@@ -2,9 +2,9 @@
 
 [Español (MX)](../MAILBOX_SETUP.md) · [English](MAILBOX_SETUP.en-US.md) · **Español (ES)** · [Français](MAILBOX_SETUP.fr-FR.md) · [Português (BR)](MAILBOX_SETUP.pt-BR.md)
 
-> Traducido de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md), que es la fuente de verdad. Si algo aquí
-> contradice al original en español (MX), **manda el español**, y avísanos, porque
-> significa que esta traducción se ha quedado atrás.
+> Traducido de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) en el commit `a7b1040`, que es la fuente de
+> verdad. Si algo aquí contradice al original en español (MX), **manda el
+> español**, y avísanos, porque significa que esta traducción se ha quedado atrás.
 
 Paso 1 del [README](README.es-ES.md#cómo-configurarlo-en-tu-agente). Esto lo haces
 tú, antes de involucrar al agente, porque hace falta una contraseña y una

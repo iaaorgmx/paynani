@@ -2,9 +2,9 @@
 
 [Español (MX)](../MAILBOX_SETUP.md) · **English** · [Español (ES)](MAILBOX_SETUP.es-ES.md) · [Français](MAILBOX_SETUP.fr-FR.md) · [Português (BR)](MAILBOX_SETUP.pt-BR.md)
 
-> Translated from [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md), which is the source of truth. Where this
-> contradicts the Spanish (MX) original, **the Spanish wins** — and say so, because
-> it means this translation has fallen behind.
+> Translated from [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) at commit `a7b1040`, which is the source of
+> truth. Where this contradicts the Spanish (MX) original, **the Spanish wins** —
+> and say so, because it means this translation has fallen behind.
 Step 1 of [the README](README.en-US.md#setting-this-up-on-your-agent). You do this
 yourself, before involving the agent, because it needs a password and a password
 should not travel through a chat.

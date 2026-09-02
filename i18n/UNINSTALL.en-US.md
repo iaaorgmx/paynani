@@ -2,9 +2,9 @@
 
 [Español (MX)](../UNINSTALL.md) · **English**
 
-> Translated from [`UNINSTALL.md`](../UNINSTALL.md), which is the source of
-> truth. Where this contradicts the Spanish (MX) original, **the Spanish
-> wins** — and say so, because it means this translation has fallen behind.
+> Translated from [`UNINSTALL.md`](../UNINSTALL.md) at commit `a7b1040`, which is the source of
+> truth. Where this contradicts the Spanish (MX) original, **the Spanish wins** —
+> and say so, because it means this translation has fallen behind.
 
 This installs a background service that touches six places on a machine. Here is
 how to take all of it back off, for a clean reinstall, for handing the machine

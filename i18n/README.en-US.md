@@ -2,9 +2,9 @@
 
 [Español (MX)](../README.md) · **English** · [Español (ES)](README.es-ES.md) · [Français](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
 
-> Translated from [`README.md`](../README.md), which is the source of truth. Where this
-> contradicts the Spanish (MX) original, **the Spanish wins** — and say so, because
-> it means this translation has fallen behind.
+> Translated from [`README.md`](../README.md) at commit `883e10e`, which is the source of
+> truth. Where this contradicts the Spanish (MX) original, **the Spanish wins** —
+> and say so, because it means this translation has fallen behind.
 Push-style email for an AI agent. It finds out about new mail within about a
 second, without polling, and can read and send under a recipient allowlist.
 

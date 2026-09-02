@@ -2,9 +2,9 @@
 
 [Español (MX)](../README.md) · [English](README.en-US.md) · [Español (ES)](README.es-ES.md) · [Français](README.fr-FR.md) · **Português (BR)**
 
-> Traduzido de [`README.md`](../README.md), que é a fonte da verdade. Se algo aqui
-> contradisser o original em espanhol (MX), **o espanhol prevalece**, e nos avise,
-> porque significa que esta tradução ficou para trás.
+> Traduzido de [`README.md`](../README.md) no commit `883e10e`, que é a fonte da verdade. Se
+> algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e
+> nos avise, porque significa que esta tradução ficou para trás.
 
 E-mail com aviso imediato para um agente de IA. Ele fica sabendo que chegou
 mensagem em cerca de um segundo, sem ficar consultando a caixa, e consegue ler e
