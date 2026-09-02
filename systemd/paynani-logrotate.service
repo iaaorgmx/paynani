@@ -1,0 +1,11 @@
+# Template. Replace /path/to/paynani with your clone's absolute path, which
+# is also the install root. The rotator resolves the state tree itself, through
+# harness/paths.py, so there is no state placeholder here.
+[Unit]
+Description=Rotate paynani logs
+
+[Service]
+Type=oneshot
+# copytruncate, not rename: systemd holds the log open in append mode, and a
+# rename sends every subsequent line to a file nobody reads. Silently.
+ExecStart=/usr/bin/python3 /path/to/paynani/harness/rotate_logs.py

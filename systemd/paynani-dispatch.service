@@ -1,0 +1,61 @@
+# Template. scripts/install.sh renders it; a manual install edits it by hand.
+# Three placeholders:
+#
+#   /path/to/paynani  your clone's absolute path, which is also the install
+#   /path/to/config   where runtime.env and hermes/ live — the clone, unless
+#                     this install named somewhere else
+#   /path/to/state    the state tree, normally <clone>/state
+#
+# They are placeholders rather than %h paths because the install root is
+# wherever the clone is, which %h cannot express — and config is kept separate
+# from the root so an install that named a different one still renders correctly.
+#
+# One dispatcher, and only one. It is the sole consumer of the event journal and
+# the sole writer of the cursor that says what has been delivered. A session must
+# never start a second one: two consumers race on one cursor and deliver the same
+# message twice.
+
+[Unit]
+Description=paynani dispatcher (delivers journalled events to the configured runtime)
+After=paynani-idle.service
+
+[Service]
+Type=simple
+# scripts/install.sh writes runtime.env. Manual installs retain the inline auto
+# default; installer-managed installs override it from the optional file.
+Environment=PAYNANI_RUNTIME=auto
+EnvironmentFile=-/path/to/config/runtime.env
+# PAYNANI_RUNTIME in runtime.env selects openclaw, hermes, or auto. `auto`
+# chooses only when exactly one runtime is present and refuses rather than
+# guessing when none or several are.
+# A systemd user service gets a minimal PATH with nothing under $HOME, so a
+# harness binary installed by npm is invisible here while an interactive shell
+# finds it. Set the full path if autodetection cannot.
+# Uncomment it in the clone, not in the installed copy: the installer converges
+# units from this file, so an edit made to the installed unit is drift and
+# --upgrade removes it. INSTALL.md gives the environment.d alternative.
+#Environment=OPENCLAW=%h/.npm-global/bin/openclaw
+# Hermes uses full operator-supplied URLs and reads each route secret from a
+# protected file. Keep the route secrets different. GET /health proves only the
+# gateway answers; signed smoke events must still verify both routes.
+#Environment=HERMES_NOTIFY_URL=http://127.0.0.1:8644/webhooks/paynani-notify
+#Environment=HERMES_NOTIFY_SECRET_FILE=/path/to/config/hermes/notify.secret
+#Environment=HERMES_ROSTER_URL=http://127.0.0.1:8644/webhooks/paynani-roster
+#Environment=HERMES_ROSTER_SECRET_FILE=/path/to/config/hermes/roster.secret
+#Environment=HERMES_HEALTH_URL=http://127.0.0.1:8644/health
+#Environment=HERMES_SIGNATURE_MODE=v2
+ExecStart=/usr/bin/python3 /path/to/paynani/harness/dispatch.py
+WorkingDirectory=/path/to/paynani
+Restart=always
+RestartSec=10
+
+# The dispatcher has its own logs, separate from the listener's. Its stderr is
+# the only place a delivery failure can land: it cannot report through the
+# runtime it is failing to reach. Somebody has to read this file, and
+# session_start.py does at the start of every session.
+StandardOutput=append:/path/to/state/dispatch.log
+StandardError=append:/path/to/state/dispatch.err.log
+SyslogIdentifier=paynani-dispatch
+
+[Install]
+WantedBy=default.target

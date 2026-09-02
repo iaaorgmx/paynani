@@ -1,0 +1,206 @@
+/* Setup page styling.
+   System fonts only; this machine may have no route to the internet, and a
+   webfont reference would be a silent request that never completes. */
+
+:root {
+  --bg:      #f7f7f5;
+  --card:    #ffffff;
+  --ink:     #1c1c1a;
+  --quiet:   #66655f;
+  --line:    #dedcd6;
+  --accent:  #2f5d50;
+  --ok-bg:   #edf6f0;  --ok-line:   #b6d8c4;  --ok-ink:   #1d5334;
+  --bad-bg:  #fdf0ee;  --bad-line:  #eebcb3;  --bad-ink:  #8a2c1c;
+  --warn-bg: #fdf6e8;  --warn-line: #e8d5a3;  --warn-ink: #7a5a12;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:      #16171a;
+    --card:    #1e2024;
+    --ink:     #e8e6e1;
+    --quiet:   #9c9a94;
+    --line:    #33363c;
+    --accent:  #7cc0a8;
+    --ok-bg:   #16261d;  --ok-line:   #2e5741;  --ok-ink:   #9adcb6;
+    --bad-bg:  #2a1a17;  --bad-line:  #5e3229;  --bad-ink:  #f0a898;
+    --warn-bg: #262015;  --warn-line: #574a2b;  --warn-ink: #e2c583;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 2rem 1rem 5rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 2rem;
+}
+
+h1 { font-size: 1.5rem; margin: 0 0 .5rem; letter-spacing: -.01em; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 .5rem; }
+h3 { font-size: .95rem; margin: 1rem 0 .35rem; color: var(--quiet); font-weight: 600; }
+
+.lead  { color: var(--quiet); margin: 0 0 1.5rem; }
+.quiet { color: var(--quiet); font-size: .85rem; margin-top: 1.25rem; }
+.hint  { color: var(--quiet); font-size: .85rem; margin: .35rem 0 0; }
+.opt   { color: var(--quiet); font-weight: 400; font-size: .8rem; }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .85em;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: .1em .35em;
+  word-break: break-all;
+}
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem 1.25rem 1.25rem;
+  margin: 0 0 1.25rem;
+}
+
+legend { padding: 0 .4rem; font-weight: 600; font-size: .9rem; }
+
+label {
+  display: block;
+  font-weight: 600;
+  font-size: .9rem;
+  margin: 1rem 0 .3rem;
+}
+fieldset > label:first-of-type { margin-top: 0; }
+
+input[type="text"], input[type="email"], input[type="password"] {
+  width: 100%;
+  padding: .6rem .7rem;
+  font: inherit;
+  font-size: .95rem;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.row { display: flex; gap: .75rem; align-items: flex-end; }
+.row .grow { flex: 1 1 auto; }
+.row .narrow { flex: 0 0 6.5rem; }
+.row label { margin-top: 1rem; }
+
+.err {
+  color: var(--bad-ink);
+  font-size: .85rem;
+  margin: .35rem 0 0;
+  font-weight: 500;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 1.25rem;
+}
+.panel p:first-child { margin-top: 0; }
+.panel p:last-child  { margin-bottom: 0; }
+.panel.ok   { background: var(--ok-bg);   border-color: var(--ok-line);   }
+.panel.bad  { background: var(--bad-bg);  border-color: var(--bad-line);  }
+.panel.warn { background: var(--warn-bg); border-color: var(--warn-line); }
+.panel.ok h2   { color: var(--ok-ink);   margin-top: 0; }
+.panel.bad h2  { color: var(--bad-ink);  margin-top: 0; }
+
+.steps { list-style: none; margin: 0; padding: 0; }
+.steps li {
+  position: relative;
+  padding-left: 1.6rem;
+  margin: .45rem 0;
+  font-size: .9rem;
+}
+.steps li::before {
+  position: absolute;
+  left: 0;
+  font-weight: 700;
+}
+.steps li.good::before { content: "✓"; color: var(--ok-ink); }
+.steps li.fail::before { content: "✕"; color: var(--bad-ink); }
+.steps .detail {
+  display: block;
+  color: var(--quiet);
+  font-size: .85rem;
+  margin-top: .2rem;
+}
+
+.actions {
+  display: flex;
+  gap: .75rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+button {
+  font: inherit;
+  font-size: .95rem;
+  font-weight: 600;
+  padding: .65rem 1.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  cursor: pointer;
+}
+button.primary   { background: var(--accent); color: var(--card); }
+button.secondary { background: transparent;   color: var(--accent); }
+button:hover     { filter: brightness(1.08); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Provider instructions. <details> so it collapses with no JavaScript;
+   the page has a default-src 'none' policy and loads no scripts at all. */
+.help {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 1.25rem;
+  margin: 0 0 1.5rem;
+  background: var(--bg);
+}
+.help summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: .95rem;
+  padding: .9rem 0;
+  color: var(--accent);
+  list-style-position: outside;
+}
+.help summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.help[open] summary { border-bottom: 1px solid var(--line); margin-bottom: .5rem; }
+.help h3 {
+  color: var(--ink);
+  font-size: .95rem;
+  margin: 1.25rem 0 .4rem;
+}
+.help h3:first-of-type { margin-top: .75rem; }
+.help p, .help li { font-size: .9rem; }
+.help ol { padding-left: 1.25rem; margin: .5rem 0; }
+.help li { margin: .3rem 0; }
+.help > *:last-child { margin-bottom: 1.25rem; }
+
+@media (max-width: 30rem) {
+  main { padding: 1.25rem; }
+  .row { flex-direction: column; align-items: stretch; gap: 0; }
+  .row .narrow { flex: 1 1 auto; }
+  .actions button { flex: 1 1 100%; }
+}

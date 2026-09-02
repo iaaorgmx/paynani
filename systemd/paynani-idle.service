@@ -1,0 +1,37 @@
+# Template. scripts/install.sh renders it; a manual install edits it by hand.
+# Three placeholders:
+#
+#   /path/to/paynani  your clone's absolute path, which is also the install
+#   /path/to/state    the state tree, normally <clone>/state
+#   /path/to/env      your credentials file, normally <clone>/.env
+#
+# systemd does not expand ~, so these must be absolute paths — and they are
+# placeholders rather than %h paths because the install root is wherever the
+# clone is, which %h cannot express.
+#
+#   install -Dm644 systemd/paynani-idle.service ~/.config/systemd/user/
+#   then replace the three placeholders.
+
+[Unit]
+Description=paynani listener (IMAP IDLE)
+Documentation=file:///path/to/paynani/DESIGN.md
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /path/to/paynani/scripts/idle_listener.py --env /path/to/env
+WorkingDirectory=/path/to/paynani
+
+# The listener retries with backoff on its own, so this only matters if the
+# process dies outright.
+Restart=always
+RestartSec=10
+
+# stdout is the event stream a session tails; stderr is diagnostics only. They
+# MUST be separate files — see DESIGN.md. A dead listener is indistinguishable
+# from a quiet mailbox unless something is watching the error log.
+StandardOutput=append:/path/to/state/mail.log
+StandardError=append:/path/to/state/idle.err.log
+SyslogIdentifier=paynani-idle
+
+[Install]
+WantedBy=default.target
