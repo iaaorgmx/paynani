@@ -54,19 +54,18 @@ et un mot de passe ne doit pas transiter par une conversation.
 Collez ceci à votre agent :
 
 ```text
-Vérifiez les paramètres de votre compte de messagerie dans le dossier workspace
-du répertoire d'installation de votre Harness.
+Vérifiez les paramètres de votre compte de messagerie ; ils se trouvent dans
+le dossier workspace du répertoire d'installation de votre Harness.
 
 ../workspace/.env
 
 Installez ensuite ce dépôt pour pouvoir l'utiliser :
 https://github.com/iaaorgmx/paynani
 
-Suivez le fichier AGENTS.md à l'intérieur du dépôt.
+Suivez les instructions du fichier AGENTS.md du dépôt.
 
-Vous aurez besoin de mon adresse e-mail pour le roster — la liste des personnes
-à qui vous pouvez écrire et dont vous pouvez traiter le courrier. Demandez-la-moi ;
-ne la devinez pas et ne la copiez depuis aucun fichier.
+Vous aurez besoin de mon nom et de mon adresse e-mail pour le fichier
+roster.md.
 
 Demandez-moi tout ce dont vous avez besoin.
 ```

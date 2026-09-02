@@ -51,19 +51,18 @@ debe pasar por un chat.
 Pégale esto a tu agente:
 
 ```text
-Revisa la configuración de tu cuenta de correo en la carpeta workspace del
-directorio de instalación de tu Harness.
+Revisa la configuración de tu cuenta de correo electrónico; está en la
+carpeta workspace del directorio de instalación de tu Harness.
 
 ../workspace/.env
 
-Luego instala este repositorio para poder usarla:
+Después, instala este repositorio para poder usarla:
 https://github.com/iaaorgmx/paynani
 
-Sigue el archivo AGENTS.md dentro del repositorio.
+Sigue las instrucciones del archivo AGENTS.md del repositorio.
 
-Vas a necesitar mi dirección de correo para el roster — la lista de personas a
-las que puedes escribir y cuyo correo puedes atender. Pídemela; no la adivines
-ni la copies de ningún archivo.
+Vas a necesitar mi nombre y mi dirección de correo electrónico para el archivo
+roster.md.
 
 Pregúntame lo que necesites.
 ```
