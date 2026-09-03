@@ -2,6 +2,28 @@
 
 ## Sin publicar
 
+- **El hook de inicio de sesión gritaba «THE DISPATCHER REPORTED PROBLEMS» en toda
+  instalación sana** ([#15](https://github.com/iaaorgmx/paynani/issues/15)).
+  `dispatch.py` escribe `delivering to <runtime>` en la rama en que **todo salió
+  bien**, por el canal de diagnóstico que termina en `state/dispatch.err.log`, y
+  `session_start.py` trataba cualquier línea no vacía de ese archivo como queja.
+  El archivo es de diagnósticos —lo dice su propio docstring— y se leía como si
+  fuera de fallos.
+
+  El dispatcher marca ahora sus líneas de rutina —el arranque exitoso, la
+  recuperación de una entrega y la compactación del diario— y el hook las
+  descarta. Lo dice quien escribe, que es el único que sabe cuál es cuál, en vez
+  de dejarle el juicio al lector: el texto del aviso decía *«If the last one is
+  not a recovery»* precisamente porque nadie más podía distinguirlas.
+
+  La compatibilidad cae del lado seguro: una bitácora escrita antes de que
+  existiera la marca sigue disparando el aviso.
+
+  Importa porque ese aviso existe para el caso en que la inyección al runtime
+  falla, que es invisible por cualquier otro medio. Sonando siempre, el día que
+  falle de verdad se verá igual que todos los días: se desactiva por uso.
+  Encontrado en la primera sesión después de instalar sobre Claude Code.
+
 - **El `password.cmd` documentado para Himalaya se rompía con un `.env` en CRLF**
   ([#14](https://github.com/iaaorgmx/paynani/issues/14)). `INSTALL.md` §4.3 mandaba
   escribir a mano `sed -n 's/^PAYNANI_PASSWORD=//p'`, que en un archivo con

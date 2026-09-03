@@ -33,6 +33,19 @@ SCHEMA_VERSION = 1
 MAIL_RECEIVED = "email.received"
 LISTENER_ERROR = "listener.error"
 
+# The dispatcher writes diagnostics to stderr, which its unit appends to
+# state/dispatch.err.log, and session_start.py reads that file to say whether
+# delivery is broken. But the file holds two kinds of line — complaints, and
+# routine notes like the one every successful startup writes — and the hook had
+# no way to tell them apart, so it announced PROBLEMS on every healthy install
+# from the first session onwards (#15).
+#
+# This prefix is how the writer says which kind a line is, and it lives here
+# because both sides import this module and neither imports the other:
+# session_start.py deliberately does not import dispatch.py, whose adapters must
+# never be able to fail a session start.
+ROUTINE_PREFIX = "ok: "
+
 
 def _now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

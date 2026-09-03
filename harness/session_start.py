@@ -96,7 +96,13 @@ def dispatcher_faults():
         text = DISPATCH_ERR.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
-    return [ln for ln in text.splitlines() if ln.strip()][-MAX_DISPATCH_ERR:]
+    # Routine notes are dropped. The dispatcher marks them, because it is the
+    # only party that knows which of its own lines is a complaint — and the line
+    # it writes on every successful startup used to make this hook announce
+    # PROBLEMS on every healthy install (#15).
+    lines = [ln for ln in text.splitlines()
+             if ln.strip() and not ln.startswith(ev.ROUTINE_PREFIX)]
+    return lines[-MAX_DISPATCH_ERR:]
 
 
 def local_code_line():

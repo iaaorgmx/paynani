@@ -20,6 +20,68 @@ def envelope(text="[mail 09:00:00, sent 08:59:00, roster] Someone — Subject", 
     return base
 
 
+class DispatcherFaults(unittest.TestCase):
+    """Which lines of the dispatcher's diagnostics count as a fault (#15).
+
+    The file holds two kinds. A complaint means mail is being journalled and not
+    delivered, which nothing else can see. A routine note means the dispatcher
+    said what it was doing. Reading both as complaints made every healthy install
+    open every session with a warning, and an alarm that sounds on the good path
+    is one people stop reading.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        sys.path.insert(0, str(ROOT / "harness"))
+        import session_start as ss
+        import event as ev
+        self.ss, self.ev = ss, ev
+        self.log = pathlib.Path(self.tmp.name) / "dispatch.err.log"
+        patcher = mock.patch.object(ss, "DISPATCH_ERR", self.log)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_routine_startup_note_is_not_a_fault(self):
+        self.log.write_text(self.ev.ROUTINE_PREFIX + "delivering to claudecode (/x)\n")
+        self.assertEqual([], self.ss.dispatcher_faults())
+
+    def test_a_real_complaint_still_is(self):
+        self.log.write_text("claudecode cannot deliver imap:INBOX:1:5: spool is full\n")
+        self.assertEqual(1, len(self.ss.dispatcher_faults()))
+
+    def test_a_complaint_among_routine_notes_survives(self):
+        self.log.write_text(
+            self.ev.ROUTINE_PREFIX + "delivering to claudecode (/x)\n"
+            "claudecode refused imap:INBOX:1:5: no\n"
+            + self.ev.ROUTINE_PREFIX + "delivery recovered: imap:INBOX:1:6\n")
+        faults = self.ss.dispatcher_faults()
+        self.assertEqual(1, len(faults))
+        self.assertIn("refused", faults[0])
+
+    def test_an_unmarked_line_from_an_older_version_still_counts(self):
+        # Backwards compatibility falls the safe way: a log written before the
+        # marker existed keeps raising the warning rather than going quiet.
+        self.log.write_text("delivering to claudecode (/x)\n")
+        self.assertEqual(1, len(self.ss.dispatcher_faults()))
+
+    def test_an_empty_log_is_not_a_fault(self):
+        self.log.write_text("")
+        self.assertEqual([], self.ss.dispatcher_faults())
+
+    def test_the_dispatcher_marks_the_lines_this_filter_drops(self):
+        """The writer and the reader must agree, so read the writer's source."""
+        source = (ROOT / "harness" / "dispatch.py").read_text()
+        self.assertIn("def note(message):", source)
+        self.assertIn("log(ev.ROUTINE_PREFIX + message)", source)
+        for routine in ("delivering to {runtime}", "delivery recovered",
+                        "compacted the event journal"):
+            self.assertIn(routine, source)
+            line = next(ln for ln in source.splitlines() if routine in ln and "(" in ln)
+            self.assertTrue(line.strip().startswith("note("),
+                            f"routine line is not marked: {line.strip()}")
+
+
 class SpoolDelivery(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -162,6 +224,7 @@ class SpoolReplay(unittest.TestCase):
             "read_spool_backlog": lambda: (["[mail] one"], False, 32),
             "selected_runtime": lambda: "claudecode",
             "version_line": lambda: None,
+            "local_code_line": lambda: "",
         }
         defaults.update(stubs)
         patchers = [mock.patch.object(ss, name, value) for name, value in defaults.items()]
