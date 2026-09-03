@@ -1,4 +1,5 @@
 # paynani
+Mensageiro de elite: os paynani eram os corredores e mensageiros oficiais do Império Asteca.
 
 [Español (MX)](../README.md) · [English (US)](README.en-US.md) · [Español (ES)](README.es-ES.md) · [Français (FR)](README.fr-FR.md) · **Português (BR)**
 

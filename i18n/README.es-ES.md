@@ -1,4 +1,5 @@
 # paynani
+Mensajero de élite: los paynani eran los corredores y mensajeros oficiales del Imperio Azteca.
 
 [Español (MX)](../README.md) · [English (US)](README.en-US.md) · **Español (ES)** · [Français (FR)](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
 
