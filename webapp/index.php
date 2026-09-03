@@ -147,7 +147,7 @@ $existing = existing_config();
     <h3>Si tu correo vino con tu hosting web (cPanel)</h3>
     <p>Es el caso más común, y los datos ya están escritos ahí para ti.</p>
     <ol>
-      <li>Entra a cPanel, normalmente <code>tudominio.com/cpanel</code>, o el enlace que te mandó tu proveedor.</li>
+      <li>Entra a cPanel, normalmente <code>tudominio.example/cpanel</code>, o el enlace que te mandó tu proveedor.</li>
       <li>Abre <strong>Email Accounts</strong> (Cuentas de correo).</li>
       <li>Busca la dirección que va a usar el agente y haz clic en <strong>Connect Devices</strong>
           (en versiones viejas se llama <em>Set Up Mail Client</em>).</li>
@@ -206,7 +206,7 @@ $existing = existing_config();
       <label for="account">Dirección de correo</label>
       <input type="email" id="account" name="AGENT_EMAIL_ACCOUNT" required
              value="<?= e($values['AGENT_EMAIL_ACCOUNT']) ?>"
-             placeholder="agente@tudominio.com">
+             placeholder="agente@tudominio.example">
       <?php if (isset($errors['AGENT_EMAIL_ACCOUNT'])): ?>
         <p class="err"><?= e($errors['AGENT_EMAIL_ACCOUNT']) ?></p>
       <?php endif; ?>
@@ -239,7 +239,7 @@ $existing = existing_config();
           <label for="imaphost">Servidor</label>
           <input type="text" id="imaphost" name="AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST" required
                  value="<?= e($values['AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST']) ?>"
-                 placeholder="imap.tuproveedor.com">
+                 placeholder="imap.tuproveedor.example">
         </div>
         <div class="narrow">
           <label for="imapport">Puerto</label>
@@ -263,7 +263,7 @@ $existing = existing_config();
           <label for="smtphost">Servidor</label>
           <input type="text" id="smtphost" name="AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST" required
                  value="<?= e($values['AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST']) ?>"
-                 placeholder="smtp.tuproveedor.com">
+                 placeholder="smtp.tuproveedor.example">
         </div>
         <div class="narrow">
           <label for="smtpport">Puerto</label>
