@@ -116,8 +116,8 @@ pgrep -af idle_listener.py                           # no debe salir nada
 
 **Primero averigua dónde están, porque en la mayoría de las instalaciones no
 están en el clon.** Cuando el host tiene un harness, la contraseña del buzón vive
-en el `.env` del workspace de ese harness —`~/.openclaw/workspace/.env`,
-`~/.hermes/workspace/.env`, `~/.claude/workspace/.env`— y `<clon>/.env` ni
+en el `.env` del workspace de ese harness (`~/.openclaw/workspace/.env`,
+`~/.hermes/workspace/.env`, `~/.claude/workspace/.env`) y `<clon>/.env` ni
 siquiera existe. Un `rm -f .env` desde el clon no borraría nada en ese caso, y te
 dejaría creyendo que borraste la contraseña.
 
@@ -129,8 +129,8 @@ python3 harness/paths.py env
 
 Si lo que responde está **fuera** del clon, es un archivo del harness y no de
 esta herramienta: otras cosas lo usan y **no se borra entero.** Quita de ahí
-únicamente las claves que agregó esta instalación —las `PAYNANI_*`, y las
-`AGENT_EMAIL_*` si fueron para este buzón y ninguna otra cosa las lee— y deja el
+únicamente las claves que agregó esta instalación (las `PAYNANI_*`, y las
+`AGENT_EMAIL_*` si fueron para este buzón y ninguna otra cosa las lee) y deja el
 resto del archivo en pie. Lo mismo aplica si es un enlace simbólico: **no borres
 lo que apunta.**
 

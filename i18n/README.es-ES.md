@@ -14,7 +14,7 @@ en [`HERMES.md`](../HERMES.md).
 
 Claude Code funciona de forma distinta a los otros dos y conviene saberlo antes
 de empezar: nada fuera de una sesión de Claude Code puede hablarle, de modo que
-el correo no se le empuja al agente — el agente va a por él. Su hook de inicio de
+el correo no se le empuja al agente: el agente va a por él. Su hook de inicio de
 sesión reproduce lo que llegó mientras no había nada en marcha y después pide al
 agente que arme una vigilancia para lo que llegue a continuación. Nada puede
 imponerlo desde fuera, así que ese es el único paso que depende de que el agente
@@ -31,8 +31,8 @@ tercero son dos minutos para comprobar que funciona de verdad.
 
 El agente necesita su propia cuenta de correo, y los datos de conexión de esa
 cuenta escritos en un fichero `.env`. **Si tu agente corre bajo un harness, ese
-fichero va en la carpeta workspace del propio harness** — `~/.hermes/workspace/.env`,
-`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env` —, que es donde se le
+fichero va en la carpeta workspace del propio harness** (`~/.hermes/workspace/.env`,
+`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env`), que es donde se le
 dice al agente que mire y de donde esta herramienta lo lee. En un host sin
 harness, ponlo dentro del clon.
 
@@ -124,8 +124,8 @@ Merece la pena saberlo antes de aceptarlo. El agente tiene instrucciones de
 informarte de todo esto cuando termine, y puedes exigirle la lista:
 
 - Cuatro unidades de usuario de systemd, no una. Dos se ejecutan continuamente y
-  se reinician solas si fallan —el escucha (`paynani-idle.service`) y el
-  repartidor (`paynani-dispatch.service`)—, y las otras dos rotan los registros:
+  se reinician solas si fallan: el escucha (`paynani-idle.service`) y el
+  repartidor (`paynani-dispatch.service`). Las otras dos rotan los registros:
   `paynani-logrotate.timer`, que se activa solo, y `paynani-logrotate.service`,
   que es `static` porque lo dispara el temporizador y no se habilita por su
   cuenta. En macOS son tres *LaunchAgents* equivalentes: `com.paynani.idle`,
@@ -246,17 +246,17 @@ elegir dónde clonar es cómo eliges dónde instalar.
   `~/.hermes/workspace/paynani` en Hermes Agent o
   `~/.claude/workspace/paynani` en Claude Code si no hay preferencia
 - Credenciales: el `.env` del workspace de tu harness cuando hay exactamente uno
-  —`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
-  `~/.claude/workspace/.env`— y `<clon>/.env` cuando no. Permisos `600`, ignorado
+  (`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
+  `~/.claude/workspace/.env`) y `<clon>/.env` cuando no. Permisos `600`, ignorado
   por git, nunca se sube. Se lee donde está y nunca se copia al clon: una segunda
   copia de una contraseña es una segunda cosa que se puede filtrar. Pregúntale a
   la instalación en vez de adivinar, con `python3 harness/paths.py env`
 - Estado y eventos: `<clon>/state/`
-- Secretos de ruta: `<clon>/hermes/`, permisos `600` — **solo en Hermes**; en
+- Secretos de ruta: `<clon>/hermes/`, permisos `600`. **Solo en Hermes**: en
   OpenClaw y en Claude Code ese directorio no existe y no falta nada
 - Unidades de usuario: `~/.config/systemd/user/paynani-idle.service`,
   `paynani-dispatch.service`, `paynani-logrotate.service` y
-  `paynani-logrotate.timer` — lo único que queda fuera del clon, porque systemd
+  `paynani-logrotate.timer`, lo único que queda fuera del clon, porque systemd
   no lee unidades de otro sitio. En macOS, los tres `.plist` de
   `com.paynani.*` en `~/Library/LaunchAgents/`
 
@@ -283,8 +283,8 @@ Construido y verificado de extremo a extremo el 2026-08-09.
 ## De dónde viene el nombre
 
 **paynani** es náhuatl clásico y significa, sin adornos, *«el que corre
-ligeramente»*: del verbo `paina` —«correr ligeramente», en el vocabulario de
-Alonso de Molina, 1571— más el sufijo `-ni`, que convierte una acción en quien la
+ligeramente»*: del verbo `paina` («correr ligeramente», en el vocabulario de
+Alonso de Molina, 1571) más el sufijo `-ni`, que convierte una acción en quien la
 hace de oficio.
 
 La grafía varía porque los frailes del siglo XVI escribieron el náhuatl con las
@@ -297,7 +297,7 @@ lector hispanohablante reconoce.
 De esa cualidad salió el nombre del oficio. El náhuatl tenía dos maneras de
 nombrar al mensajero imperial: `titlantli`, «el enviado», que lo define por el
 encargo que lleva, y `paynani`, que lo define por cómo se mueve. La que se quedó
-pegada a esos hombres fue la segunda — se los conocía por la manera de correr, no
+pegada a esos hombres fue la segunda: se los conocía por la manera de correr, no
 por quién los mandaba.
 
 Los corredores trabajaban por relevos, con postas llamadas `techialoyan`, y se
@@ -310,8 +310,8 @@ lo que hace aquí la etiqueta `roster`: el sobre dice cómo recibir la noticia a
 de que se lea.
 
 De la misma raíz viene Paynal, el que corría en lugar de Huitzilopochtli en las
-procesiones. El Códice Florentino lo explica en tres palabras —*«el delegado, el
-sustituto, el suplente»*— porque «lo apremiaban, lo hacían correr». Un agente que
+procesiones. El Códice Florentino lo explica en tres palabras, *«el delegado, el
+sustituto, el suplente»*, porque «lo apremiaban, lo hacían correr». Un agente que
 va a por el correo en lugar de quien no puede estar en todas partes.
 
 <sub>Fuentes: [Gran Diccionario Náhuatl](https://gdn.iib.unam.mx/diccionario/painani/233892)

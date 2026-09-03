@@ -14,7 +14,7 @@ in [`HERMES.md`](../HERMES.md).
 
 Claude Code works differently from the other two and it is worth knowing before
 you start: nothing outside a Claude Code session can speak into it, so mail is
-not pushed to the agent — the agent comes and gets it. Its session-start hook
+not pushed to the agent: the agent comes and gets it. Its session-start hook
 replays what arrived while nothing was running and then asks the agent to arm a
 watch for what lands next. Nothing can enforce that from outside, so it is the
 one step that rests on the agent doing as it is told. See
@@ -31,8 +31,8 @@ minutes of checking that it really works.
 
 The agent needs an email account of its own and the connection details for it,
 written into a `.env` file. **If your agent runs under a harness, that file
-belongs in the harness's own workspace folder** — `~/.hermes/workspace/.env`,
-`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env` — which is where the
+belongs in the harness's own workspace folder** (`~/.hermes/workspace/.env`,
+`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env`), which is where the
 agent is told to look and where this tool reads it from. On a host with no
 harness, put it in the clone.
 
@@ -145,14 +145,14 @@ Worth knowing before you agree to it. The agent is instructed to report all of
 this back when it finishes, and you can hold it to the list:
 
 - Four supervised user units, not one. Two run continuously and restart on
-  failure — the listener (`paynani-idle.service`) and the dispatcher
-  (`paynani-dispatch.service`) — and two rotate the logs:
+  failure: the listener (`paynani-idle.service`) and the dispatcher
+  (`paynani-dispatch.service`). Two more rotate the logs:
   `paynani-logrotate.timer`, which enables itself, and
   `paynani-logrotate.service`, which is `static` because the timer starts it and
   it is never enabled on its own. On macOS these are three equivalent
   LaunchAgents: `com.paynani.idle`, `com.paynani.dispatch` and
   `com.paynani.logrotate`
-- A credentials file at mode `600` — your harness's workspace `.env` if you keep
+- A credentials file at mode `600`: your harness's workspace `.env` if you keep
   one there, otherwise `.env` inside the clone. It is read where it lies and
   never copied
 - Log and state files under `state/` inside the clone
@@ -269,24 +269,24 @@ to clone is how you choose where to install.
   `~/.claude/workspace/paynani` on Claude Code, if you have no preference;
   every generated path is resolved from where the scripts are, so an existing
   clone needs no move.
-- Secret env: your harness's workspace `.env` when there is exactly one —
-  `~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
-  `~/.claude/workspace/.env` — and `<clone>/.env` when there is not. Mode `600`,
+- Secret env: your harness's workspace `.env` when there is exactly one
+  (`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
+  `~/.claude/workspace/.env`), and `<clone>/.env` when there is not. Mode `600`,
   ignored by git, never committed. It is read where it lies and never copied into
   the clone: a second copy of a password is a second thing that can leak. Ask the
   install rather than guessing, with `python3 harness/paths.py env`.
 - Event state: `<clone>/state/`
-- Route secrets: `<clone>/hermes/`, mode `600` — **Hermes only**; on OpenClaw
+- Route secrets: `<clone>/hermes/`, mode `600`. **Hermes only**: on OpenClaw
   and Claude Code that directory does not exist and nothing is missing
 - User units: `~/.config/systemd/user/paynani-idle.service`,
   `paynani-dispatch.service`, `paynani-logrotate.service` and
   `paynani-logrotate.timer` on Ubuntu, or the three `com.paynani.*.plist` files
-  in `~/Library/LaunchAgents/` on macOS — the only thing outside the clone,
+  in `~/Library/LaunchAgents/` on macOS. This is the only thing outside the clone,
   because systemd does not read units from anywhere else
 
 Secrets inside a git working tree are kept out of `git status` by `.gitignore`,
 and `scripts/install.sh` refuses to write if any of them is tracked or unignored.
-`git clean -xdf` still deletes them all — use `git clean -df` on a live install.
+`git clean -xdf` still deletes them all, so use `git clean -df` on a live install.
 
 ## The property everything serves
 
@@ -304,8 +304,8 @@ Built and verified end to end on 2026-08-09.
 ## Where the name comes from
 
 **paynani** is Classical Nahuatl, and it means something plainer than it sounds:
-*"the one who runs lightly."* From the verb `paina` — "correr ligeramente," in
-Alonso de Molina's 1571 vocabulary — plus the suffix `-ni`, which turns an action
+*"the one who runs lightly."* From the verb `paina` ("correr ligeramente," in
+Alonso de Molina's 1571 vocabulary) plus the suffix `-ni`, which turns an action
 into the one who does it for a living.
 
 The spelling varies because sixteenth-century friars wrote Nahuatl with the
@@ -318,7 +318,7 @@ Spanish-speaking reader recognizes.
 The name of the office grew out of that quality. Nahuatl had two ways to name
 the imperial messenger: `titlantli`, "the one sent," which defines him by the
 errand he carries, and `paynani`, which defines him by how he moves. The one that
-stuck to these men was the second — they were known for the way they ran, not for
+stuck to these men was the second: they were known for the way they ran, not for
 who dispatched them.
 
 The runners worked in relays, through staging posts called `techialoyan`, and
@@ -331,8 +331,8 @@ and club, meant a victory, and crowds followed him to the palace. That is what t
 reads it.
 
 The same root gave Paynal, who ran in Huitzilopochtli's place during processions.
-The Florentine Codex explains him in three words — *"the delegate, the substitute,
-the deputy"* — because "they pressed him on quickly; he was made to hasten." An
+The Florentine Codex explains him in three words, *"the delegate, the substitute,
+the deputy"*, because "they pressed him on quickly; he was made to hasten." An
 agent that goes for the mail on behalf of whoever cannot be everywhere at once.
 
 <sub>Sources: [Gran Diccionario Náhuatl](https://gdn.iib.unam.mx/diccionario/painani/233892)
@@ -341,4 +341,4 @@ agent that goes for the mail on behalf of whoever cannot be everywhere at once.
 
 ---
 
-<sub>Translated from [`README.md`](../README.md) at commit `2b1fc9c`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins** — and say so, because it means this translation has fallen behind.</sub>
+<sub>Translated from [`README.md`](../README.md) at commit `2b1fc9c`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins**, and say so, because it means this translation has fallen behind.</sub>

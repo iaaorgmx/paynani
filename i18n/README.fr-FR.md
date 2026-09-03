@@ -14,7 +14,7 @@ authentifiées comme décrit dans [`HERMES.md`](../HERMES.md).
 
 Claude Code fonctionne autrement que les deux autres, et mieux vaut le savoir
 avant de commencer : rien à l'extérieur d'une session Claude Code ne peut lui
-parler, donc le courrier n'est pas poussé vers l'agent — c'est l'agent qui vient
+parler, donc le courrier n'est pas poussé vers l'agent : c'est l'agent qui vient
 le chercher. Son hook de démarrage de session rejoue ce qui est arrivé pendant
 qu'aucune session ne tournait, puis demande à l'agent d'armer une surveillance
 pour la suite. Rien ne peut l'imposer de l'extérieur : c'est la seule étape qui
@@ -33,9 +33,9 @@ vraiment.
 
 L'agent a besoin de son propre compte de messagerie, et des paramètres de
 connexion de ce compte écrits dans un fichier `.env`. **Si votre agent tourne sous
-un harness, ce fichier appartient au dossier workspace de ce harness** —
-`~/.hermes/workspace/.env`, `~/.openclaw/workspace/.env`,
-`~/.claude/workspace/.env` —, c'est là qu'on demande
+un harness, ce fichier appartient au dossier workspace de ce harness**
+(`~/.hermes/workspace/.env`, `~/.openclaw/workspace/.env`,
+`~/.claude/workspace/.env`), c'est là qu'on demande
 à l'agent de regarder et c'est de là que cet outil le lit. Sur un hôte sans
 harness, placez-le au sein du clone.
 
@@ -133,9 +133,9 @@ Bon à savoir avant d'accepter. L'agent a pour consigne de vous rendre compte de
 tout ceci en terminant, et vous pouvez lui en demander la liste :
 
 - Quatre unités utilisateur systemd, pas une. Deux tournent en continu et
-  redémarrent d'elles-mêmes en cas d'échec — l'écouteur
-  (`paynani-idle.service`) et le distributeur (`paynani-dispatch.service`) — et
-  les deux autres font tourner les journaux : `paynani-logrotate.timer`, qui
+  redémarrent d'elles-mêmes en cas d'échec : l'écouteur
+  (`paynani-idle.service`) et le distributeur (`paynani-dispatch.service`). Les
+  deux autres font tourner les journaux : `paynani-logrotate.timer`, qui
   s'active seul, et `paynani-logrotate.service`, qui est `static` parce que le
   minuteur le déclenche et qu'il ne s'active pas de lui-même. Sur macOS, ce sont
   trois *LaunchAgents* équivalents : `com.paynani.idle`, `com.paynani.dispatch`
@@ -255,24 +255,24 @@ choisir où cloner, c'est choisir où installer.
   `~/.hermes/workspace/paynani` sur Hermes Agent ou
   `~/.claude/workspace/paynani` sur Claude Code à défaut de préférence
 - Identifiants : le `.env` du workspace de votre harness lorsqu'il y en a
-  exactement un — `~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
-  `~/.claude/workspace/.env` — et `<clone>/.env` sinon. En `600`, ignoré par git,
+  exactement un (`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
+  `~/.claude/workspace/.env`), et `<clone>/.env` sinon. En `600`, ignoré par git,
   jamais versionné. Il est lu où il se trouve et jamais copié dans le clone : une
   seconde copie d'un mot de passe est une seconde chose qui peut fuiter.
   Demandez-le à l'installation plutôt que de le deviner, avec
   `python3 harness/paths.py env`
 - État et événements : `<clone>/state/`
-- Secrets de route : `<clone>/hermes/`, en `600` — **uniquement sous Hermes** ;
+- Secrets de route : `<clone>/hermes/`, en `600`. **Uniquement sous Hermes** :
   sous OpenClaw et Claude Code ce répertoire n'existe pas et rien ne manque
 - Unités utilisateur : `~/.config/systemd/user/paynani-idle.service`,
   `paynani-dispatch.service`, `paynani-logrotate.service` et
-  `paynani-logrotate.timer` — la seule chose hors du clone, car systemd ne lit
+  `paynani-logrotate.timer`, la seule chose hors du clone, car systemd ne lit
   les unités de nulle part ailleurs. Sur macOS, les trois `.plist`
   `com.paynani.*` dans `~/Library/LaunchAgents/`
 
 `.gitignore` garde les secrets hors de `git status`, et `scripts/install.sh`
 refuse d'écrire si l'un d'eux est versionné ou non ignoré. Ce que cela n'empêche
-pas : `git clean -xdf` supprime les fichiers ignorés — sur une installation vivante,
+pas : `git clean -xdf` supprime les fichiers ignorés ; sur une installation vivante,
 c'est le mot de passe de la boîte, les deux secrets de route, la liste des
 destinataires et le dernier UID. Utilisez `git clean -df`.
 
@@ -293,8 +293,8 @@ Construit et vérifié de bout en bout le 09/08/2026.
 ## D'où vient le nom
 
 **paynani** est du nahuatl classique et signifie, sans ornement, *« celui qui court
-légèrement »* : du verbe `paina` — « correr ligeramente », dans le vocabulaire
-d'Alonso de Molina, 1571 — auquel s'ajoute le suffixe `-ni`, qui transforme une
+légèrement »* : du verbe `paina` (« correr ligeramente », dans le vocabulaire
+d'Alonso de Molina, 1571) auquel s'ajoute le suffixe `-ni`, qui transforme une
 action en celui qui l'exerce comme métier.
 
 La graphie varie parce que les religieux du XVIe siècle ont écrit le nahuatl avec
@@ -307,7 +307,7 @@ lecteur hispanophone reconnaît.
 C'est de cette qualité qu'est venu le nom du métier. Le nahuatl avait deux façons
 de nommer le messager impérial : `titlantli`, « celui qu'on envoie », qui le
 définit par la mission qu'il porte, et `paynani`, qui le définit par sa manière de
-se déplacer. C'est la seconde qui est restée attachée à ces hommes — on les
+se déplacer. C'est la seconde qui est restée attachée à ces hommes : on les
 connaissait à leur façon de courir, non à celui qui les envoyait.
 
 Les coureurs travaillaient par relais, avec des postes appelés `techialoyan`, et
@@ -321,8 +321,8 @@ l'étiquette `roster` : l'enveloppe dit comment recevoir la nouvelle avant qu'on
 la lise.
 
 De la même racine vient Paynal, celui qui courait à la place de Huitzilopochtli
-lors des processions. Le Codex de Florence l'explique en trois mots — *« le
-délégué, le substitut, le suppléant »* — parce qu'« on le pressait, on le faisait
+lors des processions. Le Codex de Florence l'explique en trois mots, *« le
+délégué, le substitut, le suppléant »*, parce qu'« on le pressait, on le faisait
 courir ». Un agent qui va chercher le courrier à la place de qui ne peut être
 partout à la fois.
 
