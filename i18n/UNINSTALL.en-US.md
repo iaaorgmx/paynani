@@ -1,6 +1,6 @@
 # Removing paynani
 
-[Español (MX)](../UNINSTALL.md) · **English**
+[Español (MX)](../UNINSTALL.md) · **English (US)**
 
 This installs a background service that touches six places on a machine. Here is
 how to take all of it back off, for a clean reinstall, for handing the machine

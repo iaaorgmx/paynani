@@ -1,6 +1,6 @@
 # paynani
 
-[Español (MX)](../README.md) · [English](README.en-US.md) · [Español (ES)](README.es-ES.md) · **Français** · [Português (BR)](README.pt-BR.md)
+[Español (MX)](../README.md) · [English (US)](README.en-US.md) · [Español (ES)](README.es-ES.md) · **Français (FR)** · [Português (BR)](README.pt-BR.md)
 
 Notification immédiate des courriels pour un agent IA. Il apprend l'arrivée d'un
 message en une seconde environ, sans interroger la boîte en boucle, et peut lire
@@ -288,6 +288,44 @@ D'où le dernier UID enregistré message par message, la vérification d'`UIDVAL
 réellement. [`DESIGN.md`](../DESIGN.md) explique chacun d'eux et ce qui casse sans.
 
 Construit et vérifié de bout en bout le 09/08/2026.
+
+## D'où vient le nom
+
+**paynani** est du nahuatl classique et signifie, sans ornement, *« celui qui court
+légèrement »* : du verbe `paina` — « correr ligeramente », dans le vocabulaire
+d'Alonso de Molina, 1571 — auquel s'ajoute le suffixe `-ni`, qui transforme une
+action en celui qui l'exerce comme métier.
+
+La graphie varie parce que les religieux du XVIe siècle ont écrit le nahuatl avec
+les conventions de l'espagnol de leur temps, où `i`, `y` et `j` s'employaient
+presque indifféremment. Le Gran Diccionario Náhuatl indexe les mêmes passages du
+Codex de Florence sous `painani` et sous `painanj`, et enregistre `payna` comme
+variante de `paina` : c'est un seul mot. Ce projet écrit `paynani`, la forme qu'un
+lecteur hispanophone reconnaît.
+
+Il vaut la peine de noter ce que le mot ne dit **pas**. Il ne nomme pas la charge
+— le messager impérial était un `titlantli`, « celui qu'on envoie » — mais la
+qualité : léger du pied. Il dit ce qu'il fait, non le rang qu'il occupe.
+
+Les coureurs travaillaient par relais, avec des postes appelés `techialoyan`, et
+s'entraînaient dès l'enfance. De tout ce qu'on rapporte d'eux, un détail est
+exactement ce que fait cet outil : **le messager classait la nouvelle avant
+d'ouvrir la bouche.** Arrivait-il les cheveux dénoués et en désordre, il apportait
+une défaite, et on ne lui adressait pas même un salut ; arrivait-il les cheveux
+tressés et ornés d'un ruban de couleur, bouclier et massue à la main, il apportait
+une victoire, et la foule le suivait jusqu'au palais. C'est ce que fait ici
+l'étiquette `roster` : l'enveloppe dit comment recevoir la nouvelle avant qu'on ne
+la lise.
+
+De la même racine vient Paynal, celui qui courait à la place de Huitzilopochtli
+lors des processions. Le Codex de Florence l'explique en trois mots — *« le
+délégué, le substitut, le suppléant »* — parce qu'« on le pressait, on le faisait
+courir ». Un agent qui va chercher le courrier à la place de qui ne peut être
+partout à la fois.
+
+<sub>Sources : [Gran Diccionario Náhuatl](https://gdn.iib.unam.mx/diccionario/painani/233892)
+(UNAM) · [Nahuatl Dictionary](https://nahuatl.wired-humanities.org/content/paina)
+(Wired Humanities) · [Mexicolore](https://www.mexicolore.co.uk/aztecs/ask-experts/did-they-send-post-mail).</sub>
 
 ---
 

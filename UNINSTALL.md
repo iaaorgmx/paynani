@@ -1,6 +1,6 @@
 # Cómo quitar paynani
 
-**Español (MX)** · [English](i18n/UNINSTALL.en-US.md)
+**Español (MX)** · [English (US)](i18n/UNINSTALL.en-US.md)
 
 Esto instala un servicio en segundo plano que toca seis lugares de la
 computadora. Aquí está cómo quitarlo todo, sea para reinstalar limpio, para
