@@ -14,7 +14,7 @@ Code. Quem opera o Hermes configura duas rotas autenticadas conforme descrito em
 
 O Claude Code funciona de um jeito diferente dos outros dois, e vale saber disso
 antes de começar: nada fora de uma sessão do Claude Code consegue falar com ela,
-então o e-mail não é empurrado até o agente — o agente é que vai buscá-lo. O hook
+então o e-mail não é empurrado até o agente: o agente é que vai buscá-lo. O hook
 de início de sessão reproduz o que chegou enquanto nada estava rodando e então
 pede que o agente arme uma vigilância para o que chegar depois. Nada consegue
 impor isso de fora, então esse é o único passo que depende de o agente fazer o
@@ -31,8 +31,8 @@ dois minutos conferindo que funciona de verdade.
 
 O agente precisa de uma conta de e-mail própria, e dos dados de conexão dessa
 conta escritos em um arquivo `.env`. **Se o seu agente roda sob um harness, esse
-arquivo fica na pasta workspace do próprio harness** — `~/.hermes/workspace/.env`,
-`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env` —, que é onde o agente é
+arquivo fica na pasta workspace do próprio harness** (`~/.hermes/workspace/.env`,
+`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env`), que é onde o agente é
 instruído a olhar e de onde esta ferramenta o lê. Em um host sem harness,
 coloque-o dentro do clone.
 
@@ -124,8 +124,8 @@ Vale saber antes de aceitar. O agente tem instrução de relatar tudo isso ao
 terminar, e você pode cobrar a lista:
 
 - Quatro units de usuário do systemd, não uma. Duas rodam continuamente e
-  reiniciam sozinhas em caso de falha — o ouvinte (`paynani-idle.service`) e o
-  despachante (`paynani-dispatch.service`) — e as outras duas rotacionam os
+  reiniciam sozinhas em caso de falha: o ouvinte (`paynani-idle.service`) e o
+  despachante (`paynani-dispatch.service`). As outras duas rotacionam os
   registros: `paynani-logrotate.timer`, que se ativa sozinho, e
   `paynani-logrotate.service`, que é `static` porque o timer o dispara e ele não
   se habilita por conta própria. No macOS são três *LaunchAgents* equivalentes:
@@ -242,19 +242,19 @@ escolher onde clonar é como você escolhe onde instalar.
 - Repositório: em qualquer lugar; `~/.openclaw/workspace/paynani` no OpenClaw,
   `~/.hermes/workspace/paynani` no Hermes Agent ou
   `~/.claude/workspace/paynani` no Claude Code se não houver preferência
-- Credenciais: o `.env` do workspace do seu harness quando há exatamente um —
-  `~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
-  `~/.claude/workspace/.env` — e `<clone>/.env` quando não. Permissão `600`,
+- Credenciais: o `.env` do workspace do seu harness quando há exatamente um
+  (`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
+  `~/.claude/workspace/.env`), e `<clone>/.env` quando não. Permissão `600`,
   ignorado pelo git, nunca versionado. Ele é lido onde está e nunca é copiado
   para o clone: uma segunda cópia de uma senha é uma segunda coisa que pode
   vazar. Pergunte à instalação em vez de adivinhar, com
   `python3 harness/paths.py env`
 - Estado e eventos: `<clone>/state/`
-- Segredos de rota: `<clone>/hermes/`, permissão `600` — **apenas no Hermes**; no
+- Segredos de rota: `<clone>/hermes/`, permissão `600`. **Apenas no Hermes**: no
   OpenClaw e no Claude Code esse diretório não existe e não falta nada
 - Units de usuário: `~/.config/systemd/user/paynani-idle.service`,
   `paynani-dispatch.service`, `paynani-logrotate.service` e
-  `paynani-logrotate.timer` — a única coisa fora do clone, porque o systemd não
+  `paynani-logrotate.timer`, a única coisa fora do clone, porque o systemd não
   lê units de outro lugar. No macOS, os três `.plist` de `com.paynani.*` em
   `~/Library/LaunchAgents/`
 
@@ -281,8 +281,8 @@ Construído e verificado de ponta a ponta em 09/08/2026.
 ## De onde vem o nome
 
 **paynani** é náuatle clássico e quer dizer, sem enfeite, *"aquele que corre
-ligeiro"*: do verbo `paina` — "correr ligeramente", no vocabulário de Alonso de
-Molina, 1571 — mais o sufixo `-ni`, que transforma uma ação em quem a exerce como
+ligeiro"*: do verbo `paina` ("correr ligeramente", no vocabulário de Alonso de
+Molina, 1571) mais o sufixo `-ni`, que transforma uma ação em quem a exerce como
 ofício.
 
 A grafia varia porque os frades do século XVI escreveram o náuatle com as
@@ -295,7 +295,7 @@ por um leitor de língua espanhola.
 Foi dessa qualidade que veio o nome do ofício. O náuatle tinha dois modos de
 nomear o mensageiro imperial: `titlantli`, "o enviado", que o define pela
 incumbência que carrega, e `paynani`, que o define pelo modo como se move. O que
-ficou colado a esses homens foi o segundo — eram conhecidos pelo jeito de correr,
+ficou colado a esses homens foi o segundo: eram conhecidos pelo jeito de correr,
 não por quem os despachava.
 
 Os corredores trabalhavam em revezamento, com postos chamados `techialoyan`, e
@@ -308,8 +308,8 @@ que a etiqueta `roster` faz aqui: o envelope diz como receber a notícia antes q
 alguém a leia.
 
 Da mesma raiz vem Paynal, aquele que corria no lugar de Huitzilopochtli nas
-procissões. O Códice Florentino o explica em três palavras — *"o delegado, o
-substituto, o suplente"* — porque "o apressavam, faziam-no correr". Um agente que
+procissões. O Códice Florentino o explica em três palavras, *"o delegado, o
+substituto, o suplente"*, porque "o apressavam, faziam-no correr". Um agente que
 vai buscar o correio no lugar de quem não pode estar em toda parte.
 
 <sub>Fontes: [Gran Diccionario Náhuatl](https://gdn.iib.unam.mx/diccionario/painani/233892)

@@ -113,8 +113,8 @@ pgrep -af idle_listener.py                           # expect nothing
 
 **Find out where they are first, because on most installs they are not in the
 clone.** When the host has a harness, the mailbox password lives in that
-harness's workspace `.env` — `~/.openclaw/workspace/.env`,
-`~/.hermes/workspace/.env`, `~/.claude/workspace/.env` — and `<clone>/.env` does
+harness's workspace `.env` (`~/.openclaw/workspace/.env`,
+`~/.hermes/workspace/.env`, `~/.claude/workspace/.env`) and `<clone>/.env` does
 not exist at all. An `rm -f .env` from the clone would delete nothing in that
 case, and leave you believing you had removed the password.
 
@@ -126,8 +126,8 @@ python3 harness/paths.py env
 
 If what it answers is **outside** the clone, that file belongs to the harness and
 not to this tool: other things use it and it is **not deleted whole.** Remove
-only the keys this install added — the `PAYNANI_*` ones, and the `AGENT_EMAIL_*`
-ones if they were for this mailbox and nothing else reads them — and leave the
+only the keys this install added (the `PAYNANI_*` ones, and the `AGENT_EMAIL_*`
+ones if they were for this mailbox and nothing else reads them) and leave the
 rest of the file standing. The same holds for a symlink: **do not delete what it
 points at.**
 
@@ -254,4 +254,4 @@ Four clean results and the machine is back where it started.
 
 ---
 
-<sub>Translated from [`UNINSTALL.md`](../UNINSTALL.md) at commit `2b1fc9c`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins** — and say so, because it means this translation has fallen behind.</sub>
+<sub>Translated from [`UNINSTALL.md`](../UNINSTALL.md) at commit `2b1fc9c`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins**, and say so, because it means this translation has fallen behind.</sub>
