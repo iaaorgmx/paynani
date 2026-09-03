@@ -108,10 +108,10 @@ ne va pas.
 Les opérateurs Hermes configurent deux routes authentifiées comme décrit dans
 [`HERMES.md`](../HERMES.md).
 
-Claude Code fonctionne autrement que les deux autres, et mieux vaut le savoir
-avant de commencer : rien à l'extérieur d'une session Claude Code ne peut lui
-parler, donc le courrier n'est pas poussé vers l'agent : c'est l'agent qui vient
-le chercher. Son hook de démarrage de session rejoue ce qui est arrivé pendant
+Claude Code fonctionne autrement que les deux autres, et la différence n'est pas
+cosmétique. Rien à l'extérieur d'une session Claude Code ne peut lui parler,
+donc le courrier n'est pas poussé vers l'agent : c'est l'agent qui vient le
+chercher. Son hook de démarrage de session rejoue ce qui est arrivé pendant
 qu'aucune session ne tournait, puis demande à l'agent d'armer une surveillance
 pour la suite. Rien ne peut l'imposer de l'extérieur : c'est la seule étape qui
 repose sur le fait que l'agent fasse ce qu'on lui dit. Voir

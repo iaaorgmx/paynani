@@ -101,8 +101,8 @@ Si lo envía, para y avisa a quien lo instaló. Algo va mal.
 Quien opere Hermes configura dos rutas autenticadas como se describe en
 [`HERMES.md`](../HERMES.md).
 
-Claude Code funciona de forma distinta a los otros dos y conviene saberlo antes
-de empezar: nada fuera de una sesión de Claude Code puede hablarle, de modo que
+Claude Code funciona de forma distinta a los otros dos, y la diferencia no es
+cosmética. Nada fuera de una sesión de Claude Code puede hablarle, de modo que
 el correo no se le empuja al agente: el agente va a por él. Su hook de inicio de
 sesión reproduce lo que llegó mientras no había nada en marcha y después pide al
 agente que arme una vigilancia para lo que llegue a continuación. Nada puede

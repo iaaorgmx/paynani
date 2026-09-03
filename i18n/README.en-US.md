@@ -122,8 +122,8 @@ If it sends, stop and tell whoever set it up. Something is wrong.
 Hermes operators configure two authenticated routes as described in
 [`HERMES.md`](../HERMES.md).
 
-Claude Code works differently from the other two and it is worth knowing before
-you start: nothing outside a Claude Code session can speak into it, so mail is
+Claude Code works differently from the other two, and the difference is not
+cosmetic. Nothing outside a Claude Code session can speak into it, so mail is
 not pushed to the agent: the agent comes and gets it. Its session-start hook
 replays what arrived while nothing was running and then asks the agent to arm a
 watch for what lands next. Nothing can enforce that from outside, so it is the
