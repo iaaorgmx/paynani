@@ -204,3 +204,62 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .row .narrow { flex: 1 1 auto; }
   .actions button { flex: 1 1 100%; }
 }
+
+/* ── El selector de idioma ──────────────────────────────────────────────────
+   Va en el renglón del título, alineado a la derecha, y se pasa abajo cuando
+   la pantalla es angosta en lugar de apretar al h1. */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .5rem 1rem;
+}
+
+/* El título cede el ancho y envuelve; el selector nunca se encoge ni se cae a
+   otro renglón, que es donde el título francés lo mandaba. */
+.topbar h1 { margin-bottom: 0; flex: 1 1 12rem; min-width: 0; }
+
+.langpick {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: .4rem;
+  font-size: .85rem;
+  color: var(--quiet);
+}
+
+.langpick select {
+  font: inherit;
+  color: var(--ink);
+  /* background-color, no background: la flecha se pinta como background-image
+     abajo, y la forma corta la borraría. --card sigue al modo oscuro. */
+  background-color: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .25rem 1.6rem .25rem .5rem;
+  /* La flecha va dibujada aquí para no depender del control nativo, que en
+     Linux se pinta muy distinto que en macOS y desalinea el renglón. */
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .5rem center;
+}
+
+.langpick select:focus-visible {
+  outline: 2px solid var(--accent, #1f5f4a);
+  outline-offset: 1px;
+}
+
+.langpick button {
+  font: inherit;
+  color: var(--ink);
+  background-color: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .25rem .6rem;
+  cursor: pointer;
+}
+
+.langpick button:hover { border-color: var(--accent); }
+.langpick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

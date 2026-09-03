@@ -98,6 +98,38 @@ stops them, which is almost always an app password rather than a wrong server
 name. It is a `<details>` block, so it collapses with no JavaScript on a page
 whose policy forbids scripts entirely.
 
+## The language it speaks
+
+The person filling this form is not always the person who runs the agent, and is
+not always the person who chose the language the rest of the install speaks. They
+are handing over a mailbox password, so they get to read what they are agreeing
+to in their own language.
+
+A selector sits next to the title, offering the same five languages the
+documentation is translated into, with **Español (MX)** selected by default.
+Everything the page can say is translated with it: the form, the provider help,
+the field validation, the live check's step-by-step report, and the three refusal
+screens in `guard.php`.
+
+**Switching does not lose what has been typed.** The selector and its button
+belong to the main form through the `form=` attribute even though they sit above
+it, so changing language posts the whole form and the fields come back filled.
+That submit carries `formnovalidate`, because without it the browser refuses to
+send while the password box is empty, which would mean nobody could change
+language until they had finished the form.
+
+**There is no JavaScript in it.** `guard.php` serves `default-src 'none'` with no
+`script-src`, so an `onchange` handler would be blocked and the selector would
+silently do nothing. Hence a real button rather than an automatic switch: a page
+that collects a mail password is the wrong place to loosen that policy to save a
+click.
+
+Catalogues are flat `key => string` arrays in `webapp/i18n/`. A key a translation
+is missing falls back to `es-MX` rather than rendering blank, so a half-finished
+catalogue degrades to a mixed page instead of an empty one. `es-MX` is the source
+language; every other file is translated from it and carries exactly the same
+keys.
+
 ## What the check does
 
 It opens a real connection to both servers and signs in, then signs straight out.
@@ -131,6 +163,8 @@ webapp/lib/guard.php    loopback check, one-time key, CSRF, headers
 webapp/lib/validate.php field checks, each one a mistake seen in the wild
 webapp/lib/probe.php    live IMAP and SMTP sign-in
 webapp/lib/envfile.php  writing the resolved credentials file, and the symlink
+webapp/lib/i18n.php     which language this render speaks, and t()/th()
+webapp/i18n/*.php       one flat array of strings per language
 webapp/assets/app.css   no webfonts: this host may have no internet route
 scripts/setup_web.sh    generates the key, serves the page, stops when saved
 ```
