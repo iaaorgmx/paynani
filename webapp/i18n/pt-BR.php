@@ -20,7 +20,6 @@ return [
 'saved.forgot'      => 'Esta página já esqueceu a senha. Abrir de novo não mostra ela outra vez.',
 
 'warn.existing_p1'  => '<strong>Atenção.</strong> Já existe configuração de e-mail em <code>{path}</code>. Se você terminar este formulário, ela é substituída.',
-'warn.existing_p2'  => 'Se o agente já está atendendo e-mail, feche esta página e confirme com quem configurou antes de seguir.',
 
 'help.summary'      => 'Onde eu acho esses dados?',
 
@@ -134,4 +133,10 @@ return [
 'g.token_1'           => 'Falta a chave de uso único deste link, ou a chave mudou.',
 'g.token_2'           => 'Peça ao agente para rodar scripts/setup_web.sh de novo e te mandar o link novo.',
 'g.csrf'              => 'Esse formulário expirou. Recarregue a página e preencha de novo.',
+
+'f.mkdir_failed'        => 'Não foi possível criar {dir}.',
+'f.write_failed'        => 'Não foi possível escrever em {dir}.',
+'f.incomplete'          => 'O arquivo não pôde ser escrito por inteiro.',
+'f.symlink_failed'      => 'Não foi possível escrever através do link simbólico para {target}.',
+'f.rename_failed'       => 'Não foi possível deixar o arquivo no lugar em {path}.',
 ];

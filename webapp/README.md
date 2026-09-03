@@ -141,6 +141,27 @@ catalogue degrades to a mixed page instead of an empty one. `es-MX` is the sourc
 language; every other file is translated from it and carries exactly the same
 keys.
 
+## Coming back to change something
+
+The form is not only a first-time screen. Open it against an install that already
+has credentials and the fields arrive filled from the file, so a password can be
+rotated, or a server name corrected, without retyping the other six.
+
+**The password is the exception, and stays the exception.** It is never written
+into the HTML, not even masked. The box shows bullets as a *placeholder*, the
+value attribute is empty, and leaving it that way means "keep the one already on
+disk". Type in it only to replace it. The promise above — that the password is
+never rendered back — is what makes a screenshot of this screen safe, and
+prefilling it would have quietly broken that.
+
+**Only the seven keys this form owns are written.** A real installation keeps
+more than mail settings in that file, tokens for other services among them, and
+this page has no idea what any of it is. An existing file is therefore edited
+line by line: comments, blank lines, key order and unknown keys all survive.
+Rewriting the file wholesale stayed harmless only while this was a screen you ran
+once; the moment somebody can come back to change a password, it would mean
+losing every other secret in the file to do it.
+
 ## What the check does
 
 It opens a real connection to both servers and signs in, then signs straight out.

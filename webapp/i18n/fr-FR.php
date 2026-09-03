@@ -20,7 +20,6 @@ return [
 'saved.forgot'      => 'Cette page a déjà oublié le mot de passe. La rouvrir ne l\'affichera pas de nouveau.',
 
 'warn.existing_p1'  => '<strong>Attention.</strong> Il y a déjà une configuration de messagerie dans <code>{path}</code>. Terminer ce formulaire la remplace.',
-'warn.existing_p2'  => 'Si l\'agent traite déjà du courrier, fermez cette page et vérifiez auprès de la personne qui l\'a configuré avant de continuer.',
 
 'help.summary'      => 'Où est-ce que je trouve ces informations ?',
 
@@ -134,4 +133,10 @@ return [
 'g.token_1'           => 'Il manque à ce lien sa clé à usage unique, ou la clé a changé.',
 'g.token_2'           => 'Demandez à l\'agent de relancer scripts/setup_web.sh et de vous envoyer le nouveau lien.',
 'g.csrf'              => 'Ce formulaire a expiré. Rechargez la page et remplissez-le de nouveau.',
+
+'f.mkdir_failed'        => 'Impossible de créer {dir}.',
+'f.write_failed'        => 'Impossible d\'écrire dans {dir}.',
+'f.incomplete'          => 'Le fichier n\'a pas pu être écrit en entier.',
+'f.symlink_failed'      => 'Impossible d\'écrire à travers le lien symbolique vers {target}.',
+'f.rename_failed'       => 'Impossible de mettre le fichier en place dans {path}.',
 ];

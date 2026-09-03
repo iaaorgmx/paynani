@@ -44,6 +44,12 @@ $notice      = null;
 // The password lives in the session between the test and the save, never in a
 // value attribute. Re-rendering it into the HTML would put it in the page
 // source, in the browser cache, and in any screenshot of this screen.
+// What is already on disk. The form is not only a first-time setup screen: the
+// fields arrive filled so that somebody can come back and change the password,
+// or fix a server name, without retyping the other six.
+$stored         = read_env();
+$storedPassword = (string) ($stored['AGENT_EMAIL_PASSWORD'] ?? '');
+
 $values = $_SESSION['values'] ?? [];
 foreach (ENV_FIELDS as $key) {
     if ($action !== '' && array_key_exists($key, $_POST)) {
@@ -56,8 +62,24 @@ foreach (ENV_FIELDS as $key) {
             $values[$key] = $posted;
         }
     }
-    $values[$key] ??= PORT_HINTS[$key] ?? '';
+    // Never the stored password: it goes nowhere near anything this page renders.
+    if ($key !== 'AGENT_EMAIL_PASSWORD') {
+        $values[$key] ??= (string) ($stored[$key] ?? '');
+        if ($values[$key] === '') {
+            $values[$key] = PORT_HINTS[$key] ?? '';
+        }
+    }
+    $values[$key] ??= '';
 }
+
+// The password actually used to sign in and to write the file. An empty box with
+// a password already on disk means "leave it alone", which is what makes it
+// possible to come here and change only the server name.
+$effective = $values;
+if ($effective['AGENT_EMAIL_PASSWORD'] === '') {
+    $effective['AGENT_EMAIL_PASSWORD'] = $storedPassword;
+}
+$hasPassword = $effective['AGENT_EMAIL_PASSWORD'] !== '';
 
 // A language change posts the whole form so that whatever has been typed
 // survives the switch. It is not an attempt to save, so it neither validates
@@ -65,7 +87,7 @@ foreach (ENV_FIELDS as $key) {
 if ($action !== '') {
     check_csrf();
     if ($action !== 'lang') {
-        $errors = validate($values);
+        $errors = validate($effective);
     }
     $_SESSION['values'] = $values;
 }
@@ -78,19 +100,19 @@ if ($action === 'setup' && $errors === []) {
     $imap = probe_imap(
         $values['AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST'],
         (int) $values['AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT'],
-        $values['AGENT_EMAIL_ACCOUNT'],
-        $values['AGENT_EMAIL_PASSWORD'],
+        $effective['AGENT_EMAIL_ACCOUNT'],
+        $effective['AGENT_EMAIL_PASSWORD'],
     );
     $smtp = probe_smtp(
         $values['AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST'],
         (int) $values['AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT'],
-        $values['AGENT_EMAIL_ACCOUNT'],
-        $values['AGENT_EMAIL_PASSWORD'],
+        $effective['AGENT_EMAIL_ACCOUNT'],
+        $effective['AGENT_EMAIL_PASSWORD'],
     );
     $report = ['imap' => $imap, 'smtp' => $smtp, 'ok' => $imap['ok'] && $smtp['ok']];
 
     if ($report['ok']) {
-        [$ok, $where] = write_env(render_env($values));
+        [$ok, $where] = write_env(render_env($effective));
         if ($ok) {
             $saved = $where;
             // Nothing keeps the password in memory once it is on disk.
@@ -192,7 +214,6 @@ $existing = existing_config();
   <?php if ($existing !== null): ?>
     <div class="panel warn">
       <p><?= th('warn.existing_p1', ['path' => $existing]) ?></p>
-      <p><?= th('warn.existing_p2') ?></p>
     </div>
   <?php endif; ?>
 
@@ -250,9 +271,9 @@ $existing = existing_config();
 
       <label for="password"><?= th('form.password_label') ?></label>
       <input type="password" id="password" name="AGENT_EMAIL_PASSWORD"
-             <?= $values['AGENT_EMAIL_PASSWORD'] === '' ? 'required' : '' ?>
+             <?= $hasPassword ? '' : 'required' ?>
              autocomplete="new-password"
-             placeholder="<?= $values['AGENT_EMAIL_PASSWORD'] !== '' ? th('form.password_kept') : '' ?>">
+             placeholder="<?= $hasPassword ? th('form.password_kept') : '' ?>">
       <?php if (isset($errors['AGENT_EMAIL_PASSWORD'])): ?>
         <p class="err"><?= e($errors['AGENT_EMAIL_PASSWORD']) ?></p>
       <?php endif; ?>

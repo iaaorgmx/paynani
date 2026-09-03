@@ -20,7 +20,6 @@ return [
 'saved.forgot'      => 'Esta página ya ha olvidado la contraseña. Volver a abrirla no la muestra otra vez.',
 
 'warn.existing_p1'  => '<strong>Cuidado.</strong> Ya hay configuración de correo en <code>{path}</code>. Si terminas este formulario, la reemplaza.',
-'warn.existing_p2'  => 'Si el agente ya está atendiendo correo, cierra esta página y confírmalo con quien lo configuró antes de seguir.',
 
 'help.summary'      => '¿Dónde encuentro estos datos?',
 
@@ -134,4 +133,10 @@ return [
 'g.token_1'           => 'A este enlace le falta su llave de un solo uso, o la llave ha cambiado.',
 'g.token_2'           => 'Pide al agente que ejecute scripts/setup_web.sh otra vez y te mande el enlace nuevo.',
 'g.csrf'              => 'Ese formulario ha caducado. Recarga la página y rellénalo de nuevo.',
+
+'f.mkdir_failed'        => 'No se ha podido crear {dir}.',
+'f.write_failed'        => 'No se ha podido escribir en {dir}.',
+'f.incomplete'          => 'El archivo no se ha podido escribir entero.',
+'f.symlink_failed'      => 'No se ha podido escribir a través del enlace simbólico hacia {target}.',
+'f.rename_failed'       => 'No se ha podido dejar el archivo en su sitio en {path}.',
 ];

@@ -20,7 +20,6 @@ return [
 'saved.forgot'      => 'This page has already forgotten the password. Opening it again will not show it.',
 
 'warn.existing_p1'  => '<strong>Careful.</strong> There is already mail configuration at <code>{path}</code>. Finishing this form replaces it.',
-'warn.existing_p2'  => 'If the agent is already handling mail, close this page and check with whoever set it up before going on.',
 
 'help.summary'      => 'Where do I find these?',
 
@@ -134,4 +133,10 @@ return [
 'g.token_1'           => 'This link is missing its one-time key, or the key changed.',
 'g.token_2'           => 'Ask the agent to run scripts/setup_web.sh again and send you the new link.',
 'g.csrf'              => 'That form expired. Reload the page and fill it in again.',
+
+'f.mkdir_failed'        => 'Could not create {dir}.',
+'f.write_failed'        => 'Could not write in {dir}.',
+'f.incomplete'          => 'The file could not be written in full.',
+'f.symlink_failed'      => 'Could not write through the symlink to {target}.',
+'f.rename_failed'       => 'Could not put the file in place at {path}.',
 ];

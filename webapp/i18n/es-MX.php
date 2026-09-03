@@ -25,8 +25,7 @@ return [
 'saved.forgot'      => 'Esta página ya olvidó la contraseña. Volver a abrirla no la muestra otra vez.',
 
 // ── El aviso de configuración existente ──────────────────────────────────────
-'warn.existing_p1'  => '<strong>Aguas.</strong> Ya hay configuración de correo en <code>{path}</code>. Si terminas este formulario, la reemplaza.',
-'warn.existing_p2'  => 'Si el agente ya está atendiendo correo, cierra esta página y confirma con quien lo configuró antes de seguir.',
+'warn.existing_p1'  => '<strong>Cuidado.</strong> Ya hay configuración de correo en <code>{path}</code>. Si terminas este formulario, la reemplaza.',
 
 // ── La ayuda desplegable ─────────────────────────────────────────────────────
 'help.summary'      => '¿Dónde encuentro estos datos?',
@@ -138,6 +137,13 @@ return [
 'p.address_rejected'  => 'El servidor rechazó la dirección.',
 'p.send_auth_bad'     => 'El servidor rechazó esa dirección y contraseña para enviar.',
 'p.send_auth_bad_d'   => 'Si el inicio de sesión para leer sí funcionó, hay proveedores que además piden una contraseña de aplicación distinta para enviar, o que se active SMTP en la configuración de la cuenta.',
+
+// ── Al escribir el archivo ───────────────────────────────────────────────────
+'f.mkdir_failed'        => 'No se pudo crear {dir}.',
+'f.write_failed'        => 'No se pudo escribir en {dir}.',
+'f.incomplete'          => 'El archivo no se pudo escribir completo.',
+'f.symlink_failed'      => 'No se pudo escribir a través del enlace simbólico hacia {target}.',
+'f.rename_failed'       => 'No se pudo dejar el archivo en su lugar en {path}.',
 
 // ── Las pantallas de rechazo ─────────────────────────────────────────────────
 'g.loopback_1'        => 'Esta página solo responde a peticiones desde la computadora donde corre.',
