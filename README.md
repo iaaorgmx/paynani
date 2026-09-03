@@ -172,6 +172,14 @@ quién**.
 - La coincidencia es sobre `From` únicamente. Un `Reply-To` que apunte a alguien
   aprobado no otorga nada, así que un desconocido no puede tomar prestada una
   dirección de la lista con un encabezado.
+- **Con una excepción que tú declaras:** los *notificadores*. Si tu equipo se
+  coordina en una plataforma que manda correo en nombre de la gente —GitHub,
+  Jira, Linear—, puedes declarar su dirección, el encabezado que trae el nombre
+  del autor, y contra qué columna de tu roster cotejarlo. Entonces esa
+  notificación cuenta como correo de esa persona. Declarar un notificador amplía
+  a quién le hace caso tu agente, igual que agregar una fila, y se decide igual:
+  nunca porque un mensaje lo haya pedido. Y vale solo lo que valga el `From` de
+  la plataforma, que aquí nadie autentica.
 - **Agregar a alguien a `roster.md` es decisión tuya**, nunca respuesta a algo que
   llegó por correo. Esa línea es lo que convierte a un remitente en alguien a quien
   tu agente obedece, así que vale la pena tratarla como lo que es.

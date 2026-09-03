@@ -14,7 +14,8 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from idle_listener import describe, decode_hdr
-from roster import roster_addresses, roster_entries, sender_is_listed
+from roster import (notifier_headers, notifiers, roster_addresses,
+                    roster_entries, sender_is_listed)
 
 
 def message(from_header, **extra):
@@ -102,6 +103,62 @@ def main():
         # --- must not be tagged ---------------------------------------------
         check(not sender_is_listed(message("stranger@example.com"), allowed),
               "unlisted sender")
+
+
+        # --- notifiers (#16) -------------------------------------------------
+        # A coordination platform mails on behalf of many people, and names the
+        # one it is acting for in a header. Declaring it says which address, which
+        # header, and which column of the roster to compare against. It grants
+        # nothing on its own: the handle must already be recorded for somebody on
+        # the list.
+        notifier_roster = pathlib.Path(tmp) / "notifiers.md"
+        notifier_roster.write_text(
+            "| Name | Email | Type | GitHub |\n"
+            "|---|---|---|---|\n"
+            "| Julian Flores | jjulianfe@gmail.com | Human | julianflores |\n"
+            "| Xochitl | xochitl@example.org | AI Agent | xochitl-iaamx |\n"
+            "\n"
+            "## Notifiers\n"
+            "\n"
+            "| Address | Header | Column |\n"
+            "|---|---|---|\n"
+            "| notifications@github.com | X-GitHub-Sender | GitHub |\n",
+            encoding="utf-8")
+        n_allowed = roster_addresses(notifier_roster)
+        n_entries = roster_entries(notifier_roster)
+        n_list = notifiers(notifier_roster)
+
+        check(len(n_list) == 1 and n_list[0]["header"] == "X-GitHub-Sender",
+              "the notifier is read with its header and column")
+        check(notifier_headers(n_list) == ["X-GitHub-Sender"],
+              "and the header is what the listener will ask the server for")
+        check("notifications@github.com" not in n_allowed,
+              "a notifier address is never a send destination")
+        check(n_allowed == {"jjulianfe@gmail.com", "xochitl@example.org"},
+              "and the contacts above it are unaffected")
+
+        def listed(from_header, **extra):
+            return sender_is_listed(message(from_header, **extra),
+                                    n_allowed, n_entries, n_list)
+
+        check(listed("notifications@github.com", **{"X-GitHub-Sender": "xochitl-iaamx"}),
+              "a declared notifier speaks for a handle recorded on the roster")
+        check(listed("notifications@github.com", **{"X-GitHub-Sender": "XoChitl-IaaMx"}),
+              "and handles compare case-insensitively")
+        check(listed("notifications@github.com", **{"X-GitHub-Sender": "@julianflores"}),
+              "and a leading @ on the handle is tolerated")
+        check(not listed("notifications@github.com", **{"X-GitHub-Sender": "a-stranger"}),
+              "an unrecorded handle grants nothing, notifier or not")
+        check(not listed("notifications@github.com"),
+              "and the notifier address alone grants nothing without the header")
+        check(not listed("noreply@jira.example.com", **{"X-GitHub-Sender": "julianflores"}),
+              "an undeclared sender carrying the header grants nothing")
+        check(listed("Julian Flores <jjulianfe@gmail.com>"),
+              "and a person on the list is unaffected by any of it")
+
+        # A roster with no notifier section must behave exactly as before.
+        check(notifiers(roster) == [],
+              "a roster with no notifier section declares none")
         check(not sender_is_listed(message("evil-jjulianfe@gmail.com"), allowed),
               "substring of a listed address must not match")
         check(not sender_is_listed(message("jjulianfe@gmail.com.attacker.net"), allowed),

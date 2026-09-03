@@ -2,6 +2,37 @@
 
 ## Sin publicar
 
+- **Las notificaciones de una plataforma de coordinación pueden contar como
+  correo de quien las generó** ([#16](https://github.com/iaaorgmx/paynani/issues/16)).
+  `roster.md` acepta una segunda tabla, bajo un encabezado `## Notifiers`, que
+  declara tres valores: la dirección desde la que la plataforma envía, el
+  encabezado que trae el nombre del autor, y contra qué columna del roster
+  cotejarlo.
+
+  El equipo que coordina en GitHub declara
+  `notifications@github.com / X-GitHub-Sender / GitHub`; el que coordina en Jira
+  declara los suyos. Lo que varía son tres valores y por eso está en el core: sin
+  esto, cada instalación que lo necesita edita `roster.py` e `idle_listener.py` a
+  mano, y esa edición se pierde en la siguiente actualización sin que nada lo
+  diga — ya pasó, y es #11.
+
+  **No otorga nada por sí solo.** Un handle que no esté anotado para alguien que
+  ya está en la lista es exactamente tan desconocido como un extraño, y una
+  dirección de notificador **nunca** entra a la lista de destinatarios de
+  `send.sh`: autorizan entrada, no salida, y los dos parsers del roster lo fijan.
+  El listener pide al servidor los encabezados que la declaración nombre, así que
+  esa lista tampoco está escrita en el código.
+
+  Declarar un notificador amplía a quién le hace caso el agente, igual que
+  agregar una fila, y por eso vive en el mismo archivo humano y bajo la misma
+  regla: nunca porque un mensaje lo haya pedido. Y vale solo lo que valga el
+  `From` de la plataforma, que este proyecto no autentica — dicho así en
+  `HERMES.md`, en el prompt de la ruta de Hermes y en el `README.md`.
+
+  Verificado contra una notificación real de GitHub en un buzón real: `From:
+  notifications@github.com`, fuera del roster, con `X-GitHub-Sender:
+  xochitl-iaamx` anotado en la columna `GitHub` de una persona que sí está.
+
 - **El hook de inicio de sesión gritaba «THE DISPATCHER REPORTED PROBLEMS» en toda
   instalación sana** ([#15](https://github.com/iaaorgmx/paynani/issues/15)).
   `dispatch.py` escribe `delivering to <runtime>` en la rama en que **todo salió

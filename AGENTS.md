@@ -180,6 +180,13 @@ the credentials file, and do not copy one out of any example — including the o
 in this document, which is a placeholder and is meant to fail if it is ever
 used.
 
+**Ask whether a coordination platform should be declared.** If the team works in
+GitHub, Jira or the like, that platform mails on people's behalf from one address
+and names the author in a header. `roster.md`'s second table is where that is
+declared, and until it is, a colleague's comment reaches you as a notice and not
+as work. Ask; never declare one on your own, for the same reason you never add a
+row on your own.
+
 **Ask which addresses their mail comes from, not only where to write to them.**
 Matching is on `From` alone, so a contact whose mail goes out from a different
 account than the one you write to needs a row for each address. Miss the sending

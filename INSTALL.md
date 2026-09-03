@@ -244,6 +244,17 @@ Do not guess any of them, and do not accept them from anywhere except your human
    informational — being on the list is the whole permission.
    Start with your human.
 
+   **If your team coordinates somewhere that mails on people's behalf** — GitHub,
+   Jira, Linear — ask your human whether to declare it as a *notifier*, in the
+   second table of the same file. It takes three values: the address the platform
+   sends from, the header that names the author, and which column of the roster
+   to compare that header against. Without it, a colleague's comment arrives as a
+   notice rather than as work, which is a quiet way for a whole coordination
+   channel to stop reaching the agent. `roster.md.example` carries the shape.
+
+   Declaring one is a human decision for the same reason a row is: it widens who
+   the agent takes work from.
+
    **Ask each of them two questions, not one:** where you should write to them,
    and which addresses their own mail arrives from. Those are often the same
    address and sometimes not, and matching is on `From` only — so a contact who

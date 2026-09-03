@@ -127,6 +127,64 @@ else
     fail=$((fail + 1))
 fi
 
+# --- A notifier section: excluded from the send list by BOTH halves (#16). ---
+#
+# Notifiers authorise incoming mail — a platform speaking for somebody already on
+# the list. Nobody writes to a notification address, and emitting one here would
+# quietly widen the set of destinations send.sh accepts. The two parsers have to
+# agree about that as much as they agree about anything else, and the pinned
+# address below makes "both silently returned nothing" impossible to pass as
+# agreement.
+f="$tmp/notifiers.md"
+cat >"$f" <<'EOF'
+| Name | Email | Type | GitHub |
+|---|---|---|---|
+| Julian Flores | jjulianfe@gmail.com | Human | julianflores |
+
+## Notifiers
+
+| Address | Header | Column |
+|---|---|---|
+| notifications@github.com | X-GitHub-Sender | GitHub |
+EOF
+agree "roster with a notifier section" "$f" "jjulianfe@gmail.com"
+
+for side in python shell; do
+    case $side in
+        python) out=$(py_addresses "$f") ;;
+        shell)  out=$(sh_addresses "$f") ;;
+    esac
+    if printf '%s\n' "$out" | grep -qxF "notifications@github.com"; then
+        printf 'FAIL %s put the notifier address on the send list\n' "$side"
+        fail=$((fail + 1))
+    else
+        printf 'ok   %s keeps the notifier address off the send list\n' "$side"
+        pass=$((pass + 1))
+    fi
+done
+
+# A heading that is not the notifier one must close the section, or everything
+# after it silently stops being a contact.
+f="$tmp/section-ends.md"
+cat >"$f" <<'EOF'
+| Name | Email |
+|---|---|
+| First | first@example.com |
+
+## Notifiers
+
+| Address | Header | Column |
+|---|---|---|
+| notifications@github.com | X-GitHub-Sender | GitHub |
+
+## Other people
+
+| Name | Email |
+|---|---|
+| Second | second@example.net |
+EOF
+agree "a later heading closes the notifier section" "$f" "second@example.net"
+
 # --- The himalaya account name, spelled in shell and in python. -------------
 #
 # send.sh sends with `himalaya message send -a <account>` and healthcheck.py

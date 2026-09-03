@@ -19,10 +19,37 @@ roster=${1:?usage: roster_extract.sh <roster-file>}
 
 [ -f "$roster" ] || exit 0
 
-grep -vE '^[[:space:]]*(#|$)' "$roster" | awk -F'|' '
+# Comments and headings are handled here rather than by a grep in front, because
+# the notifier section is introduced by a `##` heading and a pre-filter that
+# strips every line starting with `#` removes exactly the line that says where
+# the section begins.
+#
+# Notifier rows are skipped on purpose. They authorise INCOMING mail — a
+# platform speaking for somebody already on the list — and nobody writes to a
+# notification address. Emitting one here would add it to the addresses send.sh
+# accepts as a destination, which is a wider outgoing list for no reason.
+# scripts/test_roster_agree.sh pins that it stays out of both halves.
+awk '
+    function is_separator(s) {
+        gsub(/[|]/, "", s); gsub(/[ \t\r]/, "", s)
+        return (s != "" && s ~ /^[-:]+$/)
+    }
     {
-        for (i = 1; i <= NF; i++) {
-            field = $i
+        line = $0
+        sub(/^[ \t]+/, "", line); sub(/[ \t\r]+$/, "", line)
+        if (line ~ /^#/) {
+            heading = line
+            sub(/^#+[ \t]*/, "", heading)
+            heading = tolower(heading)
+            if (heading ~ /^notifier/ || heading ~ /^notificador/) in_notifiers = 1
+            else if (line ~ /^##/) in_notifiers = 0
+            next
+        }
+        if (line == "" || is_separator(line) || in_notifiers) next
+
+        n = split(line, parts, "|")
+        for (i = 1; i <= n; i++) {
+            field = parts[i]
             gsub(/[ \t\r]/, "", field)
             if (index(field, "@") > 0) {
                 print tolower(field)
@@ -30,4 +57,4 @@ grep -vE '^[[:space:]]*(#|$)' "$roster" | awk -F'|' '
             }
         }
     }
-'
+' "$roster"
