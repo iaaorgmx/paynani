@@ -2,10 +2,6 @@
 
 [Español (MX)](../MAILBOX_SETUP.md) · [English](MAILBOX_SETUP.en-US.md) · [Español (ES)](MAILBOX_SETUP.es-ES.md) · [Français](MAILBOX_SETUP.fr-FR.md) · **Português (BR)**
 
-> Traduzido de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) no commit `a7b1040`, que é a fonte da verdade. Se
-> algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e
-> nos avise, porque significa que esta tradução ficou para trás.
-
 Passo 1 do [README](README.pt-BR.md#como-configurar-no-seu-agente). Isto é você
 quem faz, antes de envolver o agente, porque é preciso uma senha e senha não deve
 passar por um chat.
@@ -132,3 +128,7 @@ acabou faltando ou saindo errado.
 **Uma coisa que ele nunca deveria pedir: a senha.** Ele tem o caminho do arquivo e
 pode ler na hora que precisar. Se ele pedir para você colar a senha no chat,
 recuse, isso não é passo de nenhuma destas instruções.
+
+---
+
+<sub>Traduzido de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) no commit `a7b1040`, que é a fonte da verdade. Se algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e nos avise, porque significa que esta tradução ficou para trás.</sub>

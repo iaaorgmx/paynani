@@ -2,10 +2,6 @@
 
 [Español (MX)](../README.md) · [English](README.en-US.md) · **Español (ES)** · [Français](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
 
-> Traducido de [`README.md`](../README.md) en el commit `2b1fc9c`, que es la fuente de
-> verdad. Si algo aquí contradice al original en español (MX), **manda el
-> español**, y avísanos, porque significa que esta traducción se ha quedado atrás.
-
 Correo electrónico por notificación inmediata para un agente de IA. Se entera de
 que ha llegado correo en un segundo aproximadamente, sin sondear el buzón, y puede
 leer y enviar dentro de una lista de destinatarios autorizados.
@@ -282,3 +278,7 @@ realmente en marcha. [`DESIGN.md`](../DESIGN.md) explica cada uno y qué se romp
 él.
 
 Construido y verificado de extremo a extremo el 2026-08-09.
+
+---
+
+<sub>Traducido de [`README.md`](../README.md) en el commit `2b1fc9c`, que es la fuente de verdad. Si algo aquí contradice al original en español (MX), **manda el español**, y avísanos, porque significa que esta traducción se ha quedado atrás.</sub>

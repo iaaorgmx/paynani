@@ -2,9 +2,6 @@
 
 **Español (MX)** · [English](i18n/UNINSTALL.en-US.md)
 
-> Este archivo es la fuente de verdad. Las versiones en otros idiomas son
-> traducciones: si alguna contradice a esta, **gana el español (MX)**.
-
 Esto instala un servicio en segundo plano que toca seis lugares de la
 computadora. Aquí está cómo quitarlo todo, sea para reinstalar limpio, para
 entregar la máquina a alguien más, o porque cambiaste de opinión.
@@ -252,3 +249,7 @@ himalaya account list                         # paynani ausente, las demás inta
 ```
 
 Cuatro resultados limpios y la máquina quedó como estaba.
+
+---
+
+<sub>Este archivo es la fuente de verdad. Las versiones en otros idiomas son traducciones: si alguna contradice a esta, **gana el español (MX)**.</sub>

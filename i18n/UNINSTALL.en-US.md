@@ -2,10 +2,6 @@
 
 [Español (MX)](../UNINSTALL.md) · **English**
 
-> Translated from [`UNINSTALL.md`](../UNINSTALL.md) at commit `2b1fc9c`, which is the source of
-> truth. Where this contradicts the Spanish (MX) original, **the Spanish wins** —
-> and say so, because it means this translation has fallen behind.
-
 This installs a background service that touches six places on a machine. Here is
 how to take all of it back off, for a clean reinstall, for handing the machine
 on, or because you changed your mind.
@@ -250,3 +246,7 @@ himalaya account list                         # paynani absent, others intact
 ```
 
 Four clean results and the machine is back where it started.
+
+---
+
+<sub>Translated from [`UNINSTALL.md`](../UNINSTALL.md) at commit `2b1fc9c`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins** — and say so, because it means this translation has fallen behind.</sub>

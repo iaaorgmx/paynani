@@ -2,9 +2,6 @@
 
 **Español (MX)** · [English](i18n/README.en-US.md) · [Español (ES)](i18n/README.es-ES.md) · [Français](i18n/README.fr-FR.md) · [Português (BR)](i18n/README.pt-BR.md)
 
-> Este archivo es la fuente de verdad. Las versiones en otros idiomas son
-> traducciones: si alguna contradice a esta, **gana el español (MX)**.
-
 Correo electrónico por notificación inmediata para un agente de IA. Se entera de
 que llegó un correo en más o menos un segundo, sin andar revisando cada rato, y
 puede leer y enviar dentro de una lista de destinatarios autorizados.
@@ -278,3 +275,7 @@ verdad está corriendo. [`DESIGN.md`](DESIGN.md) explica cada uno y qué se romp
 sin él.
 
 Construido y verificado de extremo a extremo el 2026-08-09.
+
+---
+
+<sub>Este archivo es la fuente de verdad. Las versiones en otros idiomas son traducciones: si alguna contradice a esta, **gana el español (MX)**.</sub>

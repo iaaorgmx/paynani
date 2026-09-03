@@ -2,10 +2,6 @@
 
 [Español (MX)](../README.md) · [English](README.en-US.md) · [Español (ES)](README.es-ES.md) · [Français](README.fr-FR.md) · **Português (BR)**
 
-> Traduzido de [`README.md`](../README.md) no commit `2b1fc9c`, que é a fonte da verdade. Se
-> algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e
-> nos avise, porque significa que esta tradução ficou para trás.
-
 E-mail com aviso imediato para um agente de IA. Ele fica sabendo que chegou
 mensagem em cerca de um segundo, sem ficar consultando a caixa, e consegue ler e
 enviar dentro de uma lista de destinatários autorizados.
@@ -280,3 +276,7 @@ serviço está mesmo rodando. O [`DESIGN.md`](../DESIGN.md) explica cada um e o 
 quebra sem ele.
 
 Construído e verificado de ponta a ponta em 09/08/2026.
+
+---
+
+<sub>Traduzido de [`README.md`](../README.md) no commit `2b1fc9c`, que é a fonte da verdade. Se algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e nos avise, porque significa que esta tradução ficou para trás.</sub>

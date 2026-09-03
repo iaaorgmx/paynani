@@ -56,6 +56,21 @@ que no era una máquina virgen.
   sección titulada «Rutas en esta máquina» que se lee como inventario. Las tres
   corregidas, también en las cuatro traducciones.
 
+- **Las notas de procedencia de las traducciones se movieron al pie de cada
+  documento.** Estaban arriba del todo, entre el selector de idioma y la primera
+  línea del texto, que es el lugar más visible de la página para una nota que es
+  de mantenimiento y no para quien viene a leer el documento. Ahora van al final,
+  tras una regla horizontal y en letra chica. El texto no cambió.
+
+  Alcanza también a `README.md`, `MAILBOX_SETUP.md` y `UNINSTALL.md`, que llevan
+  la nota espejo —«este archivo es la fuente de verdad»— por la misma razón.
+
+  De paso, dos cosas que estaban mal en `MAILBOX_SETUP.md` y que la nota tapaba:
+  su nota decía «traducido de MAILBOX_SETUP.md… gana el inglés», heredada de
+  antes de la bifurcación y contraria a la política de este repositorio, donde el
+  español (MX) es la fuente de verdad; y su selector de idioma enlazaba
+  «English» a sí mismo en vez de a `i18n/MAILBOX_SETUP.en-US.md`.
+
 - **El agente pedía permiso para la primera fila del roster en vez de
   escribirla**, teniendo ya el nombre y el correo
   ([#10](https://github.com/iaaorgmx/paynani/issues/10)). La regla «agregar un

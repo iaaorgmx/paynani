@@ -2,10 +2,6 @@
 
 [Español (MX)](../README.md) · [English](README.en-US.md) · [Español (ES)](README.es-ES.md) · **Français** · [Português (BR)](README.pt-BR.md)
 
-> Traduit de [`README.md`](../README.md) au commit `2b1fc9c`, qui fait référence. En cas de
-> divergence avec l'original en espagnol (MX), **c'est l'espagnol qui fait foi**,
-> et signalez-le nous, car cela veut dire que cette traduction a pris du retard.
-
 Notification immédiate des courriels pour un agent IA. Il apprend l'arrivée d'un
 message en une seconde environ, sans interroger la boîte en boucle, et peut lire
 et envoyer dans les limites d'une liste de destinataires autorisés.
@@ -292,3 +288,7 @@ D'où le dernier UID enregistré message par message, la vérification d'`UIDVAL
 réellement. [`DESIGN.md`](../DESIGN.md) explique chacun d'eux et ce qui casse sans.
 
 Construit et vérifié de bout en bout le 09/08/2026.
+
+---
+
+<sub>Traduit de [`README.md`](../README.md) au commit `2b1fc9c`, qui fait référence. En cas de divergence avec l'original en espagnol (MX), **c'est l'espagnol qui fait foi**, et signalez-le nous, car cela veut dire que cette traduction a pris du retard.</sub>

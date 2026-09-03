@@ -2,9 +2,6 @@
 
 [Español (MX)](../MAILBOX_SETUP.md) · **English** · [Español (ES)](MAILBOX_SETUP.es-ES.md) · [Français](MAILBOX_SETUP.fr-FR.md) · [Português (BR)](MAILBOX_SETUP.pt-BR.md)
 
-> Translated from [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) at commit `a7b1040`, which is the source of
-> truth. Where this contradicts the Spanish (MX) original, **the Spanish wins** —
-> and say so, because it means this translation has fallen behind.
 Step 1 of [the README](README.en-US.md#setting-this-up-on-your-agent). You do this
 yourself, before involving the agent, because it needs a password and a password
 should not travel through a chat.
@@ -132,3 +129,7 @@ here turns out to be missing or wrong.
 **One thing it should never ask for: the password.** It has the file path and can
 read it at runtime. If it asks you to paste the password into the chat, say no,
 that is not a step in any of these instructions.
+
+---
+
+<sub>Translated from [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) at commit `a7b1040`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins** — and say so, because it means this translation has fallen behind.</sub>
