@@ -1,6 +1,6 @@
 # paynani
 
-[Español (MX)](../README.md) · [English](README.en-US.md) · **Español (ES)** · [Français](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
+[Español (MX)](../README.md) · [English (US)](README.en-US.md) · **Español (ES)** · [Français (FR)](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
 
 Correo electrónico por notificación inmediata para un agente de IA. Se entera de
 que ha llegado correo en un segundo aproximadamente, sin sondear el buzón, y puede
@@ -278,6 +278,42 @@ realmente en marcha. [`DESIGN.md`](../DESIGN.md) explica cada uno y qué se romp
 él.
 
 Construido y verificado de extremo a extremo el 2026-08-09.
+
+## De dónde viene el nombre
+
+**paynani** es náhuatl clásico y significa, sin adornos, *«el que corre
+ligeramente»*: del verbo `paina` —«correr ligeramente», en el vocabulario de
+Alonso de Molina, 1571— más el sufijo `-ni`, que convierte una acción en quien la
+hace de oficio.
+
+La grafía varía porque los frailes del siglo XVI escribieron el náhuatl con las
+convenciones del español de su época, en las que `i`, `y` y `j` se usaban casi
+indistintamente. El Gran Diccionario Náhuatl indexa los mismos pasajes del Códice
+Florentino bajo `painani` y bajo `painanj`, y registra `payna` como variante de
+`paina`: son la misma palabra. Aquí se escribe `paynani`, que es la forma que un
+lector hispanohablante reconoce.
+
+Conviene fijarse en lo que la palabra **no** dice. No nombra el cargo —al
+mensajero imperial se le llamaba `titlantli`, «el enviado»— sino la cualidad:
+ligero de pies. Dice lo que hace, no el puesto que ocupa.
+
+Los corredores trabajaban por relevos, con postas llamadas `techialoyan`, y se
+entrenaban desde niños. De todo lo que se cuenta de ellos hay un detalle que es
+justo lo que hace esta herramienta: **el mensajero clasificaba la noticia antes de
+abrir la boca.** Si llegaba con el pelo suelto y revuelto traía una derrota, y no
+se le daba ni el saludo; si llegaba con el pelo trenzado y una cinta de color, con
+escudo y macana, traía una victoria y la gente lo seguía hasta el palacio. Eso es
+lo que hace aquí la etiqueta `roster`: el sobre dice cómo recibir la noticia antes
+de que se lea.
+
+De la misma raíz viene Paynal, el que corría en lugar de Huitzilopochtli en las
+procesiones. El Códice Florentino lo explica en tres palabras —*«el delegado, el
+sustituto, el suplente»*— porque «lo apremiaban, lo hacían correr». Un agente que
+va a por el correo en lugar de quien no puede estar en todas partes.
+
+<sub>Fuentes: [Gran Diccionario Náhuatl](https://gdn.iib.unam.mx/diccionario/painani/233892)
+(UNAM) · [Nahuatl Dictionary](https://nahuatl.wired-humanities.org/content/paina)
+(Wired Humanities) · [Mexicolore](https://www.mexicolore.co.uk/aztecs/ask-experts/did-they-send-post-mail).</sub>
 
 ---
 

@@ -1,6 +1,6 @@
 # Configurar el fichero del buzón
 
-[Español (MX)](../MAILBOX_SETUP.md) · [English](MAILBOX_SETUP.en-US.md) · **Español (ES)** · [Français](MAILBOX_SETUP.fr-FR.md) · [Português (BR)](MAILBOX_SETUP.pt-BR.md)
+[Español (MX)](../MAILBOX_SETUP.md) · [English (US)](MAILBOX_SETUP.en-US.md) · **Español (ES)** · [Français (FR)](MAILBOX_SETUP.fr-FR.md) · [Português (BR)](MAILBOX_SETUP.pt-BR.md)
 
 Paso 1 del [README](README.es-ES.md#cómo-configurarlo-en-tu-agente). Esto lo haces
 tú, antes de involucrar al agente, porque hace falta una contraseña y una

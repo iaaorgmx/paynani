@@ -1,6 +1,6 @@
 # paynani
 
-[Español (MX)](../README.md) · **English** · [Español (ES)](README.es-ES.md) · [Français](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
+[Español (MX)](../README.md) · **English (US)** · [Español (ES)](README.es-ES.md) · [Français (FR)](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
 
 Push-style email for an AI agent. It finds out about new mail within about a
 second, without polling, and can read and send under a recipient allowlist.
@@ -299,6 +299,42 @@ why the session-start hook asks whether the service is actually running.
 [`DESIGN.md`](../DESIGN.md) explains each one and what breaks without it.
 
 Built and verified end to end on 2026-08-09.
+
+## Where the name comes from
+
+**paynani** is Classical Nahuatl, and it means something plainer than it sounds:
+*"the one who runs lightly."* From the verb `paina` — "correr ligeramente," in
+Alonso de Molina's 1571 vocabulary — plus the suffix `-ni`, which turns an action
+into the one who does it for a living.
+
+The spelling varies because sixteenth-century friars wrote Nahuatl with the
+Spanish conventions of their day, in which `i`, `y` and `j` were used almost
+interchangeably. The Gran Diccionario Náhuatl indexes the same Florentine Codex
+passages under both `painani` and `painanj`, and records `payna` as a variant of
+`paina`: one word, several spellings. This project writes `paynani`, the form a
+Spanish-speaking reader recognizes.
+
+Worth noting what the word does **not** say. It is not the name of the office —
+the imperial messenger was a `titlantli`, "the one sent" — but of the quality:
+light of foot. It says what he does, not what rank he holds.
+
+The runners worked in relays, through staging posts called `techialoyan`, and
+trained from childhood. Of everything recorded about them, one detail is exactly
+what this tool does: **the messenger classified the news before he opened his
+mouth.** Arriving with loose, disheveled hair meant a defeat, and he was given no
+greeting at all; arriving with braided hair and a coloured ribbon, carrying shield
+and club, meant a victory, and crowds followed him to the palace. That is what the
+`roster` tag does here: the envelope says how to receive the news before anyone
+reads it.
+
+The same root gave Paynal, who ran in Huitzilopochtli's place during processions.
+The Florentine Codex explains him in three words — *"the delegate, the substitute,
+the deputy"* — because "they pressed him on quickly; he was made to hasten." An
+agent that goes for the mail on behalf of whoever cannot be everywhere at once.
+
+<sub>Sources: [Gran Diccionario Náhuatl](https://gdn.iib.unam.mx/diccionario/painani/233892)
+(UNAM) · [Nahuatl Dictionary](https://nahuatl.wired-humanities.org/content/paina)
+(Wired Humanities) · [Mexicolore](https://www.mexicolore.co.uk/aztecs/ask-experts/did-they-send-post-mail).</sub>
 
 ---
 

@@ -1,6 +1,6 @@
 # Configurar o arquivo da caixa de e-mail
 
-[Español (MX)](../MAILBOX_SETUP.md) · [English](MAILBOX_SETUP.en-US.md) · [Español (ES)](MAILBOX_SETUP.es-ES.md) · [Français](MAILBOX_SETUP.fr-FR.md) · **Português (BR)**
+[Español (MX)](../MAILBOX_SETUP.md) · [English (US)](MAILBOX_SETUP.en-US.md) · [Español (ES)](MAILBOX_SETUP.es-ES.md) · [Français (FR)](MAILBOX_SETUP.fr-FR.md) · **Português (BR)**
 
 Passo 1 do [README](README.pt-BR.md#como-configurar-no-seu-agente). Isto é você
 quem faz, antes de envolver o agente, porque é preciso uma senha e senha não deve

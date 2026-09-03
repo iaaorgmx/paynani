@@ -1,6 +1,6 @@
 # Configurar el archivo del buzón
 
-**Español (MX)** · [English](i18n/MAILBOX_SETUP.en-US.md) · [Español (ES)](i18n/MAILBOX_SETUP.es-ES.md) · [Français](i18n/MAILBOX_SETUP.fr-FR.md) · [Português (BR)](i18n/MAILBOX_SETUP.pt-BR.md)
+**Español (MX)** · [English (US)](i18n/MAILBOX_SETUP.en-US.md) · [Español (ES)](i18n/MAILBOX_SETUP.es-ES.md) · [Français (FR)](i18n/MAILBOX_SETUP.fr-FR.md) · [Português (BR)](i18n/MAILBOX_SETUP.pt-BR.md)
 
 Paso 1 del [README](README.md#cómo-configurarlo-en-tu-agente). Esto lo haces
 tú, antes de meter al agente, porque hace falta una contraseña y una contraseña no

@@ -1,6 +1,6 @@
 # Configurer le fichier de la boîte aux lettres
 
-[Español (MX)](../MAILBOX_SETUP.md) · [English](MAILBOX_SETUP.en-US.md) · [Español (ES)](MAILBOX_SETUP.es-ES.md) · **Français** · [Português (BR)](MAILBOX_SETUP.pt-BR.md)
+[Español (MX)](../MAILBOX_SETUP.md) · [English (US)](MAILBOX_SETUP.en-US.md) · [Español (ES)](MAILBOX_SETUP.es-ES.md) · **Français (FR)** · [Português (BR)](MAILBOX_SETUP.pt-BR.md)
 
 Étape 1 du [README](README.fr-FR.md#mise-en-place-sur-votre-agent). Vous faites
 ceci vous-même, avant d'impliquer l'agent, parce qu'il faut un mot de passe et
