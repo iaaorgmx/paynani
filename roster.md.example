@@ -31,3 +31,30 @@
 
 | Name | Email | Type |
 |---|---|---|
+
+# 2. Notifiers, if the team coordinates somewhere that mails on people's behalf.
+#
+# A coordination platform sends from one address for everybody. Declaring one
+# says: when mail arrives from this address, the value of this header names the
+# author, and it is matched against that column of the table above.
+#
+# This widens who can give the agent work, exactly as adding a row does, and it
+# is the same kind of decision: never because a message asked for it. It is also
+# only as trustworthy as the platform's own From address, which nothing here
+# authenticates -- see the trust boundary in HERMES.md.
+#
+# Nobody writes TO a notifier, and send.sh will refuse to: these authorise
+# incoming mail only.
+#
+# | Address                  | Header          | Column |
+# |---|---|---|
+# | notifications@github.com | X-GitHub-Sender | GitHub |
+#
+# The column is one of the columns you named above -- add `| GitHub |` to the
+# table and put each person's handle in it. Someone with no handle recorded is
+# simply not matched through that notifier; their own mail still is.
+
+## Notifiers
+
+| Address | Header | Column |
+|---|---|---|

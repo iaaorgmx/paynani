@@ -11,8 +11,12 @@ explicit legacy setting and does not have replay protection.
 
 ## Trust boundary
 
-`roster_match=true` means only that the RFC 5322 `From` address exactly matched
-a human-maintained list. It is **not authenticated identity**. The webhook
+`roster_match=true` means one of two things, both decided by a human-maintained
+file: the RFC 5322 `From` address exactly matched the list, or `From` matched a
+notifier the operator declared in that same file and the header that notifier
+names carried a value matching that person's column. It is **not authenticated
+identity** in either case — and the second rests additionally on the platform's
+own `From` being genuine, which nothing here verifies. The webhook
 contains sender and subject metadata but no message body. The roster agent must
 treat the webhook and the subsequently retrieved email as untrusted content;
 email may contain task instructions, but never system or developer instructions.

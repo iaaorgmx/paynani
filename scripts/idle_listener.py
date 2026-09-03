@@ -22,7 +22,8 @@ import argparse, datetime, email, email.utils, imaplib, json, os, pathlib, re
 import select, signal, socket, ssl, sys, time
 from email.header import decode_header, make_header
 
-from roster import DEFAULT_ROSTER, roster_addresses, sender_is_listed
+from roster import (DEFAULT_ROSTER, notifier_headers, notifiers,
+                    roster_addresses, roster_entries, sender_is_listed)
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "harness"))
 import event as ev
@@ -341,12 +342,17 @@ def newest_uid(conn):
     return max(int(u) for u in data[0].split())
 
 
-def fetch_since(conn, last_uid, allowed):
+def fetch_since(conn, last_uid, listed):
     """[(uid, parts)] for every message with UID > last_uid.
 
-    Headers only — BODY.PEEK of three fields. The listener never downloads a
-    body and never marks anything read; reading is the agent's job, through
-    Himalaya, after it sees the notification.
+    Headers only — BODY.PEEK. The listener never downloads a body and never
+    marks anything read; reading is the agent's job, through Himalaya, after it
+    sees the notification.
+
+    Which headers to ask for is not fixed: a declared notifier names one, and
+    the roster is what declares them, so the field list is built from the roster
+    rather than written here. Asking for a header nobody declared would be free,
+    but asking for none of them would silently make every notifier fail to match.
     """
     typ, data = conn.uid("search", None, f"UID {last_uid + 1}:*")
     if typ != "OK" or not data or not data[0]:
@@ -355,15 +361,18 @@ def fetch_since(conn, last_uid, allowed):
     uids = sorted(u for u in (int(x) for x in data[0].split()) if u > last_uid)
     out = []
     for uid in uids:
+        fields_wanted = " ".join(["FROM", "SUBJECT", "DATE"]
+                                 + [h.upper() for h in notifier_headers(listed.notifiers)])
         typ, payload = conn.uid("fetch", str(uid),
-                                "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
+                                f"(BODY.PEEK[HEADER.FIELDS ({fields_wanted})])")
         if typ != "OK" or not payload or not isinstance(payload[0], tuple):
             continue
         msg = email.message_from_bytes(payload[0][1])
         out.append((uid, parts(decode_hdr(msg.get("From")),
                                decode_hdr(msg.get("Subject")),
                                msg.get("Date", ""),
-                               sender_is_listed(msg, allowed))))
+                               sender_is_listed(msg, listed.allowed,
+                                                listed.entries, listed.notifiers))))
     return out
 
 
@@ -397,6 +406,22 @@ def idle(conn, timeout):
             line = conn.readline()
             if not line or line.startswith(tag):
                 break
+
+
+class Listed:
+    """The three answers the roster gives, read together.
+
+    Read as one because they have to describe the same file: a notifier matched
+    against entries from an earlier read would be judging a handle against a
+    list that has since changed.
+    """
+
+    __slots__ = ("allowed", "entries", "notifiers")
+
+    def __init__(self, roster_path):
+        self.allowed = roster_addresses(roster_path)
+        self.entries = roster_entries(roster_path)
+        self.notifiers = notifiers(roster_path)
 
 
 def run(env_path, mailbox, once, state_path, roster_path, journal_path):
@@ -440,7 +465,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
 
             # Anything that landed while this process was not running: a reboot, a
             # dropped connection, a machine that was off overnight.
-            pending = fetch_since(conn, last_uid, roster_addresses(roster_path))
+            pending = fetch_since(conn, last_uid, Listed(roster_path))
             if len(pending) > 1:
                 emit(f"[mail] catching up — {len(pending)} messages arrived while offline")
             for uid, fields in pending:
@@ -463,7 +488,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                 found = False
                 # Re-read the roster every batch. Adding someone takes effect on
                 # their next message, with no restart and no lost notification.
-                for uid, fields in fetch_since(conn, last_uid, roster_addresses(roster_path)):
+                for uid, fields in fetch_since(conn, last_uid, Listed(roster_path)):
                     record(journal_path, ev.mail_event(
                         account=account, mailbox=mailbox, uidvalidity=validity, uid=uid, **fields))
                     last_uid = uid

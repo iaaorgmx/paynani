@@ -14,7 +14,22 @@
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# The resolvers are exercised from a throwaway copy of the clone, not from the
+# clone itself. Two of them now read `runtime.env`, which lives in the install,
+# so running against the real tree made this suite answer differently depending
+# on whether the person running it happened to have paynani installed — the
+# result depended on undeclared local state, which is the failure this whole
+# repository is about. Overriding HOME was never enough on its own.
+CLONE=$(mktemp -d)
+trap 'rm -rf "$CLONE"' EXIT
+mkdir -p "$CLONE/harness" "$CLONE/scripts" "$CLONE/webapp/lib"
+cp "$SOURCE_ROOT/harness/paths.py" "$CLONE/harness/"
+cp "$SOURCE_ROOT/scripts/envpath.sh" "$CLONE/scripts/"
+cp "$SOURCE_ROOT/webapp/lib/envfile.php" "$SOURCE_ROOT/webapp/lib/guard.php" "$CLONE/webapp/lib/"
+ROOT="$CLONE"
+
 pass=0
 fail=0
 skip=0
@@ -226,17 +241,21 @@ check "the install root is the clone" "$ROOT" "$(py "$(mktemp -d)" "" root)"
 # thing standing between a mail password and `git add -A`. This is the cheap
 # half of that guarantee; scripts/install.sh refuses to write if it fails.
 # ---------------------------------------------------------------------------
-if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+# Against the real checkout, not the throwaway copy: these ask what git is
+# configured to ignore, which is a property of this repository. Run against
+# $CLONE they simply stop running, and eleven assertions vanishing quietly is
+# the exact failure the header of this file warns about.
+if git -C "$SOURCE_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     for relative in .env runtime.env install.manifest roster.md \
         hermes/notify.secret state/idle.json state/mail.log; do
-        if git -C "$ROOT" check-ignore -q "$relative"; then
+        if git -C "$SOURCE_ROOT" check-ignore -q "$relative"; then
             check "git ignores $relative" ignored ignored
         else
             check "git ignores $relative" ignored "NOT ignored"
         fi
     done
     for relative in .env runtime.env install.manifest roster.md; do
-        if git -C "$ROOT" ls-files --error-unmatch "$relative" >/dev/null 2>&1; then
+        if git -C "$SOURCE_ROOT" ls-files --error-unmatch "$relative" >/dev/null 2>&1; then
             check "git does not track $relative" untracked "TRACKED"
         else
             check "git does not track $relative" untracked untracked
@@ -381,12 +400,35 @@ check "two harnesses: an explicit override is how you say which" "/srv/named.env
     "$(py "$home" /srv/named.env env)"
 rm -rf "$home"
 
+# --- what the installer recorded, read back by all three (#13) --------------
+#
+# On a host with two harnesses the resolution is ambiguous on purpose. The
+# installer settles it with PAYNANI_ENV and records the answer here; before that
+# it settled it only for the systemd unit, and every other tool went on
+# resolving to a <clone>/.env that does not exist.
+home=$(mktemp -d)
+mkdir -p "$home/.openclaw/workspace" "$home/.claude/workspace"
+: >"$home/.openclaw/workspace/.env"
+: >"$home/.claude/workspace/.env"
+printf 'PAYNANI_RUNTIME=claudecode\nPAYNANI_ENV=%s/.claude/workspace/.env\n' "$home" >"$CLONE/runtime.env"
+
+agree_all "recorded runtime.env" "$home" "" env
+check "two harnesses: the recorded file is used instead of the clone" \
+    "$home/.claude/workspace/.env" "$(py "$home" "" env)"
+check "and an explicit override still beats the recording" \
+    "/named/by/hand/.env" "$(py "$home" "/named/by/hand/.env" env)"
+
+printf 'PAYNANI_RUNTIME=claudecode\n' >"$CLONE/runtime.env"
+check "with nothing recorded, the fallback is the clone again" \
+    "$CLONE/.env" "$(py "$home" "" env)"
+rm -f "$CLONE/runtime.env"
+
 if [ "$skip" -gt 0 ]; then
     # php is not a prerequisite for running paynani -- AGENTS.md wants it
     # only for the setup form -- so a host without it is fully supported and
     # this is not a failure. It is only allowed to pass while it says so.
     printf '\nskip %d php agreement checks (php not on PATH)\n' "$skip"
-    printf '\n%d passed, %d failed, %d skipped (no php)\n' "$pass" "$fail" "$skip"
+printf '\n%d passed, %d failed, %d skipped (no php)\n' "$pass" "$fail" "$skip"
 else
     printf '\n%d passed, %d failed\n' "$pass" "$fail"
 fi

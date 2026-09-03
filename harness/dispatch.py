@@ -78,6 +78,19 @@ def log(message):
     print(message, file=sys.stderr, flush=True)
 
 
+def note(message):
+    """
+    A routine diagnostic: something happened and nothing is wrong.
+
+    Same file as log(), marked so session_start.py can tell the two apart. It
+    used to be indistinguishable, which meant the line every healthy startup
+    writes was read as a fault and every session opened with a warning. An alarm
+    that sounds on the good path is one people learn to ignore, and this one
+    exists for the failure nothing else can see.
+    """
+    log(ev.ROUTINE_PREFIX + message)
+
+
 # What has already been written to each status file, so an answer that has not
 # changed is not written again. Keyed by the resolved path, because one process
 # may write more than one, and holding every field that is persisted, because
@@ -268,7 +281,7 @@ def deliver_with_retries(adapter, record, stop, status_path=None):
 
         if result.status == ACCEPTED:
             if complaining:
-                log(f"delivery recovered: {record.get('event_id')} accepted by {adapter.NAME}")
+                note(f"delivery recovered: {record.get('event_id')} accepted by {adapter.NAME}")
             if status_path:
                 note_delivery(status_path, "last_accepted", record.get("event_id"),
                               adapter.NAME, result.detail)
@@ -362,7 +375,7 @@ def maybe_compact(journal, cursor_path):
     """
     freed = ev.compact(journal, cursor_path, min_size=JOURNAL_MAX)
     if freed:
-        log(f"compacted the event journal ({freed} bytes, all delivered)")
+        note(f"compacted the event journal ({freed} bytes, all delivered)")
 
 
 def main(argv=None):
@@ -388,7 +401,7 @@ def main(argv=None):
         log(f"{runtime} is not ready: {ready.detail}")
         log("Starting anyway: events will queue in the journal until it is.")
     else:
-        log(f"delivering to {runtime}" + (f" ({ready.detail})" if ready.detail else ""))
+        note(f"delivering to {runtime}" + (f" ({ready.detail})" if ready.detail else ""))
 
     stopped = {"now": False}
 

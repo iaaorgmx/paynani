@@ -140,13 +140,41 @@ def roster_row_addresses(document):
 # example.com, example.org and example.net are reserved for documentation
 # (RFC 2606), so a placeholder copied out of a document fails visibly instead of
 # authorising somebody real.
-for document in sorted(path.name for path in ROOT.glob("*.md")):
+# `roster.md` is excluded and must be: it is the live per-install allowlist, it is
+# untracked on purpose, and it is supposed to hold real addresses. Scanning it
+# made this suite pass in a clean checkout and fail on any host with a working
+# install — found on the first one that had one. `roster.md.example`, which is
+# tracked and is what people copy from, is still checked.
+LIVE_PER_INSTALL = {"roster.md"}
+
+# `roster.md.example` is added by name: the glob is `*.md` and it ends in
+# `.example`, so it was never scanned — and it is the one file whose addresses
+# get copied onto every new install.
+DOCUMENTS = sorted({path.name for path in ROOT.glob("*.md")} - LIVE_PER_INSTALL
+                   | {"roster.md.example"})
+
+for document in DOCUMENTS:
     real = {
         address for address in roster_row_addresses(document)
         if not address.lower().endswith((".example.com", "@example.com",
                                          "@example.org", "@example.net"))
     }
     check(f"{document}: roster examples use reserved domains", set(), real)
+
+# The documented Himalaya secret command must be env_secret.py and not a
+# hand-written sed. A `sed -n 's/^KEY=//p'` returns the value with a trailing
+# carriage return on a CRLF .env, and the server rejects that as a bad
+# credential — pointing the reader at the password rather than at the file (#14).
+himalaya_secret_lines = [
+    line.strip() for line in (ROOT / "INSTALL.md").read_text().splitlines()
+    if "passwd.cmd" in line or "password.cmd" in line
+]
+check("INSTALL.md documents at least one Himalaya secret command", True,
+      bool(himalaya_secret_lines))
+check("no documented Himalaya secret command hand-rolls a sed", [],
+      [line for line in himalaya_secret_lines if "sed " in line])
+check("every documented Himalaya secret command uses env_secret.py", [],
+      [line for line in himalaya_secret_lines if "env_secret.py" not in line])
 
 shipped = {path.name for path in (ROOT / "systemd").iterdir() if path.is_file()}
 installed = installed_units("INSTALL.md")

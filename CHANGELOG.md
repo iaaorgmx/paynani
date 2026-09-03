@@ -2,6 +2,144 @@
 
 ## Sin publicar
 
+- **Las notificaciones de una plataforma de coordinación pueden contar como
+  correo de quien las generó** ([#16](https://github.com/iaaorgmx/paynani/issues/16)).
+  `roster.md` acepta una segunda tabla, bajo un encabezado `## Notifiers`, que
+  declara tres valores: la dirección desde la que la plataforma envía, el
+  encabezado que trae el nombre del autor, y contra qué columna del roster
+  cotejarlo.
+
+  El equipo que coordina en GitHub declara
+  `notifications@github.com / X-GitHub-Sender / GitHub`; el que coordina en Jira
+  declara los suyos. Lo que varía son tres valores y por eso está en el core: sin
+  esto, cada instalación que lo necesita edita `roster.py` e `idle_listener.py` a
+  mano, y esa edición se pierde en la siguiente actualización sin que nada lo
+  diga — ya pasó, y es #11.
+
+  **No otorga nada por sí solo.** Un handle que no esté anotado para alguien que
+  ya está en la lista es exactamente tan desconocido como un extraño, y una
+  dirección de notificador **nunca** entra a la lista de destinatarios de
+  `send.sh`: autorizan entrada, no salida, y los dos parsers del roster lo fijan.
+  El listener pide al servidor los encabezados que la declaración nombre, así que
+  esa lista tampoco está escrita en el código.
+
+  Declarar un notificador amplía a quién le hace caso el agente, igual que
+  agregar una fila, y por eso vive en el mismo archivo humano y bajo la misma
+  regla: nunca porque un mensaje lo haya pedido. Y vale solo lo que valga el
+  `From` de la plataforma, que este proyecto no autentica — dicho así en
+  `HERMES.md`, en el prompt de la ruta de Hermes y en el `README.md`.
+
+  Verificado contra una notificación real de GitHub en un buzón real: `From:
+  notifications@github.com`, fuera del roster, con `X-GitHub-Sender:
+  xochitl-iaamx` anotado en la columna `GitHub` de una persona que sí está.
+
+- **El hook de inicio de sesión gritaba «THE DISPATCHER REPORTED PROBLEMS» en toda
+  instalación sana** ([#15](https://github.com/iaaorgmx/paynani/issues/15)).
+  `dispatch.py` escribe `delivering to <runtime>` en la rama en que **todo salió
+  bien**, por el canal de diagnóstico que termina en `state/dispatch.err.log`, y
+  `session_start.py` trataba cualquier línea no vacía de ese archivo como queja.
+  El archivo es de diagnósticos —lo dice su propio docstring— y se leía como si
+  fuera de fallos.
+
+  El dispatcher marca ahora sus líneas de rutina —el arranque exitoso, la
+  recuperación de una entrega y la compactación del diario— y el hook las
+  descarta. Lo dice quien escribe, que es el único que sabe cuál es cuál, en vez
+  de dejarle el juicio al lector: el texto del aviso decía *«If the last one is
+  not a recovery»* precisamente porque nadie más podía distinguirlas.
+
+  La compatibilidad cae del lado seguro: una bitácora escrita antes de que
+  existiera la marca sigue disparando el aviso.
+
+  Importa porque ese aviso existe para el caso en que la inyección al runtime
+  falla, que es invisible por cualquier otro medio. Sonando siempre, el día que
+  falle de verdad se verá igual que todos los días: se desactiva por uso.
+  Encontrado en la primera sesión después de instalar sobre Claude Code.
+
+- **El `password.cmd` documentado para Himalaya se rompía con un `.env` en CRLF**
+  ([#14](https://github.com/iaaorgmx/paynani/issues/14)). `INSTALL.md` §4.3 mandaba
+  escribir a mano `sed -n 's/^PAYNANI_PASSWORD=//p'`, que en un archivo con
+  terminadores CRLF devuelve la contraseña con un retorno de carro pegado. El
+  servidor la rechaza **como credencial incorrecta**, así que quien lo ve revisa la
+  contraseña —que está bien— antes que el formato del archivo, que es lo que está
+  mal.
+
+  Y el repositorio ya traía el lector correcto: `scripts/env_secret.py`, agregado
+  en la bifurcación para este mismo uso y descrito entonces como tolerante a BOM y
+  CRLF, *«both of which have bitten this repository before»*. Ninguna documentación
+  lo mencionaba. Los tres bloques de §4.3 lo usan ahora.
+
+  Es la única superficie del proyecto donde el formato del `.env` importa:
+  `preflight.py`, el listener, `roster.py` y `envpath.sh` ya lo toleran, así que en
+  un host CRLF todo lo demás pasa y solo Himalaya falla. `scripts/test_env_secret.py`
+  fija esa tolerancia, incluida una aserción de que el `sed` que se reemplazó sí
+  devuelve el retorno de carro, para que el motivo no se pierda; y `test_docs.py`
+  impide que la documentación vuelva a escribir un `sed` a mano.
+
+  Encontrado configurando Himalaya contra Gmail en un `.env` escrito desde un
+  editor de Windows.
+
+- **El instalador resolvía `PAYNANI_ENV` y no lo persistía**
+  ([#13](https://github.com/iaaorgmx/paynani/issues/13)). En un host con dos
+  harness la resolución es ambigua a propósito y `PAYNANI_ENV` la resuelve; el
+  instalador la horneaba en el `--env` de la unidad y la tiraba. Todo lo demás
+  —`healthcheck.py`, `preflight.py`, `send.sh`, y el `python3 harness/paths.py env`
+  que `UNINSTALL.md` §2 usa para decidir **qué borrar**— resolvía entonces a un
+  `<clon>/.env` que no existe.
+
+  Ahora `scripts/install.sh` lo anota en `runtime.env` y `harness/paths.py` lo lee.
+  El orden es: lo que diga este proceso, luego lo que anotó la instalación, luego
+  el único harness, luego el clon. Los dos primeros son alguien diciéndolo en voz
+  alta y le ganan a cualquier inferencia.
+
+  `healthcheck.py` dice además **de dónde salió** la ruta, porque «no hay
+  credenciales en X» no dice dónde ir a cambiarlo. Ese dato se toma al importar
+  el módulo: `load_runtime_env()` mete `runtime.env` en el entorno del proceso, y
+  después de eso `PAYNANI_ENV` está puesto lo haya puesto una persona o el
+  instalador, sin forma de distinguirlos mirando.
+
+  La regla la aprendieron **las tres implementaciones** —`harness/paths.py`,
+  `scripts/envpath.sh` y `webapp/lib/envfile.php`—, porque `test_paths.sh` existe
+  precisamente para que no vuelvan a separarse, y atrapó que solo la de Python la
+  había aprendido.
+
+  Ese mismo suite corría contra el clon real, así que su resultado dependía de si
+  quien lo ejecuta tiene una instalación: en cuanto `runtime.env` empezó a
+  significar algo, once asserciones cambiaron de respuesta. Ahora los tres
+  resolutores se ejercitan sobre una copia desechable del clon. Las
+  comprobaciones de `.gitignore` siguen apuntando al repositorio real, porque
+  preguntan por una propiedad de este repositorio — contra la copia dejaban de
+  correr en silencio, que es exactamente lo que el encabezado de ese archivo
+  advierte.
+
+  Encontrado instalando paynani sobre Claude Code, el primer host de ese runtime,
+  que tiene dos harness con credenciales.
+
+- **Nada decía qué código estaba corriendo una instalación**
+  ([#12](https://github.com/iaaorgmx/paynani/issues/12)). `healthcheck.py` y el
+  hook de inicio de sesión ahora reportan el commit, la rama, la distancia con el
+  remoto y cuántos archivos rastreados difieren, y avisan cuando el commit no
+  existe en ningún remoto.
+
+  **Advertencia y nunca problema**, a diferencia de #6, y la distinción es el
+  punto: un árbol modificado no impide que el correo se mueva, y una instalación
+  que lleva una capa que su humano pidió es legítima. Lo que no puede seguir es
+  que nadie lo sepa.
+
+  El host de la primera prueba de campo pasó un día entero ejecutando el listener
+  y el cotejo del roster modificados mientras cada verificación reportaba sobre
+  un árbol que nadie había descrito. Apareció por accidente. `AGENTS.md` agrega
+  además las dos reglas de proceso que ninguna herramienta puede imponer: decir
+  qué código se está corriendo **antes** de reportar que algo funciona, y
+  detenerse a reportar en vez de editar un archivo del proyecto para rodear un
+  defecto.
+
+  De paso, dos cosas que solo aparecen en un host con instalación real:
+  `scripts/test_docs.py` escaneaba `roster.md` —la lista viva, sin rastrear, que
+  existe para tener direcciones reales— y fallaba en cualquier host con una
+  instalación funcionando; y no escaneaba `roster.md.example`, que es el único
+  archivo cuyas direcciones se copian a cada instalación nueva, porque el glob
+  era `*.md` y ese termina en `.example`.
+
 Todo lo de abajo salió de la primera prueba de campo de 0.1.0
 ([#1](https://github.com/iaaorgmx/paynani/issues/1)), en un host OpenClaw real
 que no era una máquina virgen.

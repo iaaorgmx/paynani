@@ -137,6 +137,11 @@ lo que apunta.**
 Si lo que responde es `<clon>/.env`, ese archivo sí es de esta instalación y se
 va completo con el comando de abajo.
 
+En un host con dos harness, la respuesta sale de `PAYNANI_ENV`, que el instalador
+dejó anotado en `runtime.env`. Si ese archivo ya no está, la ruta que obtengas
+puede no ser la que la instalación usaba: revisa el `--env` de
+`~/.config/systemd/user/paynani-idle.service`, que la lleva horneada.
+
 Después, desde dentro del clon, lo que siempre le pertenece:
 
 ```bash

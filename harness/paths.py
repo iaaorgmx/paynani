@@ -94,13 +94,46 @@ def config_dir(environ=None, home=None):
     return install_root(environ, home)
 
 
+def recorded_env(environ=None, home=None):
+    """
+    The credentials file the installer was told to use, from `runtime.env`.
+
+    `runtime.env` exists to remember what the install decided, and this is the
+    second thing worth remembering. The installer resolves `PAYNANI_ENV`, bakes
+    the answer into the unit's `--env`, and used to throw it away — so on a host
+    with two harnesses the service ran fine off the right file while every other
+    tool, `healthcheck.py` and `UNINSTALL.md`'s own "what do I delete" step
+    included, resolved to a `<clone>/.env` that does not exist.
+    """
+    try:
+        text = runtime_env(environ, home).read_text(encoding="utf-8-sig")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("PAYNANI_ENV="):
+            value = line[len("PAYNANI_ENV="):].strip().strip('"').strip("'")
+            return Path(value).expanduser() if value else None
+    return None
+
+
 def env_file(environ=None, home=None):
-    """The credentials file this host should use, existing or not."""
+    """
+    The credentials file this host should use, existing or not.
+
+    In order: what this process was told, then what the install recorded, then
+    the single harness file, then the clone. The first two are somebody saying
+    it out loud, and they win over any amount of inference.
+    """
     environ = os.environ if environ is None else environ
 
     override = (environ.get("PAYNANI_ENV") or "").strip()
     if override:
         return Path(override).expanduser()
+
+    recorded = recorded_env(environ, home)
+    if recorded:
+        return recorded
 
     # Read the harness's file where it lies. Everything else — state,
     # runtime.env, the manifest, hermes/ — still hangs off the clone, and that
@@ -113,7 +146,8 @@ def env_file(environ=None, home=None):
     # Two of them means two agents share this host. Either could be the wrong
     # mailbox, and a listener on the wrong mailbox is indistinguishable from a
     # quiet one — so neither is adopted, and the answer falls back to the file
-    # this install owns. Name the right one with PAYNANI_ENV.
+    # this install owns. Name the right one with PAYNANI_ENV; the installer
+    # records it in runtime.env so it only has to be said once.
     return install_root(environ, home) / ".env"
 
 
@@ -170,6 +204,7 @@ if __name__ == "__main__":
         "root": install_root,
         "config": config_dir,
         "runtime-env": runtime_env,
+        "recorded-env": recorded_env,
         "manifest": manifest,
         "hermes": hermes_dir,
         "roster": roster,

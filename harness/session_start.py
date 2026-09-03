@@ -48,6 +48,7 @@ RUNTIME_ENV = REPO / "runtime.env"
 
 MAX_REPLAY = 20   # enough to see overnight without flooding the context window
 MAX_DISPATCH_ERR = 5   # the last few lines say whether it is still failing
+MAX_LOCAL_FILES = 10   # name them, but do not paste a whole refactor
 VERSION_TIMEOUT = 20   # above version.sh's own 10s, so its timeout fires first
 
 
@@ -95,7 +96,56 @@ def dispatcher_faults():
         text = DISPATCH_ERR.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
-    return [ln for ln in text.splitlines() if ln.strip()][-MAX_DISPATCH_ERR:]
+    # Routine notes are dropped. The dispatcher marks them, because it is the
+    # only party that knows which of its own lines is a complaint — and the line
+    # it writes on every successful startup used to make this hook announce
+    # PROBLEMS on every healthy install (#15).
+    lines = [ln for ln in text.splitlines()
+             if ln.strip() and not ln.startswith(ev.ROUTINE_PREFIX)]
+    return lines[-MAX_DISPATCH_ERR:]
+
+
+def local_code_line():
+    """
+    One line when this clone is not running the published code, and nothing
+    otherwise.
+
+    A session starting on a modified tree is the moment to say so: every other
+    line this hook prints, and every check the agent will run afterwards,
+    silently assumes the code is what the repository published. #11 spent a day
+    invisible because nobody was ever told to look, and the person who could have
+    said it in one sentence was the one reading a report that did not mention it.
+    """
+    def git(*args):
+        try:
+            run = subprocess.run(["git", "-C", str(repo_root()), *args],
+                                 capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return (run.stdout or "").strip() if run.returncode == 0 else None
+
+    if git("rev-parse", "--is-inside-work-tree") != "true":
+        return ""
+    status = git("status", "--porcelain", "--untracked-files=no")
+    if not status:
+        return ""
+    # Split rather than slice a fixed width: the helper strips the whole output,
+    # so the first line loses the leading space of its two-character status
+    # field and a fixed `ln[3:]` eats the first letter of that one filename.
+    names = [ln.split(maxsplit=1)[-1] for ln in status.splitlines() if ln.strip()]
+    files = names[:MAX_LOCAL_FILES]
+    commit = git("rev-parse", "--short", "HEAD") or "HEAD"
+    more = ""
+    count = len(names)
+    if count > len(files):
+        more = f" (and {count - len(files)} more)"
+    return ("THIS INSTALL IS NOT RUNNING THE PUBLISHED CODE — "
+            f"{count} tracked file(s) differ from commit {commit}: "
+            + ", ".join(files) + more + ". "
+            "If your human asked for these, they are expected, and a `git pull` "
+            "will silently take them away. If you did not know they were there, "
+            "say so before reporting that anything was verified: every check you "
+            "are about to run describes this tree, not the published one.")
 
 
 def version_line():
@@ -269,6 +319,10 @@ def main():
         parts.append(header + "\n" + "\n".join(lines))
     elif runtime != "claudecode":
         parts.append("No unseen mail since the last session acknowledged the log.")
+
+    local = local_code_line()
+    if local:
+        parts.append(local)
 
     version = version_line()
     if version:

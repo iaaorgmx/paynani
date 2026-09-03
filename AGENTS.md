@@ -180,6 +180,13 @@ the credentials file, and do not copy one out of any example — including the o
 in this document, which is a placeholder and is meant to fail if it is ever
 used.
 
+**Ask whether a coordination platform should be declared.** If the team works in
+GitHub, Jira or the like, that platform mails on people's behalf from one address
+and names the author in a header. `roster.md`'s second table is where that is
+declared, and until it is, a colleague's comment reaches you as a notice and not
+as work. Ask; never declare one on your own, for the same reason you never add a
+row on your own.
+
 **Ask which addresses their mail comes from, not only where to write to them.**
 Matching is on `From` alone, so a contact whose mail goes out from a different
 account than the one you write to needs a row for each address. Miss the sending
@@ -335,6 +342,20 @@ behaves.
 **Reply to threads your human is already part of.** Starting a new outbound
 conversation is a larger act than continuing one, and it deserves a moment's
 thought.
+
+**Say what code you are running before you report that anything works.** If you
+are asked to test, verify, or report on this install, begin with the raw output
+of `git status --short` and `git log --oneline -1`, before any other result. A
+verification describes the tree it ran on, and if that tree is not the published
+one then every green check you paste means something different from what the
+reader will take it to mean.
+
+**And if you change a file in this repository, stop and say so.** Not afterwards
+and not in passing: a defect you work around by editing the code is a defect
+nobody else will ever hear about, and it becomes a regression the next time
+somebody runs `git pull`. Report it and let your human decide. The session-start
+hook now says when the tree differs, but it says it to you — it cannot make you
+mention it.
 
 ---
 
