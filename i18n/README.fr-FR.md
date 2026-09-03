@@ -304,9 +304,11 @@ Codex de Florence sous `painani` et sous `painanj`, et enregistre `payna` comme
 variante de `paina` : c'est un seul mot. Ce projet écrit `paynani`, la forme qu'un
 lecteur hispanophone reconnaît.
 
-Il vaut la peine de noter ce que le mot ne dit **pas**. Il ne nomme pas la charge
-— le messager impérial était un `titlantli`, « celui qu'on envoie » — mais la
-qualité : léger du pied. Il dit ce qu'il fait, non le rang qu'il occupe.
+C'est de cette qualité qu'est venu le nom du métier. Le nahuatl avait deux façons
+de nommer le messager impérial : `titlantli`, « celui qu'on envoie », qui le
+définit par la mission qu'il porte, et `paynani`, qui le définit par sa manière de
+se déplacer. C'est la seconde qui est restée attachée à ces hommes — on les
+connaissait à leur façon de courir, non à celui qui les envoyait.
 
 Les coureurs travaillaient par relais, avec des postes appelés `techialoyan`, et
 s'entraînaient dès l'enfance. De tout ce qu'on rapporte d'eux, un détail est
