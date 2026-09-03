@@ -1,4 +1,5 @@
 # paynani
+Elite messenger: the paynani were the official runners and messengers of the Aztec Empire.
 
 [Español (MX)](../README.md) · **English (US)** · [Español (ES)](README.es-ES.md) · [Français (FR)](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
 
@@ -314,9 +315,11 @@ passages under both `painani` and `painanj`, and records `payna` as a variant of
 `paina`: one word, several spellings. This project writes `paynani`, the form a
 Spanish-speaking reader recognizes.
 
-Worth noting what the word does **not** say. It is not the name of the office —
-the imperial messenger was a `titlantli`, "the one sent" — but of the quality:
-light of foot. It says what he does, not what rank he holds.
+The name of the office grew out of that quality. Nahuatl had two ways to name
+the imperial messenger: `titlantli`, "the one sent," which defines him by the
+errand he carries, and `paynani`, which defines him by how he moves. The one that
+stuck to these men was the second — they were known for the way they ran, not for
+who dispatched them.
 
 The runners worked in relays, through staging posts called `techialoyan`, and
 trained from childhood. Of everything recorded about them, one detail is exactly

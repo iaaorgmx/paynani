@@ -1,4 +1,5 @@
 # paynani
+Mensajero de élite: los paynani eran los corredores y mensajeros oficiales del Imperio Azteca.
 
 [Español (MX)](../README.md) · [English (US)](README.en-US.md) · **Español (ES)** · [Français (FR)](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
 
@@ -293,9 +294,11 @@ Florentino bajo `painani` y bajo `painanj`, y registra `payna` como variante de
 `paina`: son la misma palabra. Aquí se escribe `paynani`, que es la forma que un
 lector hispanohablante reconoce.
 
-Conviene fijarse en lo que la palabra **no** dice. No nombra el cargo —al
-mensajero imperial se le llamaba `titlantli`, «el enviado»— sino la cualidad:
-ligero de pies. Dice lo que hace, no el puesto que ocupa.
+De esa cualidad salió el nombre del oficio. El náhuatl tenía dos maneras de
+nombrar al mensajero imperial: `titlantli`, «el enviado», que lo define por el
+encargo que lleva, y `paynani`, que lo define por cómo se mueve. La que se quedó
+pegada a esos hombres fue la segunda — se los conocía por la manera de correr, no
+por quién los mandaba.
 
 Los corredores trabajaban por relevos, con postas llamadas `techialoyan`, y se
 entrenaban desde niños. De todo lo que se cuenta de ellos hay un detalle que es

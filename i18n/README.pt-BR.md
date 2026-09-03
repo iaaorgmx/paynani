@@ -1,4 +1,5 @@
 # paynani
+Mensageiro de elite: os paynani eram os corredores e mensageiros oficiais do Império Asteca.
 
 [Español (MX)](../README.md) · [English (US)](README.en-US.md) · [Español (ES)](README.es-ES.md) · [Français (FR)](README.fr-FR.md) · **Português (BR)**
 
@@ -291,9 +292,11 @@ Florentino sob `painani` e sob `painanj`, e registra `payna` como variante de
 `paina`: é a mesma palavra. Aqui se escreve `paynani`, que é a forma reconhecida
 por um leitor de língua espanhola.
 
-Vale reparar no que a palavra **não** diz. Ela não nomeia o cargo — o mensageiro
-imperial era um `titlantli`, "o enviado" — e sim a qualidade: ligeiro de pés. Diz
-o que ele faz, não o posto que ocupa.
+Foi dessa qualidade que veio o nome do ofício. O náuatle tinha dois modos de
+nomear o mensageiro imperial: `titlantli`, "o enviado", que o define pela
+incumbência que carrega, e `paynani`, que o define pelo modo como se move. O que
+ficou colado a esses homens foi o segundo — eram conhecidos pelo jeito de correr,
+não por quem os despachava.
 
 Os corredores trabalhavam em revezamento, com postos chamados `techialoyan`, e
 treinavam desde crianças. De tudo o que se conta sobre eles, há um detalhe que é
