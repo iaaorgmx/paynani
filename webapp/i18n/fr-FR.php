@@ -19,7 +19,6 @@ return [
 'saved.next_p2'     => 'La seule chose qui vaille la peine de votre côté : envoyez un courriel à l\'agent et demandez-lui ce qui vient d\'arriver. S\'il répond en deux secondes, tout fonctionne.',
 'saved.forgot'      => 'Cette page a déjà oublié le mot de passe. La rouvrir ne l\'affichera pas de nouveau.',
 
-'warn.existing_p1'  => '<strong>Attention.</strong> Il y a déjà une configuration de messagerie dans <code>{path}</code>. Terminer ce formulaire la remplace.',
 
 'help.summary'      => 'Où est-ce que je trouve ces informations ?',
 

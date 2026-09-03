@@ -24,9 +24,6 @@ return [
 'saved.next_p2'     => 'Lo único que vale la pena hacer tú: mándale un correo al agente y pregúntale qué acaba de llegar. Si te contesta en un par de segundos, todo funciona.',
 'saved.forgot'      => 'Esta página ya olvidó la contraseña. Volver a abrirla no la muestra otra vez.',
 
-// ── El aviso de configuración existente ──────────────────────────────────────
-'warn.existing_p1'  => '<strong>Cuidado.</strong> Ya hay configuración de correo en <code>{path}</code>. Si terminas este formulario, la reemplaza.',
-
 // ── La ayuda desplegable ─────────────────────────────────────────────────────
 'help.summary'      => '¿Dónde encuentro estos datos?',
 

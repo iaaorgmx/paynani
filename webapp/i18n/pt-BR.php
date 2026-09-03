@@ -19,7 +19,6 @@ return [
 'saved.next_p2'     => 'A única coisa que vale a pena fazer você: mande um e-mail para o agente e pergunte o que acabou de chegar. Se ele responder em uns dois segundos, está tudo funcionando.',
 'saved.forgot'      => 'Esta página já esqueceu a senha. Abrir de novo não mostra ela outra vez.',
 
-'warn.existing_p1'  => '<strong>Atenção.</strong> Já existe configuração de e-mail em <code>{path}</code>. Se você terminar este formulário, ela é substituída.',
 
 'help.summary'      => 'Onde eu acho esses dados?',
 

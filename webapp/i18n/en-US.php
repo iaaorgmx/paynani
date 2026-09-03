@@ -19,7 +19,6 @@ return [
 'saved.next_p2'     => 'The one thing worth doing yourself: send the agent an email and ask what just arrived. If it answers within a couple of seconds, everything works.',
 'saved.forgot'      => 'This page has already forgotten the password. Opening it again will not show it.',
 
-'warn.existing_p1'  => '<strong>Careful.</strong> There is already mail configuration at <code>{path}</code>. Finishing this form replaces it.',
 
 'help.summary'      => 'Where do I find these?',
 

@@ -52,7 +52,8 @@ $storedPassword = (string) ($stored['AGENT_EMAIL_PASSWORD'] ?? '');
 
 $values = $_SESSION['values'] ?? [];
 foreach (ENV_FIELDS as $key) {
-    if ($action !== '' && array_key_exists($key, $_POST)) {
+    $postedNow = $action !== '' && array_key_exists($key, $_POST);
+    if ($postedNow) {
         $posted = trim((string) $_POST[$key]);
         // The password box comes back empty on every render, because its value is
         // never written into the HTML. An empty box therefore means "unchanged",
@@ -62,12 +63,20 @@ foreach (ENV_FIELDS as $key) {
             $values[$key] = $posted;
         }
     }
+
+    // The file fills anything this request did not carry. Testing for empty and
+    // not merely for absent is the whole point: the language switch posts the
+    // form, so a switch on an untouched page used to store seven empty strings
+    // in the session, and those then shadowed the file on every later render.
+    // The fields came back blank for the rest of the session and nothing said
+    // why. A blank box that was not just typed means "whatever is on disk".
+    //
     // Never the stored password: it goes nowhere near anything this page renders.
-    if ($key !== 'AGENT_EMAIL_PASSWORD') {
-        $values[$key] ??= (string) ($stored[$key] ?? '');
-        if ($values[$key] === '') {
-            $values[$key] = PORT_HINTS[$key] ?? '';
-        }
+    if ($key !== 'AGENT_EMAIL_PASSWORD' && !$postedNow && ($values[$key] ?? '') === '') {
+        $values[$key] = (string) ($stored[$key] ?? '');
+    }
+    if (($values[$key] ?? '') === '') {
+        $values[$key] = $key === 'AGENT_EMAIL_PASSWORD' ? '' : (PORT_HINTS[$key] ?? '');
     }
     $values[$key] ??= '';
 }
@@ -123,7 +132,6 @@ if ($action === 'setup' && $errors === []) {
     }
 }
 
-$existing = existing_config();
 ?>
 <!doctype html>
 <html lang="<?= e(current_lang()) ?>">
@@ -210,12 +218,6 @@ $existing = existing_config();
   </div>
 
   <p class="lead"><?= th('page.lead') ?></p>
-
-  <?php if ($existing !== null): ?>
-    <div class="panel warn">
-      <p><?= th('warn.existing_p1', ['path' => $existing]) ?></p>
-    </div>
-  <?php endif; ?>
 
   <details class="help">
     <summary><?= th('help.summary') ?></summary>
