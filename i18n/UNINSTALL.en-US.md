@@ -134,6 +134,11 @@ points at.**
 If what it answers is `<clone>/.env`, that file does belong to this install and
 goes entirely, with the command below.
 
+On a host with two harnesses the answer comes from `PAYNANI_ENV`, which the
+installer recorded in `runtime.env`. If that file is gone, the path you get may
+not be the one the install used: check the `--env` on
+`~/.config/systemd/user/paynani-idle.service`, which carries it baked in.
+
 Then, from inside the clone, what always belongs to it:
 
 ```bash

@@ -27,9 +27,39 @@ paynani_config_dir() {
     paynani_root
 }
 
+# One value out of the installer-generated runtime.env, or nothing. Kept
+# deliberately identical to recorded_env() in harness/paths.py and to
+# recorded_env() in webapp/lib/envfile.php: three implementations of one rule,
+# and scripts/test_paths.sh exists because they have drifted before.
+paynani_recorded_env() {
+    local file line value
+    file="$(paynani_runtime_env)"
+    [ -f "$file" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        case "$line" in
+            PAYNANI_ENV=*)
+                value=${line#PAYNANI_ENV=}
+                value=${value%\"}; value=${value#\"}
+                value=${value%\'}; value=${value#\'}
+                [ -n "$value" ] && printf '%s' "$value"
+                return 0
+                ;;
+        esac
+    done < "$file"
+}
+
 paynani_env_file() {
+    local recorded
     if [ -n "${PAYNANI_ENV:-}" ]; then
         printf '%s' "$PAYNANI_ENV"
+        return
+    fi
+
+    # What the install recorded, when it was told which file is its own.
+    recorded="$(paynani_recorded_env)"
+    if [ -n "$recorded" ]; then
+        printf '%s' "$recorded"
         return
     fi
 

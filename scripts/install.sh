@@ -535,12 +535,22 @@ migrate_ownership_manifest() {
 render_artifact() {
     local destination=$1 source=$2
     if [[ "$source" == generated-runtime-config ]]; then
+        # Record the credentials file when this install was told which one it is.
+        # On a host with two harnesses the resolution is deliberately ambiguous,
+        # PAYNANI_ENV is how an operator settles it, and it used to be settled
+        # once for the unit and forgotten for everything else.
+        local recorded_env_line=''
+        if [[ -n "${PAYNANI_ENV:-}" ]]; then
+            printf -v recorded_env_line 'PAYNANI_ENV=%s\n' "$PAYNANI_ENV"
+        fi
         if [[ "$runtime" == openclaw ]]; then
             printf 'PAYNANI_RUNTIME=openclaw\n'
+            printf '%s' "$recorded_env_line"
             return
         fi
         if [[ "$runtime" == claudecode ]]; then
             printf 'PAYNANI_RUNTIME=claudecode\n'
+            printf '%s' "$recorded_env_line"
             return
         fi
         python3 - "$notify_secret_file" "$roster_secret_file" <<'PYINNER'
@@ -558,6 +568,8 @@ values = {
 }
 if os.environ.get("HERMES_ALLOW_REMOTE", "").lower() in ("1", "true", "yes"):
     values["HERMES_ALLOW_REMOTE"] = "1"
+if os.environ.get("PAYNANI_ENV", "").strip():
+    values["PAYNANI_ENV"] = os.environ["PAYNANI_ENV"].strip()
 for name, value in values.items():
     if "\n" in value or "\r" in value or "\0" in value:
         raise SystemExit(f"invalid multiline or NUL value for {name}")

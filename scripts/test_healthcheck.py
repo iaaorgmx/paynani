@@ -316,6 +316,43 @@ check("the roster is parsed the way the listener parses it", 1,
       facts["roster"]["addresses"])
 check("so a reordered row is not read as an empty list", [], problems)
 
+# --- where the credentials path came from (#13) ------------------------------
+#
+# On a host with two harnesses the resolution is ambiguous on purpose, and
+# PAYNANI_ENV settles it. The installer used to settle it once, for the unit,
+# and forget: every other tool then resolved to a <clone>/.env that is not there,
+# and reported no credentials about an install that was delivering mail.
+
+f = Fixture()
+f.env.unlink()
+_, problems, _ = f.run()
+check("missing credentials say where the path came from", True,
+      any("which is where" in p for p in problems))
+
+saved_env = os.environ.pop("PAYNANI_ENV", None)
+try:
+    runtime_file = pathlib.Path(tempfile.mkdtemp()) / "runtime.env"
+    runtime_file.write_text("PAYNANI_RUNTIME=claudecode\n"
+                            "PAYNANI_ENV=/somewhere/else/.env\n", encoding="utf-8")
+    import paths
+    saved_runtime_env = paths.runtime_env
+    paths.runtime_env = lambda environ=None, home=None: runtime_file
+
+    check("a recorded PAYNANI_ENV is read back out of runtime.env",
+          pathlib.Path("/somewhere/else/.env"), paths.recorded_env(environ={}))
+    check("a recorded file wins over falling back to the clone",
+          pathlib.Path("/somewhere/else/.env"), paths.env_file(environ={}))
+    check("but an explicit PAYNANI_ENV still wins over the recording",
+          pathlib.Path("/named/by/hand/.env"),
+          paths.env_file(environ={"PAYNANI_ENV": "/named/by/hand/.env"}))
+    runtime_file.write_text("PAYNANI_RUNTIME=claudecode\n", encoding="utf-8")
+    check("nothing recorded means nothing is invented", None,
+          paths.recorded_env(environ={}))
+    paths.runtime_env = saved_runtime_env
+finally:
+    if saved_env is not None:
+        os.environ["PAYNANI_ENV"] = saved_env
+
 # --- which code this install is actually running (#12) -----------------------
 #
 # A tree that differs from the published commit does not stop mail, so none of

@@ -2,6 +2,42 @@
 
 ## Sin publicar
 
+- **El instalador resolvía `PAYNANI_ENV` y no lo persistía**
+  ([#13](https://github.com/iaaorgmx/paynani/issues/13)). En un host con dos
+  harness la resolución es ambigua a propósito y `PAYNANI_ENV` la resuelve; el
+  instalador la horneaba en el `--env` de la unidad y la tiraba. Todo lo demás
+  —`healthcheck.py`, `preflight.py`, `send.sh`, y el `python3 harness/paths.py env`
+  que `UNINSTALL.md` §2 usa para decidir **qué borrar**— resolvía entonces a un
+  `<clon>/.env` que no existe.
+
+  Ahora `scripts/install.sh` lo anota en `runtime.env` y `harness/paths.py` lo lee.
+  El orden es: lo que diga este proceso, luego lo que anotó la instalación, luego
+  el único harness, luego el clon. Los dos primeros son alguien diciéndolo en voz
+  alta y le ganan a cualquier inferencia.
+
+  `healthcheck.py` dice además **de dónde salió** la ruta, porque «no hay
+  credenciales en X» no dice dónde ir a cambiarlo. Ese dato se toma al importar
+  el módulo: `load_runtime_env()` mete `runtime.env` en el entorno del proceso, y
+  después de eso `PAYNANI_ENV` está puesto lo haya puesto una persona o el
+  instalador, sin forma de distinguirlos mirando.
+
+  La regla la aprendieron **las tres implementaciones** —`harness/paths.py`,
+  `scripts/envpath.sh` y `webapp/lib/envfile.php`—, porque `test_paths.sh` existe
+  precisamente para que no vuelvan a separarse, y atrapó que solo la de Python la
+  había aprendido.
+
+  Ese mismo suite corría contra el clon real, así que su resultado dependía de si
+  quien lo ejecuta tiene una instalación: en cuanto `runtime.env` empezó a
+  significar algo, once asserciones cambiaron de respuesta. Ahora los tres
+  resolutores se ejercitan sobre una copia desechable del clon. Las
+  comprobaciones de `.gitignore` siguen apuntando al repositorio real, porque
+  preguntan por una propiedad de este repositorio — contra la copia dejaban de
+  correr en silencio, que es exactamente lo que el encabezado de ese archivo
+  advierte.
+
+  Encontrado instalando paynani sobre Claude Code, el primer host de ese runtime,
+  que tiene dos harness con credenciales.
+
 - **Nada decía qué código estaba corriendo una instalación**
   ([#12](https://github.com/iaaorgmx/paynani/issues/12)). `healthcheck.py` y el
   hook de inicio de sesión ahora reportan el commit, la rama, la distancia con el

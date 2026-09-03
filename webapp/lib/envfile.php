@@ -51,11 +51,44 @@ const ENV_FIELDS = [
     'AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT',
 ];
 
+/**
+ * The credentials file the installer recorded in runtime.env, or null.
+ *
+ * Kept deliberately identical to recorded_env() in harness/paths.py and
+ * paynani_recorded_env() in scripts/envpath.sh. Three implementations of one
+ * rule; scripts/test_paths.sh cross-checks them because they have drifted before.
+ */
+function recorded_env(): ?string
+{
+    $file = install_root() . '/runtime.env';
+    clearstatcache(true, $file);
+    if (!is_file($file)) {
+        return null;
+    }
+    $text = @file_get_contents($file);
+    if ($text === false) {
+        return null;
+    }
+    foreach (preg_split('/\r\n|\r|\n/', $text) as $line) {
+        $line = trim($line);
+        if (strpos($line, 'PAYNANI_ENV=') === 0) {
+            $value = trim(substr($line, strlen('PAYNANI_ENV=')), " \t\"'");
+            return $value !== '' ? $value : null;
+        }
+    }
+    return null;
+}
+
 function env_path(): string
 {
     $override = getenv('PAYNANI_ENV');
     if (is_string($override) && trim($override) !== '') {
         return trim($override);
+    }
+
+    $recorded = recorded_env();
+    if ($recorded !== null) {
+        return $recorded;
     }
 
     // Read the harness's file where it lies. Everything else still hangs off

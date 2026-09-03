@@ -37,9 +37,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import event as ev            # noqa: E402
 import dispatch as dsp        # noqa: E402
 from adapters import ACCEPTED, CONFIG   # noqa: E402
-from paths import (env_file, install_root,   # noqa: E402
-                   repo_root, roster, runtime_env, state_dir)
+from paths import (env_file, harness_env_files, install_root,   # noqa: E402
+                   recorded_env, repo_root, roster, runtime_env, state_dir)
 from roster import roster_addresses   # noqa: E402
+
+# Taken at import, before runtime_facts() calls load_runtime_env() and layers
+# runtime.env into os.environ. After that call, PAYNANI_ENV is in the environment
+# whether a person put it there or the installer recorded it, and env_source()
+# cannot tell the two apart by looking. Snapshot first, ask later.
+ENV_OVERRIDE_AT_START = (os.environ.get("PAYNANI_ENV") or "").strip()
 
 STATE_DIR = state_dir()
 LISTENER_STATE = STATE_DIR / "idle.json"
@@ -514,8 +520,27 @@ def himalaya_facts():
     return out
 
 
+def env_source():
+    """
+    Which of the four rules decided the credentials path.
+
+    Named because "no credentials at X" does not say where to go and change it.
+    A path that came from `runtime.env` is fixed in `runtime.env`; one that came
+    from a harness is fixed by the harness; one that fell through to the clone
+    means nothing said anything, which is its own answer.
+    """
+    if ENV_OVERRIDE_AT_START:
+        return "PAYNANI_ENV in this environment"
+    if recorded_env():
+        return f"PAYNANI_ENV recorded in {runtime_env()}"
+    if len(harness_env_files()) == 1:
+        return "the one harness on this host"
+    return "the clone, because nothing named a file"
+
+
 def config_facts():
     out = {"env": None, "env_mode": None, "env_present": False,
+           "env_source": env_source(),
            "repo": str(repo_root()), "version": None}
     path = env_file()
     out["env"] = str(path)
@@ -612,7 +637,8 @@ def assess(facts):
                 "install has either never sent anything or predates the log")
 
     if not config["env_present"]:
-        problems.append(f"no credentials at {config['env']}")
+        problems.append(f"no credentials at {config['env']}, which is where "
+                        f"{config['env_source']} points")
     elif config["env_mode"] not in ("0o600", "0o400"):
         warnings.append(f"credentials at {config['env']} are mode {config['env_mode']}, "
                         "which is more readable than they should be")
@@ -725,6 +751,7 @@ def render(facts, problems, warnings):
                    "whether a reply was owed is not judged here")
     out.append(f"credentials  {config['env']}"
                + (f"  mode {config['env_mode']}" if config["env_present"] else "  MISSING"))
+    out.append(f"             from {config['env_source']}")
     ros = facts["roster"]
     out.append(f"roster       {ros['path']}"
                + (f"  {ros['addresses']} address(es)" if ros["present"] else "  MISSING"))
