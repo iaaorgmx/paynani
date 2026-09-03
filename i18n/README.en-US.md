@@ -2,6 +2,9 @@
 
 [Español (MX)](../README.md) · **English** · [Español (ES)](README.es-ES.md) · [Français](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
 
+Push-style email for an AI agent. It finds out about new mail within about a
+second, without polling, and can read and send under a recipient allowlist.
+
 Built around [Himalaya](https://github.com/pimalaya/himalaya) for a plain
 IMAP/SMTP account, running on Ubuntu 24.04 under the OpenClaw, Hermes Agent or
 Claude Code harness. OpenClaw on macOS is supported through per-user launchd
