@@ -336,6 +336,20 @@ behaves.
 conversation is a larger act than continuing one, and it deserves a moment's
 thought.
 
+**Say what code you are running before you report that anything works.** If you
+are asked to test, verify, or report on this install, begin with the raw output
+of `git status --short` and `git log --oneline -1`, before any other result. A
+verification describes the tree it ran on, and if that tree is not the published
+one then every green check you paste means something different from what the
+reader will take it to mean.
+
+**And if you change a file in this repository, stop and say so.** Not afterwards
+and not in passing: a defect you work around by editing the code is a defect
+nobody else will ever hear about, and it becomes a regression the next time
+somebody runs `git pull`. Report it and let your human decide. The session-start
+hook now says when the tree differs, but it says it to you — it cannot make you
+mention it.
+
 ---
 
 ## If you change the code

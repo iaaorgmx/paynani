@@ -2,6 +2,32 @@
 
 ## Sin publicar
 
+- **Nada decía qué código estaba corriendo una instalación**
+  ([#12](https://github.com/iaaorgmx/paynani/issues/12)). `healthcheck.py` y el
+  hook de inicio de sesión ahora reportan el commit, la rama, la distancia con el
+  remoto y cuántos archivos rastreados difieren, y avisan cuando el commit no
+  existe en ningún remoto.
+
+  **Advertencia y nunca problema**, a diferencia de #6, y la distinción es el
+  punto: un árbol modificado no impide que el correo se mueva, y una instalación
+  que lleva una capa que su humano pidió es legítima. Lo que no puede seguir es
+  que nadie lo sepa.
+
+  El host de la primera prueba de campo pasó un día entero ejecutando el listener
+  y el cotejo del roster modificados mientras cada verificación reportaba sobre
+  un árbol que nadie había descrito. Apareció por accidente. `AGENTS.md` agrega
+  además las dos reglas de proceso que ninguna herramienta puede imponer: decir
+  qué código se está corriendo **antes** de reportar que algo funciona, y
+  detenerse a reportar en vez de editar un archivo del proyecto para rodear un
+  defecto.
+
+  De paso, dos cosas que solo aparecen en un host con instalación real:
+  `scripts/test_docs.py` escaneaba `roster.md` —la lista viva, sin rastrear, que
+  existe para tener direcciones reales— y fallaba en cualquier host con una
+  instalación funcionando; y no escaneaba `roster.md.example`, que es el único
+  archivo cuyas direcciones se copian a cada instalación nueva, porque el glob
+  era `*.md` y ese termina en `.example`.
+
 Todo lo de abajo salió de la primera prueba de campo de 0.1.0
 ([#1](https://github.com/iaaorgmx/paynani/issues/1)), en un host OpenClaw real
 que no era una máquina virgen.

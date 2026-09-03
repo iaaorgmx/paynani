@@ -87,6 +87,14 @@ class Fixture:
         hc.env_file = lambda: self.env
         hc.runtime_facts = self._runtime_facts
 
+        # A clean checkout of a published commit, unless a test says otherwise.
+        # Stubbed rather than read: the real answer depends on whoever is running
+        # the suite, and a test whose result changes with the tester's working
+        # tree is not a test.
+        self.git = {"is_repo": True, "commit": "abc1234", "branch": "main",
+                    "in_origin": True, "dirty_tracked": 0, "ahead": 0, "behind": 0}
+        hc.git_facts = lambda: self.git
+
     def _runtime_facts(self):
         return {"selected": self.runtime, "available": ["openclaw"],
                 "reachable": self.reachable,
@@ -149,6 +157,7 @@ class Fixture:
             "config": hc.config_facts(),
             "roster": hc.roster_facts(),
             "himalaya": hc.himalaya_facts(),
+            "git": hc.git_facts(),
         }
         facts["spool"] = self.spool_facts
         facts["reply"] = hc.reply_facts(facts["queue"]["cursor"])
@@ -306,6 +315,52 @@ facts, problems, _ = f.run()
 check("the roster is parsed the way the listener parses it", 1,
       facts["roster"]["addresses"])
 check("so a reordered row is not read as an empty list", [], problems)
+
+# --- which code this install is actually running (#12) -----------------------
+#
+# A tree that differs from the published commit does not stop mail, so none of
+# these is a problem. What they must not be is silent: #11 ran a modified
+# listener for a day while every check reported on a tree nobody had described.
+
+f = Fixture()
+_, problems, warnings = f.run()
+check("a clean checkout says nothing", [], warnings)
+check("and is certainly not a failure", [], problems)
+
+f = Fixture()
+f.git = dict(f.git, dirty_tracked=7)
+_, problems, warnings = f.run()
+check("a modified tree is worth saying", True,
+      any("not running the published code" in w for w in warnings))
+check("and says how many files", True, any("7 tracked file(s)" in w for w in warnings))
+check("and names the commit they differ from", True,
+      any("abc1234" in w for w in warnings))
+check("but is never a reason to call delivery broken", [], problems)
+
+f = Fixture()
+f.git = dict(f.git, dirty_tracked=7)
+code, text = f.exit_code()
+check("a modified tree does not change the exit code", 0, code)
+check("and the report says the tree differs", True, "tracked file(s) modified" in text)
+
+f = Fixture()
+f.git = dict(f.git, in_origin=False)
+_, problems, warnings = f.run()
+check("a commit on no remote is worth saying", True,
+      any("only on this machine" in w for w in warnings))
+check("and is still not a failure", [], problems)
+
+f = Fixture()
+f.git = dict(f.git, is_repo=False, commit=None, dirty_tracked=None)
+_, problems, warnings = f.run()
+check("an install that is not a git checkout is not accused of anything", [], warnings)
+check("nor called broken", [], problems)
+
+f = Fixture()
+f.git = dict(f.git, ahead=3, behind=1)
+_, text = f.exit_code()
+check("the report says how far the branch is from its upstream", True,
+      "3 ahead, 1 behind upstream" in text)
 
 # --- what the runtime last said ----------------------------------------------
 
