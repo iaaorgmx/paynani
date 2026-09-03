@@ -43,8 +43,9 @@ exposed to a network in either case.
 
 ## Requirements
 
-PHP 8.1 or newer, CLI only. No composer, no framework, no database, no
-JavaScript. On Ubuntu:
+PHP 8.1 or newer, CLI only. No composer, no framework, no database. The only
+JavaScript is `assets/lang.js`, twenty lines that switch language when the
+selector changes; everything the page does works without it. On Ubuntu:
 
 ```bash
 sudo apt-get install -y php8.3-cli
@@ -95,8 +96,7 @@ people miss next to the non-SSL one.
 
 Then Gmail, Outlook, Zoho and Fastmail, each with the caveat that actually
 stops them, which is almost always an app password rather than a wrong server
-name. It is a `<details>` block, so it collapses with no JavaScript on a page
-whose policy forbids scripts entirely.
+name. It is a `<details>` block, so it collapses on its own with no script involved.
 
 ## The language it speaks
 
@@ -118,11 +118,22 @@ That submit carries `formnovalidate`, because without it the browser refuses to
 send while the password box is empty, which would mean nobody could change
 language until they had finished the form.
 
-**There is no JavaScript in it.** `guard.php` serves `default-src 'none'` with no
-`script-src`, so an `onchange` handler would be blocked and the selector would
-silently do nothing. Hence a real button rather than an automatic switch: a page
-that collects a mail password is the wrong place to loosen that policy to save a
-click.
+**The selector switches on change, and degrades to a button.** That needs a
+script, so the policy carries `script-src 'self'`: same-origin files only, no
+`'unsafe-inline'`, no `'unsafe-eval'`, no remote origin. Inline handlers stay
+forbidden, which is the part that matters — a string injected into this page
+still cannot execute. The one file allowed is `assets/lang.js`.
+
+The page ships a real submit button and the script hides it on load. That is
+deliberately not a `<noscript>` fallback: a script blocked by CSP still counts as
+scripting being enabled, so `<noscript>` would render nothing and leave a dead
+selector. This way, if the script does not run for any reason, what is left on
+screen is a button that works. The failure mode is one extra click.
+
+**The caret is drawn in CSS, not loaded as an image.** The policy does not
+declare `img-src`, so it falls back to `default-src 'none'` and a `data:` URI is
+blocked without a word — which is exactly what happened first, leaving a control
+with nothing to mark it as a dropdown. Two rotated borders need no permission.
 
 Catalogues are flat `key => string` arrays in `webapp/i18n/`. A key a translation
 is missing falls back to `es-MX` rather than rendering blank, so a half-finished
@@ -166,6 +177,7 @@ webapp/lib/envfile.php  writing the resolved credentials file, and the symlink
 webapp/lib/i18n.php     which language this render speaks, and t()/th()
 webapp/i18n/*.php       one flat array of strings per language
 webapp/assets/app.css   no webfonts: this host may have no internet route
+webapp/assets/lang.js   switches language on change; the button works without it
 scripts/setup_web.sh    generates the key, serves the page, stops when saved
 ```
 

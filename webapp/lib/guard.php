@@ -134,7 +134,12 @@ function send_security_headers(): void
     header('Cache-Control: no-store, no-cache, must-revalidate');
     // No external anything: the page is a form on a machine that may have no
     // route to the internet at all, and a CDN reference would silently break it.
-    header("Content-Security-Policy: default-src 'none'; style-src 'self'; form-action 'self'; base-uri 'none'");
+    // script-src 'self' and nothing more: same-origin files only, no
+    // 'unsafe-inline', no 'unsafe-eval', no remote origin. The one script this
+    // page loads is assets/lang.js, which switches language on change. Inline
+    // handlers stay forbidden, so a string injected into this page still cannot
+    // execute.
+    header("Content-Security-Policy: default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'");
 }
 
 function start_session(): void

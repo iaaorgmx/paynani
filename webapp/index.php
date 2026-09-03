@@ -110,6 +110,7 @@ $existing = existing_config();
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= th('page.title') ?></title>
 <link rel="stylesheet" href="/assets/app.css">
+<script src="/assets/lang.js" defer></script>
 </head>
 <body>
 <main>
@@ -120,13 +121,14 @@ $existing = existing_config();
     <h1><?= th('saved.h1') ?></h1>
     <?php /* Nothing left to preserve on this screen, so a plain GET form is enough. */ ?>
     <form method="get" action="/" class="langpick">
-      <label for="lang"><?= th('lang.label') ?></label>
-      <select id="lang" name="lang">
-        <?php foreach (LANGUAGES as $tag => $name): ?>
-          <option value="<?= e($tag) ?>"<?= $tag === current_lang() ? ' selected' : '' ?>><?= e($name) ?></option>
-        <?php endforeach; ?>
-      </select>
-      <button type="submit"><?= th('lang.apply') ?></button>
+      <span class="combo">
+        <select id="lang" name="lang" aria-label="<?= th('lang.label') ?>">
+          <?php foreach (LANGUAGES as $tag => $name): ?>
+            <option value="<?= e($tag) ?>"<?= $tag === current_lang() ? ' selected' : '' ?>><?= e($name) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </span>
+      <button type="submit" id="langgo"><?= th('lang.apply') ?></button>
     </form>
   </div>
 
@@ -159,17 +161,29 @@ $existing = existing_config();
       saving one click, so the button is real and always visible.
     */ ?>
     <div class="langpick">
-      <label for="lang"><?= th('lang.label') ?></label>
-      <select id="lang" name="lang" form="setup">
-        <?php foreach (LANGUAGES as $tag => $name): ?>
-          <option value="<?= e($tag) ?>"<?= $tag === current_lang() ? ' selected' : '' ?>><?= e($name) ?></option>
-        <?php endforeach; ?>
-      </select>
-      <?php /* formnovalidate: sin él, el navegador se niega a enviar mientras la
-           contraseña esté vacía, y cambiar de idioma se vuelve imposible hasta
-           haber llenado el formulario. Este envío no guarda nada, así que no
-           tiene nada que validar. */ ?>
-      <button type="submit" name="action" value="lang" form="setup" formnovalidate><?= th('lang.apply') ?></button>
+      <?php /* La etiqueta visible se quitó a propósito; aria-label la conserva
+           para quien navega con lector de pantalla, que si no se encontraría un
+           combo sin nombre. */ ?>
+      <span class="combo">
+        <select id="lang" name="lang" form="setup" aria-label="<?= th('lang.label') ?>">
+          <?php foreach (LANGUAGES as $tag => $name): ?>
+            <option value="<?= e($tag) ?>"<?= $tag === current_lang() ? ' selected' : '' ?>><?= e($name) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </span>
+      <?php /*
+        Este botón se queda en el HTML y assets/lang.js lo esconde al arrancar.
+        No es un noscript: un script bloqueado por la CSP cuenta como scripting
+        activo, así que un noscript no renderizaría nada y el combo quedaría
+        muerto. Así, si el script no corre, lo que queda en pantalla es un botón
+        que sí funciona.
+
+        formnovalidate: sin él, el navegador se niega a enviar mientras la
+        contraseña esté vacía, y cambiar de idioma se vuelve imposible hasta
+        haber llenado el formulario. Este envío no guarda nada, así que no tiene
+        nada que validar.
+      */ ?>
+      <button type="submit" name="action" value="lang" form="setup" formnovalidate id="langgo"><?= th('lang.apply') ?></button>
     </div>
   </div>
 
