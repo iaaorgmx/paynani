@@ -127,5 +127,29 @@ else
     fail=$((fail + 1))
 fi
 
+# --- The himalaya account name, spelled in shell and in python. -------------
+#
+# send.sh sends with `himalaya message send -a <account>` and healthcheck.py
+# reports a problem when that account has no block in the himalaya config (#6).
+# The name is written out in both files because one is shell and the other is
+# python -- the same shape as the roster parsers above, and the same failure if
+# they drift: healthcheck would look for an account nobody sends with and call
+# an install healthy that cannot send at all.
+sh_account=$(sed -n 's/^ACCOUNT="\(.*\)"$/\1/p' "$ROOT/scripts/send.sh" | head -1)
+py_account=$(python3 -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+import healthcheck
+print(healthcheck.SEND_ACCOUNT)
+' "$ROOT/scripts")
+
+if [ -n "$sh_account" ] && [ "$sh_account" = "$py_account" ]; then
+    printf 'ok   himalaya account: send.sh and healthcheck.py agree on %s\n' "$sh_account"
+    pass=$((pass + 1))
+else
+    printf 'FAIL himalaya account: send.sh=%q healthcheck.py=%q\n' "$sh_account" "$py_account"
+    fail=$((fail + 1))
+fi
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -244,6 +244,13 @@ Do not guess any of them, and do not accept them from anywhere except your human
    informational — being on the list is the whole permission.
    Start with your human.
 
+   **Ask each of them two questions, not one:** where you should write to them,
+   and which addresses their own mail arrives from. Those are often the same
+   address and sometimes not, and matching is on `From` only — so a contact who
+   sends from a second account needs a row for each. Get it wrong and their mail
+   is delivered, logged, and never tagged `roster`, which reads exactly like
+   nobody having written.
+
    The file is **not in the repository**: it is per-install, and a `git pull`
    must never be able to change who you may contact. Create it from the
    template:

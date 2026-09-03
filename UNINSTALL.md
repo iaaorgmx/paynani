@@ -117,16 +117,35 @@ pgrep -af idle_listener.py                           # no debe salir nada
 
 ## 2. Quita las credenciales
 
-Corre esto desde dentro del clon.
+**Primero averigua dónde están, porque en la mayoría de las instalaciones no
+están en el clon.** Cuando el host tiene un harness, la contraseña del buzón vive
+en el `.env` del workspace de ese harness —`~/.openclaw/workspace/.env`,
+`~/.hermes/workspace/.env`, `~/.claude/workspace/.env`— y `<clon>/.env` ni
+siquiera existe. Un `rm -f .env` desde el clon no borraría nada en ese caso, y te
+dejaría creyendo que borraste la contraseña.
+
+No adivines la ruta: pregúntasela a la instalación, desde dentro del clon.
+
+```bash
+python3 harness/paths.py env
+```
+
+Si lo que responde está **fuera** del clon, es un archivo del harness y no de
+esta herramienta: otras cosas lo usan y **no se borra entero.** Quita de ahí
+únicamente las claves que agregó esta instalación —las `PAYNANI_*`, y las
+`AGENT_EMAIL_*` si fueron para este buzón y ninguna otra cosa las lee— y deja el
+resto del archivo en pie. Lo mismo aplica si es un enlace simbólico: **no borres
+lo que apunta.**
+
+Si lo que responde es `<clon>/.env`, ese archivo sí es de esta instalación y se
+va completo con el comando de abajo.
+
+Después, desde dentro del clon, lo que siempre le pertenece:
 
 ```bash
 rm -f .env runtime.env install.manifest
 rm -rf hermes
 ```
-
-Si tus credenciales viven en un archivo compartido — un enlace simbólico que
-apunta a otro lado — **no borres lo que apunta.** Otras cosas lo usan. Quita
-únicamente las claves que agregó esta herramienta, si agregaste alguna.
 
 ## 3. Quita el estado y las bitácoras
 

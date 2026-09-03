@@ -70,5 +70,36 @@ check "settings present: gets past the guard" "no" \
 check "settings present: actually tries the server" "yes" \
     "$(case $out in *no-such-host.invalid*) echo yes ;; *) echo no ;; esac)"
 
+# ---------------------------------------------------------------------------
+# --help answers without opening a socket (issue #7).
+#
+# Run with the same settings as the check above, whose host is unresolvable and
+# therefore names itself in the output the moment the network is touched. So
+# "does not mention the host" is a real assertion here and not a tautology.
+# ---------------------------------------------------------------------------
+out=$(PAYNANI_ENV="$tmp/env" timeout 20 python3 "$PREFLIGHT" --help </dev/null 2>&1)
+status=$?
+
+check "--help: exits 0" "0" "$status"
+check "--help: prints the usage line" "yes" \
+    "$(case $out in *"Usage:"*) echo yes ;; *) echo no ;; esac)"
+check "--help: does not connect" "no" \
+    "$(case $out in *no-such-host.invalid*) echo yes ;; *) echo no ;; esac)"
+
+out=$(PAYNANI_ENV="$tmp/env" timeout 20 python3 "$PREFLIGHT" -h </dev/null 2>&1)
+check "-h: same as --help" "yes" \
+    "$(case $out in *"Usage:"*) echo yes ;; *) echo no ;; esac)"
+
+# An unknown flag is refused rather than ignored: silently doing nothing leaves
+# the caller believing it took effect.
+out=$(PAYNANI_ENV="$tmp/env" timeout 20 python3 "$PREFLIGHT" --no-such-flag </dev/null 2>&1)
+status=$?
+
+check "unknown flag: exits 2" "2" "$status"
+check "unknown flag: names the argument" "yes" \
+    "$(case $out in *--no-such-flag*) echo yes ;; *) echo no ;; esac)"
+check "unknown flag: does not connect" "no" \
+    "$(case $out in *no-such-host.invalid*) echo yes ;; *) echo no ;; esac)"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

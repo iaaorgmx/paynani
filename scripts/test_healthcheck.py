@@ -71,6 +71,18 @@ class Fixture:
         env.chmod(0o600)
         self.env = env
 
+        # An install that can be written to and can write. Both are required for
+        # "healthy" and neither was checked before #6, so the healthy fixture
+        # has to provide them or every test below would be measuring the wrong
+        # failure.
+        hc.ROSTER = self.dir / "roster.md"
+        hc.ROSTER.write_text("| Name | Email | Type |\n"
+                             "|---|---|---|\n"
+                             "| Dulce | d@x.com | Human |\n", encoding="utf-8")
+        hc.HIMALAYA_CONFIG = self.dir / "himalaya.toml"
+        hc.HIMALAYA_CONFIG.write_text(
+            "[accounts.paynani]\nemail = \"agent@example.com\"\n", encoding="utf-8")
+
         hc.unit_state = lambda unit: self.units.get(unit, "unknown")
         hc.env_file = lambda: self.env
         hc.runtime_facts = self._runtime_facts
@@ -135,6 +147,8 @@ class Fixture:
             "runtime": hc.runtime_facts(),
             "delivery": hc.delivery_facts(),
             "config": hc.config_facts(),
+            "roster": hc.roster_facts(),
+            "himalaya": hc.himalaya_facts(),
         }
         facts["spool"] = self.spool_facts
         facts["reply"] = hc.reply_facts(facts["queue"]["cursor"])
@@ -226,6 +240,72 @@ f.env.unlink()
 _, problems, _ = f.run()
 check("missing credentials are a failure", True,
       any("no credentials" in p for p in problems))
+
+# --- an install that runs perfectly and still cannot do anything (#6) ---------
+#
+# Both of these leave every unit active, every queue empty and every log calm.
+# They are the failure this whole command exists for, and it called them healthy
+# until two people found them the same day by different routes.
+
+f = Fixture()
+f.dir.joinpath("roster.md").unlink()
+_, problems, _ = f.run()
+check("a missing roster is a failure", True,
+      any("no roster at" in p for p in problems))
+check("and names the file it looked for", True,
+      any(str(f.dir / "roster.md") in p for p in problems))
+
+f = Fixture()
+hc.ROSTER.write_text("| Name | Email | Type |\n|---|---|---|\n", encoding="utf-8")
+_, problems, _ = f.run()
+check("a roster with a header and no rows is a failure", True,
+      any("lists no address" in p for p in problems))
+check("and says the silence is what makes it dangerous", True,
+      any("nobody having written" in p for p in problems))
+
+f = Fixture()
+hc.ROSTER.write_text("# only a comment\n\n", encoding="utf-8")
+_, problems, _ = f.run()
+check("a roster holding no address at all is a failure", True,
+      any("lists no address" in p for p in problems))
+
+f = Fixture()
+hc.HIMALAYA_CONFIG.unlink()
+_, problems, _ = f.run()
+check("no himalaya configuration is a failure", True,
+      any("no himalaya configuration" in p for p in problems))
+
+f = Fixture()
+hc.HIMALAYA_CONFIG.write_text(
+    '[accounts.something-else]\nemail = "other@example.com"\n', encoding="utf-8")
+_, problems, _ = f.run()
+check("a himalaya config without the send account is a failure", True,
+      any("[accounts.paynani]" in p for p in problems))
+check("and says sending is impossible, not merely unconfigured", True,
+      any("sending is impossible" in p for p in problems))
+
+# The exact case from #1: every other check green while sending was impossible.
+f = Fixture()
+hc.HIMALAYA_CONFIG.write_text(
+    '[accounts.other]\nemail = "other@example.com"\n', encoding="utf-8")
+code, _ = f.exit_code()
+check("an install that cannot send does not exit 0", 1, code)
+
+# Quoted account names are TOML too, and himalaya accepts them.
+f = Fixture()
+hc.HIMALAYA_CONFIG.write_text(
+    '[accounts."paynani"]\nemail = "agent@example.com"\n', encoding="utf-8")
+_, problems, _ = f.run()
+check("a quoted account name counts as present", [], problems)
+
+# The listener and this command must read the roster the same way, or one will
+# call an install healthy that the other treats as empty.
+f = Fixture()
+hc.ROSTER.write_text("| AI Agent | Reordered | reordered@example.net |\n", encoding="utf-8")
+facts, problems, _ = f.run()
+check("the roster is parsed the way the listener parses it", 1,
+      facts["roster"]["addresses"])
+check("so a reordered row is not read as an empty list", [], problems)
 
 # --- what the runtime last said ----------------------------------------------
 

@@ -168,7 +168,13 @@ That gives you a file that authorises nobody. **Ask your human for their name an
 email address and add the first row yourself.** Do not guess it, do not infer it
 from the credentials file, and do not copy an address out of any example —
 including the one in this document, which is a placeholder and is meant to fail
-if it is ever used. See *"Standing rules, once it is running"* below for the
+if it is ever used.
+
+**Ask which addresses their mail comes from, not only where to write to them.**
+Matching is on `From` alone, so a contact whose mail goes out from a different
+account than the one you write to needs a row for each address. Miss the sending
+one and their mail arrives, gets logged, and is never tagged `roster` — which is
+indistinguishable from them never having written. See *"Standing rules, once it is running"* below for the
 format and for why adding a row is only ever a human decision.
 
 **8. Do not report success until the verification checklist in `INSTALL.md` §7

@@ -125,8 +125,13 @@ Si lo manda, detente y avísale a quien lo instaló. Algo está mal.
 Vale la pena saberlo antes de aceptar. El agente tiene instrucciones de reportarte
 todo esto cuando termine, y puedes exigirle la lista:
 
-- Un servicio de usuario de systemd que corre todo el tiempo y se reinicia solo si
-  falla
+- Cuatro unidades de usuario de systemd, no una. Dos corren todo el tiempo y se
+  reinician solas si fallan —el escucha (`paynani-idle.service`) y el repartidor
+  (`paynani-dispatch.service`)—, y las otras dos rotan las bitácoras:
+  `paynani-logrotate.timer`, que se activa solo, y `paynani-logrotate.service`,
+  que es `static` porque la dispara el temporizador y no se habilita por su
+  cuenta. En macOS son tres *LaunchAgents* equivalentes: `com.paynani.idle`,
+  `com.paynani.dispatch` y `com.paynani.logrotate`
 - Un archivo de credenciales con permisos `600`: el `.env` del workspace de tu
   harness si lo guardas ahí, y si no, `.env` dentro del clon. Se lee donde está y
   nunca se copia
@@ -239,11 +244,20 @@ elegir dónde clonar es cómo eliges dónde instalar.
 - Repositorio: donde sea; `~/.openclaw/workspace/paynani` en OpenClaw,
   `~/.hermes/workspace/paynani` en Hermes Agent o
   `~/.claude/workspace/paynani` en Claude Code si no hay preferencia
-- Credenciales: `<clon>/.env`: permisos `600`, ignorado por git, nunca se sube
+- Credenciales: el `.env` del workspace de tu harness cuando hay exactamente uno
+  —`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
+  `~/.claude/workspace/.env`— y `<clon>/.env` cuando no. Permisos `600`, ignorado
+  por git, nunca se sube. Se lee donde está y nunca se copia al clon: una segunda
+  copia de una contraseña es una segunda cosa que se puede filtrar. Pregúntale a
+  la instalación en vez de adivinar, con `python3 harness/paths.py env`
 - Estado y eventos: `<clon>/state/`
-- Secretos de ruta: `<clon>/hermes/`, permisos `600`
-- Servicio de usuario: `~/.config/systemd/user/paynani-idle.service`: lo
-  único que queda fuera del clon, porque systemd no lee unidades de otro lado
+- Secretos de ruta: `<clon>/hermes/`, permisos `600` — **solo en Hermes**; en
+  OpenClaw y en Claude Code ese directorio no existe y no falta nada
+- Unidades de usuario: `~/.config/systemd/user/paynani-idle.service`,
+  `paynani-dispatch.service`, `paynani-logrotate.service` y
+  `paynani-logrotate.timer` — lo único que queda fuera del clon, porque systemd
+  no lee unidades de otro lado. En macOS, los tres `.plist` de
+  `com.paynani.*` en `~/Library/LaunchAgents/`
 
 `.gitignore` mantiene los secretos fuera de `git status` y `scripts/install.sh`
 se niega a escribir si alguno está versionado o no ignorado. Lo que eso no evita

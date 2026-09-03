@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Check that the configured IMAP server supports IDLE and returns UIDVALIDITY."""
+"""Check that the configured IMAP server supports IDLE and returns UIDVALIDITY.
+
+Usage:  python3 scripts/preflight.py [-h|--help]
+
+Takes no options beyond --help. Reads the account from the env file that
+harness/paths.py resolves, then opens a live IMAP connection to it: it is a
+read-only check and touches no message, but it does log in.
+"""
 
 import getpass
 import imaplib
@@ -63,7 +70,27 @@ def load_env(path: Path) -> dict[str, str]:
     return env
 
 
-def main() -> int:
+def usage() -> str:
+    """The module docstring, which is the whole interface."""
+    return (__doc__ or "").strip()
+
+
+def main(argv=None) -> int:
+    # --help is what someone types when they do NOT want to run this yet, and it
+    # is the reflex on meeting an unfamiliar script. Answer it before opening a
+    # socket. Anything else is refused rather than ignored: a flag that silently
+    # does nothing is worse than one that is rejected, because the caller
+    # believes it took effect.
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if any(a in ("-h", "--help") for a in argv):
+        print(usage())
+        return 0
+    if argv:
+        print(f"unrecognised argument: {argv[0]}")
+        print()
+        print(usage())
+        return 2
+
     env = load_env(ENV)
 
     # Running before there is anything to check, with no terminal to ask on.

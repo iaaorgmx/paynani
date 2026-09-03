@@ -140,8 +140,14 @@ If it sends, stop and tell whoever set it up. Something is wrong.
 Worth knowing before you agree to it. The agent is instructed to report all of
 this back when it finishes, and you can hold it to the list:
 
-- A supervised user service that runs continuously and restarts on failure:
-  systemd user units on Ubuntu, launchd LaunchAgents on macOS
+- Four supervised user units, not one. Two run continuously and restart on
+  failure — the listener (`paynani-idle.service`) and the dispatcher
+  (`paynani-dispatch.service`) — and two rotate the logs:
+  `paynani-logrotate.timer`, which enables itself, and
+  `paynani-logrotate.service`, which is `static` because the timer starts it and
+  it is never enabled on its own. On macOS these are three equivalent
+  LaunchAgents: `com.paynani.idle`, `com.paynani.dispatch` and
+  `com.paynani.logrotate`
 - A credentials file at mode `600` — your harness's workspace `.env` if you keep
   one there, otherwise `.env` inside the clone. It is read where it lies and
   never copied
@@ -259,12 +265,20 @@ to clone is how you choose where to install.
   `~/.claude/workspace/paynani` on Claude Code, if you have no preference;
   every generated path is resolved from where the scripts are, so an existing
   clone needs no move.
-- Secret env: `<clone>/.env`: mode `600`, ignored by git, never committed. An
-  install that already keeps credentials elsewhere keeps them there.
+- Secret env: your harness's workspace `.env` when there is exactly one —
+  `~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
+  `~/.claude/workspace/.env` — and `<clone>/.env` when there is not. Mode `600`,
+  ignored by git, never committed. It is read where it lies and never copied into
+  the clone: a second copy of a password is a second thing that can leak. Ask the
+  install rather than guessing, with `python3 harness/paths.py env`.
 - Event state: `<clone>/state/`
-- Route secrets: `<clone>/hermes/`, mode `600`
-- User services: `~/.config/systemd/user/paynani-*.service` on Ubuntu, or
-  `~/Library/LaunchAgents/com.paynani.*.plist` on macOS
+- Route secrets: `<clone>/hermes/`, mode `600` — **Hermes only**; on OpenClaw
+  and Claude Code that directory does not exist and nothing is missing
+- User units: `~/.config/systemd/user/paynani-idle.service`,
+  `paynani-dispatch.service`, `paynani-logrotate.service` and
+  `paynani-logrotate.timer` on Ubuntu, or the three `com.paynani.*.plist` files
+  in `~/Library/LaunchAgents/` on macOS — the only thing outside the clone,
+  because systemd does not read units from anywhere else
 
 Secrets inside a git working tree are kept out of `git status` by `.gitignore`,
 and `scripts/install.sh` refuses to write if any of them is tracked or unignored.
