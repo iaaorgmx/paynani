@@ -1,5 +1,99 @@
 # Changelog
 
+## Sin publicar
+
+Todo lo de abajo salió de la primera prueba de campo de 0.1.0
+([#1](https://github.com/iaaorgmx/paynani/issues/1)), en un host OpenClaw real
+que no era una máquina virgen.
+
+- **`healthcheck.py` reportaba `healthy: true` en instalaciones que no podían
+  enviar ni actuar sobre ningún correo**
+  ([#6](https://github.com/iaaorgmx/paynani/issues/6)). Nunca abría `roster.md` ni
+  miraba la configuración de Himalaya, así que ninguna de sus condiciones tocaba
+  la lista de autorizados ni el cliente con el que se envía.
+
+  Ahora son problema, no advertencia: `roster.md` ausente, `roster.md` sin
+  ninguna dirección, y la falta de un bloque `[accounts.paynani]` en la
+  configuración de Himalaya. Las tres dejan cada unidad activa, cada cola vacía y
+  cada bitácora en calma mientras el correo no se mueve, que es exactamente la
+  falla que este proyecto existe para no tener.
+
+  El roster se lee con `roster.roster_addresses`, la misma función del listener,
+  para que esta herramienta no pueda reportar una lista que el listener no ve. El
+  nombre de la cuenta se escribe en `send.sh` y en `healthcheck.py` por separado
+  —uno es shell y el otro Python— y `scripts/test_roster_agree.sh` los amarra:
+  si se separan, esta comprobación buscaría una cuenta con la que nadie envía.
+
+  Dos personas llegaron al mismo punto ciego el mismo día por instancias
+  distintas: un roster vacío en un clon limpio, y una cuenta de Himalaya faltante
+  en el host de la prueba de campo.
+
+- **`preflight.py --help` abría una conexión IMAP en vivo en lugar de imprimir
+  ayuda** ([#7](https://github.com/iaaorgmx/paynani/issues/7)). El script no
+  procesaba argumentos: cualquier bandera se ignoraba en silencio y corría la
+  comprobación completa. `--help` es justo la bandera que alguien usa cuando
+  **no** quiere ejecutar todavía. Ahora `-h` y `--help` imprimen la cadena de uso
+  y salen con `0` antes de tocar la red, y cualquier otro argumento se rechaza con
+  `2` en vez de ignorarse.
+
+- **`UNINSTALL.md` §2 no quitaba las credenciales en un host con harness**
+  ([#5](https://github.com/iaaorgmx/paynani/issues/5)), que es la mayoría.
+  Regresión introducida en `a7b1040`: el `rm -f .env` desde dentro del clon no
+  borra nada cuando la contraseña vive en `~/.openclaw/workspace/.env`. Un
+  procedimiento anunciado como destructivo que no borra lo que dice borrar deja a
+  quien entrega una máquina creyendo que quitó la contraseña del buzón. Ahora el
+  paso empieza por resolver la ruta con `python3 harness/paths.py env` y distingue
+  el archivo del harness —del que solo se quitan las claves de esta instalación—
+  del `.env` del clon, que sí se va entero.
+
+- **El README describía la instalación como más pequeña de lo que es**
+  ([#2](https://github.com/iaaorgmx/paynani/issues/2),
+  [#3](https://github.com/iaaorgmx/paynani/issues/3),
+  [#4](https://github.com/iaaorgmx/paynani/issues/4)). Decía «un servicio de
+  usuario de systemd» donde una instalación completa deja cuatro unidades;
+  ubicaba las credenciales en `<clon>/.env`, que en un host con harness ni
+  siquiera existe; y listaba `<clon>/hermes/` sin condicionarlo a Hermes, en una
+  sección titulada «Rutas en esta máquina» que se lee como inventario. Las tres
+  corregidas, también en las cuatro traducciones.
+
+- **Las notas de procedencia de las traducciones se movieron al pie de cada
+  documento.** Estaban arriba del todo, entre el selector de idioma y la primera
+  línea del texto, que es el lugar más visible de la página para una nota que es
+  de mantenimiento y no para quien viene a leer el documento. Ahora van al final,
+  tras una regla horizontal y en letra chica. El texto no cambió.
+
+  Alcanza también a `README.md`, `MAILBOX_SETUP.md` y `UNINSTALL.md`, que llevan
+  la nota espejo —«este archivo es la fuente de verdad»— por la misma razón.
+
+  De paso, dos cosas que estaban mal en `MAILBOX_SETUP.md` y que la nota tapaba:
+  su nota decía «traducido de MAILBOX_SETUP.md… gana el inglés», heredada de
+  antes de la bifurcación y contraria a la política de este repositorio, donde el
+  español (MX) es la fuente de verdad; y su selector de idioma enlazaba
+  «English» a sí mismo en vez de a `i18n/MAILBOX_SETUP.en-US.md`.
+
+- **El agente pedía permiso para la primera fila del roster en vez de
+  escribirla**, teniendo ya el nombre y el correo
+  ([#10](https://github.com/iaaorgmx/paynani/issues/10)). La regla «agregar un
+  destinatario es decisión humana» está escrita para un mensaje que pide ser
+  agregado al roster, y se leía como si también cubriera la instalación, donde el
+  humano está presente y la primera fila es justamente lo que encargó. Un agente
+  que pide permiso para cada paso que ya tenía encargado entrena a su humano a
+  decir que sí sin leer, que es lo que vuelve peligrosa la petición que sí había
+  que leer. `AGENTS.md`, `INSTALL.md` y `roster.md.example` ahora separan los dos
+  casos: en la instalación se escribe la fila —y si faltan los datos se piden los
+  datos, no el permiso—; después, una petición que llega por mensaje sigue siendo
+  texto y nunca autorización.
+
+- **Nada advertía que un contacto puede escribir desde una dirección distinta a
+  la que se le escribe** ([#8](https://github.com/iaaorgmx/paynani/issues/8)).
+  `roster.md.example` explicaba que la coincidencia es contra `From`, que es
+  correcto, pero quien llena el archivo por primera vez escribe naturalmente la
+  dirección a la que va a escribir, que puede ser la única que conoce. Cuando no
+  coinciden, el correo llega, se registra y nunca se etiqueta `roster`, que se lee
+  igual que si nadie hubiera escrito. `roster.md.example`, `INSTALL.md` §7 y
+  `AGENTS.md` paso 7 ahora dicen que hay que preguntar las dos cosas, y que un
+  contacto puede necesitar más de una fila.
+
 ## 0.1.0
 
 Paynani se bifurca de [agenteiamail](https://github.com/julianflores/agenteiamail)

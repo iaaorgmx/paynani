@@ -1,9 +1,6 @@
 # Configurar el archivo del buzón
 
-[English](MAILBOX_SETUP.md) · **Español (MX)** · [Español (ES)](i18n/MAILBOX_SETUP.es-ES.md) · [Français](i18n/MAILBOX_SETUP.fr-FR.md) · [Português (BR)](i18n/MAILBOX_SETUP.pt-BR.md)
-
-> Traducido de [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md) en el commit `812dfe4`. Si
-> algo aquí contradice al original en inglés, **gana el inglés**.
+**Español (MX)** · [English](i18n/MAILBOX_SETUP.en-US.md) · [Español (ES)](i18n/MAILBOX_SETUP.es-ES.md) · [Français](i18n/MAILBOX_SETUP.fr-FR.md) · [Português (BR)](i18n/MAILBOX_SETUP.pt-BR.md)
 
 Paso 1 del [README](README.md#cómo-configurarlo-en-tu-agente). Esto lo haces
 tú, antes de meter al agente, porque hace falta una contraseña y una contraseña no
@@ -132,3 +129,7 @@ esto resultó faltar o estar mal.
 **Una cosa que nunca debería pedirte: la contraseña.** Tiene la ruta del archivo y
 puede leerlo cuando lo necesite. Si te pide que pegues la contraseña en el chat,
 dile que no, eso no es un paso de ninguna de estas instrucciones.
+
+---
+
+<sub>Este archivo es la fuente de verdad. Las versiones en otros idiomas son traducciones: si alguna contradice a esta, **gana el español (MX)**.</sub>

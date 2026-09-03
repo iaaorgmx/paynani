@@ -25,18 +25,21 @@ import calendar
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import event as ev            # noqa: E402
 import dispatch as dsp        # noqa: E402
 from adapters import ACCEPTED, CONFIG   # noqa: E402
 from paths import (env_file, install_root,   # noqa: E402
-                   repo_root, runtime_env, state_dir)
+                   repo_root, roster, runtime_env, state_dir)
+from roster import roster_addresses   # noqa: E402
 
 STATE_DIR = state_dir()
 LISTENER_STATE = STATE_DIR / "idle.json"
@@ -46,6 +49,27 @@ DISPATCH_ERR = STATE_DIR / "dispatch.err.log"
 DELIVERY = STATE_DIR / "delivery.json"
 IDLE_ERR = STATE_DIR / "idle.err.log"
 SENT_LOG = STATE_DIR / "sent.log"
+
+ROSTER = roster()
+
+# scripts/send.sh runs `himalaya message send -a paynani`, and the name is
+# spelled here a second time because one caller is shell and the other Python.
+# scripts/test_roster_agree.sh pins the two spellings together, the same way it
+# already pins the two roster parsers: a check that looked for the wrong account
+# would report a healthy install that cannot send.
+SEND_ACCOUNT = "paynani"
+
+# Where himalaya reads its own configuration. It honours XDG_CONFIG_HOME, so
+# this does too rather than hard-coding the path the documentation quotes.
+HIMALAYA_CONFIG = (Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+                   / "himalaya" / "config.toml")
+
+# `[accounts.paynani]`, with or without quotes around the name. Both are TOML
+# and himalaya accepts either, so a config written by hand in the second style
+# must not read as a missing account.
+ACCOUNT_HEADER = re.compile(
+    r'^[ \t]*\[accounts\.(?:"' + re.escape(SEND_ACCOUNT) + r'"|'
+    + re.escape(SEND_ACCOUNT) + r')\][ \t]*$', re.MULTILINE)
 
 LISTENER_UNIT = "paynani-idle.service"
 DISPATCH_UNIT = "paynani-dispatch.service"
@@ -389,6 +413,54 @@ def runtime_facts():
     return out
 
 
+def roster_facts():
+    """
+    Whether there is anybody this install may write to, or act for.
+
+    Read here for the first time, and the omission was the point: an empty or
+    absent allowlist is the one fault with no symptom at all. `send.sh` refuses
+    every address and arriving mail stops being tagged `roster`, which looks
+    exactly like nobody having written. `harness/paths.py` says that about this
+    file in so many words, and nothing checked it.
+
+    Parsed with `roster.roster_addresses`, the same function the listener uses,
+    so this cannot report a list the listener does not see.
+    """
+    out = {"path": str(ROSTER), "present": False, "addresses": 0}
+    try:
+        out["present"] = ROSTER.is_file()
+    except OSError:
+        return out
+    out["addresses"] = len(roster_addresses(ROSTER))
+    return out
+
+
+def himalaya_facts():
+    """
+    Whether the account `send.sh` sends with exists.
+
+    Everything else in this file watches mail coming in. This is the one thing
+    that has to be true for mail to go out, and it lives in a file this project
+    does not own: an install can pass every other check with credentials in
+    `.env` and still have no `[accounts.paynani]` block for himalaya to send
+    through. Reported in #1 from a real host, where four green checks stood
+    while sending was impossible.
+
+    Only the account block is looked for. Whether its settings are correct is a
+    question for `himalaya account check`, which needs the network; whether it
+    is there at all does not.
+    """
+    out = {"config": str(HIMALAYA_CONFIG), "account": SEND_ACCOUNT,
+           "config_present": False, "account_present": False}
+    try:
+        text = HIMALAYA_CONFIG.read_text(encoding="utf-8-sig")
+    except OSError:
+        return out
+    out["config_present"] = True
+    out["account_present"] = bool(ACCOUNT_HEADER.search(text))
+    return out
+
+
 def config_facts():
     out = {"env": None, "env_mode": None, "env_present": False,
            "repo": str(repo_root()), "version": None}
@@ -492,6 +564,31 @@ def assess(facts):
         warnings.append(f"credentials at {config['env']} are mode {config['env_mode']}, "
                         "which is more readable than they should be")
 
+    # The last two are a different kind of failure from everything above, and
+    # they are problems rather than warnings for one reason: mail does not move.
+    # Above, something that should be running is not. Here, everything runs
+    # perfectly and the install still cannot do the thing it exists to do — it
+    # may write to nobody, or it has no account to write with. That is the
+    # quietest failure this command can be asked about, and it reported healthy
+    # through both of them (#6).
+    ros = facts["roster"]
+    if not ros["present"]:
+        problems.append(f"no roster at {ros['path']}: nobody may be written to, and "
+                        "no arriving mail becomes actionable")
+    elif not ros["addresses"]:
+        problems.append(f"the roster at {ros['path']} lists no address: sending "
+                        "refuses everyone and arriving mail is never tagged "
+                        "'roster', which looks exactly like nobody having written")
+
+    him = facts["himalaya"]
+    if not him["config_present"]:
+        problems.append(f"no himalaya configuration at {him['config']}: "
+                        "scripts/send.sh has nothing to send through")
+    elif not him["account_present"]:
+        problems.append(f"the himalaya configuration at {him['config']} has no "
+                        f"[accounts.{him['account']}] block, which is the account "
+                        "scripts/send.sh sends with: sending is impossible")
+
     return problems, warnings
 
 
@@ -556,6 +653,17 @@ def render(facts, problems, warnings):
                    "whether a reply was owed is not judged here")
     out.append(f"credentials  {config['env']}"
                + (f"  mode {config['env_mode']}" if config["env_present"] else "  MISSING"))
+    ros = facts["roster"]
+    out.append(f"roster       {ros['path']}"
+               + (f"  {ros['addresses']} address(es)" if ros["present"] else "  MISSING"))
+    him = facts["himalaya"]
+    if not him["config_present"]:
+        account = "no himalaya configuration"
+    elif him["account_present"]:
+        account = f"[accounts.{him['account']}] present"
+    else:
+        account = f"[accounts.{him['account']}] MISSING"
+    out.append(f"sending      {him['config']}  {account}")
     out.append(f"repo         {config['repo']}")
     if config["version"]:
         out.append(f"version      {config['version']}")
@@ -594,6 +702,8 @@ def main(argv=None):
         "runtime": runtime_facts(),
         "delivery": delivery_facts(),
         "config": config_facts(),
+        "roster": roster_facts(),
+        "himalaya": himalaya_facts(),
     }
     facts["spool"] = spool_facts(facts["runtime"].get("selected"))
     facts["reply"] = reply_facts(facts["queue"]["cursor"])

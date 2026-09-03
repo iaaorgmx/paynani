@@ -2,10 +2,6 @@
 
 [Español (MX)](../README.md) · [English](README.en-US.md) · [Español (ES)](README.es-ES.md) · **Français** · [Português (BR)](README.pt-BR.md)
 
-> Traduit de [`README.md`](../README.md) au commit `883e10e`, qui fait référence. En cas de
-> divergence avec l'original en espagnol (MX), **c'est l'espagnol qui fait foi**,
-> et signalez-le nous, car cela veut dire que cette traduction a pris du retard.
-
 Notification immédiate des courriels pour un agent IA. Il apprend l'arrivée d'un
 message en une seconde environ, sans interroger la boîte en boucle, et peut lire
 et envoyer dans les limites d'une liste de destinataires autorisés.
@@ -135,8 +131,14 @@ ne va pas.
 Bon à savoir avant d'accepter. L'agent a pour consigne de vous rendre compte de
 tout ceci en terminant, et vous pouvez lui en demander la liste :
 
-- Un service utilisateur systemd qui tourne en continu et redémarre en cas
-  d'échec
+- Quatre unités utilisateur systemd, pas une. Deux tournent en continu et
+  redémarrent d'elles-mêmes en cas d'échec — l'écouteur
+  (`paynani-idle.service`) et le distributeur (`paynani-dispatch.service`) — et
+  les deux autres font tourner les journaux : `paynani-logrotate.timer`, qui
+  s'active seul, et `paynani-logrotate.service`, qui est `static` parce que le
+  minuteur le déclenche et qu'il ne s'active pas de lui-même. Sur macOS, ce sont
+  trois *LaunchAgents* équivalents : `com.paynani.idle`, `com.paynani.dispatch`
+  et `com.paynani.logrotate`
 - Un fichier d'identifiants en `600` : le `.env` du workspace de votre harness si
   vous le gardez là, sinon `.env` au sein du clone. Il est lu où il se trouve et
   n'est jamais copié
@@ -251,11 +253,21 @@ choisir où cloner, c'est choisir où installer.
 - Dépôt : n'importe où ; `~/.openclaw/workspace/paynani` sur OpenClaw,
   `~/.hermes/workspace/paynani` sur Hermes Agent ou
   `~/.claude/workspace/paynani` sur Claude Code à défaut de préférence
-- Identifiants : `<clone>/.env` : en `600`, ignoré par git, jamais versionné
+- Identifiants : le `.env` du workspace de votre harness lorsqu'il y en a
+  exactement un — `~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
+  `~/.claude/workspace/.env` — et `<clone>/.env` sinon. En `600`, ignoré par git,
+  jamais versionné. Il est lu où il se trouve et jamais copié dans le clone : une
+  seconde copie d'un mot de passe est une seconde chose qui peut fuiter.
+  Demandez-le à l'installation plutôt que de le deviner, avec
+  `python3 harness/paths.py env`
 - État et événements : `<clone>/state/`
-- Secrets de route : `<clone>/hermes/`, en `600`
-- Service utilisateur : `~/.config/systemd/user/paynani-idle.service` : la
-  seule chose hors du clone, car systemd ne lit les unités de nulle part ailleurs
+- Secrets de route : `<clone>/hermes/`, en `600` — **uniquement sous Hermes** ;
+  sous OpenClaw et Claude Code ce répertoire n'existe pas et rien ne manque
+- Unités utilisateur : `~/.config/systemd/user/paynani-idle.service`,
+  `paynani-dispatch.service`, `paynani-logrotate.service` et
+  `paynani-logrotate.timer` — la seule chose hors du clone, car systemd ne lit
+  les unités de nulle part ailleurs. Sur macOS, les trois `.plist`
+  `com.paynani.*` dans `~/Library/LaunchAgents/`
 
 `.gitignore` garde les secrets hors de `git status`, et `scripts/install.sh`
 refuse d'écrire si l'un d'eux est versionné ou non ignoré. Ce que cela n'empêche
@@ -276,3 +288,7 @@ D'où le dernier UID enregistré message par message, la vérification d'`UIDVAL
 réellement. [`DESIGN.md`](../DESIGN.md) explique chacun d'eux et ce qui casse sans.
 
 Construit et vérifié de bout en bout le 09/08/2026.
+
+---
+
+<sub>Traduit de [`README.md`](../README.md) au commit `2b1fc9c`, qui fait référence. En cas de divergence avec l'original en espagnol (MX), **c'est l'espagnol qui fait foi**, et signalez-le nous, car cela veut dire que cette traduction a pris du retard.</sub>
