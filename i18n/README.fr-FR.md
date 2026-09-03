@@ -9,17 +9,7 @@ et envoyer dans les limites d'une liste de destinataires autorisés.
 
 Construit autour de [Himalaya](https://github.com/pimalaya/himalaya) pour un
 compte IMAP/SMTP ordinaire, sous Ubuntu 24.04 avec l'environnement OpenClaw,
-Hermes Agent ou Claude Code. Les opérateurs Hermes configurent deux routes
-authentifiées comme décrit dans [`HERMES.md`](../HERMES.md).
-
-Claude Code fonctionne autrement que les deux autres, et mieux vaut le savoir
-avant de commencer : rien à l'extérieur d'une session Claude Code ne peut lui
-parler, donc le courrier n'est pas poussé vers l'agent : c'est l'agent qui vient
-le chercher. Son hook de démarrage de session rejoue ce qui est arrivé pendant
-qu'aucune session ne tournait, puis demande à l'agent d'armer une surveillance
-pour la suite. Rien ne peut l'imposer de l'extérieur : c'est la seule étape qui
-repose sur le fait que l'agent fasse ce qu'on lui dit. Voir
-[`INSTALL.md`](../INSTALL.md) §6.
+Hermes Agent ou Claude Code.
 
 ---
 
@@ -112,6 +102,20 @@ S'il envoie, arrêtez tout et prévenez la personne qui l'a installé. Quelque c
 ne va pas.
 
 ---
+
+## Architecture de distribution par environnement
+
+Les opérateurs Hermes configurent deux routes authentifiées comme décrit dans
+[`HERMES.md`](../HERMES.md).
+
+Claude Code fonctionne autrement que les deux autres, et la différence n'est pas
+cosmétique. Rien à l'extérieur d'une session Claude Code ne peut lui parler,
+donc le courrier n'est pas poussé vers l'agent : c'est l'agent qui vient le
+chercher. Son hook de démarrage de session rejoue ce qui est arrivé pendant
+qu'aucune session ne tournait, puis demande à l'agent d'armer une surveillance
+pour la suite. Rien ne peut l'imposer de l'extérieur : c'est la seule étape qui
+repose sur le fait que l'agent fasse ce qu'on lui dit. Voir
+[`INSTALL.md`](../INSTALL.md) §6.
 
 ## Ce que votre agent pourra faire
 

@@ -9,16 +9,7 @@ leer y enviar dentro de una lista de destinatarios autorizados.
 
 Construido sobre [Himalaya](https://github.com/pimalaya/himalaya) para una cuenta
 IMAP/SMTP corriente, en Ubuntu 24.04 bajo el entorno OpenClaw, Hermes Agent o
-Claude Code. Quien opere Hermes configura dos rutas autenticadas como se describe
-en [`HERMES.md`](../HERMES.md).
-
-Claude Code funciona de forma distinta a los otros dos y conviene saberlo antes
-de empezar: nada fuera de una sesión de Claude Code puede hablarle, de modo que
-el correo no se le empuja al agente: el agente va a por él. Su hook de inicio de
-sesión reproduce lo que llegó mientras no había nada en marcha y después pide al
-agente que arme una vigilancia para lo que llegue a continuación. Nada puede
-imponerlo desde fuera, así que ese es el único paso que depende de que el agente
-haga lo que se le ha dicho. Véase [`INSTALL.md`](../INSTALL.md) §6.
+Claude Code.
 
 ---
 
@@ -104,6 +95,19 @@ merece la pena verla funcionar una vez con tus propios ojos.
 Si lo envía, para y avisa a quien lo instaló. Algo va mal.
 
 ---
+
+## Arquitectura de entrega por entorno
+
+Quien opere Hermes configura dos rutas autenticadas como se describe en
+[`HERMES.md`](../HERMES.md).
+
+Claude Code funciona de forma distinta a los otros dos, y la diferencia no es
+cosmética. Nada fuera de una sesión de Claude Code puede hablarle, de modo que
+el correo no se le empuja al agente: el agente va a por él. Su hook de inicio de
+sesión reproduce lo que llegó mientras no había nada en marcha y después pide al
+agente que arme una vigilancia para lo que llegue a continuación. Nada puede
+imponerlo desde fuera, así que ese es el único paso que depende de que el agente
+haga lo que se le ha dicho. Véase [`INSTALL.md`](../INSTALL.md) §6.
 
 ## Qué va a poder hacer tu agente
 
