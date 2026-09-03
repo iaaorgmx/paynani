@@ -2,6 +2,29 @@
 
 ## Sin publicar
 
+- **El `password.cmd` documentado para Himalaya se rompía con un `.env` en CRLF**
+  ([#14](https://github.com/iaaorgmx/paynani/issues/14)). `INSTALL.md` §4.3 mandaba
+  escribir a mano `sed -n 's/^PAYNANI_PASSWORD=//p'`, que en un archivo con
+  terminadores CRLF devuelve la contraseña con un retorno de carro pegado. El
+  servidor la rechaza **como credencial incorrecta**, así que quien lo ve revisa la
+  contraseña —que está bien— antes que el formato del archivo, que es lo que está
+  mal.
+
+  Y el repositorio ya traía el lector correcto: `scripts/env_secret.py`, agregado
+  en la bifurcación para este mismo uso y descrito entonces como tolerante a BOM y
+  CRLF, *«both of which have bitten this repository before»*. Ninguna documentación
+  lo mencionaba. Los tres bloques de §4.3 lo usan ahora.
+
+  Es la única superficie del proyecto donde el formato del `.env` importa:
+  `preflight.py`, el listener, `roster.py` y `envpath.sh` ya lo toleran, así que en
+  un host CRLF todo lo demás pasa y solo Himalaya falla. `scripts/test_env_secret.py`
+  fija esa tolerancia, incluida una aserción de que el `sed` que se reemplazó sí
+  devuelve el retorno de carro, para que el motivo no se pierda; y `test_docs.py`
+  impide que la documentación vuelva a escribir un `sed` a mano.
+
+  Encontrado configurando Himalaya contra Gmail en un `.env` escrito desde un
+  editor de Windows.
+
 - **El instalador resolvía `PAYNANI_ENV` y no lo persistía**
   ([#13](https://github.com/iaaorgmx/paynani/issues/13)). En un host con dos
   harness la resolución es ambigua a propósito y `PAYNANI_ENV` la resuelve; el

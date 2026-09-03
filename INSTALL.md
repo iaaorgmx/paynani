@@ -502,13 +502,13 @@ mailbox.alias.inbox = "INBOX"
 server = "imaps://mail.example.com:993"
 [accounts.paynani.imap.sasl.plain]
 authcid = "agent@example.com"
-password.cmd = "sed -n 's/^PAYNANI_PASSWORD=//p' /full/path/to/the/.env"
+password.cmd = "python3 /full/path/to/the/clone/scripts/env_secret.py /full/path/to/the/.env PAYNANI_PASSWORD"
 
 [accounts.paynani.smtp]
 server = "smtps://mail.example.com:465"
 [accounts.paynani.smtp.sasl.plain]
 authcid = "agent@example.com"
-password.cmd = "sed -n 's/^PAYNANI_PASSWORD=//p' /full/path/to/the/.env"
+password.cmd = "python3 /full/path/to/the/clone/scripts/env_secret.py /full/path/to/the/.env PAYNANI_PASSWORD"
 ```
 
 `mailbox.alias.inbox` is not optional on v2. Without it the account is valid and
@@ -544,11 +544,23 @@ imap-port = 993
 imap-ssl = true
 imap-login = "agent@example.com"
 imap-auth = "passwd"
-imap-passwd.cmd = "sed -n 's/^PAYNANI_PASSWORD=//p' /full/path/to/the/.env"
+imap-passwd.cmd = "python3 /full/path/to/the/clone/scripts/env_secret.py /full/path/to/the/.env PAYNANI_PASSWORD"
 ```
 
 Field names moved between 1.x releases too, so if a key is rejected, the error
 names the ones it expected; that is the fastest way to the right shape.
+
+**Use `scripts/env_secret.py`, not a hand-written `sed`.** It exists for this
+one job and it tolerates a UTF-8 BOM and CRLF line endings, which a `sed -n
+'s/^KEY=//p'` does not: on a CRLF `.env` that `sed` returns the password with a
+trailing carriage return and the server rejects the login **as a bad
+credential**. Nothing else in this project notices — `preflight.py`, the
+listener, `roster.py` and `envpath.sh` all tolerate CRLF — so every other check
+passes and only Himalaya fails, pointing at a password that is correct. Verified
+on a real host: an `.env` written from a Windows editor.
+
+Give it absolute paths. Himalaya resolves nothing and runs the command from a
+working directory this project does not choose.
 
 **Use a command-based secret in either version, not the keyring.** On a headless
 box there is no unlocked keyring, and a systemd service failing to reach

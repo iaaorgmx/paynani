@@ -161,6 +161,21 @@ for document in DOCUMENTS:
     }
     check(f"{document}: roster examples use reserved domains", set(), real)
 
+# The documented Himalaya secret command must be env_secret.py and not a
+# hand-written sed. A `sed -n 's/^KEY=//p'` returns the value with a trailing
+# carriage return on a CRLF .env, and the server rejects that as a bad
+# credential — pointing the reader at the password rather than at the file (#14).
+himalaya_secret_lines = [
+    line.strip() for line in (ROOT / "INSTALL.md").read_text().splitlines()
+    if "passwd.cmd" in line or "password.cmd" in line
+]
+check("INSTALL.md documents at least one Himalaya secret command", True,
+      bool(himalaya_secret_lines))
+check("no documented Himalaya secret command hand-rolls a sed", [],
+      [line for line in himalaya_secret_lines if "sed " in line])
+check("every documented Himalaya secret command uses env_secret.py", [],
+      [line for line in himalaya_secret_lines if "env_secret.py" not in line])
+
 shipped = {path.name for path in (ROOT / "systemd").iterdir() if path.is_file()}
 installed = installed_units("INSTALL.md")
 enableable = {
