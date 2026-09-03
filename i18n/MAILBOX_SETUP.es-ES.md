@@ -45,7 +45,7 @@ equivoca, así que tiene su propia sección más abajo.
 
 Tu dirección de correo termina en un dominio: `ejemplo.com`. El servidor donde
 realmente vive tu correo casi nunca es `ejemplo.com`, ni suele ser
-`mail.ejemplo.com`. Suele ser algo como `nc-ph-2488.xmhosting.com` o
+`mail.ejemplo.com`. Suele ser algo como `s1042.hosting.example.net` o
 `imappro.zoho.com`.
 
 `mail.ejemplo.com` a menudo **sí** resuelve, y ahí está la trampa: parece

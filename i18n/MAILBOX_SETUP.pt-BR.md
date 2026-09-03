@@ -44,7 +44,7 @@ tem uma seção só dela mais abaixo.
 
 Seu endereço termina num domínio, `exemplo.com`. O servidor onde o seu e-mail
 realmente mora quase nunca é `exemplo.com`, e quase nunca é `mail.exemplo.com`
-também. Costuma ser algo como `nc-ph-2488.xmhosting.com` ou `imappro.zoho.com`.
+também. Costuma ser algo como `s1042.hosting.example.net` ou `imappro.zoho.com`.
 
 `mail.exemplo.com` frequentemente **resolve**, e é aí que está a armadilha: parece
 certo, conecta, e depois se descobre que o certificado TLS foi emitido para o

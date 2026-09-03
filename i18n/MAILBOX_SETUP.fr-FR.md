@@ -45,8 +45,8 @@ elle a donc sa propre section plus bas.
 
 Votre adresse se termine par un domaine, `exemple.com`. Le serveur où vit
 réellement votre courrier n'est en général **pas** `exemple.com`, ni
-`mail.exemple.com`. C'est plutôt quelque chose comme `nc-ph-2488.xmhosting.com` ou
-`imappro.zoho.com`.
+`mail.exemple.com`. C'est plutôt quelque chose comme
+`s1042.hosting.example.net` ou `imappro.zoho.com`.
 
 `mail.exemple.com` résout pourtant souvent, et c'est là le piège : cela a l'air
 correct, la connexion s'établit, puis il s'avère que le certificat TLS est émis
