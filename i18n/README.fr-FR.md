@@ -2,7 +2,7 @@
 
 [Español (MX)](../README.md) · [English](README.en-US.md) · [Español (ES)](README.es-ES.md) · **Français** · [Português (BR)](README.pt-BR.md)
 
-> Traduit de [`README.md`](../README.md) au commit `883e10e`, qui fait référence. En cas de
+> Traduit de [`README.md`](../README.md) au commit `2b1fc9c`, qui fait référence. En cas de
 > divergence avec l'original en espagnol (MX), **c'est l'espagnol qui fait foi**,
 > et signalez-le nous, car cela veut dire que cette traduction a pris du retard.
 
