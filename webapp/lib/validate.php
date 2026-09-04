@@ -46,7 +46,7 @@ function validate(array $in): array
         // exist, and the error arrives as a connection failure.
         if (ctype_digit($host)) {
             $errors[$key] = 'Eso es un número de puerto, no un nombre de servidor. El nombre se ve así: '
-                          . 'imap.tuproveedor.com.';
+                          . 'imap.tuproveedor.example.';
             continue;
         }
         if (str_contains($host, '/') || str_contains($host, ' ') || str_contains($host, '@')) {

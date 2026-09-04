@@ -39,7 +39,7 @@ function explain_connect_error(string $raw, string $host): string
         || str_contains($lower, 'certificate_verify_failed')) {
         return "El servidor contestó, pero su certificado de seguridad no está emitido para “{$host}”. "
              . "Normalmente eso significa que el nombre del servidor está un poco mal; muchos proveedores "
-             . "quieren algo como imap.tuproveedor.com y no mail.tudominio.com. Pídele a tu proveedor el "
+             . "quieren algo como imap.tuproveedor.example y no mail.tudominio.example. Pídele a tu proveedor el "
              . "nombre exacto que publica.";
     }
     if (str_contains($lower, 'getaddrinfo') || str_contains($lower, 'name or service not known')
