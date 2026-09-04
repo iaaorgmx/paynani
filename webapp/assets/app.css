@@ -63,7 +63,11 @@ code {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: .1em .35em;
-  word-break: break-all;
+  /* break-all rompe en cualquier carácter aunque la palabra quepa entera en la
+     línea siguiente, y partía `imap.` como `ima` + `p.`. Con esto una ruta larga
+     sigue partiéndose, porque no cabe de otro modo, pero un token corto se va
+     completo al siguiente renglón. */
+  overflow-wrap: anywhere;
 }
 
 fieldset {
