@@ -1,4 +1,10 @@
-# paynani
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../brand/paynani-horizontal-claro.svg">
+    <img src="../brand/paynani-horizontal.svg" alt="paynani" height="52">
+  </picture>
+</h1>
+
 Mensageiro de elite: os paynani eram os corredores e mensageiros oficiais do Império Asteca.
 
 [Español (MX)](../README.md) · [English (US)](README.en-US.md) · [Español (ES)](README.es-ES.md) · [Français (FR)](README.fr-FR.md) · **Português (BR)**

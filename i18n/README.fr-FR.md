@@ -1,4 +1,10 @@
-# paynani
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../brand/paynani-horizontal-claro.svg">
+    <img src="../brand/paynani-horizontal.svg" alt="paynani" height="52">
+  </picture>
+</h1>
+
 Messager d'élite : les paynani étaient les coureurs et messagers officiels de l'Empire aztèque.
 
 [Español (MX)](../README.md) · [English (US)](README.en-US.md) · [Español (ES)](README.es-ES.md) · **Français (FR)** · [Português (BR)](README.pt-BR.md)

@@ -1,4 +1,10 @@
-# paynani
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../brand/paynani-horizontal-claro.svg">
+    <img src="../brand/paynani-horizontal.svg" alt="paynani" height="52">
+  </picture>
+</h1>
+
 Elite messenger: the paynani were the official runners and messengers of the Aztec Empire.
 
 [Español (MX)](../README.md) · **English (US)** · [Español (ES)](README.es-ES.md) · [Français (FR)](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
