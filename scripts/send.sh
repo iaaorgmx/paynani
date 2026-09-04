@@ -266,12 +266,32 @@ attachment_part() {
     _paynani_path=$1
     _paynani_name=$(basename "$_paynani_path" | tr -d '\r\n')
 
-    # file(1) is the only thing here that knows what the bytes are. When it has
-    # no opinion, say so honestly rather than guessing a type the client would
-    # then trust.
-    _paynani_type=$(file --mime-type -b "$_paynani_path" 2>/dev/null || true)
-    case "$_paynani_type" in
-        ''|*[!!-~]*) _paynani_type=application/octet-stream ;;
+    # file(1) reads bytes and cannot know what the sender meant by them. On an
+    # SVG that opens with a comment rather than `<?xml` or `<svg` it answers
+    # text/html -- which is every logo in brand/, so this project's own artwork
+    # would ride as HTML, a type mail clients distrust and sometimes render
+    # instead of offering as a file. Where the extension is unambiguous it is the
+    # better evidence, because the sender chose it and the sniff only guessed.
+    #
+    # Everything else still goes to file(1), and when it has no usable opinion,
+    # say so honestly rather than name a type the client would then trust.
+    case "$(printf '%s' "$_paynani_name" | tr '[:upper:]' '[:lower:]')" in
+        *.svg)        _paynani_type=image/svg+xml ;;
+        *.md)         _paynani_type=text/markdown ;;
+        *.csv)        _paynani_type=text/csv ;;
+        *.txt)        _paynani_type=text/plain ;;
+        *.json)       _paynani_type=application/json ;;
+        *.pdf)        _paynani_type=application/pdf ;;
+        *.png)        _paynani_type=image/png ;;
+        *.jpg|*.jpeg) _paynani_type=image/jpeg ;;
+        *.gif)        _paynani_type=image/gif ;;
+        *.webp)       _paynani_type=image/webp ;;
+        *)
+            _paynani_type=$(file --mime-type -b "$_paynani_path" 2>/dev/null || true)
+            case "$_paynani_type" in
+                ''|*[!!-~]*) _paynani_type=application/octet-stream ;;
+            esac
+            ;;
     esac
 
     printf -- '--%s\n' "$boundary"
