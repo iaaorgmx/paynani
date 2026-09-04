@@ -16,7 +16,7 @@ paynani_root() {
 # own installation directory. One pattern, not a list of special cases: a new
 # runtime is a new root here and nothing else. Keep in step with HARNESS_ROOTS /
 # HARNESS_ENV_RELATIVE in harness/paths.py and the same pair in
-# webapp/lib/envfile.php; scripts/test_paths.sh asserts all three agree.
+# webapp/lib/paths.php; scripts/test_paths.sh asserts all three agree.
 #
 # The OpenClaw root is listed because it is an instance of the rule rather than
 # an exception to it.
@@ -29,7 +29,7 @@ paynani_config_dir() {
 
 # One value out of the installer-generated runtime.env, or nothing. Kept
 # deliberately identical to recorded_env() in harness/paths.py and to
-# recorded_env() in webapp/lib/envfile.php: three implementations of one rule,
+# recorded_env() in webapp/lib/paths.php: three implementations of one rule,
 # and scripts/test_paths.sh exists because they have drifted before.
 paynani_recorded_env() {
     local file line value
