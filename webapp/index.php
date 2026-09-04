@@ -17,6 +17,7 @@ require_once __DIR__ . '/lib/guard.php';
 require_once __DIR__ . '/lib/validate.php';
 require_once __DIR__ . '/lib/probe.php';
 require_once __DIR__ . '/lib/envfile.php';
+require_once __DIR__ . '/lib/brand.php';
 
 require_loopback();
 start_session();
@@ -144,6 +145,13 @@ if ($action === 'setup' && $errors === []) {
 </head>
 <body>
 <main>
+
+<?php /*
+  El SVG va en línea, no en un <img>: guard.php sirve `default-src 'none'` sin
+  `img-src`, así que una imagen enlazada quedaría bloqueada. Ver lib/brand.php.
+  El logotipo trae su propio <title>, y por eso no lleva texto al lado.
+*/ ?>
+<div class="marca"><?= brand_svg('paynani-horizontal.svg') ?></div>
 
 <?php if ($saved !== null): ?>
 

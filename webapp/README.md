@@ -196,6 +196,7 @@ webapp/lib/guard.php    loopback check, one-time key, CSRF, headers
 webapp/lib/validate.php field checks, each one a mistake seen in the wild
 webapp/lib/probe.php    live IMAP and SMTP sign-in
 webapp/lib/envfile.php  writing the resolved credentials file, and the symlink
+webapp/lib/brand.php    inlines the logo from brand/, which the CSP forbids linking
 webapp/lib/i18n.php     which language this render speaks, and t()/th()
 webapp/i18n/*.php       one flat array of strings per language
 webapp/assets/app.css   no webfonts: this host may have no internet route

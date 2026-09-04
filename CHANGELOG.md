@@ -1,5 +1,26 @@
 # Changelog
 
+## Sin publicar
+
+- **La página de configuración del buzón no llevaba la marca.** Ahora abre con el
+  logotipo, y sale de `brand/` sin que exista una segunda copia del dibujo.
+
+  Enlazarlo no era opción: `brand/` vive al principio del clon, fuera del docroot
+  de la página, y sobre todo `guard.php` sirve `default-src 'none'` sin `img-src`,
+  así que un `<img>` quedaría bloqueado. Aflojar esa política para poner una
+  imagen en un formulario que recoge una contraseña habría sido el peor de los
+  intercambios. El SVG se inserta en línea —`webapp/lib/brand.php`, con lista
+  blanca de nombres—, y el marcado en línea no es un recurso que se descargue, así
+  que no necesita ninguna directiva.
+
+  Insertarlo además resuelve el tema oscuro. Los archivos de `brand/` llevan sus
+  colores como atributos de presentación, que es lo correcto cuando el SVG se abre
+  solo; una regla de CSS gana sobre eso, así que `app.css` repinta `.voluta` con
+  `--accent` y `.logotipo` con `--ink` y el logotipo sigue al tema sin una segunda
+  versión del archivo. Las dos clases se agregaron a los doce SVG y quedan
+  documentadas en `brand/README.md` como lo que son: un punto de agarre, no
+  decoración.
+
 ## 0.2.0 — 2026-09-04
 
 **paynani estrena marca, su página de configuración habla cinco idiomas, y el
