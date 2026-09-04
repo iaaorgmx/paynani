@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/i18n.php';
+
 /**
  * Live checks against the mail server, before anything is written to disk.
  *
@@ -37,23 +39,19 @@ function explain_connect_error(string $raw, string $host): string
 
     if (str_contains($lower, 'did not match') || str_contains($lower, 'certificate verify failed')
         || str_contains($lower, 'certificate_verify_failed')) {
-        return "El servidor contestó, pero su certificado de seguridad no está emitido para “{$host}”. "
-             . "Normalmente eso significa que el nombre del servidor está un poco mal; muchos proveedores "
-             . "quieren algo como imap.tuproveedor.example y no mail.tudominio.example. Pídele a tu proveedor el "
-             . "nombre exacto que publica.";
+        return t('p.cert_mismatch', ['host' => $host]);
     }
     if (str_contains($lower, 'getaddrinfo') || str_contains($lower, 'name or service not known')
         || str_contains($lower, 'no such host')) {
-        return "“{$host}” no resuelve a ninguna máquina. Revisa cómo está escrito.";
+        return t('p.no_dns', ['host' => $host]);
     }
     if (str_contains($lower, 'connection refused')) {
-        return "Se llega a “{$host}” pero rechazó la conexión en ese puerto. Lo más probable es que el puerto esté mal.";
+        return t('p.refused', ['host' => $host]);
     }
     if (str_contains($lower, 'timed out') || str_contains($lower, 'timeout')) {
-        return "“{$host}” no contestó en " . PROBE_TIMEOUT . " segundos. O el nombre del servidor o el "
-             . "puerto están mal, o hay un firewall estorbando.";
+        return t('p.timed_out', ['host' => $host, 'seconds' => PROBE_TIMEOUT]);
     }
-    return $raw !== '' ? $raw : 'La conexión falló sin decir por qué.';
+    return $raw !== '' ? $raw : t('p.failed_silent');
 }
 
 function tls_context(): mixed
@@ -159,52 +157,49 @@ function probe_imap(string $host, int $port, string $user, string $pass): array
     $steps = [];
 
     if ($port === 143) {
-        $steps[] = step(false, 'El puerto 143 no sirve con esta herramienta.',
-            'El listener abre IMAP sobre TLS de inmediato (IMAP4_SSL), y el puerto 143 empieza sin cifrar. '
-          . 'Usa el 993, que es el que ofrece casi cualquier proveedor.');
+        $steps[] = step(false, t('p.imap143'),
+            t('p.imap143_detail'));
         return ['ok' => false, 'steps' => $steps];
     }
 
     [$stream, $error] = open_stream('ssl', $host, $port);
     if ($stream === null) {
-        $steps[] = step(false, "No se pudo abrir una conexión cifrada a {$host}:{$port}.", $error);
+        $steps[] = step(false, t('p.no_tls', ['host' => $host, 'port' => $port]), $error);
         return ['ok' => false, 'steps' => $steps];
     }
-    $steps[] = step(true, "Conectado a {$host}:{$port} por TLS, y el certificado está correcto.");
+    $steps[] = step(true, t('p.tls_ok', ['host' => $host, 'port' => $port]));
 
     $greeting = read_line($stream);
     if (!str_starts_with($greeting, '* OK') && !str_starts_with($greeting, '* PREAUTH')) {
-        $steps[] = step(false, 'Ese puerto contestó, pero no está hablando IMAP.',
-            $greeting !== '' ? "Dijo: {$greeting}" : 'No dijo absolutamente nada.');
+        $steps[] = step(false, t('p.not_imap'),
+            $greeting !== '' ? t('p.said', ['greeting' => $greeting]) : t('p.said_nothing'));
         fclose($stream);
         return ['ok' => false, 'steps' => $steps];
     }
-    $steps[] = step(true, 'El servidor se identificó como un servidor IMAP.');
+    $steps[] = step(true, t('p.is_imap'));
 
     fwrite($stream, "a1 LOGIN " . imap_quote($user) . ' ' . imap_quote($pass) . "\r\n");
     $lines  = imap_read_until($stream, 'a1');
     $result = end($lines) ?: '';
 
     if (!str_starts_with($result, 'a1 OK')) {
-        $steps[] = step(false, 'El servidor rechazó esa dirección y contraseña.',
-            'Muchos proveedores piden aquí una contraseña de aplicación en lugar de la que escribes en su sitio web. '
-          . 'Si el tuyo ofrece verificación en dos pasos, casi seguro es el caso.');
+        $steps[] = step(false, t('p.auth_rejected'),
+            t('p.auth_rejected_d'));
         fwrite($stream, "a9 LOGOUT\r\n");
         fclose($stream);
         return ['ok' => false, 'steps' => $steps];
     }
-    $steps[] = step(true, 'Sesión iniciada correctamente.');
+    $steps[] = step(true, t('p.signed_in'));
 
     // IDLE is the whole design. Ask after logging in; plenty of servers only
     // advertise it to an authenticated session.
     fwrite($stream, "a2 CAPABILITY\r\n");
     $caps = strtoupper(implode(' ', imap_read_until($stream, 'a2')));
     if (str_contains($caps, 'IDLE')) {
-        $steps[] = step(true, 'El servidor soporta IDLE, así que el correo nuevo llega en más o menos un segundo.');
+        $steps[] = step(true, t('p.idle_yes'));
     } else {
-        $steps[] = step(false, 'Este servidor no ofrece IDLE.',
-            'Sin eso no hay manera de enterarse del correo nuevo cuando llega, y esta herramienta no tiene '
-          . 'nada a qué recurrir. Vale la pena preguntarle a tu proveedor antes de seguir.');
+        $steps[] = step(false, t('p.idle_no'),
+            t('p.idle_no_detail'));
         fwrite($stream, "a9 LOGOUT\r\n");
         fclose($stream);
         return ['ok' => false, 'steps' => $steps];
@@ -277,38 +272,37 @@ function probe_smtp_mode(string $host, int $port, string $user, string $pass, bo
 
     [$stream, $error] = open_stream($implicit ? 'ssl' : 'tcp', $host, $port);
     if ($stream === null) {
-        $steps[] = step(false, "No se pudo llegar a {$host}:{$port}.", $error);
+        $steps[] = step(false, t('p.no_reach', ['host' => $host, 'port' => $port]), $error);
         return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
     }
 
     $greeting = smtp_read_reply($stream);
     if (smtp_code($greeting) !== 220) {
-        $steps[] = step(false, 'Ese puerto contestó, pero no está hablando SMTP.',
-            trim($greeting) !== '' ? 'Dijo: ' . trim($greeting) : 'No dijo absolutamente nada.');
+        $steps[] = step(false, t('p.not_smtp'),
+            trim($greeting) !== '' ? t('p.said', ['greeting' => trim($greeting)]) : t('p.said_nothing'));
         fclose($stream);
         return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
     }
 
     $ehlo = smtp_command($stream, 'EHLO localhost');
     if (smtp_code($ehlo) !== 250) {
-        $steps[] = step(false, 'El servidor no quiso iniciar una sesión.', trim($ehlo));
+        $steps[] = step(false, t('p.no_session'), trim($ehlo));
         fclose($stream);
         return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
     }
 
     if ($implicit) {
-        $steps[] = step(true, "Conectado a {$host}:{$port} por TLS, y el certificado está correcto.");
+        $steps[] = step(true, t('p.tls_ok', ['host' => $host, 'port' => $port]));
     } else {
         if (!str_contains(strtoupper($ehlo), 'STARTTLS')) {
-            $steps[] = step(false, 'Este servidor no cifra la conexión en ese puerto.',
-                'Mandar una contraseña por un enlace sin cifrar no es algo que esta herramienta vaya a configurar. '
-              . 'Prueba el puerto 465, o el 587 si tu proveedor soporta STARTTLS.');
+            $steps[] = step(false, t('p.no_encryption'),
+                t('p.no_encryption_d'));
             fclose($stream);
             return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
         }
         $start = smtp_command($stream, 'STARTTLS');
         if (smtp_code($start) !== 220) {
-            $steps[] = step(false, 'El servidor se negó a cambiar a una conexión cifrada.', trim($start));
+            $steps[] = step(false, t('p.starttls_refused'), trim($start));
             fclose($stream);
             return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
         }
@@ -318,18 +312,18 @@ function probe_smtp_mode(string $host, int $port, string $user, string $pass, bo
         if ($crypto !== true) {
             // Same trap as the implicit-TLS path: the certificate complaint is in
             // a warning, not in the return value.
-            $steps[] = step(false, 'No se pudo establecer la conexión cifrada.',
+            $steps[] = step(false, t('p.tls_failed'),
                 explain_connect_error($warnings, $host));
             fclose($stream);
             return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
         }
-        $steps[] = step(true, "Conectado a {$host}:{$port} y elevado a TLS; el certificado está correcto.");
+        $steps[] = step(true, t('p.tls_upgraded', ['host' => $host, 'port' => $port]));
         $ehlo = smtp_command($stream, 'EHLO localhost');
     }
 
     if (!str_contains(strtoupper($ehlo), 'AUTH')) {
-        $steps[] = step(false, 'El servidor no ofrece manera de iniciar sesión en ese puerto.',
-            'Normalmente eso significa que el puerto es para otra cosa. El 465 y el 587 son los dos que hay que probar.');
+        $steps[] = step(false, t('p.no_auth_offered'),
+            t('p.no_auth_offered_d'));
         smtp_command($stream, 'QUIT');
         fclose($stream);
         return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
@@ -337,7 +331,7 @@ function probe_smtp_mode(string $host, int $port, string $user, string $pass, bo
 
     $auth = smtp_command($stream, 'AUTH LOGIN');
     if (smtp_code($auth) !== 334) {
-        $steps[] = step(false, 'El servidor no aceptó esta forma de iniciar sesión.', trim($auth));
+        $steps[] = step(false, t('p.auth_method_bad'), trim($auth));
         smtp_command($stream, 'QUIT');
         fclose($stream);
         return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
@@ -345,7 +339,7 @@ function probe_smtp_mode(string $host, int $port, string $user, string $pass, bo
 
     $sentUser = smtp_command($stream, base64_encode($user));
     if (smtp_code($sentUser) !== 334) {
-        $steps[] = step(false, 'El servidor rechazó la dirección.', trim($sentUser));
+        $steps[] = step(false, t('p.address_rejected'), trim($sentUser));
         smtp_command($stream, 'QUIT');
         fclose($stream);
         return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
@@ -353,14 +347,13 @@ function probe_smtp_mode(string $host, int $port, string $user, string $pass, bo
 
     $sentPass = smtp_command($stream, base64_encode($pass));
     if (smtp_code($sentPass) !== 235) {
-        $steps[] = step(false, 'El servidor rechazó esa dirección y contraseña para enviar.',
-            'If signing in for reading worked, some providers still want a separate app password for '
-          . 'sending, or need SMTP switched on in your account settings.');
+        $steps[] = step(false, t('p.send_auth_bad'),
+            t('p.send_auth_bad_d'));
         smtp_command($stream, 'QUIT');
         fclose($stream);
         return ['ok' => false, 'authenticated' => false, 'steps' => $steps];
     }
-    $steps[] = step(true, 'Sesión iniciada correctamente, así que el agente va a poder responder.');
+    $steps[] = step(true, t('p.signed_in_smtp'));
 
     smtp_command($stream, 'QUIT');
     fclose($stream);

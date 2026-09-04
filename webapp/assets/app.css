@@ -212,3 +212,85 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .row .narrow { flex: 1 1 auto; }
   .actions button { flex: 1 1 100%; }
 }
+
+/* ── El selector de idioma ──────────────────────────────────────────────────
+   Va en el renglón del título, alineado a la derecha, y se pasa abajo cuando
+   la pantalla es angosta en lugar de apretar al h1. */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .5rem 1rem;
+}
+
+/* El título cede el ancho y envuelve; el selector nunca se encoge ni se cae a
+   otro renglón, que es donde el título francés lo mandaba. */
+.topbar h1 { margin-bottom: 0; flex: 1 1 12rem; min-width: 0; }
+
+.langpick {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: .4rem;
+}
+
+/* Se ve como los demás campos del formulario, no como el botón de al lado:
+   mismo fondo, mismo borde, mismo radio, y una flecha que lo delata como
+   desplegable. La flecha va dibujada aquí y no se deja al control nativo,
+   que en Linux se pinta muy distinto que en macOS y desalinea el renglón. */
+.langpick select {
+  font: inherit;
+  font-size: .9rem;
+  color: var(--ink);
+  background-color: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .45rem 2rem .45rem .7rem;
+  appearance: none;
+  cursor: pointer;
+  width: 100%;
+}
+
+/* La flecha va aquí, en dos bordes girados 45 grados, y no como imagen: la
+   política de guard.php es `default-src 'none'` y no declara img-src, así que
+   un data: URI se bloquea sin decir nada y el control queda sin nada que lo
+   distinga de un botón. Esto no carga nada, así que no hay qué permitir. */
+.combo { position: relative; display: inline-flex; }
+
+.combo::after {
+  content: "";
+  position: absolute;
+  right: .75rem;
+  top: 50%;
+  width: .4rem;
+  height: .4rem;
+  border-right: 1.5px solid var(--quiet);
+  border-bottom: 1.5px solid var(--quiet);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+.langpick select:hover { border-color: var(--accent); }
+
+.langpick select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+/* El botón de reserva. assets/lang.js lo esconde en cuanto arranca; solo se
+   queda a la vista si el script no corrió, y entonces es lo único que sirve. */
+.langpick button {
+  font: inherit;
+  font-size: .9rem;
+  color: var(--ink);
+  background-color: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .45rem .7rem;
+  cursor: pointer;
+}
+
+.langpick button:hover { border-color: var(--accent); }
+.langpick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

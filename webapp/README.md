@@ -43,8 +43,9 @@ exposed to a network in either case.
 
 ## Requirements
 
-PHP 8.1 or newer, CLI only. No composer, no framework, no database, no
-JavaScript. On Ubuntu:
+PHP 8.1 or newer, CLI only. No composer, no framework, no database. The only
+JavaScript is `assets/lang.js`, twenty lines that switch language when the
+selector changes; everything the page does works without it. On Ubuntu:
 
 ```bash
 sudo apt-get install -y php8.3-cli
@@ -95,8 +96,71 @@ people miss next to the non-SSL one.
 
 Then Gmail, Outlook, Zoho and Fastmail, each with the caveat that actually
 stops them, which is almost always an app password rather than a wrong server
-name. It is a `<details>` block, so it collapses with no JavaScript on a page
-whose policy forbids scripts entirely.
+name. It is a `<details>` block, so it collapses on its own with no script involved.
+
+## The language it speaks
+
+The person filling this form is not always the person who runs the agent, and is
+not always the person who chose the language the rest of the install speaks. They
+are handing over a mailbox password, so they get to read what they are agreeing
+to in their own language.
+
+A selector sits next to the title, offering the same five languages the
+documentation is translated into, with **Español (MX)** selected by default.
+Everything the page can say is translated with it: the form, the provider help,
+the field validation, the live check's step-by-step report, and the three refusal
+screens in `guard.php`.
+
+**Switching does not lose what has been typed.** The selector and its button
+belong to the main form through the `form=` attribute even though they sit above
+it, so changing language posts the whole form and the fields come back filled.
+That submit carries `formnovalidate`, because without it the browser refuses to
+send while the password box is empty, which would mean nobody could change
+language until they had finished the form.
+
+**The selector switches on change, and degrades to a button.** That needs a
+script, so the policy carries `script-src 'self'`: same-origin files only, no
+`'unsafe-inline'`, no `'unsafe-eval'`, no remote origin. Inline handlers stay
+forbidden, which is the part that matters — a string injected into this page
+still cannot execute. The one file allowed is `assets/lang.js`.
+
+The page ships a real submit button and the script hides it on load. That is
+deliberately not a `<noscript>` fallback: a script blocked by CSP still counts as
+scripting being enabled, so `<noscript>` would render nothing and leave a dead
+selector. This way, if the script does not run for any reason, what is left on
+screen is a button that works. The failure mode is one extra click.
+
+**The caret is drawn in CSS, not loaded as an image.** The policy does not
+declare `img-src`, so it falls back to `default-src 'none'` and a `data:` URI is
+blocked without a word — which is exactly what happened first, leaving a control
+with nothing to mark it as a dropdown. Two rotated borders need no permission.
+
+Catalogues are flat `key => string` arrays in `webapp/i18n/`. A key a translation
+is missing falls back to `es-MX` rather than rendering blank, so a half-finished
+catalogue degrades to a mixed page instead of an empty one. `es-MX` is the source
+language; every other file is translated from it and carries exactly the same
+keys.
+
+## Coming back to change something
+
+The form is not only a first-time screen. Open it against an install that already
+has credentials and the fields arrive filled from the file, so a password can be
+rotated, or a server name corrected, without retyping the other six.
+
+**The password is the exception, and stays the exception.** It is never written
+into the HTML, not even masked. The box shows bullets as a *placeholder*, the
+value attribute is empty, and leaving it that way means "keep the one already on
+disk". Type in it only to replace it. The promise above — that the password is
+never rendered back — is what makes a screenshot of this screen safe, and
+prefilling it would have quietly broken that.
+
+**Only the seven keys this form owns are written.** A real installation keeps
+more than mail settings in that file, tokens for other services among them, and
+this page has no idea what any of it is. An existing file is therefore edited
+line by line: comments, blank lines, key order and unknown keys all survive.
+Rewriting the file wholesale stayed harmless only while this was a screen you ran
+once; the moment somebody can come back to change a password, it would mean
+losing every other secret in the file to do it.
 
 ## What the check does
 
@@ -131,7 +195,10 @@ webapp/lib/guard.php    loopback check, one-time key, CSRF, headers
 webapp/lib/validate.php field checks, each one a mistake seen in the wild
 webapp/lib/probe.php    live IMAP and SMTP sign-in
 webapp/lib/envfile.php  writing the resolved credentials file, and the symlink
+webapp/lib/i18n.php     which language this render speaks, and t()/th()
+webapp/i18n/*.php       one flat array of strings per language
 webapp/assets/app.css   no webfonts: this host may have no internet route
+webapp/assets/lang.js   switches language on change; the button works without it
 scripts/setup_web.sh    generates the key, serves the page, stops when saved
 ```
 

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/i18n.php';
+
 /**
  * Access control for the setup form.
  *
@@ -49,8 +51,8 @@ function require_loopback(): void
     if (!in_array($remote, ['127.0.0.1', '::1'], true)) {
         http_response_code(403);
         header('Content-Type: text/plain; charset=UTF-8');
-        echo "Esta página solo responde a peticiones desde la computadora donde corre.\n\n";
-        echo "Si el agente está en un host remoto, reenvía el puerto en lugar de esto:\n";
+        echo t('g.loopback_1') . "\n\n";
+        echo t('g.loopback_2') . "\n";
         echo "  ssh -L 8765:127.0.0.1:8765 tu-usuario@ese-host\n";
         exit;
     }
@@ -98,8 +100,8 @@ function require_token(): void
 
     http_response_code(403);
     header('Content-Type: text/plain; charset=UTF-8');
-    echo "A este enlace le falta su llave de un solo uso, o la llave cambió.\n\n";
-    echo "Pídele al agente que corra scripts/setup_web.sh otra vez y te mande el enlace nuevo.\n";
+    echo t('g.token_1') . "\n\n";
+    echo t('g.token_2') . "\n";
     exit;
 }
 
@@ -117,7 +119,7 @@ function check_csrf(): void
     if (!isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf'], $given)) {
         http_response_code(400);
         header('Content-Type: text/plain; charset=UTF-8');
-        echo "Ese formulario expiró. Recarga la página y llénalo de nuevo.\n";
+        echo t('g.csrf') . "\n";
         exit;
     }
 }
@@ -132,7 +134,12 @@ function send_security_headers(): void
     header('Cache-Control: no-store, no-cache, must-revalidate');
     // No external anything: the page is a form on a machine that may have no
     // route to the internet at all, and a CDN reference would silently break it.
-    header("Content-Security-Policy: default-src 'none'; style-src 'self'; form-action 'self'; base-uri 'none'");
+    // script-src 'self' and nothing more: same-origin files only, no
+    // 'unsafe-inline', no 'unsafe-eval', no remote origin. The one script this
+    // page loads is assets/lang.js, which switches language on change. Inline
+    // handlers stay forbidden, so a string injected into this page still cannot
+    // execute.
+    header("Content-Security-Policy: default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'");
 }
 
 function start_session(): void

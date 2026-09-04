@@ -12,6 +12,7 @@ declare(strict_types=1);
  * one-time link. See webapp/README.md.
  */
 
+require_once __DIR__ . '/lib/i18n.php';
 require_once __DIR__ . '/lib/guard.php';
 require_once __DIR__ . '/lib/validate.php';
 require_once __DIR__ . '/lib/probe.php';
@@ -43,9 +44,16 @@ $notice      = null;
 // The password lives in the session between the test and the save, never in a
 // value attribute. Re-rendering it into the HTML would put it in the page
 // source, in the browser cache, and in any screenshot of this screen.
+// What is already on disk. The form is not only a first-time setup screen: the
+// fields arrive filled so that somebody can come back and change the password,
+// or fix a server name, without retyping the other six.
+$stored         = read_env();
+$storedPassword = (string) ($stored['AGENT_EMAIL_PASSWORD'] ?? '');
+
 $values = $_SESSION['values'] ?? [];
 foreach (ENV_FIELDS as $key) {
-    if ($action !== '' && array_key_exists($key, $_POST)) {
+    $postedNow = $action !== '' && array_key_exists($key, $_POST);
+    if ($postedNow) {
         $posted = trim((string) $_POST[$key]);
         // The password box comes back empty on every render, because its value is
         // never written into the HTML. An empty box therefore means "unchanged",
@@ -55,12 +63,41 @@ foreach (ENV_FIELDS as $key) {
             $values[$key] = $posted;
         }
     }
-    $values[$key] ??= PORT_HINTS[$key] ?? '';
+
+    // The file fills anything this request did not carry. Testing for empty and
+    // not merely for absent is the whole point: the language switch posts the
+    // form, so a switch on an untouched page used to store seven empty strings
+    // in the session, and those then shadowed the file on every later render.
+    // The fields came back blank for the rest of the session and nothing said
+    // why. A blank box that was not just typed means "whatever is on disk".
+    //
+    // Never the stored password: it goes nowhere near anything this page renders.
+    if ($key !== 'AGENT_EMAIL_PASSWORD' && !$postedNow && ($values[$key] ?? '') === '') {
+        $values[$key] = (string) ($stored[$key] ?? '');
+    }
+    if (($values[$key] ?? '') === '') {
+        $values[$key] = $key === 'AGENT_EMAIL_PASSWORD' ? '' : (PORT_HINTS[$key] ?? '');
+    }
+    $values[$key] ??= '';
 }
 
+// The password actually used to sign in and to write the file. An empty box with
+// a password already on disk means "leave it alone", which is what makes it
+// possible to come here and change only the server name.
+$effective = $values;
+if ($effective['AGENT_EMAIL_PASSWORD'] === '') {
+    $effective['AGENT_EMAIL_PASSWORD'] = $storedPassword;
+}
+$hasPassword = $effective['AGENT_EMAIL_PASSWORD'] !== '';
+
+// A language change posts the whole form so that whatever has been typed
+// survives the switch. It is not an attempt to save, so it neither validates
+// nor touches the servers; it re-renders the same page in the other language.
 if ($action !== '') {
     check_csrf();
-    $errors = validate($values);
+    if ($action !== 'lang') {
+        $errors = validate($effective);
+    }
     $_SESSION['values'] = $values;
 }
 
@@ -72,19 +109,19 @@ if ($action === 'setup' && $errors === []) {
     $imap = probe_imap(
         $values['AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST'],
         (int) $values['AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT'],
-        $values['AGENT_EMAIL_ACCOUNT'],
-        $values['AGENT_EMAIL_PASSWORD'],
+        $effective['AGENT_EMAIL_ACCOUNT'],
+        $effective['AGENT_EMAIL_PASSWORD'],
     );
     $smtp = probe_smtp(
         $values['AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST'],
         (int) $values['AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT'],
-        $values['AGENT_EMAIL_ACCOUNT'],
-        $values['AGENT_EMAIL_PASSWORD'],
+        $effective['AGENT_EMAIL_ACCOUNT'],
+        $effective['AGENT_EMAIL_PASSWORD'],
     );
     $report = ['imap' => $imap, 'smtp' => $smtp, 'ok' => $imap['ok'] && $smtp['ok']];
 
     if ($report['ok']) {
-        [$ok, $where] = write_env(render_env($values));
+        [$ok, $where] = write_env(render_env($effective));
         if ($ok) {
             $saved = $where;
             // Nothing keeps the password in memory once it is on disk.
@@ -95,154 +132,175 @@ if ($action === 'setup' && $errors === []) {
     }
 }
 
-$existing = existing_config();
 ?>
 <!doctype html>
-<html lang="es-MX">
+<html lang="<?= e(current_lang()) ?>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>paynani: configuración del buzón</title>
+<title><?= th('page.title') ?></title>
 <link rel="stylesheet" href="/assets/app.css">
+<script src="/assets/lang.js" defer></script>
 </head>
 <body>
 <main>
 
 <?php if ($saved !== null): ?>
 
-  <h1>Listo</h1>
-  <p class="lead">Tu servidor de correo aceptó la cuenta y la configuración quedó
-     guardada. Ya puedes cerrar esta página.</p>
-
-  <div class="panel ok">
-    <p>Se guardó en <code><?= e($saved) ?></code>, y solo esta cuenta puede leerlo.</p>
+  <div class="topbar">
+    <h1><?= th('saved.h1') ?></h1>
+    <?php /* Nothing left to preserve on this screen, so a plain GET form is enough. */ ?>
+    <form method="get" action="/" class="langpick">
+      <span class="combo">
+        <select id="lang" name="lang" aria-label="<?= th('lang.label') ?>">
+          <?php foreach (LANGUAGES as $tag => $name): ?>
+            <option value="<?= e($tag) ?>"<?= $tag === current_lang() ? ' selected' : '' ?>><?= e($name) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </span>
+      <button type="submit" id="langgo"><?= th('lang.apply') ?></button>
+    </form>
   </div>
 
-  <h2>Qué sigue</h2>
-  <p>Avísale al agente que la configuración ya está. Él instala el resto y verifica
-     que el correo llegue; esa parte es su trabajo, no el tuyo.</p>
-  <p>Lo único que vale la pena hacer tú: mándale un correo al agente y pregúntale qué
-     acaba de llegar. Si te contesta en un par de segundos, todo funciona.</p>
+  <p class="lead"><?= th('saved.lead') ?></p>
 
-  <p class="quiet">Esta página ya olvidó la contraseña. Volver a abrirla no la muestra otra vez.</p>
+  <div class="panel ok">
+    <p><?= th('saved.where', ['path' => $saved]) ?></p>
+  </div>
+
+  <h2><?= th('saved.next_h2') ?></h2>
+  <p><?= th('saved.next_p1') ?></p>
+  <p><?= th('saved.next_p2') ?></p>
+
+  <p class="quiet"><?= th('saved.forgot') ?></p>
 
 <?php else: ?>
 
-  <h1>Dale un buzón al agente</h1>
-  <p class="lead">Siete datos de tu proveedor de correo. Todo se queda en esta
-     computadora. Esta página no es accesible desde internet.</p>
+  <div class="topbar">
+    <h1><?= th('page.h1') ?></h1>
+    <?php /*
+      The select and its button belong to the form below through the form=
+      attribute, even though they sit up here. Switching language therefore
+      posts whatever has already been typed, and the fields come back filled in
+      the new language instead of empty.
 
-  <?php if ($existing !== null): ?>
-    <div class="panel warn">
-      <p><strong>Aguas.</strong> Ya hay configuración de correo en
-         <code><?= e($existing) ?></code>. Si terminas este formulario, la reemplaza.</p>
-      <p>Si el agente ya está atendiendo correo, cierra esta página y confirma con quien
-         lo configuró antes de seguir.</p>
+      No onchange, and no script anywhere: guard.php serves a
+      `default-src 'none'` policy with no script-src, so an inline handler would
+      be blocked and the switch would silently do nothing. A page that collects
+      a mail password is the wrong place to loosen that policy for the sake of
+      saving one click, so the button is real and always visible.
+    */ ?>
+    <div class="langpick">
+      <?php /* La etiqueta visible se quitó a propósito; aria-label la conserva
+           para quien navega con lector de pantalla, que si no se encontraría un
+           combo sin nombre. */ ?>
+      <span class="combo">
+        <select id="lang" name="lang" form="setup" aria-label="<?= th('lang.label') ?>">
+          <?php foreach (LANGUAGES as $tag => $name): ?>
+            <option value="<?= e($tag) ?>"<?= $tag === current_lang() ? ' selected' : '' ?>><?= e($name) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </span>
+      <?php /*
+        Este botón se queda en el HTML y assets/lang.js lo esconde al arrancar.
+        No es un noscript: un script bloqueado por la CSP cuenta como scripting
+        activo, así que un noscript no renderizaría nada y el combo quedaría
+        muerto. Así, si el script no corre, lo que queda en pantalla es un botón
+        que sí funciona.
+
+        formnovalidate: sin él, el navegador se niega a enviar mientras la
+        contraseña esté vacía, y cambiar de idioma se vuelve imposible hasta
+        haber llenado el formulario. Este envío no guarda nada, así que no tiene
+        nada que validar.
+      */ ?>
+      <button type="submit" name="action" value="lang" form="setup" formnovalidate id="langgo"><?= th('lang.apply') ?></button>
     </div>
-  <?php endif; ?>
+  </div>
+
+  <p class="lead"><?= th('page.lead') ?></p>
 
   <details class="help">
-    <summary>¿Dónde encuentro estos datos?</summary>
+    <summary><?= th('help.summary') ?></summary>
 
-    <h3>Si tu correo vino con tu hosting web (cPanel)</h3>
-    <p>Es el caso más común, y los datos ya están escritos ahí para ti.</p>
+    <h3><?= th('help.cpanel_h3') ?></h3>
+    <p><?= th('help.cpanel_p') ?></p>
     <ol>
-      <li>Entra a cPanel, normalmente <code>tudominio.example/cpanel</code>, o el enlace que te mandó tu proveedor.</li>
-      <li>Abre <strong>Email Accounts</strong> (Cuentas de correo).</li>
-      <li>Busca la dirección que va a usar el agente y haz clic en <strong>Connect Devices</strong>
-          (en versiones viejas se llama <em>Set Up Mail Client</em>).</li>
-      <li>Busca <strong>Mail Client Manual Settings</strong> y usa la columna
-          <strong>Secure SSL/TLS Settings</strong>, no la que no lleva SSL.</li>
+      <li><?= th('help.cpanel_li1') ?></li>
+      <li><?= th('help.cpanel_li2') ?></li>
+      <li><?= th('help.cpanel_li3') ?></li>
+      <li><?= th('help.cpanel_li4') ?></li>
     </ol>
-    <p>Copia <em>Incoming Server</em> y su puerto IMAP a la sección de lectura de abajo, y
-       <em>Outgoing Server</em> con su puerto SMTP a la de envío. El usuario es la dirección
-       de correo completa, y la contraseña es la que le pusiste a ese buzón cuando lo
-       creaste. Si no la recuerdas, cPanel te deja cambiarla en esa misma página.</p>
+    <p><?= th('help.cpanel_after') ?></p>
 
-    <h3>Gmail o Google Workspace</h3>
-    <p>Los nombres de servidor siempre son los mismos: <code>imap.gmail.com</code> puerto
-       <code>993</code> para leer, <code>smtp.gmail.com</code> puerto <code>465</code> para enviar.</p>
-    <p>La contraseña es donde se atora la gente. Google no acepta aquí la normal. Necesitas
-       una <strong>contraseña de aplicación</strong>, que requiere tener activada primero la
-       verificación en dos pasos. Créala en <code>myaccount.google.com</code> → Seguridad →
-       Contraseñas de aplicaciones, y pega el código de 16 caracteres que te dé.</p>
-    <p>Revisa también que IMAP esté activado: Gmail → Configuración → Reenvío y correo POP/IMAP.</p>
+    <h3><?= th('help.gmail_h3') ?></h3>
+    <p><?= th('help.gmail_p1') ?></p>
+    <p><?= th('help.gmail_p2') ?></p>
+    <p><?= th('help.gmail_p3') ?></p>
 
-    <h3>Outlook.com, Hotmail o Microsoft 365</h3>
-    <p><code>outlook.office365.com</code> puerto <code>993</code> para leer,
-       <code>smtp.office365.com</code> puerto <code>587</code> para enviar.</p>
-    <p>Muchas cuentas empresariales de Microsoft ya bloquean por política los inicios de
-       sesión como este. Si la verificación de abajo rechaza la contraseña aunque esté bien,
-       normalmente es por eso, y tu administrador tiene que permitirlo.</p>
+    <h3><?= th('help.ms_h3') ?></h3>
+    <p><?= th('help.ms_p1') ?></p>
+    <p><?= th('help.ms_p2') ?></p>
 
-    <h3>Zoho</h3>
-    <p><code>imappro.zoho.com</code> puerto <code>993</code>, <code>smtp.zoho.com</code>
-       puerto <code>465</code>. Zoho también pide una contraseña de aplicación, no la normal.</p>
+    <h3><?= th('help.zoho_h3') ?></h3>
+    <p><?= th('help.zoho_p') ?></p>
 
-    <h3>Fastmail</h3>
-    <p><code>imap.fastmail.com</code> puerto <code>993</code>,
-       <code>smtp.fastmail.com</code> puerto <code>465</code>, con contraseña de aplicación.</p>
+    <h3><?= th('help.fastmail_h3') ?></h3>
+    <p><?= th('help.fastmail_p') ?></p>
 
-    <h3>Cualquier otro</h3>
-    <p>Pregúntale a tu proveedor, o busca su nombre más <em>configuración IMAP y SMTP</em>.
-       Buscas cuatro cosas: el nombre del servidor de entrada, el de salida, y un puerto
-       para cada uno. Prefiere los puertos marcados como SSL o TLS.</p>
-    <p>Una advertencia que vale la pena repetir: no adivines el nombre del servidor
-       poniéndole <code>mail.</code> enfrente a tu dominio. Seguido funciona lo suficiente
-       para parecer correcto y luego falla en el certificado de seguridad, que es horrible
-       de diagnosticar después. La verificación de abajo lo detecta y te lo dice claro.</p>
+    <h3><?= th('help.other_h3') ?></h3>
+    <p><?= th('help.other_p1') ?></p>
+    <p><?= th('help.other_p2') ?></p>
   </details>
 
   <?php if ($notice !== null): ?>
     <div class="panel warn"><p><?= e($notice) ?></p></div>
   <?php endif; ?>
 
-  <form method="post" action="/" autocomplete="off">
+  <form method="post" action="/" id="setup" autocomplete="off">
     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
 
     <fieldset>
-      <legend>La cuenta</legend>
+      <legend><?= th('form.account_legend') ?></legend>
 
-      <label for="account">Dirección de correo</label>
+      <label for="account"><?= th('form.account_label') ?></label>
       <input type="email" id="account" name="AGENT_EMAIL_ACCOUNT" required
              value="<?= e($values['AGENT_EMAIL_ACCOUNT']) ?>"
-             placeholder="agente@tudominio.example">
+             placeholder="<?= th('form.account_ph') ?>">
       <?php if (isset($errors['AGENT_EMAIL_ACCOUNT'])): ?>
         <p class="err"><?= e($errors['AGENT_EMAIL_ACCOUNT']) ?></p>
       <?php endif; ?>
-      <p class="hint">El buzón propio del agente, no el tuyo.</p>
+      <p class="hint"><?= th('form.account_hint') ?></p>
 
-      <label for="password">Contraseña</label>
+      <label for="password"><?= th('form.password_label') ?></label>
       <input type="password" id="password" name="AGENT_EMAIL_PASSWORD"
-             <?= $values['AGENT_EMAIL_PASSWORD'] === '' ? 'required' : '' ?>
+             <?= $hasPassword ? '' : 'required' ?>
              autocomplete="new-password"
-             placeholder="<?= $values['AGENT_EMAIL_PASSWORD'] !== '' ? '••••••••  se conservó la anterior' : '' ?>">
+             placeholder="<?= $hasPassword ? th('form.password_kept') : '' ?>">
       <?php if (isset($errors['AGENT_EMAIL_PASSWORD'])): ?>
         <p class="err"><?= e($errors['AGENT_EMAIL_PASSWORD']) ?></p>
       <?php endif; ?>
-      <p class="hint">Si tu proveedor ofrece <em>contraseñas de aplicación</em>, usa una de
-         esas. Es el dato que más seguido termina rechazado si no.</p>
+      <p class="hint"><?= th('form.password_hint') ?></p>
 
-      <label for="fromname">Nombre visible <span class="opt">opcional</span></label>
+      <label for="fromname"><?= th('form.fromname_label') ?> <span class="opt"><?= th('form.optional') ?></span></label>
       <input type="text" id="fromname" name="AGENT_EMAIL_FROM_NAME"
-             value="<?= e($values['AGENT_EMAIL_FROM_NAME']) ?>" placeholder="Atenea">
+             value="<?= e($values['AGENT_EMAIL_FROM_NAME']) ?>" placeholder="<?= th('form.fromname_ph') ?>">
       <?php if (isset($errors['AGENT_EMAIL_FROM_NAME'])): ?>
         <p class="err"><?= e($errors['AGENT_EMAIL_FROM_NAME']) ?></p>
       <?php endif; ?>
-      <p class="hint">El nombre que ve la gente cuando el agente les escribe.</p>
+      <p class="hint"><?= th('form.fromname_hint') ?></p>
     </fieldset>
 
     <fieldset>
-      <legend>Lectura de correo (IMAP)</legend>
+      <legend><?= th('form.imap_legend') ?></legend>
       <div class="row">
         <div class="grow">
-          <label for="imaphost">Servidor</label>
+          <label for="imaphost"><?= th('form.server') ?></label>
           <input type="text" id="imaphost" name="AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST" required
                  value="<?= e($values['AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST']) ?>"
-                 placeholder="imap.tuproveedor.example">
+                 placeholder="<?= th('form.imap_host_ph') ?>">
         </div>
         <div class="narrow">
-          <label for="imapport">Puerto</label>
+          <label for="imapport"><?= th('form.port') ?></label>
           <input type="text" id="imapport" name="AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT" required
                  inputmode="numeric" value="<?= e($values['AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT']) ?>">
         </div>
@@ -250,23 +308,20 @@ $existing = existing_config();
       <?php foreach (['AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST', 'AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT'] as $k): ?>
         <?php if (isset($errors[$k])): ?><p class="err"><?= e($errors[$k]) ?></p><?php endif; ?>
       <?php endforeach; ?>
-      <p class="hint">Pídele a tu proveedor el nombre exacto del servidor. Adivinarlo
-         poniendo <code>imap.</code> enfrente de tu dominio seguido produce un nombre que
-         funciona en todo menos en el certificado de seguridad, y ese falla es difícil de
-         diagnosticar después.</p>
+      <p class="hint"><?= th('form.imap_hint') ?></p>
     </fieldset>
 
     <fieldset>
-      <legend>Envío de correo (SMTP)</legend>
+      <legend><?= th('form.smtp_legend') ?></legend>
       <div class="row">
         <div class="grow">
-          <label for="smtphost">Servidor</label>
+          <label for="smtphost"><?= th('form.server') ?></label>
           <input type="text" id="smtphost" name="AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST" required
                  value="<?= e($values['AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST']) ?>"
-                 placeholder="smtp.tuproveedor.example">
+                 placeholder="<?= th('form.smtp_host_ph') ?>">
         </div>
         <div class="narrow">
-          <label for="smtpport">Puerto</label>
+          <label for="smtpport"><?= th('form.port') ?></label>
           <input type="text" id="smtpport" name="AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT" required
                  inputmode="numeric" value="<?= e($values['AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT']) ?>">
         </div>
@@ -274,14 +329,14 @@ $existing = existing_config();
       <?php foreach (['AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST', 'AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT'] as $k): ?>
         <?php if (isset($errors[$k])): ?><p class="err"><?= e($errors[$k]) ?></p><?php endif; ?>
       <?php endforeach; ?>
-      <p class="hint">465 o 587. Los dos se verifican igual.</p>
+      <p class="hint"><?= th('form.smtp_hint') ?></p>
     </fieldset>
 
     <?php if ($report !== null): ?>
       <div class="panel bad">
-        <h2>Todavía no se guarda: algo aquí no está bien</h2>
+        <h2><?= th('report.h2') ?></h2>
 
-        <h3>Lectura de correo</h3>
+        <h3><?= th('report.imap_h3') ?></h3>
         <ul class="steps">
           <?php foreach ($report['imap']['steps'] as $s): ?>
             <li class="<?= $s['ok'] ? 'good' : 'fail' ?>">
@@ -291,7 +346,7 @@ $existing = existing_config();
           <?php endforeach; ?>
         </ul>
 
-        <h3>Envío de correo</h3>
+        <h3><?= th('report.smtp_h3') ?></h3>
         <ul class="steps">
           <?php foreach ($report['smtp']['steps'] as $s): ?>
             <li class="<?= $s['ok'] ? 'good' : 'fail' ?>">
@@ -304,12 +359,10 @@ $existing = existing_config();
     <?php endif; ?>
 
     <div class="actions">
-      <button type="submit" name="action" value="setup" class="primary">Verificar y guardar</button>
+      <button type="submit" name="action" value="setup" class="primary"><?= th('form.submit') ?></button>
     </div>
 
-    <p class="quiet">Esto entra a tu buzón y sale de inmediato; no lee, no envía ni cambia
-       nada. La configuración se guarda solo si tu servidor de correo la acepta, así que no
-       hay nada que deshacer si algo aquí está mal.</p>
+    <p class="quiet"><?= th('form.footnote') ?></p>
   </form>
 
 <?php endif; ?>
