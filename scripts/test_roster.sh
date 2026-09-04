@@ -289,6 +289,98 @@ assert "the record names the cc"        'grep -q "cc=second_contact@example.org"
 assert "message-id stays last with a cc" \
     '[ "$(sed -n "s/.*message-id=//p" "$sent_log")" = "$(grep -m1 "^Message-ID: " "$CAPTURE" | sed "s/^Message-ID: //")" ]'
 
+# --- Attachments ---------------------------------------------------------------
+#
+# #38: send.sh built a single-part text/plain and nothing else, so a field report
+# that came with a document had to be pasted into the body. Text survives that;
+# a screenshot or a PDF has no way through at all.
+#
+# The first assertion is the one that matters most: a message with no --attach
+# must still be the message this script sent before, because every send this
+# project makes today is that one.
+attach_dir="$tmp/attach"
+mkdir -p "$attach_dir"
+printf 'col1,col2\n1,2\n' >"$attach_dir/datos.csv"
+printf 'segundo archivo\n' >"$attach_dir/otro.txt"
+
+: >"$CAPTURE"
+send_ok "jjulianfe@gmail.com" "sin adjuntos" "$body"
+assert "no --attach stays single-part"     'grep -qx "Content-Type: text/plain; charset=UTF-8" "$CAPTURE"'
+assert "no --attach declares no boundary"  '! grep -q "boundary=" "$CAPTURE"'
+
+: >"$CAPTURE"
+send_ok --attach "$attach_dir/datos.csv" "jjulianfe@gmail.com" "con adjunto" "$body"
+assert "--attach makes it multipart/mixed" 'grep -qE "^Content-Type: multipart/mixed; boundary=\"=_paynani_[0-9a-f]{32}\"\$" "$CAPTURE"'
+assert "the body survives as a part"       'grep -qx "hi" "$CAPTURE"'
+assert "the attachment is base64"          'grep -qx "Content-Transfer-Encoding: base64" "$CAPTURE"'
+assert "the attachment is named"           'grep -qx "Content-Disposition: attachment; filename=\"datos.csv\"" "$CAPTURE"'
+assert "the type is named"                 'grep -qx "Content-Type: text/csv" "$CAPTURE"'
+assert "the closing separator is present"  'grep -qE "^--=_paynani_[0-9a-f]{32}--\$" "$CAPTURE"'
+
+# The bytes have to come back out. Everything above could pass on a message whose
+# attachment decoded to something else, or to nothing.
+assert "the attachment round-trips" \
+    'python3 -c "
+import email, email.policy, sys
+m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
+parts = [p for p in m.walk() if p.get_content_disposition() == \"attachment\"]
+assert len(parts) == 1, parts
+assert parts[0].get_filename() == \"datos.csv\"
+assert parts[0].get_payload(decode=True) == b\"col1,col2\n1,2\n\"
+" "$CAPTURE"'
+
+# An SVG that opens with a comment does not sniff as an SVG: file 5.45 answers
+# text/html for the logos in brand/ and text/plain for the one below. Which wrong
+# answer you get depends on the bytes and the libmagic version, so this asserts
+# only that the sniff is wrong -- that is the whole reason the extension table
+# exists. Sending this project's own artwork as HTML is the failure it guards,
+# found the first time --attach was pointed at real files.
+printf '<!-- comentario primero -->\n<svg xmlns="http://www.w3.org/2000/svg"></svg>\n' >"$attach_dir/logo.svg"
+assert "file(1) alone does not recognise it" '[ "$(file --mime-type -b "$attach_dir/logo.svg")" != "image/svg+xml" ]'
+: >"$CAPTURE"
+send_ok --attach "$attach_dir/logo.svg" "jjulianfe@gmail.com" "svg" "$body"
+assert "an .svg is typed image/svg+xml"    'grep -qx "Content-Type: image/svg+xml" "$CAPTURE"'
+assert "an .svg is not typed text/html"    '! grep -q "^Content-Type: text/html" "$CAPTURE"'
+
+# file(1) still decides everything the extension table does not name.
+printf 'sin extension conocida\n' >"$attach_dir/dato.bin"
+: >"$CAPTURE"
+send_ok --attach "$attach_dir/dato.bin" "jjulianfe@gmail.com" "bin" "$body"
+assert "an unknown extension falls back to file(1)" \
+    'grep -c "^Content-Type: text/plain" "$CAPTURE" | grep -qx 2'
+
+: >"$CAPTURE"
+send_ok --attach "$attach_dir/datos.csv" --attach "$attach_dir/otro.txt" \
+    "jjulianfe@gmail.com" "dos adjuntos" "$body"
+assert "--attach repeats, in order" \
+    'python3 -c "
+import email, email.policy, sys
+m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
+names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
+assert names == [\"datos.csv\", \"otro.txt\"], names
+" "$CAPTURE"'
+
+# An accented filename is the common case in this project, not the edge case. An
+# encoded-word inside a quoted string stays literal, so this needs RFC 2231.
+cp "$attach_dir/datos.csv" "$attach_dir/reporte señales.csv"
+: >"$CAPTURE"
+send_ok --attach "$attach_dir/reporte señales.csv" "jjulianfe@gmail.com" "acentos" "$body"
+assert "an accented filename uses RFC 2231" 'grep -q "filename\*=UTF-8'"''"'" "$CAPTURE"'
+assert "an accented filename round-trips" \
+    'python3 -c "
+import email, email.policy, sys
+m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
+names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
+assert names == [\"reporte señales.csv\"], names
+" "$CAPTURE"'
+
+# A path that cannot be read must stop the whole send, not produce a message with
+# a hole in it.
+: >"$CAPTURE"
+"$SEND" --attach "$attach_dir/does-not-exist.pdf" "jjulianfe@gmail.com" "subject" "$body" >/dev/null 2>&1 && arc=0 || arc=$?
+assert "a missing attachment exits 2"      '[ "${arc:-0}" -eq 2 ]'
+assert "a missing attachment sends nothing" '[ ! -s "$CAPTURE" ]'
+
 # --- The shipped template authorises nobody -----------------------------------
 #
 # roster.md.example used to carry two real, working addresses as data rows, so

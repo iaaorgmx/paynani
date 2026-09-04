@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Send via Himalaya, but only to allowlisted recipients.
 #
-#   send.sh [--check] [--cc <address>] <to> <subject> <body-file>
+#   send.sh [--check] [--cc <address>] [--attach <path>]... <to> <subject> <body-file>
 #
 # Anything not in roster.md exits 2 and sends nothing. That is the point: this
 # agent reads mail all day and acts on the part of it that comes from the roster,
@@ -9,9 +9,17 @@
 # --cc is held to the same rule -- it is a second address this agent writes to,
 # not a lesser one, so it is checked against the roster exactly like <to>.
 #
+# --attach may be repeated; the files ride in the order given. With none, the
+# message is byte-for-byte what it was before attachments existed: a single-part
+# text/plain. With one or more it becomes multipart/mixed, and the body is the
+# first part rather than the whole message. A field report that could only be
+# pasted into the body is what asked for this (#38).
+#
 # --check prints the message it would send and sends nothing. Use it to prove
 # this script can find its credentials, which the roster tests cannot: the roster
-# gate runs first, so a refusal exits before the env file is ever read.
+# gate runs first, so a refusal exits before the env file is ever read. It prints
+# attachments encoded, not summarised, because a message you cannot see whole is
+# one you cannot check.
 #
 # Environment:
 #   ROSTER    path to the allowlist        (default: repo root/roster.md)
@@ -40,6 +48,7 @@ ACCOUNT="paynani"
 
 check_only=""
 cc=""
+attachments=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --check)
@@ -50,17 +59,45 @@ while [ $# -gt 0 ]; do
             cc=${2:?--cc requires an address}
             shift 2
             ;;
+        --attach)
+            attachments+=("${2:?--attach requires a path}")
+            shift 2
+            ;;
         *)
             break
             ;;
     esac
 done
 
-to=${1:?usage: send.sh [--check] [--cc <address>] <to> <subject> <body-file>}
+to=${1:?usage: send.sh [--check] [--cc <address>] [--attach <path>]... <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
 
 [ -f "$bodyfile" ] || { echo "no such body file: $bodyfile" >&2; exit 1; }
+
+# Attachments are checked before anything is built, so a bad path costs nothing
+# and half a message is never sent. Exit 2 is the same code the roster refusal
+# uses, and means the same thing here: nothing left this host.
+attach_bytes=0
+for _paynani_file in ${attachments[@]+"${attachments[@]}"}; do
+    if [ ! -f "$_paynani_file" ] || [ ! -r "$_paynani_file" ]; then
+        echo "REFUSED: cannot read attachment $_paynani_file" >&2
+        echo "Nothing was sent. Check the path, or drop the --attach." >&2
+        exit 2
+    fi
+    attach_bytes=$(( attach_bytes + $(wc -c < "$_paynani_file") ))
+done
+
+# Gmail rejects above 25 MB, and base64 costs a third on top of the raw bytes.
+# Refusing here beats an SMTP rejection after the fact, which arrives as a bounce
+# to a mailbox nobody may read for hours.
+ATTACH_LIMIT=20971520
+attach_encoded=$(( attach_bytes * 4 / 3 ))
+if [ "$attach_encoded" -gt "$ATTACH_LIMIT" ]; then
+    echo "REFUSED: attachments encode to ~${attach_encoded} bytes, over the ${ATTACH_LIMIT} limit" >&2
+    echo "Nothing was sent. Send fewer files, or link to them instead." >&2
+    exit 2
+fi
 
 # A newline in any of these would end the header and start another one, so a
 # crafted subject (or cc) could add Bcc: and reach an address the roster never
@@ -190,15 +227,105 @@ date_hdr=$(date -R)
 # half must be one we plausibly own, so take it from the sender.
 msgid="<$(date -u +%Y%m%d%H%M%S).$$.${RANDOM}@${from_addr##*@}>"
 
+# --- Attachments -------------------------------------------------------------
+#
+# Only computed when there is something to attach, so the no-attachment path
+# stays exactly the message this script sent before: same headers, same order,
+# single part. A separator that could appear in the content would truncate the
+# message at that line, so it carries 128 bits of randomness and a prefix no
+# body plausibly contains.
+boundary=""
+if [ ${#attachments[@]} -gt 0 ]; then
+    boundary="=_paynani_$(openssl rand -hex 16)"
+fi
+
+# A filename is a header parameter, and the quoting rules that protect the From
+# display name protect this too: a quote or a backslash in a filename would
+# otherwise end the parameter early and let the rest be read as more parameters.
+# Non-ASCII needs RFC 2231 rather than an encoded-word -- an encoded-word inside
+# a quoted string stays literal, so an accented filename would arrive as the
+# =?UTF-8?B?...?= text itself. Spanish filenames are the common case here, not
+# the edge case.
+percent_encode() {
+    LC_ALL=C
+    _paynani_s=$1
+    _paynani_out=""
+    _paynani_i=0
+    while [ "$_paynani_i" -lt "${#_paynani_s}" ]; do
+        _paynani_c=${_paynani_s:$_paynani_i:1}
+        case "$_paynani_c" in
+            [A-Za-z0-9._~-]) _paynani_out="$_paynani_out$_paynani_c" ;;
+            *) _paynani_out="$_paynani_out$(printf '%%%02X' "'$_paynani_c")" ;;
+        esac
+        _paynani_i=$(( _paynani_i + 1 ))
+    done
+    printf '%s' "$_paynani_out"
+}
+
+attachment_part() {
+    _paynani_path=$1
+    _paynani_name=$(basename "$_paynani_path" | tr -d '\r\n')
+
+    # file(1) reads bytes and cannot know what the sender meant by them. On an
+    # SVG that opens with a comment rather than `<?xml` or `<svg` it answers
+    # text/html -- which is every logo in brand/, so this project's own artwork
+    # would ride as HTML, a type mail clients distrust and sometimes render
+    # instead of offering as a file. Where the extension is unambiguous it is the
+    # better evidence, because the sender chose it and the sniff only guessed.
+    #
+    # Everything else still goes to file(1), and when it has no usable opinion,
+    # say so honestly rather than name a type the client would then trust.
+    case "$(printf '%s' "$_paynani_name" | tr '[:upper:]' '[:lower:]')" in
+        *.svg)        _paynani_type=image/svg+xml ;;
+        *.md)         _paynani_type=text/markdown ;;
+        *.csv)        _paynani_type=text/csv ;;
+        *.txt)        _paynani_type=text/plain ;;
+        *.json)       _paynani_type=application/json ;;
+        *.pdf)        _paynani_type=application/pdf ;;
+        *.png)        _paynani_type=image/png ;;
+        *.jpg|*.jpeg) _paynani_type=image/jpeg ;;
+        *.gif)        _paynani_type=image/gif ;;
+        *.webp)       _paynani_type=image/webp ;;
+        *)
+            _paynani_type=$(file --mime-type -b "$_paynani_path" 2>/dev/null || true)
+            case "$_paynani_type" in
+                ''|*[!!-~]*) _paynani_type=application/octet-stream ;;
+            esac
+            ;;
+    esac
+
+    printf -- '--%s\n' "$boundary"
+    printf 'Content-Type: %s\n' "$_paynani_type"
+    printf 'Content-Transfer-Encoding: base64\n'
+    if printf '%s' "$_paynani_name" | LC_ALL=C grep -q '[^ -~]'; then
+        printf "Content-Disposition: attachment; filename*=UTF-8''%s\n" \
+            "$(percent_encode "$_paynani_name")"
+    else
+        printf 'Content-Disposition: attachment; filename="%s"\n' \
+            "$(printf '%s' "$_paynani_name" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+    fi
+    printf '\n'
+    # GNU base64 wraps at 76 already; BSD base64 does not wrap at all. Stripping
+    # and re-folding gives the same output on both rather than one that depends
+    # on which host the agent happens to be installed on.
+    base64 < "$_paynani_path" | tr -d '\n' | fold -w 76
+    printf '\n'
+}
+
 build_message() {
     printf 'Date: %s\n' "$date_hdr"
     printf 'Message-ID: %s\n' "$msgid"
     printf 'MIME-Version: 1.0\n'
-    printf 'Content-Type: text/plain; charset=UTF-8\n'
     # The body is written as raw UTF-8 and sent as-is. Declaring 7bit here would
     # be a lie the moment anyone writes an accent, which in this project is most
-    # messages.
-    printf 'Content-Transfer-Encoding: 8bit\n'
+    # messages. With attachments the same two lines move down onto the body part,
+    # where they describe the body rather than the whole message.
+    if [ -n "$boundary" ]; then
+        printf 'Content-Type: multipart/mixed; boundary="%s"\n' "$boundary"
+    else
+        printf 'Content-Type: text/plain; charset=UTF-8\n'
+        printf 'Content-Transfer-Encoding: 8bit\n'
+    fi
     if [ -n "$from_name" ]; then
         if printf '%s' "$from_name" | LC_ALL=C grep -q '[^ -~]'; then
             # An encoded-word is not a quoted string and must not be quoted —
@@ -220,7 +347,23 @@ build_message() {
     fi
     printf 'Subject: %s\n' "$(encode_header "$subject")"
     printf '\n'
+    if [ -z "$boundary" ]; then
+        cat "$bodyfile"
+        return
+    fi
+    printf -- '--%s\n' "$boundary"
+    printf 'Content-Type: text/plain; charset=UTF-8\n'
+    printf 'Content-Transfer-Encoding: 8bit\n'
+    printf '\n'
     cat "$bodyfile"
+    # A body file that does not end in a newline would otherwise put the closing
+    # separator on the same line as its last word, and a separator that is not
+    # alone on its line is not a separator.
+    printf '\n'
+    for _paynani_file in ${attachments[@]+"${attachments[@]}"}; do
+        attachment_part "$_paynani_file"
+    done
+    printf -- '--%s--\n' "$boundary"
 }
 
 if [ -n "$check_only" ]; then
