@@ -8,12 +8,13 @@ instructions, so most of these tests are about what must *not* be tagged.
 
 import email
 import pathlib
+import socket
 import sys
 import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from idle_listener import describe, decode_hdr
+from idle_listener import KEEPALIVE_OPTIONS, describe, decode_hdr, keepalive
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 
@@ -196,6 +197,41 @@ def main():
         check(encoded == "Prueba de correo — ñ, á, ¿qué tal?", f"decoded to {encoded!r}")
         check("\n" not in describe("a@b.c", encoded, "", trusted=True),
               "one message is always one line")
+
+    # --- keepalive, the thing that makes a dead connection announce itself ----
+    #
+    # Behind NAT an idle connection is dropped without a FIN and the socket still
+    # reads ESTAB, so nothing notices until something writes. These probes are
+    # what write. The failure this guards is not a crash: naming only Linux's
+    # TCP_KEEPIDLE leaves macOS with SO_KEEPALIVE on and the system default of
+    # two hours, so no probe fires inside any useful window and the protection
+    # silently falls back to IDLE_REFRESH. Silence is the failure mode the whole
+    # feature exists to remove, so it has to be asserted, not assumed.
+    names = [name for name, _ in KEEPALIVE_OPTIONS]
+    check("TCP_KEEPIDLE" in names, "the Linux idle-timer name is asked for")
+    check("TCP_KEEPALIVE" in names, "the macOS idle-timer name is asked for too")
+    check(len(names) == len(set(names)), f"no option is set twice: {names}")
+
+    # Whichever platform this is, one of the two idle names must resolve. If
+    # neither does, keepalive() runs, logs nothing, and protects nothing.
+    idle_names = [n for n in ("TCP_KEEPIDLE", "TCP_KEEPALIVE") if hasattr(socket, n)]
+    check(idle_names, "this platform exposes an idle timer under one of the two names")
+
+    # And it has to reach the socket. Asserting on the table alone would pass on
+    # a keepalive() that never called setsockopt.
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        keepalive(probe)
+        check(probe.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE) == 1,
+              "SO_KEEPALIVE is on after keepalive()")
+        for name, value in KEEPALIVE_OPTIONS:
+            option = getattr(socket, name, None)
+            if option is None:
+                continue
+            got = probe.getsockopt(socket.IPPROTO_TCP, option)
+            check(got == value, f"{name} is {value} after keepalive(), got {got}")
+    finally:
+        probe.close()
 
     print("listener tests passed")
     return 0
