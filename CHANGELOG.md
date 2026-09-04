@@ -1,6 +1,120 @@
 # Changelog
 
-## Sin publicar
+## 0.2.0 — 2026-09-04
+
+**paynani estrena marca, su página de configuración habla cinco idiomas, y el
+resolutor de rutas de PHP quedó aislado en su propio archivo.** 51 commits desde
+0.1.0.
+
+Basta `git pull`. Ninguna ruta que una unidad de systemd nombre cambió de sitio,
+no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.php`,
+`webapp/i18n/`— llegan con el propio pull.
+
+- **El resolutor de rutas de PHP arrastraba media aplicación**
+  ([#33](https://github.com/iaaorgmx/paynani/issues/33)). Preguntar en PHP dónde
+  vive el `.env` obligaba a cargar el catálogo de idiomas, el control de acceso
+  del formulario, la sesión y el CSRF: `envfile.php` y `guard.php` requerían
+  `i18n.php`, y las cinco funciones de resolución estaban repartidas entre esos
+  dos archivos. En Python basta `harness/paths.py` y en shell basta
+  `scripts/envpath.sh`; la tercera implementación de la misma regla era la única
+  que no se podía leer sola.
+
+  Ahora viven juntas en `webapp/lib/paths.php` —`home_dir()`, `install_root()`,
+  `state_dir()`, `recorded_env()`, `env_path()`, más `HARNESS_ROOTS`,
+  `HARNESS_ENV_RELATIVE` y `ENV_BASENAME`— y ese archivo **no requiere nada**. No
+  es higiene: es lo que le permite ser comparable por sí solo con las otras dos,
+  que es exactamente lo que `test_paths.sh` afirma 151 veces.
+
+  `guard.php` se queda con loopback, llave, CSRF, cabeceras y sesión;
+  `envfile.php` con leer, sanear, renderizar y escribir. Los dos siguen
+  requiriendo `i18n.php`, y eso es deliberado: `require_loopback()` y
+  `write_env()` traducen mensajes que lee alguien que está entregando la
+  contraseña de su buzón. Lo que se corta es que el resolutor lo heredara.
+
+- **`scripts/test_paths.sh` comparaba rutas contra un php muerto.** La suite cayó
+  a 131 de 151 y los veinte fallos decían «php agrees with python» con la ruta
+  esperada de un lado y la cadena vacía del otro. No era un desacuerdo de rutas:
+  el `require_once` de `i18n.php` no encontraba su archivo en el clon de prueba
+  —que copiaba sólo `envfile.php` y `guard.php`—, php moría, y la comparación
+  leía ese vacío como una ruta que no coincide.
+
+  Se arregló la copia y, sobre todo, el silenciado: la invocación descartaba
+  stderr con `2>/dev/null`, y eso convertía «este archivo no carga» en «este
+  archivo resuelve la cadena vacía», que manda a buscar el problema al lado
+  equivocado. Ahora, si la salida no es una ruta absoluta, se devuelve el error
+  para que aparezca en la línea `actual:`. Sin eso, el mismo fallo se vuelve a
+  esconder la próxima vez que alguien agregue un `require`.
+
+- **paynani estrena identidad visual**
+  ([#27](https://github.com/iaaorgmx/paynani/issues/27)). El isotipo es **la
+  voluta**: la voluta de la palabra con que los códices dibujan el habla saliendo
+  de la boca, en trazo de grosor parejo con puntas redondas.
+
+  `brand/` trae catorce archivos, porque la marca se ve en un favicon de 16 px,
+  en el avatar de la organización y en la cabecera del README, y cada sitio pide
+  una pieza distinta. La **versión reducida** —el mismo trazo sin el rizo
+  interior— existe porque por debajo de 32 px el rizo se cierra y queda una
+  mancha. El logotipo va **en curvas**, así que ningún archivo depende de tener
+  una fuente instalada; las curvas vienen de Spectral Medium, bajo SIL Open Font
+  License 1.1, cuyo texto se incluye en `brand/OFL-Spectral.txt`.
+
+  `webapp/assets/app.css` se realineó: el acento pasa de jade `#2f5d50` a grana
+  cochinilla `#8f2d2b` (`#d8887f` en oscuro). El cambio no era de una línea. Con
+  jade, el acento y el rojo de error estaban a dE76 65.4; con grana quedaban a
+  7.7, y en pantalla el botón «Verificar y guardar» y el panel «No se pudo
+  conectar» pasaban a ser el mismo rojo. Mover el error hacia el naranja lo
+  acercaba al ámbar de aviso —de dE 29.8 a entre 9.8 y 20.8 en oscuro—, así que
+  la salida fue sacar el acento del botón primario y ponerlo en tinta. El único
+  rojo saturado de la página vuelve a ser el error; `--ok`, `--bad` y `--warn`
+  quedan intactas.
+
+  El `# paynani` de texto del `README.md` y de sus cuatro traducciones se cambia
+  por el logotipo, dentro de un `<h1>` y con `alt="paynani"` —no se pierde ni el
+  encabezado de primer nivel ni el nombre para quien usa lector de pantalla— y
+  envuelto en `<picture>` con `prefers-color-scheme`, porque el logotipo normal
+  tiene el texto en tinta y sobre el tema oscuro de GitHub no se ve.
+
+- **El prompt del Paso 2 no cabía en la pantalla de un teléfono.** Las vallas de
+  código no envuelven líneas, nunca, así que una línea de 78 caracteres se
+  cortaba donde terminaba la pantalla y el resto quedaba detrás de un
+  desplazamiento horizontal que casi nadie descubre. Justo el texto que el README
+  pide copiar entero era el que no se podía leer entero.
+
+  Se reenvolvió a 32 columnas en los cinco idiomas, sin cambiar una palabra: como
+  se pega en un chat, dónde parta la línea no significa nada. Se conserva la
+  valla a propósito —un blockquote envolvería solo, pero perdería el botón de
+  copiar, que en un texto cuyo único uso es copiarse es lo que más sirve—. La
+  única línea que sigue midiendo 35 es la URL del repositorio, que no se puede
+  partir y que a 360 px entra completa igual.
+
+- **La página de configuración del buzón habla cinco idiomas.** Quien llena el
+  formulario no siempre es quien eligió el idioma del resto de la instalación, y
+  está entregando la contraseña de un buzón: tiene derecho a leer en su idioma lo
+  que está aceptando. Los textos salen de `webapp/i18n/<tag>.php`, un arreglo
+  plano por idioma, y una clave que a una traducción le falte cae a es-MX en vez
+  de renderizar vacío, así que un catálogo a medias degrada a página mezclada y
+  no a página en blanco. El selector cambia el idioma al cambiar, y el botón
+  funciona sin JavaScript.
+
+- **El código dentro de la página se partía a media palabra.** `word-break:
+  break-all` corta en cualquier carácter aunque la palabra quepa entera en el
+  renglón siguiente, y partía `imap.` como `ima` + `p.`. Con `overflow-wrap:
+  anywhere` una ruta larga sigue partiéndose, porque no cabe de otro modo, pero
+  un token corto se va completo al siguiente renglón.
+
+- **Los ejemplos usaban dominios que alguien posee, y uno era un servidor real.**
+  `MAILBOX_SETUP.md` nombraba un servidor de hosting existente en su ejemplo, y
+  los marcadores de posición de la webapp usaban `tudominio.com` y
+  `tuproveedor.com`. Un ejemplo que apunta a un dominio de verdad manda tráfico
+  —y a veces credenciales— a quien no lo pidió. Todo pasa a `.example`, que
+  existe justamente para esto, en las traducciones también.
+
+- **Documentación.** De dónde viene el nombre queda escrito, y propagado a las
+  cuatro traducciones; el selector de idioma se localiza en vez de aparecer
+  siempre en español. La arquitectura de entrega por harness se agrupa en su
+  propia sección en lugar de estar repartida. Y se quitan las rayas de la
+  documentación pública para humanos, que es una convención de este proyecto para
+  el texto que no lee un agente.
 
 - **Las notificaciones de una plataforma de coordinación pueden contar como
   correo de quien las generó** ([#16](https://github.com/iaaorgmx/paynani/issues/16)).
