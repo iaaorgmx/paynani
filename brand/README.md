@@ -98,6 +98,74 @@ remota**: va la tipografía del sistema. La razón está escrita en
 no tener salida a internet, y ahí una fuente remota no falla con estruendo, falla
 en silencio.
 
+## Voz gráfica
+
+Las cinco reglas dicen qué no hacer. Esto dice cómo decidir cuando el caso no
+está en la lista.
+
+**El isotipo es un trazo, no una silueta.** De ahí sale casi todo lo demás. No se
+rellena, no se encierra en un círculo ni en una pastilla: la voluta es habla
+saliendo de una boca, y meterla en un contenedor la contradice — el encierro es
+justamente lo que está dejando atrás. Si hace falta separarla del fondo, se
+cambia el fondo, no se le pone marco.
+
+**Un solo acento.** La grana cochinilla es el único color que la marca agrega. El
+jade se retiró para no acabar con un sistema de dos colores compitiendo. Si algo
+necesita un segundo color, es semántico —error, éxito, aviso— y no pertenece a la
+marca: no lo tomes de la paleta ni lo llames color de paynani.
+
+**El nombre es la otra mitad.** El isotipo va solo únicamente donde el nombre ya
+está presente o no hace falta: favicon, avatar, marca de agua. En cualquier otro
+sitio va el lockup. Un isotipo suelto en un lugar donde nadie ha leído «paynani»
+no comunica la marca, la esconde.
+
+**El espacio es material, no sobra.** El resguardo de `2x` es un mínimo, no un
+objetivo. La marca aguanta mucho aire alrededor y se ve mal apretada; ante la
+duda, más espacio.
+
+**La cita no se disfraza.** El origen es la voluta de la palabra de los códices,
+y esa referencia ya la carga el trazo. No se le suman grecas, escalonados,
+pirámides ni bordes «prehispánicos»: eso convierte una cita en un disfraz, que
+es exactamente el cliché del azteca decorativo que la marca existe para evitar.
+La contención es lo que hace que la referencia se lea como intención y no como
+adorno.
+
+**La marca de agua es el único uso decorativo permitido**, al 6 % y **siempre
+desbordando un borde**. Una voluta completa dentro del cuadro deja de leerse como
+textura y se lee como un segundo logotipo. Ver `social-preview.html`.
+
+**La boca apunta siempre arriba a la derecha.** No es una preferencia de
+composición: es habla saliendo, y voltearla invierte la lectura.
+
+**Sobre fondo oscuro se cambia de archivo, no de opacidad.** Para eso están los
+`*-claro.svg`. Bajarle la opacidad a la versión clara ensucia el color y rompe el
+contraste verificado en la paleta.
+
+## Piezas exportadas
+
+| Archivo | Dónde va |
+|---|---|
+| `social-preview.html` | Fuente del social preview del repositorio. |
+| `paynani-social-preview-1280x640.png` | GitHub → Settings → General → Social preview. |
+
+El PNG se versiona junto a su fuente por la misma razón que los SVG: **subir esa
+imagen es interfaz web, no API**, así que el archivo tiene que existir para que
+una persona pueda arrastrarlo. La primera versión vivió sólo fuera de `git` y se
+perdió.
+
+Para regenerarlo, desde `brand/`:
+
+```bash
+~/.claude/bin/web-shot.sh "file://$PWD/social-preview.html" \
+    paynani-social-preview-1280x640.png --ancho 1280 --alto 640
+```
+
+La fuente **referencia** `paynani-horizontal.svg` con `<img>` en vez de copiar el
+dibujo: funciona porque ese archivo lleva los colores horneados, y evita una
+segunda copia que se quedaría atrás la próxima vez que la marca cambie. La voluta
+de la marca de agua sí va en línea, porque necesita una opacidad que `<img>` no
+puede imponerle desde fuera.
+
 ## Cómo se regeneran
 
 Los SVG están generados, no dibujados a mano. El trazo de la voluta es un `path`

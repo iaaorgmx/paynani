@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<title>paynani — social preview 1280×640</title>
+<!--
+  Fuente del social preview del repositorio. Se exporta a
+  paynani-social-preview-1280x640.png; el procedimiento está en README.md.
+
+  El logotipo se referencia, no se copia: paynani-horizontal.svg lleva los
+  colores horneados, así que funciona con <img> aunque los *-mono no. Una
+  segunda copia del dibujo aquí sería una que se queda atrás la próxima vez que
+  la marca cambie.
+
+  La voluta de la marca de agua sí va en línea, porque necesita una opacidad
+  que el archivo no trae y que <img> no puede imponerle desde fuera.
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    background: #f7f7f5;
+    color: #1c1c1a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Ubuntu,
+                 "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 29px;
+    position: relative;
+  }
+  /* Desborda por la esquina: la voluta se lee como marca de agua, no como un
+     segundo logotipo puesto en una esquina. */
+  .marca-agua { position: absolute; right: -128px; bottom: -164px; opacity: .06; line-height: 0; }
+  .logotipo { width: 443px; display: block; }
+  .lema { font-size: 27px; color: #3c3b37; text-align: center; max-width: 74%; line-height: 1.5; z-index: 1; }
+  .repositorio {
+    font-size: 22px; color: #66655f; z-index: 1;
+    font-family: "Ubuntu Mono", "DejaVu Sans Mono", ui-monospace, Menlo, monospace;
+  }
+</style>
+</head>
+<body>
+  <div class="marca-agua">
+    <svg width="547" height="547" viewBox="0 0 64 64" fill="none"
+         xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M50 15C30 11 12 23 14 38c2 12 16 16 24 10 8-6 6-16-2-17-6-1-10 4-7 8"
+            stroke="#8f2d2b" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <img class="logotipo" src="paynani-horizontal.svg" alt="paynani">
+  <div class="lema">Correo por notificación inmediata para un agente de IA</div>
+  <div class="repositorio">iaaorgmx/paynani</div>
+</body>
+</html>
