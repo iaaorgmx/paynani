@@ -33,8 +33,11 @@ DEFAULT_ENV   = None   # resolved by harness/paths.py, see main()
 DEFAULT_STATE = str(state_dir() / "idle.json")
 DEFAULT_JOURNAL = str(state_dir() / "events.jsonl")
 
-# RFC 2177: a client must re-issue IDLE at least every 29 minutes.
-IDLE_REFRESH = 25 * 60
+# RFC 2177: a client must re-issue IDLE at least every 29 minutes. We stay well
+# under the ceiling on purpose: this interval is also the longest a dead
+# connection can sit unnoticed, so 25 minutes bought nothing and cost a
+# 25-minute blind window. See keepalive() for the primary defence.
+IDLE_REFRESH = 5 * 60
 BACKOFF_MIN, BACKOFF_MAX = 5, 300
 
 # Optional: collapse GitHub notification subjects into something scannable.
@@ -270,6 +273,33 @@ def lookup(env, field, default=None):
     sys.exit(1)
 
 
+def keepalive(sock):
+    """Make a dead connection announce itself.
+
+    Behind NAT — WSL2, or most home routers — an idle connection is dropped
+    without a FIN, and from this side the socket still reads ESTAB until
+    something tries to write. The listener sits in select() waiting for an
+    EXISTS that can no longer arrive, and the mailbox looks exactly like a quiet
+    one. Keepalive probes turn that into a read error, which the retry loop
+    already handles: recovery was never the missing piece, noticing was.
+    """
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    except OSError as exc:
+        log(f"could not enable SO_KEEPALIVE: {exc}")
+        return
+    # macOS does not expose TCP_KEEPIDLE, so every tunable is asked for by name
+    # before it is set. A missing one costs sensitivity, not correctness.
+    for name, value in (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 20), ("TCP_KEEPCNT", 3)):
+        option = getattr(socket, name, None)
+        if option is None:
+            continue
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, option, value)
+        except OSError as exc:
+            log(f"could not set {name}={value}: {exc}")
+
+
 def connect(env):
     # The old schema is a trap rather than an inconvenience: the key is named for
     # a server and holds a port, so a literal reading sends you somewhere else.
@@ -292,6 +322,7 @@ def connect(env):
     password = lookup(env, "password")
 
     conn = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context(), timeout=30)
+    keepalive(conn.sock)
     try:
         conn.login(user, password)
     except imaplib.IMAP4.error as exc:
