@@ -58,6 +58,30 @@ pintan de negro, porque el documento del SVG no ve el `color` de la página que 
 incluye. Si vas a usar `<img>`, toma el archivo de color que corresponda
 (`voluta.svg` o `voluta-claro.svg`), no el `-mono`.
 
+## Las clases `.voluta` y `.logotipo`
+
+Dentro de cada SVG, el trazo lleva `class="voluta"` y el logotipo en curvas lleva
+`class="logotipo"`. No son decoración: son el punto de agarre para **insertar el
+SVG en línea** y pintarlo con la hoja de estilos de la página, sin que exista una
+segunda copia del dibujo en ningún lado.
+
+Funciona porque una regla de CSS gana sobre un atributo de presentación, así que
+los colores horneados en el archivo siguen siendo los correctos cuando el SVG se
+abre solo o se referencia con `<img>`, y la página que lo inserta puede
+repintarlo por tema:
+
+```css
+.marca .voluta   { stroke: var(--accent); }
+.marca .logotipo { fill: var(--ink); }
+```
+
+Así lo usa la página de configuración del buzón —`webapp/lib/brand.php` la
+inserta y `webapp/assets/app.css` la pinta—, que además no tenía alternativa: su
+`Content-Security-Policy` es `default-src 'none'` sin `img-src`, de modo que una
+imagen enlazada quedaría bloqueada.
+
+**Si editas o regeneras los SVG, conserva las dos clases.**
+
 ## Tipografía
 
 El logotipo va **en curvas** dentro de los SVG, así que ningún archivo depende de
