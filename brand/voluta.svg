@@ -1,0 +1,8 @@
+<!-- paynani | isotipo principal
+     Manual de Identidad: https://github.com/iaaorgmx/paynani/issues/27
+     El logotipo va en curvas: Spectral Medium, SIL Open Font License 1.1,
+     Copyright 2017 The Spectral Project Authors. Ver brand/README.md. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none" role="img" aria-label="paynani">
+  <title>paynani</title>
+  <path d="M50 15C30 11 12 23 14 38c2 12 16 16 24 10 8-6 6-16-2-17-6-1-10 4-7 8" stroke="#8f2d2b" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
