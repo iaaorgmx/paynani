@@ -273,6 +273,25 @@ def lookup(env, field, default=None):
     sys.exit(1)
 
 
+# How long a connection may sit idle before the kernel probes it, how far apart
+# the probes go, and how many go unanswered before the socket is declared dead.
+#
+# The idle timer has two names. Linux calls it TCP_KEEPIDLE; macOS calls it
+# TCP_KEEPALIVE, and each platform exposes only its own -- so listing both and
+# asking for each by name costs one skipped lookup either way and covers both.
+# Naming only TCP_KEEPIDLE, as this did at first, does not fail on macOS: it
+# leaves SO_KEEPALIVE on with the system default of two hours, so no probe fires
+# inside any window that matters and the protection quietly falls back to
+# IDLE_REFRESH. A silent downgrade is the exact failure this whole function
+# exists to remove, so the macOS name is not an optional extra.
+KEEPALIVE_OPTIONS = (
+    ("TCP_KEEPIDLE", 60),     # Linux
+    ("TCP_KEEPALIVE", 60),    # macOS, same knob
+    ("TCP_KEEPINTVL", 20),
+    ("TCP_KEEPCNT", 3),
+)
+
+
 def keepalive(sock):
     """Make a dead connection announce itself.
 
@@ -288,9 +307,11 @@ def keepalive(sock):
     except OSError as exc:
         log(f"could not enable SO_KEEPALIVE: {exc}")
         return
-    # macOS does not expose TCP_KEEPIDLE, so every tunable is asked for by name
-    # before it is set. A missing one costs sensitivity, not correctness.
-    for name, value in (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 20), ("TCP_KEEPCNT", 3)):
+    # Every tunable is asked for by name before it is set, because which ones
+    # exist depends on the platform. A missing one costs sensitivity, not
+    # correctness -- see KEEPALIVE_OPTIONS for why both idle-timer names are
+    # listed rather than only Linux's.
+    for name, value in KEEPALIVE_OPTIONS:
         option = getattr(socket, name, None)
         if option is None:
             continue
