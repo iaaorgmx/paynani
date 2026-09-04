@@ -43,7 +43,7 @@ its own section below.
 
 Your email address ends in a domain, `example.com`. The server your mail actually
 lives on is usually **not** `example.com`, and usually not `mail.example.com`
-either. It is something like `nc-ph-2488.xmhosting.com` or
+either. It is something like `s1042.hosting.example.net` or
 `imappro.zoho.com`.
 
 `mail.example.com` frequently *does* resolve, which is what makes this a trap: it
