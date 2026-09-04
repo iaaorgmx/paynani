@@ -27,7 +27,13 @@ trap 'rm -rf "$CLONE"' EXIT
 mkdir -p "$CLONE/harness" "$CLONE/scripts" "$CLONE/webapp/lib"
 cp "$SOURCE_ROOT/harness/paths.py" "$CLONE/harness/"
 cp "$SOURCE_ROOT/scripts/envpath.sh" "$CLONE/scripts/"
-cp "$SOURCE_ROOT/webapp/lib/envfile.php" "$SOURCE_ROOT/webapp/lib/guard.php" "$CLONE/webapp/lib/"
+# envfile.php requiere guard.php e i18n.php. Copiar de menos no da un fallo
+# legible: el require muere, php no imprime nada, y la comparación de abajo
+# lee ese vacío como un desacuerdo de rutas. i18n.php no necesita catálogos
+# aquí — load_catalogue() devuelve [] si el archivo no está, y ni env_path()
+# ni state_dir() llaman a t().
+cp "$SOURCE_ROOT/webapp/lib/envfile.php" "$SOURCE_ROOT/webapp/lib/guard.php" \
+   "$SOURCE_ROOT/webapp/lib/i18n.php" "$CLONE/webapp/lib/"
 ROOT="$CLONE"
 
 pass=0
@@ -81,10 +87,20 @@ php_() {
         *) echo SKIP_NA; return ;;
     esac
     command -v php >/dev/null 2>&1 || { echo SKIP_NOPHP; return; }
-    HOME="$1" PAYNANI_ENV="${2:-}" php -r '
+    local out
+    out=$(HOME="$1" PAYNANI_ENV="${2:-}" php -r '
         require "'"$ROOT"'/webapp/lib/envfile.php";
         echo "'"${3:-env}"'" === "env" ? env_path() : state_dir();
-    ' 2>/dev/null
+    ' 2>&1)
+    # Un fatal de php sale por stderr y deja stdout vacío. Descartarlo con
+    # 2>/dev/null convertía «este archivo no carga» en «este archivo resuelve la
+    # cadena vacía», y el fallo se leía como un desacuerdo de rutas que no era.
+    # Una ruta siempre es absoluta; cualquier otra cosa es el error, y se
+    # devuelve para que aparezca en la línea «actual».
+    case "$out" in
+        /*) printf '%s\n' "$out" ;;
+        *)  printf 'PHP_ERROR: %s\n' "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-140)" ;;
+    esac
 }
 
 # Sets RESOLVED rather than printing it: this also prints check results, and a
