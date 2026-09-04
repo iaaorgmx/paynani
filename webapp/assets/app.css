@@ -8,7 +8,7 @@
   --ink:     #1c1c1a;
   --quiet:   #66655f;
   --line:    #dedcd6;
-  --accent:  #2f5d50;
+  --accent:  #8f2d2b;
   --ok-bg:   #edf6f0;  --ok-line:   #b6d8c4;  --ok-ink:   #1d5334;
   --bad-bg:  #fdf0ee;  --bad-line:  #eebcb3;  --bad-ink:  #8a2c1c;
   --warn-bg: #fdf6e8;  --warn-line: #e8d5a3;  --warn-ink: #7a5a12;
@@ -21,7 +21,7 @@
     --ink:     #e8e6e1;
     --quiet:   #9c9a94;
     --line:    #33363c;
-    --accent:  #7cc0a8;
+    --accent:  #d8887f;
     --ok-bg:   #16261d;  --ok-line:   #2e5741;  --ok-ink:   #9adcb6;
     --bad-bg:  #2a1a17;  --bad-line:  #5e3229;  --bad-ink:  #f0a898;
     --warn-bg: #262015;  --warn-line: #574a2b;  --warn-ink: #e2c583;
@@ -163,7 +163,11 @@ button {
   border: 1px solid var(--accent);
   cursor: pointer;
 }
-button.primary   { background: var(--accent); color: var(--card); }
+/* El primario va en tinta, no en el acento: desde que la marca es grana, un
+   botón del color del acento y el panel de error son el mismo rojo, y la
+   alarma deja de leerse como alarma. El acento sigue en enlaces, foco,
+   botón secundario y resumen. */
+button.primary   { background: var(--ink); border-color: var(--ink); color: var(--card); }
 button.secondary { background: transparent;   color: var(--accent); }
 button:hover     { filter: brightness(1.08); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
