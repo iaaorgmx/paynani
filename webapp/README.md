@@ -191,6 +191,7 @@ documents it as the schema trap it is.
 
 ```
 webapp/index.php        the form, the report, and the confirmation
+webapp/lib/paths.php    where the credentials and the state live; requires nothing
 webapp/lib/guard.php    loopback check, one-time key, CSRF, headers
 webapp/lib/validate.php field checks, each one a mistake seen in the wild
 webapp/lib/probe.php    live IMAP and SMTP sign-in

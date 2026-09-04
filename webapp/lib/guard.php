@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/paths.php';
 require_once __DIR__ . '/i18n.php';
 
 /**
@@ -21,29 +22,6 @@ require_once __DIR__ . '/i18n.php';
 
 const TOKEN_BASENAME = 'setup.token';
 
-/**
- * The clone, which is also the install root.
- *
- * Found from this file, not from $PWD or $HOME, so serving this directory from
- * anywhere still resolves to the install it belongs to. The rule is written
- * down in harness/paths.py and the three languages are asserted to agree in
- * scripts/test_paths.sh; change all of them or none.
- */
-function install_root(): string
-{
-    return dirname(__DIR__, 2);
-}
-
-/** The queue state, cursors and logs. */
-function state_dir(): string
-{
-    $override = getenv('PAYNANI_STATE');
-    if (is_string($override) && trim($override) !== '') {
-        return rtrim(trim($override), '/');
-    }
-    return install_root() . '/state';
-}
-
 /** Loopback only. A password form has no business answering the network. */
 function require_loopback(): void
 {
@@ -61,16 +39,6 @@ function require_loopback(): void
 function token_path(): string
 {
     return state_dir() . '/' . TOKEN_BASENAME;
-}
-
-function home_dir(): string
-{
-    $home = getenv('HOME');
-    if (is_string($home) && $home !== '') {
-        return $home;
-    }
-    $info = posix_getpwuid(posix_geteuid());
-    return is_array($info) && isset($info['dir']) ? (string) $info['dir'] : '/tmp';
 }
 
 /**

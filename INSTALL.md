@@ -355,7 +355,7 @@ and this project does not.
 
 Adding a runtime means adding its root to `HARNESS_ROOTS`, in
 [`harness/paths.py`](harness/paths.py), [`scripts/envpath.sh`](scripts/envpath.sh)
-and [`webapp/lib/envfile.php`](webapp/lib/envfile.php) together —
+and [`webapp/lib/paths.php`](webapp/lib/paths.php) together —
 `scripts/test_paths.sh` asserts the three agree.
 
 If two harnesses on one host each have credentials, neither is adopted and the

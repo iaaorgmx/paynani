@@ -27,13 +27,10 @@ trap 'rm -rf "$CLONE"' EXIT
 mkdir -p "$CLONE/harness" "$CLONE/scripts" "$CLONE/webapp/lib"
 cp "$SOURCE_ROOT/harness/paths.py" "$CLONE/harness/"
 cp "$SOURCE_ROOT/scripts/envpath.sh" "$CLONE/scripts/"
-# envfile.php requiere guard.php e i18n.php. Copiar de menos no da un fallo
-# legible: el require muere, php no imprime nada, y la comparación de abajo
-# lee ese vacío como un desacuerdo de rutas. i18n.php no necesita catálogos
-# aquí — load_catalogue() devuelve [] si el archivo no está, y ni env_path()
-# ni state_dir() llaman a t().
-cp "$SOURCE_ROOT/webapp/lib/envfile.php" "$SOURCE_ROOT/webapp/lib/guard.php" \
-   "$SOURCE_ROOT/webapp/lib/i18n.php" "$CLONE/webapp/lib/"
+# paths.php es la tercera implementación de la regla y no requiere nada, así que
+# un solo archivo basta y la lista de arriba no vuelve a quedarse corta cuando
+# alguien agregue un require en otro lado.
+cp "$SOURCE_ROOT/webapp/lib/paths.php" "$CLONE/webapp/lib/"
 ROOT="$CLONE"
 
 pass=0
@@ -89,7 +86,7 @@ php_() {
     command -v php >/dev/null 2>&1 || { echo SKIP_NOPHP; return; }
     local out
     out=$(HOME="$1" PAYNANI_ENV="${2:-}" php -r '
-        require "'"$ROOT"'/webapp/lib/envfile.php";
+        require "'"$ROOT"'/webapp/lib/paths.php";
         echo "'"${3:-env}"'" === "env" ? env_path() : state_dir();
     ' 2>&1)
     # Un fatal de php sale por stderr y deja stdout vacío. Descartarlo con
