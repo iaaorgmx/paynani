@@ -45,17 +45,23 @@ password should not travel through a chat.
 Paste this to your agent:
 
 ```text
-Check your email account settings; they are in the workspace folder of your
-Harness installation directory.
+Check your email account
+settings; they are in the
+workspace folder of your Harness
+installation directory.
 
 ../workspace/.env
 
-Then install this repository so you can use it:
+Then install this repository so
+you can use it:
 https://github.com/iaaorgmx/paynani
 
-Follow the instructions in the repository's AGENTS.md file.
+Follow the instructions in the
+repository's AGENTS.md file.
 
-You will need my name and my email address for the roster.md file.
+You will need my name and my
+email address for the roster.md
+file.
 
 Ask me anything you need.
 ```
@@ -64,18 +70,25 @@ Ask me anything you need.
 <summary>En español</summary>
 
 ```text
-Revisa la configuración de tu cuenta de correo electrónico; está en la
-carpeta workspace del directorio de instalación de tu Harness.
+Revisa la configuración de tu
+cuenta de correo electrónico;
+está en la carpeta workspace del
+directorio de instalación de tu
+Harness.
 
 ../workspace/.env
 
-Después, instala este repositorio para poder usarla:
+Después, instala este
+repositorio para poder usarla:
 https://github.com/iaaorgmx/paynani
 
-Sigue las instrucciones del archivo AGENTS.md del repositorio.
+Sigue las instrucciones del
+archivo AGENTS.md del
+repositorio.
 
-Vas a necesitar mi nombre y mi dirección de correo electrónico para el archivo
-roster.md.
+Vas a necesitar mi nombre y mi
+dirección de correo electrónico
+para el archivo roster.md.
 
 Pregúntame lo que necesites.
 ```
