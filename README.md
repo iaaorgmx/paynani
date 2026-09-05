@@ -116,12 +116,12 @@ Quien opere Hermes configura dos rutas autenticadas como se describe en
 [`HERMES.md`](HERMES.md).
 
 Claude Code y OpenAI Codex funcionan distinto a los otros dos, y la diferencia
-no es cosmética. El correo no se les empuja al agente: el agente va por él. En
-Claude Code el hook de inicio de sesión reproduce lo que llegó mientras no había
-nada corriendo y luego le pide al agente que arme una vigilancia para lo que
-llegue después. En Codex esta primera versión repone en `SessionStart`; lo que
-llegue a media sesión aparece hasta el siguiente inicio, reanudación, limpieza o
-compactación. Ver [`INSTALL.md`](INSTALL.md) §6.
+no es cosmética. Claude Code va por el correo: el hook de inicio reproduce lo
+que llegó mientras no había nada corriendo y luego le pide al agente que arme
+una vigilancia para lo que llegue después. Codex registra su thread en
+`SessionStart`; el dispatcher escribe `codex.spool` y despierta la sesión viva
+con `codex queue`, dejando el replay de `SessionStart` como respaldo. Ver
+[`INSTALL.md`](INSTALL.md) §6.
 
 ## Qué va a poder hacer tu agente
 

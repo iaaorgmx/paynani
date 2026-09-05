@@ -330,8 +330,8 @@ runtime_env="$clone/runtime.env"
 }
 [[ "$LAST_OUTPUT" == *'codex_spool_probe=accepted'* &&
    "$LAST_OUTPUT" == *'verification_smoke=codex-spool result=writable'* &&
-   "$LAST_OUTPUT" == *'session-arming=session-start-only'* ]] || {
-    printf 'FAIL Codex convergence did not report spool-only verification\n'
+   "$LAST_OUTPUT" == *'codex_spool_probe=queue-or-replay scope=writability-only'* ]] || {
+    printf 'FAIL Codex convergence did not report queue-or-replay verification\n'
     fail=$((fail + 1))
 }
 check_status 'second Codex convergence is idempotent' 0 --runtime codex

@@ -17,7 +17,7 @@ Never fails the session: any unexpected error degrades to a quiet no-op, because
 broken hook must not be able to block startup.
 """
 
-import json, os, pathlib, platform, subprocess, sys
+import json, os, pathlib, platform, select, subprocess, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import event as ev
@@ -38,15 +38,15 @@ DISPATCH_SERVICE = "paynani-dispatch.service"
 SERVICE_LABEL = "com.paynani.idle"
 DISPATCH_SERVICE_LABEL = "com.paynani.dispatch"
 
-# Claude Code and Codex cannot use the OpenClaw/Hermes push path in this
-# repository's runtime contract, so their sessions consume a spool. Claude Code
-# also arms a Monitor for mid-session lines; Codex MVP replays only at
-# SessionStart, so mail that arrives mid-session waits for the next startup,
-# resume, clear, or compact event.
+# Claude Code and Codex both keep a spool for catch-up. Claude Code also arms a
+# Monitor for mid-session lines. Codex records the active thread at SessionStart
+# so the dispatcher can wake it with `codex queue`; this replay is the backstop
+# for mail that arrived with no live session or before the hook was installed.
 SPOOL = STATE_DIR / "session.spool"
 SESSION_OFFSET = STATE_DIR / "session.offset"
 CODEX_SPOOL = STATE_DIR / "codex.spool"
 CODEX_OFFSET = STATE_DIR / "codex.offset"
+CODEX_SESSION = STATE_DIR / "codex.session"
 SESSION_WATCH = REPO / "harness/session_watch.sh"
 RUNTIME_ENV = REPO / "runtime.env"
 
@@ -257,6 +257,14 @@ def read_spool_backlog(spool_path=None, offset_path=None):
     return lines, capped, through
 
 
+def write_text_atomic(path, text):
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def acknowledge_spool(offset_path, through):
     """
     Record the byte offset a Codex SessionStart hook has emitted through.
@@ -267,12 +275,56 @@ def acknowledge_spool(offset_path, through):
     preferable to a skipped message.
     """
     try:
-        offset_path = pathlib.Path(offset_path)
-        offset_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = offset_path.with_suffix(offset_path.suffix + ".tmp")
-        tmp.write_text(str(int(through)), encoding="utf-8")
-        os.replace(tmp, offset_path)
+        write_text_atomic(offset_path, str(int(through)))
     except (OSError, ValueError):
+        pass
+
+
+def read_hook_input():
+    """
+    Read Codex's hook JSON if it is waiting on stdin.
+
+    A missing or malformed payload is not a hook failure. Older tests and manual
+    invocations call this script with no stdin at all, and the startup context is
+    still useful without the optional session registration.
+    """
+    try:
+        if sys.stdin.isatty():
+            return {}
+        try:
+            ready, _, _ = select.select([sys.stdin], [], [], 0)
+        except (OSError, TypeError, ValueError):
+            ready = [sys.stdin]
+        if not ready:
+            return {}
+        text = sys.stdin.read()
+    except (OSError, ValueError):
+        return {}
+    if not text.strip():
+        return {}
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def remember_codex_session(payload):
+    session_id = str(payload.get("session_id") or "").strip()
+    if not session_id:
+        return
+    try:
+        write_text_atomic(CODEX_SESSION, session_id + "\n")
+    except OSError:
+        pass
+
+
+def forget_codex_session():
+    try:
+        CODEX_SESSION.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
         pass
 
 
@@ -297,6 +349,11 @@ def read_backlog():
 
 def main():
     runtime = selected_runtime()
+    if "--session-end" in sys.argv[1:]:
+        forget_codex_session()
+        return 0
+    if runtime == "codex":
+        remember_codex_session(read_hook_input())
     lines, capped = read_backlog()
     spool_lines, spool_capped, spool_through = ([], False, 0)
     spool_path, spool_offset = spool_paths(runtime)
@@ -387,10 +444,10 @@ def main():
             parts.append("No unseen mail since the last Codex session-start replay.")
 
         parts.append(
-            "Codex paynani delivery is session-start replay only in this version. "
-            "Mail that arrives while this session is already running is written "
-            "durably to codex.spool, but it will not appear here until the next "
-            "Codex startup, resume, clear, or compact event."
+            "Codex paynani delivery uses `codex queue` when a live session has "
+            "registered its thread. Mail is still written durably to codex.spool; "
+            "this SessionStart replay is the fallback for anything not already "
+            "acknowledged by live queue delivery."
         )
 
     if lines:
@@ -411,13 +468,14 @@ def main():
     if version:
         parts.append(version)
 
-    # ---- CLAUDE CODE'S HOOK CONTRACT ---------------------------------------
-    # This is the payload Claude Code's SessionStart hook accepts, and this hook
-    # runs on Claude Code only. `scripts/claude_hook.py --install` registers it
-    # there; nothing on OpenClaw or Hermes invokes this script, and nothing
-    # should -- on a push runtime the queue is the catch-up, because delivery
-    # can fail and the cursor does not move until it succeeds. DESIGN.md, "What
-    # the other two runtimes use instead", has the full account.
+    # ---- CODEX AND CLAUDE CODE'S HOOK CONTRACT -----------------------------
+    # This is the payload their SessionStart command hooks accept. Codex also
+    # feeds JSON on stdin, which we used above only to record the active thread;
+    # the stdout contract stays the same. Nothing on OpenClaw or Hermes invokes
+    # this script, and nothing should -- on a push runtime the queue is the
+    # catch-up, because delivery can fail and the cursor does not move until it
+    # succeeds. DESIGN.md, "What the push runtimes use instead", has the full
+    # account.
     #
     # This comment used to read "ADAPT THIS BLOCK TO OPENCLAW'S HOOK CONTRACT",
     # which sent operators of a runtime that never runs this file looking for

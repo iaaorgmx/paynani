@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Register (or show) the paynani SessionStart hook in Codex.
+Register (or show) the paynani Codex hooks.
 
 `hooks.json` belongs to the person using Codex and may already contain unrelated
 automation. This script edits it only when asked, by merge rather than replace,
 and backs it up before changing an existing file.
 
 Usage:
-  codex_hook.py --print     show the fragment, change nothing
-  codex_hook.py --check     report whether it is already registered
-  codex_hook.py --install   merge it in, backing up first
+  codex_hook.py --print     show the fragments, change nothing
+  codex_hook.py --check     report whether they are already registered
+  codex_hook.py --install   merge them in, backing up first
 """
 
 import argparse
@@ -22,23 +22,38 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SETTINGS = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex")) / "hooks.json"
 HOOK = ROOT / "harness" / "session_start.py"
-EVENT = "SessionStart"
-MATCHER = "startup|resume|clear|compact"
+START_EVENT = "SessionStart"
+END_EVENT = "SessionEnd"
+START_MATCHER = "startup|resume|clear|compact"
+END_MATCHER = ".*"
 TIMEOUT = 15
 ADDITIONAL_CONTEXT_LIMIT = 5000
 
 
-def command():
+def start_command():
     return f"python3 {HOOK}"
 
 
-def fragment():
+def end_command():
+    return f"python3 {HOOK} --session-end"
+
+
+def start_fragment():
     return {
         "type": "command",
-        "command": command(),
+        "command": start_command(),
         "timeout": TIMEOUT,
         "statusMessage": "Checking paynani",
         "additionalContextLimit": ADDITIONAL_CONTEXT_LIMIT,
+    }
+
+
+def end_fragment():
+    return {
+        "type": "command",
+        "command": end_command(),
+        "timeout": TIMEOUT,
+        "statusMessage": "Clearing paynani session",
     }
 
 
@@ -60,18 +75,27 @@ def load(path):
         )
 
 
-def already_registered(settings):
-    for entry in settings.get("hooks", {}).get(EVENT, []) or []:
+def _event_has_command(settings, event, command_text):
+    for entry in settings.get("hooks", {}).get(event, []) or []:
         for hook in entry.get("hooks", []) or []:
-            if str(HOOK) in (hook.get("command") or ""):
+            if (hook.get("command") or "") == command_text:
                 return True
     return False
 
 
+def already_registered(settings):
+    return (_event_has_command(settings, START_EVENT, start_command())
+            and _event_has_command(settings, END_EVENT, end_command()))
+
+
 def merge(settings):
     hooks = settings.setdefault("hooks", {})
-    entries = hooks.setdefault(EVENT, [])
-    entries.append({"matcher": MATCHER, "hooks": [fragment()]})
+    if not _event_has_command(settings, START_EVENT, start_command()):
+        hooks.setdefault(START_EVENT, []).append(
+            {"matcher": START_MATCHER, "hooks": [start_fragment()]})
+    if not _event_has_command(settings, END_EVENT, end_command()):
+        hooks.setdefault(END_EVENT, []).append(
+            {"matcher": END_MATCHER, "hooks": [end_fragment()]})
     return settings
 
 
@@ -96,7 +120,7 @@ def install(path):
         handle.flush()
         os.fsync(handle.fileno())
     tmp.replace(path)
-    print(f"registered the {EVENT} hook in {path}")
+    print(f"registered the paynani Codex hooks in {path}")
     return 0
 
 
@@ -112,7 +136,10 @@ def main():
     path = pathlib.Path(args.settings).expanduser() if args.settings else SETTINGS
 
     if args.show:
-        print(json.dumps({"hooks": {EVENT: [{"matcher": MATCHER, "hooks": [fragment()]}]}}, indent=2))
+        print(json.dumps({"hooks": {
+            START_EVENT: [{"matcher": START_MATCHER, "hooks": [start_fragment()]}],
+            END_EVENT: [{"matcher": END_MATCHER, "hooks": [end_fragment()]}],
+        }}, indent=2))
         return 0
     if args.check:
         settings, _ = load(path)

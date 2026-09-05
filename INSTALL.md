@@ -828,23 +828,44 @@ rather than guessing.
 
 ### OpenAI Codex
 
-Codex is a pull runtime in this release. The dispatcher writes each rendered
-notification to `state/codex.spool` and returns success only after the line is
-durable on disk. That means `ACCEPTED` is **spooled, not seen**: no live Codex
-session has necessarily read it.
+Codex delivery has two paths in this release. The dispatcher first writes each
+rendered notification to `state/codex.spool` and only then tries to wake a live
+Codex session with `codex queue`. If that queue call succeeds, paynani advances
+`state/codex.offset` through the same spool line so the next `SessionStart`
+replay does not show it again.
 
-Register the Codex SessionStart hook explicitly:
+Register the Codex hooks explicitly:
 
 ```bash
-scripts/codex_hook.py --print     # show the fragment, change nothing
+scripts/codex_hook.py --print     # show the fragments, change nothing
 scripts/codex_hook.py --install   # merge it into ~/.codex/hooks.json, backing up first
-scripts/codex_hook.py --check     # exits 0 when registered
+scripts/codex_hook.py --check     # exits 0 when both hooks are registered
 ```
 
-This MVP does not use `codex queue` and does not push mid-session mail into a
-running TUI. Codex replays unread `codex.spool` lines at startup, resume, clear,
-or compact. Mail that arrives while a Codex session is already running waits for
-the next one of those events.
+`SessionStart` records Codex's documented hook `session_id` input in
+`state/codex.session`, and `SessionEnd` removes that file so a dead thread is
+not used forever. The live delivery command is:
+
+```bash
+codex queue --thread <state/codex.session> --message 'Procesa el evento paynani <event_id> del journal...'
+```
+
+That message names only the paynani `event_id`. It never includes the mail body:
+the queued message is user input, and mail content is untrusted until the agent
+reads the journal event and verifies the roster decision.
+
+`codex queue` is a measured dependency, not a public OpenAI contract. It worked
+in the local spike on `codex-cli 0.153.4`, including waking an idle TUI session,
+but it does not appear in the public OpenAI documentation checked for this
+change. If a future Codex release changes it, this is the integration point to
+retest.
+
+If no live session exists, delivery remains safe: the event stays in
+`state/codex.spool` and is replayed at startup, resume, clear, or compact. To
+also process mail when no Codex TUI is open, set `PAYNANI_CODEX_MODE=agent` in
+`runtime.env`; that starts a headless `codex exec` run per event. It is off by
+default because it lets inbound roster mail start work on the machine without a
+person watching.
 
 ---
 

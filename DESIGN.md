@@ -270,14 +270,16 @@ it"* — no runtime can tell us that. Each one draws the line somewhere earlier:
 | OpenClaw | `openclaw system event --mode now` | the event is enqueued on the main session | that the heartbeat injected it, or that the session survived to run one |
 | Hermes | authenticated HTTP route | `200 status=delivered` on the notify route; `202 status=accepted` on the roster route | for `202`, that the queued agent run ever completed |
 | Claude Code | append to `state/session.spool` | the bytes are on disk | that any session ever read them — a file write cannot fail informatively |
-| OpenAI Codex | append to `state/codex.spool` | the bytes are on disk | that any session ever read them; this MVP replays only on SessionStart |
+| OpenAI Codex | append to `state/codex.spool`, then `codex queue` to the registered thread | the event is either queued into a live Codex session or durably spooled for replay | that the agent completed the requested mail work |
 
 Read down the last column and the shape is one thing: **every runtime has a point
 past which this project cannot see, and the runtimes differ only in how early it
-comes.** Claude Code's and Codex's are the earliest, which is why they need
-session-start replay. Hermes is explicit about it in its own contract, which is why
-`HERMES.md` documents `202` as *"completion is unconfirmed"* rather than as
-success. OpenClaw's looks the latest and is not
+comes.** Claude Code's is the earliest, which is why it needs session-start
+replay. Codex keeps the same replay backstop, but now moves the live boundary to
+`codex queue` when a session has registered its thread. Hermes is explicit about
+it in its own contract, which is why `HERMES.md` documents `202` as
+*"completion is unconfirmed"* rather than as success. OpenClaw's looks the
+latest and is not
 ([#108](https://github.com/julianflores/agenteiamail/issues/108)).
 
 The honest way to describe the guarantee, then, is not *"mail reaches the agent"*.
@@ -398,20 +400,42 @@ Claude Code and OpenAI Codex; on OpenClaw and Hermes, nothing invokes it and
 nothing should. It is worth saying plainly because the reverse was implied for
 two releases, and it cost an investigation.
 
-### Why Codex is pull-only in this release
+### Why Codex queues first and still keeps replay
 
-Codex CLI has a `codex queue` command, but this repository does not use it for
-runtime delivery yet. The command existing is not the same as proving the
-systemd service can discover the right live session, that queuing has the right
-trust boundary for mail notifications, or that its exit statuses divide cleanly
-into `retry()` and `config()`.
+Codex CLI 0.153.4 has a `codex queue --thread <THREAD> --message <TEXT>`
+command. It is not documented in the public OpenAI documentation as of this
+implementation, so paynani treats it as a measured dependency rather than a
+published contract: the behavior is covered by tests and called out in
+`INSTALL.md`.
 
-So the Codex adapter takes the conservative half that is already proven by
-Claude Code: write one durable line to `state/codex.spool`, and let
-`harness/session_start.py` replay unread lines through Codex's SessionStart hook.
-Unlike Claude Code, this MVP has no Monitor equivalent. Mail that arrives while
-a Codex session is running waits until the next startup, resume, clear, or
-compact event. That is a product limitation, not a dispatch failure.
+The live path is now the primary one. Codex's `SessionStart` hook receives a
+documented `session_id` in its stdin payload, and `harness/session_start.py`
+writes that id to `state/codex.session`. The dispatcher writes the rendered
+notification line to `state/codex.spool`, then the Codex adapter runs:
+
+```bash
+codex queue --thread "$(cat state/codex.session)" --message "Procesa el evento paynani <event_id> del journal..."
+```
+
+Only the event id is queued. The body of the mail is never put into the queued
+message, because Codex receives that text as user input and the mail body is not
+trusted until the agent fetches the event from the journal and verifies the
+roster decision.
+
+The spool stays because a live session is optional. If `codex queue` succeeds,
+`state/codex.offset` advances through the line that was just queued, so the next
+SessionStart replay will not show it again. If there is no active session, the
+event remains spooled and either waits for the next SessionStart replay or, when
+`PAYNANI_CODEX_MODE=agent` is set, starts a headless `codex exec` run. That mode
+is off by default for the same reason as Claude Code's agent mode: it widens
+what inbound roster mail can cause on the machine.
+
+Queue failures are classified by stderr, not only by exit code. Exit `0` means
+queued and accepted. Exit `2` is configuration. Exit `1` with `No active session
+found` is a normal fallback path, not a fault. Exit `1` with `attempt to write a
+readonly database` means the command ran inside Codex's sandbox and is
+configuration, because the dispatcher service is supposed to run outside that
+sandbox.
 
 ### Where that guarantee stops
 
