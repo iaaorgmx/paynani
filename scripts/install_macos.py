@@ -319,7 +319,7 @@ def install(args: argparse.Namespace) -> int:
         print(f"openclaw_probe=accepted executable={runtime_bin}")
     else:
         print(f"codex_spool_probe=accepted spool={state_dir() / 'codex.spool'}")
-        print("codex_spool_probe=session-start-only scope=writability-only")
+        print("codex_spool_probe=queue-or-replay scope=writability-only")
     print("verification_report_end result=passed")
     return EX_CHANGED if changed else EX_OK
 

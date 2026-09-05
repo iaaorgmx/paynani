@@ -32,6 +32,14 @@ class SpoolDelivery(unittest.TestCase):
     def spool_text(self):
         return codex.spool_path().read_text(encoding="utf-8")
 
+    def register_session(self, session_id="thread-1"):
+        codex.session_path().parent.mkdir(parents=True, exist_ok=True)
+        codex.session_path().write_text(session_id + "\n", encoding="utf-8")
+
+    def queue_result(self, returncode=0, stdout="", stderr=""):
+        import subprocess
+        return subprocess.CompletedProcess(["codex"], returncode, stdout=stdout, stderr=stderr)
+
     def test_delivery_appends_one_line_and_is_accepted(self):
         result = codex.deliver(envelope("first"))
         self.assertTrue(result.ok, result.detail)
@@ -64,6 +72,11 @@ class SpoolDelivery(unittest.TestCase):
         result = codex.deliver(envelope(text=""))
         self.assertEqual(result.status, "config")
 
+    def test_missing_event_id_is_config_not_queued(self):
+        result = codex.deliver(envelope("text", event_id=""))
+        self.assertEqual(result.status, "config")
+        self.assertFalse(codex.spool_path().exists())
+
     def test_unwritable_state_is_config_not_retry(self):
         self.state.mkdir(parents=True)
         self.state.chmod(0o500)
@@ -75,6 +88,116 @@ class SpoolDelivery(unittest.TestCase):
         with mock.patch.object(codex, "find_binary", lambda: None):
             result = codex.check()
         self.assertTrue(result.ok, result.detail)
+
+    def test_live_queue_acceptance_acknowledges_the_spool_offset(self):
+        self.register_session()
+        with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+            with mock.patch.object(codex.subprocess, "run",
+                                   lambda *a, **kw: self.queue_result(0)):
+                result = codex.deliver(envelope("queued", event_id="imap:INBOX:42:7"))
+        self.assertTrue(result.ok, result.detail)
+        self.assertEqual(str(codex.spool_path().stat().st_size),
+                         codex.offset_path().read_text(encoding="utf-8"))
+
+    def test_live_queue_acceptance_does_not_skip_unread_backlog(self):
+        self.register_session()
+        codex.spool_path().parent.mkdir(parents=True, exist_ok=True)
+        codex.spool_path().write_text("old one\nold two\n", encoding="utf-8")
+        codex.offset_path().write_text("0", encoding="utf-8")
+        with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+            with mock.patch.object(codex.subprocess, "run",
+                                   lambda *a, **kw: self.queue_result(0)):
+                result = codex.deliver(envelope("new", event_id="imap:INBOX:42:8"))
+        self.assertTrue(result.ok, result.detail)
+        self.assertEqual("0", codex.offset_path().read_text(encoding="utf-8"))
+        self.assertEqual(self.spool_text(), "old one\nold two\nnew\n")
+
+    def test_live_queue_message_names_only_the_event_id(self):
+        self.register_session()
+        calls = []
+
+        def run(*args, **kwargs):
+            calls.append(args[0])
+            return self.queue_result(0)
+
+        with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+            with mock.patch.object(codex.subprocess, "run", run):
+                codex.deliver(envelope("BODY MUST NOT BE QUEUED", event_id="evt-777"))
+        command = calls[0]
+        message = command[command.index("--message") + 1]
+        self.assertIn("evt-777", message)
+        self.assertNotIn("BODY MUST NOT BE QUEUED", message)
+
+    def test_queue_usage_error_is_config(self):
+        self.register_session()
+        with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+            with mock.patch.object(codex.subprocess, "run",
+                                   lambda *a, **kw: self.queue_result(2, stderr="usage")):
+                result = codex.deliver(envelope("queued"))
+        self.assertEqual(result.status, "config")
+
+    def test_queue_no_active_session_falls_back_to_spool(self):
+        self.register_session()
+        with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+            with mock.patch.object(codex.subprocess, "run",
+                                   lambda *a, **kw: self.queue_result(
+                                       1, stderr="Error: No active session found matching 'x'.")):
+                result = codex.deliver(envelope("queued"))
+        self.assertTrue(result.ok, result.detail)
+        self.assertEqual(self.spool_text(), "queued\n")
+        self.assertFalse(codex.offset_path().exists())
+        self.assertFalse(codex.session_path().exists())
+
+    def test_queue_readonly_database_is_config(self):
+        self.register_session()
+        with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+            with mock.patch.object(codex.subprocess, "run",
+                                   lambda *a, **kw: self.queue_result(
+                                       1, stderr="attempt to write a readonly database")):
+                result = codex.deliver(envelope("queued"))
+        self.assertEqual(result.status, "config")
+
+    def test_agent_mode_is_fallback_when_no_live_session_exists(self):
+        calls = []
+
+        def run(*args, **kwargs):
+            calls.append(args[0])
+            return self.queue_result(0)
+
+        env = {"PAYNANI_CODEX_MODE": "agent"}
+        with mock.patch.dict(os.environ, env):
+            with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+                with mock.patch.object(codex.subprocess, "run", run):
+                    result = codex.deliver(envelope("agent", event_id="evt-agent"))
+        self.assertTrue(result.ok, result.detail)
+        self.assertEqual(calls[0][:3], ["/usr/bin/codex", "exec", "--cd"])
+        self.assertEqual(str(codex.spool_path().stat().st_size),
+                         codex.offset_path().read_text(encoding="utf-8"))
+
+    def test_agent_mode_acceptance_does_not_skip_unread_backlog(self):
+        codex.spool_path().parent.mkdir(parents=True, exist_ok=True)
+        codex.spool_path().write_text("old\n", encoding="utf-8")
+        codex.offset_path().write_text("0", encoding="utf-8")
+        env = {"PAYNANI_CODEX_MODE": "agent"}
+        with mock.patch.dict(os.environ, env):
+            with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+                with mock.patch.object(codex.subprocess, "run",
+                                       lambda *a, **kw: self.queue_result(0)):
+                    result = codex.deliver(envelope("agent", event_id="evt-agent"))
+        self.assertTrue(result.ok, result.detail)
+        self.assertEqual("0", codex.offset_path().read_text(encoding="utf-8"))
+        self.assertEqual(self.spool_text(), "old\nagent\n")
+
+    def test_failed_agent_mode_still_accepts_the_spooled_event(self):
+        env = {"PAYNANI_CODEX_MODE": "agent"}
+        with mock.patch.dict(os.environ, env):
+            with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+                with mock.patch.object(codex.subprocess, "run",
+                                       lambda *a, **kw: self.queue_result(1, stderr="boom")):
+                    result = codex.deliver(envelope("agent"))
+        self.assertTrue(result.ok, result.detail)
+        self.assertIn("agent run failed", result.detail)
+        self.assertFalse(codex.offset_path().exists())
 
 
 class SpoolNaming(unittest.TestCase):
@@ -107,12 +230,14 @@ class SpoolReplay(unittest.TestCase):
         self.ss = ss
         self.spool = self.state / "codex.spool"
         self.offset = self.state / "codex.offset"
-        for attr, value in (("CODEX_SPOOL", self.spool), ("CODEX_OFFSET", self.offset)):
+        self.session = self.state / "codex.session"
+        for attr, value in (("CODEX_SPOOL", self.spool), ("CODEX_OFFSET", self.offset),
+                            ("CODEX_SESSION", self.session)):
             patcher = mock.patch.object(ss, attr, value)
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def _emit(self, **stubs):
+    def _emit(self, stdin_text="", argv=None, **stubs):
         import contextlib, io, json as _json
         ss = self.ss
         defaults = {
@@ -125,6 +250,8 @@ class SpoolReplay(unittest.TestCase):
         }
         defaults.update(stubs)
         patchers = [mock.patch.object(ss, name, value) for name, value in defaults.items()]
+        patchers.append(mock.patch.object(ss.sys, "stdin", io.StringIO(stdin_text)))
+        patchers.append(mock.patch.object(ss.sys, "argv", argv or ["session_start.py"]))
         for patcher in patchers:
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -132,13 +259,36 @@ class SpoolReplay(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             ss.main()
         raw = buf.getvalue()
-        return raw, _json.loads(raw)
+        return raw, _json.loads(raw) if raw.strip() else None
 
     def test_a_healthy_host_emits_no_null_system_message(self):
         raw, payload = self._emit()
         self.assertNotIn('"systemMessage": null', raw)
         self.assertNotIn("systemMessage", payload)
         self.assertIn("additionalContext", payload["hookSpecificOutput"])
+
+    def test_session_start_registers_session_id_from_stdin(self):
+        self._emit(stdin_text='{"session_id":"thread-123","hook_event_name":"SessionStart"}')
+        self.assertEqual(self.session.read_text(encoding="utf-8"), "thread-123\n")
+
+    def test_empty_stdin_does_not_break_or_register_a_session(self):
+        raw, payload = self._emit(stdin_text="")
+        self.assertTrue(raw.strip())
+        self.assertIn("hookSpecificOutput", payload)
+        self.assertFalse(self.session.exists())
+
+    def test_malformed_stdin_does_not_break_or_register_a_session(self):
+        raw, payload = self._emit(stdin_text="{not json")
+        self.assertTrue(raw.strip())
+        self.assertIn("hookSpecificOutput", payload)
+        self.assertFalse(self.session.exists())
+
+    def test_session_end_removes_the_registered_session(self):
+        self.session.parent.mkdir(parents=True, exist_ok=True)
+        self.session.write_text("thread-123\n", encoding="utf-8")
+        raw, _ = self._emit(argv=["session_start.py", "--session-end"])
+        self.assertEqual(raw, "")
+        self.assertFalse(self.session.exists())
 
     def test_everything_is_replayed_from_a_cold_start(self):
         self.spool.write_text("one\ntwo\n", encoding="utf-8")
@@ -205,11 +355,11 @@ class SpoolReplay(unittest.TestCase):
             with mock.patch.object(self.ss.subprocess, "run", lambda *a, **kw: completed):
                 self.assertEqual(self.ss.unit_state("paynani-idle.service"), "unknown")
 
-    def test_session_start_only_limitation_is_said(self):
+    def test_codex_queue_delivery_is_said(self):
         self.spool.write_text("one\n", encoding="utf-8")
         _, payload = self._emit()
         context = payload["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("session-start replay only", context)
+        self.assertIn("codex queue", context)
 
 
 class HookRegistration(unittest.TestCase):
@@ -227,6 +377,11 @@ class HookRegistration(unittest.TestCase):
     def load(self):
         import json
         return json.loads(self.settings.read_text(encoding="utf-8"))
+
+    def commands(self, event):
+        return [h["command"]
+                for entry in self.load()["hooks"].get(event, [])
+                for h in entry["hooks"]]
 
     def test_creates_the_file_when_absent(self):
         self.run_install()
@@ -247,26 +402,29 @@ class HookRegistration(unittest.TestCase):
             "hooks": {"SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "theirs.py"}]}]},
         }), encoding="utf-8")
         self.run_install()
-        commands = [h["command"]
-                    for entry in self.load()["hooks"]["SessionStart"]
-                    for h in entry["hooks"]]
+        commands = self.commands("SessionStart")
         self.assertIn("theirs.py", commands)
+        self.assertIn(self.hook.start_command(), commands)
         self.assertEqual(len(commands), 2)
+        self.assertEqual(self.commands("SessionEnd"), [self.hook.end_command()])
 
     def test_installing_twice_does_not_duplicate(self):
         self.run_install()
         self.run_install()
-        commands = [h["command"]
-                    for entry in self.load()["hooks"]["SessionStart"]
-                    for h in entry["hooks"]]
-        self.assertEqual(len(commands), 1)
+        self.assertEqual(self.commands("SessionStart"), [self.hook.start_command()])
+        self.assertEqual(self.commands("SessionEnd"), [self.hook.end_command()])
 
-    def test_fragment_uses_codex_session_start_shape(self):
+    def test_fragments_use_codex_hook_shapes(self):
         self.run_install()
         entry = self.load()["hooks"]["SessionStart"][0]
         hook = entry["hooks"][0]
-        self.assertEqual(entry["matcher"], "startup|resume|clear|compact")
+        self.assertEqual(entry["matcher"], self.hook.START_MATCHER)
         self.assertEqual(hook["additionalContextLimit"], self.hook.ADDITIONAL_CONTEXT_LIMIT)
+        end_entry = self.load()["hooks"]["SessionEnd"][0]
+        end_hook = end_entry["hooks"][0]
+        self.assertEqual(end_entry["matcher"], self.hook.END_MATCHER)
+        self.assertNotIn("additionalContextLimit", end_hook)
+        self.assertIn("--session-end", end_hook["command"])
 
     def test_an_existing_file_is_backed_up(self):
         self.settings.write_text('{"theme": "dark"}', encoding="utf-8")

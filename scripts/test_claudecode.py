@@ -218,7 +218,7 @@ class SpoolReplay(unittest.TestCase):
         import contextlib, io, json as _json
         ss = self.ss
         defaults = {
-            "unit_down": lambda unit: False,
+            "unit_state": lambda unit: "active",
             "dispatcher_faults": lambda: [],
             "read_backlog": lambda: ([], False),
             "read_spool_backlog": lambda: (["[mail] one"], False, 32),
@@ -257,7 +257,7 @@ class SpoolReplay(unittest.TestCase):
 
     def test_a_problem_still_reaches_the_status_line(self):
         """Omitting the key when empty must not omit it when there is a problem."""
-        _, payload = self._emit(unit_down=lambda unit: unit == self.ss.SERVICE)
+        _, payload = self._emit(unit_state=lambda unit: "down" if unit == self.ss.SERVICE else "active")
         self.assertIn("systemMessage", payload)
         self.assertIn("DOWN", payload["systemMessage"])
 
@@ -301,17 +301,19 @@ class SpoolReplay(unittest.TestCase):
         lines, _, _ = self.ss.read_spool_backlog()
         self.assertEqual(lines, ["fresh"])
 
-    def test_replay_is_capped_but_the_offset_still_covers_everything(self):
+    def test_replay_is_capped_without_acknowledging_unshown_mail(self):
         """
-        Trimming protects the context window. The offset must still account for
-        the untrimmed bytes, or the trimmed messages come back forever.
+        Trimming protects the context window. The offset must stop at the last
+        line actually shown, or the unshown messages are silently acknowledged.
         """
         count = self.ss.MAX_REPLAY + 5
         self.spool.write_text("".join(f"line{i}\n" for i in range(count)), encoding="utf-8")
         lines, capped, through = self.ss.read_spool_backlog()
         self.assertEqual(len(lines), self.ss.MAX_REPLAY)
+        self.assertEqual(lines[0], "line0")
+        self.assertEqual(lines[-1], f"line{self.ss.MAX_REPLAY - 1}")
         self.assertTrue(capped)
-        self.assertEqual(through, self.spool.stat().st_size)
+        self.assertLess(through, self.spool.stat().st_size)
 
     def test_missing_spool_is_quiet(self):
         lines, capped, through = self.ss.read_spool_backlog()

@@ -388,7 +388,7 @@ def spool_facts(selected):
         offset = 0
     out["bytes_unread"] = max(0, out["bytes_total"] - offset)
     if selected == "codex":
-        out["session_arming"] = "session-start-only"
+        out["session_arming"] = "queue-or-replay"
     return out
 
 
@@ -710,9 +710,9 @@ def render(facts, problems, warnings):
         out.append(f"spool        {spool['spool']}")
         out.append(f"             {spool['bytes_unread']} byte(s) not yet picked up "
                    f"by a session, of {spool['bytes_total']}")
-        if spool.get("session_arming") == "session-start-only":
-            out.append("             Codex replays this only at startup, resume, clear, "
-                       "or compact; mid-session mail waits for the next session event")
+        if spool.get("session_arming") == "queue-or-replay":
+            out.append("             Codex wakes a registered live session with codex queue; "
+                       "unread bytes wait for SessionStart replay")
         else:
             out.append("             whether a session has armed a watch is not "
                        "observable from here; unread bytes with no session open is normal")

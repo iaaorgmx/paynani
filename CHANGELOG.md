@@ -2,6 +2,17 @@
 
 ## Sin publicar
 
+- **Codex puede despertar una sesión viva con `codex queue`**
+  ([#48](https://github.com/iaaorgmx/paynani/issues/48)).
+
+  El hook `SessionStart` registra el `session_id` documentado por Codex en
+  `state/codex.session`, y `SessionEnd` lo borra para no apuntar a un thread
+  muerto. El dispatcher sigue escribiendo primero en `state/codex.spool`, pero
+  ahora encola una instrucción fija que nombra solo el `event_id`; si Codex la
+  acepta, avanza `state/codex.offset` para que la reposición no duplique el
+  correo. Si no hay sesión viva, `PAYNANI_CODEX_MODE=agent` puede arrancar el
+  respaldo con `codex exec`, apagado por omisión.
+
 - **La reposición de Claude Code ya no salta correo en silencio.** Antes mostraba
   los 20 renglones más recientes del spool y armaba el watch al final del
   archivo, así que con un rezago mayor a 20 los más viejos quedaban acusados sin

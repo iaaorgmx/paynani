@@ -653,21 +653,21 @@ _, _, warnings = f.run()
 check("but a spool a session has read through is answerable, and warns", True,
       any("roster message(s) have been delivered" in w for w in warnings))
 
-# Codex has no Monitor path in the MVP. It replays at SessionStart only, so
-# unread bytes are still normal waiting state and not evidence the agent failed
-# to answer.
+# Codex can wake a registered live session with `codex queue`, but unread bytes
+# are still normal waiting state when no session accepted them and not evidence
+# the agent failed to answer.
 f = (Fixture(runtime="codex").queue(2, age_seconds=6 * HOUR)
      .drain().spool(bytes_unread=400, bytes_total=400, name="codex.spool",
-                    session_arming="session-start-only"))
+                    session_arming="queue-or-replay"))
 facts, _, warnings = f.run()
 check("mail still sitting unread in the Codex spool is not unanswered", [],
       warnings)
-check("the Codex spool state records session-start-only delivery",
-      "session-start-only", facts["spool"]["session_arming"])
+check("the Codex spool state records queue-or-replay delivery",
+      "queue-or-replay", facts["spool"]["session_arming"])
 
 code, text = f.exit_code()
-check("the Codex report states the mid-session limitation", True,
-      "mid-session mail waits" in text)
+check("the Codex report states live queue plus replay", True,
+      "codex queue" in text and "SessionStart replay" in text)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -1159,10 +1159,10 @@ probe_claudecode_spool() {
 }
 
 probe_codex_spool() {
-    # Codex delivery is the same durable handoff shape as Claude Code, but the
-    # session side is SessionStart replay only in this MVP. No `codex queue`
-    # probe belongs here: live delivery has not been proven safe for this
-    # runtime contract.
+    # Codex live delivery uses `codex queue` when a SessionStart hook has
+    # registered a thread, but this installer still probes only the durable
+    # backstop. There may be no live TUI during installation, and absence of one
+    # must not make an otherwise valid install fail.
     local state spool probe
     state=$(python3 -c 'import sys; sys.path.insert(0, "'"$ROOT"'/harness"); import paths; print(paths.state_dir())') ||         die_config 'could not resolve the state directory for the Codex spool'
     spool="$state/codex.spool"
@@ -1177,7 +1177,7 @@ probe_codex_spool() {
         die_config "$spool exists but is not writable"
     fi
     printf 'codex_spool_probe=accepted spool=%s\n' "$spool"
-    printf 'codex_spool_probe=session-start-only scope=writability-only\n'
+    printf 'codex_spool_probe=queue-or-replay scope=writability-only\n'
 }
 
 print_final_verification_report() {
@@ -1217,7 +1217,7 @@ print_final_verification_report() {
     elif [[ "$runtime" == codex ]]; then
         printf 'verification_secret=not-applicable runtime=codex\n'
         printf 'verification_smoke=codex-spool result=writable\n'
-        printf 'verification_note=codex-delivery scope=spool-writable-only session-arming=session-start-only\n'
+        printf 'verification_note=codex-delivery scope=spool-writable-only session-arming=queue-or-replay\n'
     else
         printf 'verification_secret=not-applicable runtime=openclaw\n'
         printf 'verification_smoke=openclaw-service-environment result=accepted\n'
