@@ -46,6 +46,65 @@
   documentadas en `brand/README.md` como lo que son: un punto de agarre, no
   decoración.
 
+- **El listener podía quedarse ciego sin que nada lo dijera**
+  ([#37](https://github.com/iaaorgmx/paynani/issues/37), en
+  [#39](https://github.com/iaaorgmx/paynani/pull/39) y
+  [#41](https://github.com/iaaorgmx/paynani/pull/41)). Detrás de un NAT —WSL2, o
+  casi cualquier router doméstico— una conexión IMAP ociosa se descarta sin FIN.
+  De este lado el socket se sigue viendo `ESTAB` hasta que alguien intenta
+  escribir, así que el listener se quedaba bloqueado esperando un `EXISTS` que ya
+  no podía llegar: proceso vivo, socket sano, cero errores en el log, y el correo
+  dejando de llegar. Un buzón tranquilo y un listener ciego dan exactamente la
+  misma señal, que es la razón de ser de este proyecto al revés.
+
+  Nada sondeaba la conexión porque dos cosas se combinaban: el socket se abría
+  sin `SO_KEEPALIVE`, así que el kernel nunca preguntaba al otro extremo, y
+  `IDLE_REFRESH` estaba en 25 minutos —número que no es solo cada cuánto se
+  reemite IDLE, es cuánto puede durar una conexión muerta sin que nadie se
+  entere—. Ahora el socket pide keepalive al conectarse, con sondas a los 60
+  segundos, y `IDLE_REFRESH` bajó a 5 minutos.
+
+  El arreglo se completó en dos pasos porque el primero estaba incompleto de una
+  manera que no se veía. Pedía `TCP_KEEPIDLE`, `TCP_KEEPINTVL` y `TCP_KEEPCNT`
+  consultando cada nombre antes de usarlo, con el comentario correcto de que
+  macOS no expone `TCP_KEEPIDLE`. El diagnóstico era bueno; la conclusión no:
+  **macOS sí tiene ese temporizador, se llama `TCP_KEEPALIVE`**, y no se pedía.
+  En un Mac quedaba `SO_KEEPALIVE` encendido con el ocioso del sistema —dos
+  horas—, o sea ninguna sonda dentro de una ventana útil y toda la protección
+  recargada en el `IDLE_REFRESH`. No era catastrófico, era silencioso, que es
+  justo lo que esta función existe para eliminar. `scripts/install_macos.py` son
+  328 líneas: macOS es un objetivo soportado, no hipotético.
+
+- **`send.sh` no sabía adjuntar archivos**
+  ([#38](https://github.com/iaaorgmx/paynani/issues/38), en
+  [#40](https://github.com/iaaorgmx/paynani/pull/40)). Armaba un `text/plain` de
+  una sola parte y nada más. Cuando Zeus Claude-Tob mandó su reporte de campo
+  sobre la instalación, no pudo adjuntar el documento: lo pegó completo en el
+  cuerpo y explicó por qué. Con texto se sobrevive; con una captura o un PDF no
+  hay salida.
+
+  Ahora acepta `--attach <ruta>`, repetible, en el orden en que se den. **Sin
+  `--attach` el mensaje no cambia en absoluto** —mismos encabezados, mismo orden,
+  una sola parte—, y eso es lo primero que asegura la suite, porque todos los
+  envíos que este proyecto hace hoy son ese mensaje. Con adjuntos pasa a
+  `multipart/mixed` y el cuerpo se vuelve la primera parte. El tipo sale de una
+  tabla de extensiones primero y de `file --mime-type -b` para el resto, porque
+  `file(1)` no acierta en varios de los formatos que este proyecto manda a diario.
+
+- **El manual de marca no decía cómo decidir fuera de la lista**
+  ([#27](https://github.com/iaaorgmx/paynani/issues/27), en
+  [#42](https://github.com/iaaorgmx/paynani/pull/42)). Las reglas decían qué no
+  hacer; faltaba con qué criterio resolver un caso que no estuviera en la lista.
+  Los ocho criterios ya se habían decidido, pero vivían sólo en el issue: el
+  isotipo es un trazo y no una silueta —no se rellena ni se encierra, porque el
+  encierro es justo lo que la voluta está dejando atrás—, hay un solo acento, el
+  nombre es la otra mitad de la marca, el resguardo de `2x` es un mínimo y no un
+  objetivo, y la cita no se disfraza de greca.
+
+  Con eso queda también el `social preview` a 1280 × 640 en `brand/`, y junto a
+  él el HTML del que sale, para que volver a generarlo no dependa de recordar
+  cómo se hizo.
+
 ## 0.2.0 — 2026-09-04
 
 **paynani estrena marca, su página de configuración habla cinco idiomas, y el
