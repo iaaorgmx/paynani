@@ -20,7 +20,7 @@ paynani_root() {
 #
 # The OpenClaw root is listed because it is an instance of the rule rather than
 # an exception to it.
-PAYNANI_HARNESS_ROOTS=".openclaw .hermes .claude"
+PAYNANI_HARNESS_ROOTS=".openclaw .hermes .claude .codex"
 PAYNANI_HARNESS_ENV_RELATIVE="workspace/.env"
 
 paynani_config_dir() {

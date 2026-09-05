@@ -37,6 +37,7 @@ Usage:
   scripts/install.sh --runtime openclaw [--upgrade|--uninstall] [--dry-run]
   scripts/install.sh --runtime hermes [--deliver TARGET --chat-id ID | --profile PROFILE]
   scripts/install.sh --runtime claudecode [--upgrade|--uninstall] [--dry-run]
+  scripts/install.sh --runtime codex [--upgrade|--uninstall] [--dry-run]
                      [--upgrade|--uninstall] [--non-interactive]
                      [--notify-secret-file PATH --roster-secret-file PATH]
                      [--dry-run]
@@ -47,7 +48,7 @@ Modes:
   --uninstall        Remove only artifacts owned by this installer
 
 Options:
-  --runtime RUNTIME          Required: openclaw, hermes, or claudecode
+  --runtime RUNTIME          Required: openclaw, hermes, claudecode, or codex
   --deliver TARGET          Guidance label for an operator-managed Hermes target
   --chat-id ID               Guidance label for that target's chat ID
   --profile PROFILE          Guidance label for an existing operator-managed profile
@@ -287,13 +288,13 @@ discover_prerequisites() {
     if [[ "$mode" == uninstall ]]; then
         runtime_cli="not-required-for-uninstall"
     else
-        if [[ "$runtime" == claudecode ]]; then
+        if [[ "$runtime" == claudecode || "$runtime" == codex ]]; then
             # No runtime CLI is required. Delivery is a file append, and the
-            # `claude` binary is only used by the opt-in agent mode -- so
+            # runtime binary is only used by optional session-side setup -- so
             # demanding it here would refuse a host that this runtime works
             # perfectly well on. The spool being writable is the real
             # prerequisite, and the adapter's own check() owns that question.
-            runtime_cli="not-required-for-claudecode"
+            runtime_cli="not-required-for-$runtime"
         elif [[ "$runtime" == openclaw ]]; then
             if [[ -z "$service_path" ]]; then
                 if ((service_path_error_reported == 0)); then
@@ -481,7 +482,7 @@ manifest_arguments() {
 }
 
 load_ownership_manifest() {
-    local output kind path digest previous_runtime
+    local output kind path digest previous_runtime candidate
     declare -gA owned_digests=()
     manifest_runtime=$runtime
     [[ -e "$manifest" || -L "$manifest" ]] || return 0
@@ -492,13 +493,16 @@ load_ownership_manifest() {
             printf '%s\n' "$output" >&2
             exit "$EX_CONFIG"
         fi
-        if [[ "$runtime" == openclaw ]]; then
-            previous_runtime=hermes
-        else
-            previous_runtime=openclaw
-        fi
-        mapfile -d '' -t arguments < <(manifest_arguments "$previous_runtime")
-        if ! output=$(python3 "$ROOT/scripts/install_manifest.py" read "${arguments[@]}" 2>&1); then
+        previous_runtime=""
+        for candidate in openclaw hermes claudecode codex; do
+            [[ "$candidate" != "$runtime" ]] || continue
+            mapfile -d '' -t arguments < <(manifest_arguments "$candidate")
+            if output=$(python3 "$ROOT/scripts/install_manifest.py" read "${arguments[@]}" 2>&1); then
+                previous_runtime=$candidate
+                break
+            fi
+        done
+        if [[ -z "$previous_runtime" ]]; then
             printf '%s\n' "$output" >&2
             exit "$EX_CONFIG"
         fi
@@ -550,6 +554,11 @@ render_artifact() {
         fi
         if [[ "$runtime" == claudecode ]]; then
             printf 'PAYNANI_RUNTIME=claudecode\n'
+            printf '%s' "$recorded_env_line"
+            return
+        fi
+        if [[ "$runtime" == codex ]]; then
+            printf 'PAYNANI_RUNTIME=codex\n'
             printf '%s' "$recorded_env_line"
             return
         fi
@@ -1149,6 +1158,28 @@ probe_claudecode_spool() {
     printf 'claudecode_spool_probe=session-arming-unobservable scope=writability-only\n'
 }
 
+probe_codex_spool() {
+    # Codex delivery is the same durable handoff shape as Claude Code, but the
+    # session side is SessionStart replay only in this MVP. No `codex queue`
+    # probe belongs here: live delivery has not been proven safe for this
+    # runtime contract.
+    local state spool probe
+    state=$(python3 -c 'import sys; sys.path.insert(0, "'"$ROOT"'/harness"); import paths; print(paths.state_dir())') ||         die_config 'could not resolve the state directory for the Codex spool'
+    spool="$state/codex.spool"
+    mkdir -p -- "$state" 2>/dev/null ||         die_config "state directory $state cannot be created"
+    probe="$state/.codex-spool-probe.$$"
+    if ! : >"$probe" 2>/dev/null; then
+        rm -f -- "$probe" 2>/dev/null || true
+        die_config "state directory $state is not writable, so no event could ever be delivered"
+    fi
+    rm -f -- "$probe" 2>/dev/null || true
+    if [[ -e "$spool" && ! -w "$spool" ]]; then
+        die_config "$spool exists but is not writable"
+    fi
+    printf 'codex_spool_probe=accepted spool=%s\n' "$spool"
+    printf 'codex_spool_probe=session-start-only scope=writability-only\n'
+}
+
 print_final_verification_report() {
     local unit label secret_path secret_mode
     printf 'verification_report_begin\n'
@@ -1183,6 +1214,10 @@ print_final_verification_report() {
         # whether a Monitor is armed, so a writable spool proves mail can be
         # delivered and proves nothing about whether anyone is reading it.
         printf 'verification_note=claudecode-delivery scope=spool-writable-only session-arming=unobservable\n'
+    elif [[ "$runtime" == codex ]]; then
+        printf 'verification_secret=not-applicable runtime=codex\n'
+        printf 'verification_smoke=codex-spool result=writable\n'
+        printf 'verification_note=codex-delivery scope=spool-writable-only session-arming=session-start-only\n'
     else
         printf 'verification_secret=not-applicable runtime=openclaw\n'
         printf 'verification_smoke=openclaw-service-environment result=accepted\n'
@@ -1310,7 +1345,7 @@ done
 
 [[ -n "$runtime" ]] || die_usage '--runtime is required'
 case "$runtime" in
-    openclaw|hermes|claudecode) ;;
+    openclaw|hermes|claudecode|codex) ;;
     *) die_usage "unsupported runtime: $runtime" ;;
 esac
 
@@ -1443,6 +1478,8 @@ if [[ "$runtime" == openclaw ]]; then
     probe_openclaw_service_environment
 elif [[ "$runtime" == claudecode ]]; then
     probe_claudecode_spool
+elif [[ "$runtime" == codex ]]; then
+    probe_codex_spool
 else
     probe_hermes_routes
 fi

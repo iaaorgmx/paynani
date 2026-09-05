@@ -49,7 +49,7 @@ STATUS = STATE_DIR / "delivery.json"
 # dispatcher is the only process that knows what it has delivered.
 JOURNAL_MAX = int(os.environ.get("DISPATCH_JOURNAL_MAX", 4 * 1024 * 1024))
 
-KNOWN_RUNTIMES = ("openclaw", "hermes", "claudecode")
+KNOWN_RUNTIMES = ("openclaw", "hermes", "claudecode", "codex")
 
 # How long to wait before trying a failed record again. Doubling, capped, so a
 # runtime that is down for an hour is retried every minute rather than every

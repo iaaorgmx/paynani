@@ -114,7 +114,8 @@ pgrep -af idle_listener.py                           # expect nothing
 **Find out where they are first, because on most installs they are not in the
 clone.** When the host has a harness, the mailbox password lives in that
 harness's workspace `.env` (`~/.openclaw/workspace/.env`,
-`~/.hermes/workspace/.env`, `~/.claude/workspace/.env`) and `<clone>/.env` does
+`~/.hermes/workspace/.env`, `~/.claude/workspace/.env`,
+`~/.codex/workspace/.env`) and `<clone>/.env` does
 not exist at all. An `rm -f .env` from the clone would delete nothing in that
 case, and leave you believing you had removed the password.
 

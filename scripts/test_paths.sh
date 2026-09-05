@@ -345,6 +345,32 @@ check "claude harness: an explicit override still wins" "/srv/named.env" \
 rm -rf "$home"
 
 # ---------------------------------------------------------------------------
+# OpenAI Codex is the fourth harness root. The credential rule stays the same:
+# only workspace/.env resolves under the runtime root, while state, runtime.env,
+# the manifest, Hermes secrets and the roster remain clone-owned.
+# ---------------------------------------------------------------------------
+home=$(mktemp -d)
+mkdir -p "$home/.codex/workspace"
+printf 'PAYNANI_EMAIL=agent@example.com\n' >"$home/.codex/workspace/.env"
+agree_all "codex harness" "$home"
+check "codex harness: credentials are read where the harness keeps them" \
+    "$home/.codex/workspace/.env" "$(py "$home" "" env)"
+check "codex harness: state still hangs off the clone" "$ROOT/state" "$(py "$home" "" state)"
+check "codex harness: runtime config still hangs off the clone" \
+    "$ROOT/runtime.env" "$(py "$home" "" runtime-env)"
+check "codex harness: hermes secrets still hang off the clone" \
+    "$ROOT/hermes" "$(py "$home" "" hermes)"
+case "$(py "$home" "" config)" in
+    "$home"/.config/*) codex_under_config=yes ;;
+    *) codex_under_config=no ;;
+esac
+check "codex harness: nothing resolves under ~/.config" "no" \
+    "$codex_under_config"
+check "codex harness: an explicit override still wins" "/srv/named.env" \
+    "$(py "$home" /srv/named.env env)"
+rm -rf "$home"
+
+# ---------------------------------------------------------------------------
 # The runtime's own config is not the agent's mailbox.
 #
 # ~/.hermes/.env holds Hermes' gateway token. The rule matches

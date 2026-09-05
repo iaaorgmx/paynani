@@ -82,7 +82,7 @@ Si tu agente corre bajo un harness, este fichero va en la carpeta workspace de
 ese harness, que es donde se le dice al agente que mire:
 
 ```bash
-cd ~/.hermes/workspace        # o ~/.openclaw/workspace, ~/.claude/workspace (tu harness)
+cd ~/.hermes/workspace        # o ~/.openclaw/workspace, ~/.claude/workspace, ~/.codex/workspace (tu harness)
 touch .env
 chmod 600 .env
 ```

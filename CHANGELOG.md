@@ -2,6 +2,24 @@
 
 ## Sin publicar
 
+- **OpenAI Codex entra como runtime `codex`**
+  ([#44](https://github.com/iaaorgmx/paynani/issues/44)).
+
+  La entrega sigue el modelo conservador de los runtimes que jalan: el dispatcher
+  escribe una línea durable en `state/codex.spool`, con `fsync`, y solo entonces
+  avanza el cursor. `ACCEPTED` significa *spooled, not seen*: ninguna sesión viva
+  de Codex queda probada por esa escritura.
+
+  La sesión se entera mediante un hook `SessionStart` registrado aparte con
+  `scripts/codex_hook.py --install`, que mezcla en `~/.codex/hooks.json` sin
+  reemplazar hooks ajenos y hace copia de respaldo antes de tocar un archivo
+  existente. Esta primera versión no usa `codex queue`: el correo que llegue a
+  media sesión espera al siguiente startup, resume, clear o compact.
+
+  También se agregó `~/.codex/workspace/.env` a los tres resolutores de rutas, el
+  soporte de `scripts/install.sh --runtime codex`, el reporte de healthcheck para
+  `codex.spool`, documentación y `scripts/test_codex.py`.
+
 - **La página de configuración del buzón no llevaba la marca.** Ahora abre con el
   logotipo, y sale de `brand/` sin que exista una segunda copia del dibujo.
 

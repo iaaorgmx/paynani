@@ -316,8 +316,10 @@ def parser() -> argparse.ArgumentParser:
     forget.add_argument("--path", required=True)
     migrate = sub.add_parser("migrate-runtime")
     migrate.add_argument("--manifest", required=True)
-    migrate.add_argument("--from-runtime", required=True, choices=("openclaw", "hermes"))
-    migrate.add_argument("--runtime", required=True, choices=("openclaw", "hermes"))
+    migrate.add_argument("--from-runtime", required=True,
+                         choices=("openclaw", "hermes", "claudecode", "codex"))
+    migrate.add_argument("--runtime", required=True,
+                         choices=("openclaw", "hermes", "claudecode", "codex"))
     migrate.add_argument("--allowed", action="append", default=[])
     write = sub.add_parser("write-artifact")
     write.add_argument("--path", required=True)

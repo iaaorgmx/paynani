@@ -15,7 +15,7 @@ et envoyer dans les limites d'une liste de destinataires autorisés.
 
 Construit autour de [Himalaya](https://github.com/pimalaya/himalaya) pour un
 compte IMAP/SMTP ordinaire, sous Ubuntu 24.04 avec l'environnement OpenClaw,
-Hermes Agent ou Claude Code.
+Hermes Agent, Claude Code ou OpenAI Codex.
 
 ---
 
@@ -31,7 +31,7 @@ L'agent a besoin de son propre compte de messagerie, et des paramètres de
 connexion de ce compte écrits dans un fichier `.env`. **Si votre agent tourne sous
 un harness, ce fichier appartient au dossier workspace de ce harness**
 (`~/.hermes/workspace/.env`, `~/.openclaw/workspace/.env`,
-`~/.claude/workspace/.env`), c'est là qu'on demande
+`~/.claude/workspace/.env`, `~/.codex/workspace/.env`), c'est là qu'on demande
 à l'agent de regarder et c'est de là que cet outil le lit. Sur un hôte sans
 harness, placez-le au sein du clone.
 
@@ -121,8 +121,8 @@ ne va pas.
 Les opérateurs Hermes configurent deux routes authentifiées comme décrit dans
 [`HERMES.md`](../HERMES.md).
 
-Claude Code fonctionne autrement que les deux autres, et la différence n'est pas
-cosmétique. Rien à l'extérieur d'une session Claude Code ne peut lui parler,
+Claude Code et OpenAI Codex fonctionnent autrement que les deux autres, et la différence n'est pas
+cosmétique. Le courrier n'est pas poussé vers l'agent,
 donc le courrier n'est pas poussé vers l'agent : c'est l'agent qui vient le
 chercher. Son hook de démarrage de session rejoue ce qui est arrivé pendant
 qu'aucune session ne tournait, puis demande à l'agent d'armer une surveillance
@@ -248,7 +248,7 @@ scripts/idle_listener.py  Service systemd --user. Maintient une connexion IMAP
   ├─► harness/dispatch.py         l'unique consommateur supervisé. Lit le journal,
   │                               remet chaque événement à un adaptateur de runtime
   │                               et n'avance le curseur qu'une fois accepté
-  │     └─► harness/adapters/     openclaw, hermes et claudecode. Le seul
+  │     └─► harness/adapters/     openclaw, hermes, claudecode et codex. Le seul
   │                               code ici qui sache ce qu'est un harness
   ├─► harness/session_start.py    montre ce qui est en file ; n'acquitte rien
   └─► harness/rotate_logs.py      rotation copytruncate, sur un timer utilisateur
@@ -269,18 +269,19 @@ Le clone *est* l'installation : tout ce qui lui appartient vit à l'intérieur, 
 choisir où cloner, c'est choisir où installer.
 
 - Dépôt : n'importe où ; `~/.openclaw/workspace/paynani` sur OpenClaw,
-  `~/.hermes/workspace/paynani` sur Hermes Agent ou
-  `~/.claude/workspace/paynani` sur Claude Code à défaut de préférence
+  `~/.hermes/workspace/paynani` sur Hermes Agent,
+  `~/.claude/workspace/paynani` sur Claude Code ou
+  `~/.codex/workspace/paynani` sur OpenAI Codex à défaut de préférence
 - Identifiants : le `.env` du workspace de votre harness lorsqu'il y en a
   exactement un (`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
-  `~/.claude/workspace/.env`), et `<clone>/.env` sinon. En `600`, ignoré par git,
+  `~/.claude/workspace/.env`, `~/.codex/workspace/.env`), et `<clone>/.env` sinon. En `600`, ignoré par git,
   jamais versionné. Il est lu où il se trouve et jamais copié dans le clone : une
   seconde copie d'un mot de passe est une seconde chose qui peut fuiter.
   Demandez-le à l'installation plutôt que de le deviner, avec
   `python3 harness/paths.py env`
 - État et événements : `<clone>/state/`
 - Secrets de route : `<clone>/hermes/`, en `600`. **Uniquement sous Hermes** :
-  sous OpenClaw et Claude Code ce répertoire n'existe pas et rien ne manque
+  sous OpenClaw, Claude Code et OpenAI Codex ce répertoire n'existe pas et rien ne manque
 - Unités utilisateur : `~/.config/systemd/user/paynani-idle.service`,
   `paynani-dispatch.service`, `paynani-logrotate.service` et
   `paynani-logrotate.timer`, la seule chose hors du clone, car systemd ne lit

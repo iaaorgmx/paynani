@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install paynani for OpenClaw on macOS using per-user LaunchAgents."""
+"""Install paynani on macOS using per-user LaunchAgents."""
 
 from __future__ import annotations
 
@@ -48,9 +48,8 @@ def plist_path(name: str) -> Path:
     return launch_agent_dir() / f"{LABELS[name]}.plist"
 
 
-def agent_env(openclaw_bin: str) -> dict[str, str]:
+def agent_env(runtime: str, runtime_bin: str | None = None) -> dict[str, str]:
     path_parts = [
-        str(Path(openclaw_bin).parent),
         "/opt/homebrew/bin",
         "/usr/local/bin",
         "/usr/bin",
@@ -58,17 +57,21 @@ def agent_env(openclaw_bin: str) -> dict[str, str]:
         "/usr/sbin",
         "/sbin",
     ]
-    return {
-        "PAYNANI_RUNTIME": "openclaw",
+    if runtime_bin:
+        path_parts.insert(0, str(Path(runtime_bin).parent))
+    env = {
+        "PAYNANI_RUNTIME": runtime,
         "PAYNANI_ENV": str(env_file()),
-        "OPENCLAW": openclaw_bin,
         "PATH": ":".join(dict.fromkeys(path_parts)),
     }
+    if runtime == "openclaw" and runtime_bin:
+        env["OPENCLAW"] = runtime_bin
+    return env
 
 
-def plist_for(name: str, python: str, openclaw_bin: str) -> dict:
+def plist_for(name: str, python: str, runtime: str, runtime_bin: str | None = None) -> dict:
     state = state_dir()
-    env = agent_env(openclaw_bin)
+    env = agent_env(runtime, runtime_bin)
     if name == "idle":
         return {
             "Label": LABELS[name],
@@ -193,29 +196,11 @@ def secure_existing_env(path: Path) -> None:
         die(f"credentials at {path} are mode {mode:o}; expected 600 or 400")
 
 
-def write_runtime_env(openclaw_bin: str) -> bool:
-    path = runtime_env()
-    desired = (
-        'PAYNANI_RUNTIME="openclaw"\n'
-        f'OPENCLAW="{openclaw_bin}"\n'
-        f'PAYNANI_ENV="{env_file()}"\n'
-        'PAYNANI_SUPERVISOR="launchd"\n'
-    )
-    current = path.read_text() if path.exists() else None
-    if current == desired:
-        return False
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(desired, encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    tmp.replace(path)
-    return True
-
-
 def parse(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Install paynani for OpenClaw on macOS with launchd."
+        description="Install paynani on macOS with launchd."
     )
-    parser.add_argument("--runtime", required=True, choices=("openclaw", "hermes"))
+    parser.add_argument("--runtime", required=True, choices=("openclaw", "hermes", "codex"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--upgrade", action="store_true")
     parser.add_argument("--uninstall", action="store_true")
@@ -226,20 +211,20 @@ def parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--notify-secret-file")
     parser.add_argument("--roster-secret-file")
     args = parser.parse_args(argv)
-    if args.runtime != "openclaw":
-        die("macOS install currently supports --runtime openclaw only", EX_USAGE)
+    if args.runtime == "hermes":
+        die("macOS install currently supports --runtime openclaw and codex only", EX_USAGE)
     modes = sum(bool(x) for x in (args.upgrade, args.uninstall))
     if modes > 1:
         die("--upgrade and --uninstall are mutually exclusive", EX_USAGE)
     return args
 
 
-def print_plan(openclaw_bin: str, python: str, args: argparse.Namespace) -> int:
-    print("discovery runtime=openclaw")
+def print_plan(runtime: str, runtime_bin: str | None, python: str, args: argparse.Namespace) -> int:
+    print(f"discovery runtime={runtime}")
     print(f"repo_root={ROOT}")
     print(f"platform=macos-launchd")
     print(f"python={python}")
-    print(f"runtime_cli={openclaw_bin}")
+    print(f"runtime_cli={runtime_bin or f'not-required-for-{runtime}'}")
     print(f"credentials={env_file()}")
     print(f"state_dir={state_dir()}")
     print(f"launch_agent_dir={launch_agent_dir()}")
@@ -278,18 +263,38 @@ def uninstall(args: argparse.Namespace) -> int:
     return EX_CHANGED if changed else EX_OK
 
 
+def write_runtime_env(runtime: str, runtime_bin: str | None = None) -> bool:
+    path = runtime_env()
+    lines = [f'PAYNANI_RUNTIME="{runtime}"\n']
+    if runtime == "openclaw" and runtime_bin:
+        lines.append(f'OPENCLAW="{runtime_bin}"\n')
+    lines.append(f'PAYNANI_ENV="{env_file()}"\n')
+    lines.append('PAYNANI_SUPERVISOR="launchd"\n')
+    desired = "".join(lines)
+    current = path.read_text() if path.exists() else None
+    if current == desired:
+        return False
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(desired, encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+    return True
+
+
 def install(args: argparse.Namespace) -> int:
     python = sys.executable
-    openclaw_bin = os.environ.get("OPENCLAW") or shutil.which("openclaw")
-    if not openclaw_bin:
-        die("openclaw executable not found in PATH; set OPENCLAW to an absolute path")
-    openclaw_bin = str(Path(openclaw_bin).resolve())
-    if not Path(openclaw_bin).exists():
-        die(f"OPENCLAW path does not exist: {openclaw_bin}")
+    runtime_bin = None
+    if args.runtime == "openclaw":
+        runtime_bin = os.environ.get("OPENCLAW") or shutil.which("openclaw")
+        if not runtime_bin:
+            die("openclaw executable not found in PATH; set OPENCLAW to an absolute path")
+        runtime_bin = str(Path(runtime_bin).resolve())
+        if not Path(runtime_bin).exists():
+            die(f"OPENCLAW path does not exist: {runtime_bin}")
     if not shutil.which("himalaya"):
         die("himalaya executable not found in PATH; install Himalaya before running paynani")
     secure_existing_env(env_file())
-    plan_status = print_plan(openclaw_bin, python, args)
+    plan_status = print_plan(args.runtime, runtime_bin, python, args)
     if args.dry_run:
         return plan_status
 
@@ -297,20 +302,24 @@ def install(args: argparse.Namespace) -> int:
     state_dir().mkdir(parents=True, exist_ok=True)
     os.chmod(state_dir(), 0o700)
     launch_agent_dir().mkdir(parents=True, exist_ok=True)
-    changed = write_runtime_env(openclaw_bin) or changed
+    changed = write_runtime_env(args.runtime, runtime_bin) or changed
     for name, label in LABELS.items():
         path = plist_path(name)
         if not plist_owned_by_this_checkout(path):
             die(f"refusing to overwrite unowned LaunchAgent: {path}")
-        changed = write_plist(path, plist_for(name, python, openclaw_bin)) or changed
+        changed = write_plist(path, plist_for(name, python, args.runtime, runtime_bin)) or changed
         changed = bootstrap(path, label) or changed
         print(f"launchagent={path} label={label} state={service_state(label)}")
 
-    result = subprocess.run([openclaw_bin, "--version"], capture_output=True, text=True, timeout=20)
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "").strip()
-        die(f"OpenClaw probe failed: {detail}")
-    print(f"openclaw_probe=accepted executable={openclaw_bin}")
+    if args.runtime == "openclaw":
+        result = subprocess.run([runtime_bin, "--version"], capture_output=True, text=True, timeout=20)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            die(f"OpenClaw probe failed: {detail}")
+        print(f"openclaw_probe=accepted executable={runtime_bin}")
+    else:
+        print(f"codex_spool_probe=accepted spool={state_dir() / 'codex.spool'}")
+        print("codex_spool_probe=session-start-only scope=writability-only")
     print("verification_report_end result=passed")
     return EX_CHANGED if changed else EX_OK
 

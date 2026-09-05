@@ -38,11 +38,15 @@ DISPATCH_SERVICE = "paynani-dispatch.service"
 SERVICE_LABEL = "com.paynani.idle"
 DISPATCH_SERVICE_LABEL = "com.paynani.dispatch"
 
-# Claude Code cannot be pushed into, so its session is the consumer: the
-# dispatcher writes the spool and never reads it, and these two files are how a
-# session knows where it got to. See DESIGN.md, "Why one runtime pulls".
+# Claude Code and Codex cannot use the OpenClaw/Hermes push path in this
+# repository's runtime contract, so their sessions consume a spool. Claude Code
+# also arms a Monitor for mid-session lines; Codex MVP replays only at
+# SessionStart, so mail that arrives mid-session waits for the next startup,
+# resume, clear, or compact event.
 SPOOL = STATE_DIR / "session.spool"
 SESSION_OFFSET = STATE_DIR / "session.offset"
+CODEX_SPOOL = STATE_DIR / "codex.spool"
+CODEX_OFFSET = STATE_DIR / "codex.offset"
 SESSION_WATCH = REPO / "harness/session_watch.sh"
 RUNTIME_ENV = REPO / "runtime.env"
 
@@ -50,35 +54,40 @@ MAX_REPLAY = 20   # enough to see overnight without flooding the context window
 MAX_DISPATCH_ERR = 5   # the last few lines say whether it is still failing
 MAX_LOCAL_FILES = 10   # name them, but do not paste a whole refactor
 VERSION_TIMEOUT = 20   # above version.sh's own 10s, so its timeout fires first
+CODEX_ACK_CONTEXT_LIMIT = int(os.environ.get("PAYNANI_CODEX_ACK_CONTEXT_LIMIT", "5000"))
 
 
-def launchd_down(label):
-    """True only if launchd positively reports that a label is not running."""
+def launchd_state(label):
+    """active / down / unknown for a per-user macOS LaunchAgent."""
     try:
         r = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{label}"],
                            capture_output=True, text=True, timeout=5)
         if r.returncode != 0:
-            return True
-        return "state = running" not in (r.stdout or "")
+            return "down"
+        return "active" if "state = running" in (r.stdout or "") else "down"
     except (OSError, subprocess.SubprocessError):
-        return False
+        return "unknown"
 
 
-def unit_down(unit):
-    """True only if we positively confirmed the unit is not active."""
+def unit_state(unit):
+    """active / down / unknown, without treating a blocked query as a dead unit."""
     if platform.system() == "Darwin":
         labels = {
             SERVICE: SERVICE_LABEL,
             DISPATCH_SERVICE: DISPATCH_SERVICE_LABEL,
         }
-        return launchd_down(labels.get(unit, unit))
+        return launchd_state(labels.get(unit, unit))
     try:
-        r = subprocess.run(["systemctl", "--user", "is-active", "--quiet", unit],
-                           timeout=5)
-        return r.returncode != 0
+        r = subprocess.run(["systemctl", "--user", "is-active", unit],
+                           capture_output=True, text=True, timeout=5)
+        state = (r.stdout or "").strip()
+        if r.returncode == 0 and state == "active":
+            return "active"
+        if state in {"inactive", "failed", "deactivating"}:
+            return "down"
+        return "unknown"
     except (OSError, subprocess.SubprocessError):
-        # Could not ask. Stay quiet rather than cry wolf about a live service.
-        return False
+        return "unknown"
 
 
 def dispatcher_faults():
@@ -194,22 +203,28 @@ def selected_runtime():
     return None
 
 
-def read_spool_backlog():
-    """
-    (rendered lines, capped, byte offset read through) for the Claude Code spool.
+def spool_paths(runtime):
+    if runtime == "codex":
+        return CODEX_SPOOL, CODEX_OFFSET
+    return SPOOL, SESSION_OFFSET
 
-    **This does not advance the offset**, and that asymmetry is deliberate. The
-    watch writes the offset when it is armed, so an agent that reads this and
-    never arms the watch replays the same messages next time. Replaying is the
-    survivable error; skipping is not, and a hook that acknowledged on the
-    agent's behalf would be claiming an arming it cannot observe.
+
+def read_spool_backlog(spool_path=None, offset_path=None):
     """
+    (rendered lines, capped, byte offset read through) for a session spool.
+
+    By default this reads the Claude Code spool for compatibility with the
+    existing tests. The caller decides whether and when an offset can be
+    acknowledged; reading alone never does it.
+    """
+    spool_path = SPOOL if spool_path is None else pathlib.Path(spool_path)
+    offset_path = SESSION_OFFSET if offset_path is None else pathlib.Path(offset_path)
     try:
-        start = int(SESSION_OFFSET.read_text(encoding="utf-8").strip() or 0)
+        start = int(offset_path.read_text(encoding="utf-8").strip() or 0)
     except (OSError, ValueError):
         start = 0
     try:
-        size = SPOOL.stat().st_size
+        size = spool_path.stat().st_size
     except OSError:
         return [], False, start
     # A spool shorter than the recorded offset means the file was replaced or
@@ -218,13 +233,47 @@ def read_spool_backlog():
     if size < start:
         start = 0
     try:
-        with open(SPOOL, "rb") as handle:
+        with open(spool_path, "rb") as handle:
             handle.seek(start)
             data = handle.read()
     except OSError:
         return [], False, start
-    lines = [ln for ln in data.decode("utf-8", "replace").splitlines() if ln.strip()]
-    return lines[-MAX_REPLAY:], len(lines) > MAX_REPLAY, start + len(data)
+    lines = []
+    through = start
+    position = start
+    capped = False
+    for raw in data.splitlines(keepends=True):
+        position += len(raw)
+        line = raw.decode("utf-8", "replace").strip()
+        if not line:
+            if not lines:
+                through = position
+            continue
+        if len(lines) >= MAX_REPLAY:
+            capped = True
+            break
+        lines.append(line)
+        through = position
+    return lines, capped, through
+
+
+def acknowledge_spool(offset_path, through):
+    """
+    Record the byte offset a Codex SessionStart hook has emitted through.
+
+    Claude Code acknowledges by arming its Monitor. Codex has no monitor in this
+    MVP, so the hook acknowledges after it has written valid JSON to stdout. If
+    this write fails, the same messages replay next time; duplicate replay is
+    preferable to a skipped message.
+    """
+    try:
+        offset_path = pathlib.Path(offset_path)
+        offset_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = offset_path.with_suffix(offset_path.suffix + ".tmp")
+        tmp.write_text(str(int(through)), encoding="utf-8")
+        os.replace(tmp, offset_path)
+    except (OSError, ValueError):
+        pass
 
 
 def read_backlog():
@@ -250,14 +299,17 @@ def main():
     runtime = selected_runtime()
     lines, capped = read_backlog()
     spool_lines, spool_capped, spool_through = ([], False, 0)
+    spool_path, spool_offset = spool_paths(runtime)
     if runtime == "claudecode":
         spool_lines, spool_capped, spool_through = read_spool_backlog()
-    down = unit_down(SERVICE)
-    dispatch_down = unit_down(DISPATCH_SERVICE)
+    elif runtime == "codex":
+        spool_lines, spool_capped, spool_through = read_spool_backlog(spool_path, spool_offset)
+    listener_state = unit_state(SERVICE)
+    dispatcher_state = unit_state(DISPATCH_SERVICE)
     faults = dispatcher_faults()
 
     parts = []
-    if down:
+    if listener_state == "down":
         check = (f"`launchctl print gui/$(id -u)/{SERVICE_LABEL}`" if platform.system() == "Darwin"
                  else f"`systemctl --user status {SERVICE}`")
         parts.append(
@@ -265,14 +317,28 @@ def main():
             f"being detected at all. Check {check} and "
             "restart it before relying on mail notifications."
         )
+    elif listener_state == "unknown":
+        check = (f"`launchctl print gui/$(id -u)/{SERVICE_LABEL}`" if platform.system() == "Darwin"
+                 else f"`systemctl --user status {SERVICE}`")
+        parts.append(
+            f"MAIL LISTENER STATUS UNKNOWN — this session could not query {SERVICE}. "
+            f"Check {check} outside this context before treating the listener as down."
+        )
 
-    if dispatch_down:
+    if dispatcher_state == "down":
         check = (f"`launchctl print gui/$(id -u)/{DISPATCH_SERVICE_LABEL}`" if platform.system() == "Darwin"
                  else f"`systemctl --user status {DISPATCH_SERVICE}`")
         parts.append(
             f"MAIL DISPATCHER IS DOWN — {DISPATCH_SERVICE} is not active. Mail is still "
             "being detected and journalled, but nothing is delivering it into a "
             f"session. Check {check}."
+        )
+    elif dispatcher_state == "unknown":
+        check = (f"`launchctl print gui/$(id -u)/{DISPATCH_SERVICE_LABEL}`" if platform.system() == "Darwin"
+                 else f"`systemctl --user status {DISPATCH_SERVICE}`")
+        parts.append(
+            f"MAIL DISPATCHER STATUS UNKNOWN — this session could not query {DISPATCH_SERVICE}. "
+            f"Check {check} outside this context before treating the dispatcher as down."
         )
 
     if faults:
@@ -309,6 +375,23 @@ def main():
             "shows these same messages again, and no new mail reaches you for the "
             "rest of this one."
         )
+    elif runtime == "codex":
+        if spool_lines:
+            parts.append(
+                f"Mail that arrived before this Codex session event "
+                f"({len(spool_lines)} message(s)"
+                + (f", showing the oldest {MAX_REPLAY}" if spool_capped else "")
+                + "):\n" + "\n".join(spool_lines)
+            )
+        else:
+            parts.append("No unseen mail since the last Codex session-start replay.")
+
+        parts.append(
+            "Codex paynani delivery is session-start replay only in this version. "
+            "Mail that arrives while this session is already running is written "
+            "durably to codex.spool, but it will not appear here until the next "
+            "Codex startup, resume, clear, or compact event."
+        )
 
     if lines:
         header = (f"Mail queued but not yet delivered ({len(lines)} message(s)"
@@ -317,7 +400,7 @@ def main():
                   "expect the dispatcher to deliver it as well rather than "
                   "treating this as the only copy:")
         parts.append(header + "\n" + "\n".join(lines))
-    elif runtime != "claudecode":
+    elif runtime not in ("claudecode", "codex"):
         parts.append("No unseen mail since the last session acknowledged the log.")
 
     local = local_code_line()
@@ -341,15 +424,18 @@ def main():
     # what was calling it. If you are porting to a fourth runtime, the question
     # to answer first is not what shape to emit -- it is whether that runtime's
     # delivery can fail. If it can, it needs no hook at all.
+    additional_context = "\n\n".join(parts)
     payload = {
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
-            "additionalContext": "\n\n".join(parts),
+            "additionalContext": additional_context,
         },
     }
     system_message = (
-        "Mail listener is DOWN — new mail is not being detected" if down
-        else "Mail dispatcher is DOWN — mail is journalled but not delivered" if dispatch_down
+        "Mail listener is DOWN — new mail is not being detected" if listener_state == "down"
+        else "Mail dispatcher is DOWN — mail is journalled but not delivered" if dispatcher_state == "down"
+        else "Mail service status unknown — could not query service manager"
+        if listener_state == "unknown" or dispatcher_state == "unknown"
         else "Dispatcher reported errors — mail may not be reaching the session" if faults
         else (f"{len(lines)} unseen mail notification(s)" if lines else None)
     )
@@ -367,7 +453,10 @@ def main():
     # install was repaired, got nothing at all.
     if system_message is not None:
         payload["systemMessage"] = system_message
-    print(json.dumps(payload))
+    print(json.dumps(payload), flush=True)
+    if (runtime == "codex" and spool_lines
+            and len(additional_context.encode("utf-8")) <= CODEX_ACK_CONTEXT_LIMIT):
+        acknowledge_spool(spool_offset, spool_through)
     # -----------------------------------------------------------------------
     return 0
 
