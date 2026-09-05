@@ -122,13 +122,14 @@ class Fixture:
         ev.write_cursor(hc.CURSOR, hc.JOURNAL.stat().st_size)
         return self
 
-    def spool(self, bytes_unread, bytes_total=None):
-        """Stand in for spool_facts(), which reads the real Claude Code spool."""
-        self.spool_facts = {"spool": str(self.dir / "session.spool"),
+    def spool(self, bytes_unread, bytes_total=None, name="session.spool",
+              session_arming="unobservable"):
+        """Stand in for spool_facts(), which reads the real pull-runtime spool."""
+        self.spool_facts = {"spool": str(self.dir / name),
                             "bytes_total": bytes_total if bytes_total is not None
                             else bytes_unread,
                             "bytes_unread": bytes_unread,
-                            "session_arming": "unobservable"}
+                            "session_arming": session_arming}
         return self
 
     def sent(self, count=1, age_seconds=0, rotated=False):
@@ -166,8 +167,14 @@ class Fixture:
 
     def exit_code(self):
         buf = io.StringIO()
-        with redirect_stdout(buf):
-            code = hc.main([])
+        original_spool_facts = hc.spool_facts
+        if self.spool_facts is not None:
+            hc.spool_facts = lambda selected: self.spool_facts
+        try:
+            with redirect_stdout(buf):
+                code = hc.main([])
+        finally:
+            hc.spool_facts = original_spool_facts
         return code, buf.getvalue()
 
 
@@ -645,6 +652,22 @@ f = (Fixture(runtime="claudecode").queue(2, age_seconds=6 * HOUR)
 _, _, warnings = f.run()
 check("but a spool a session has read through is answerable, and warns", True,
       any("roster message(s) have been delivered" in w for w in warnings))
+
+# Codex has no Monitor path in the MVP. It replays at SessionStart only, so
+# unread bytes are still normal waiting state and not evidence the agent failed
+# to answer.
+f = (Fixture(runtime="codex").queue(2, age_seconds=6 * HOUR)
+     .drain().spool(bytes_unread=400, bytes_total=400, name="codex.spool",
+                    session_arming="session-start-only"))
+facts, _, warnings = f.run()
+check("mail still sitting unread in the Codex spool is not unanswered", [],
+      warnings)
+check("the Codex spool state records session-start-only delivery",
+      "session-start-only", facts["spool"]["session_arming"])
+
+code, text = f.exit_code()
+check("the Codex report states the mid-session limitation", True,
+      "mid-session mail waits" in text)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

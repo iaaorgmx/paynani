@@ -13,9 +13,9 @@ Push-style email for an AI agent. It finds out about new mail within about a
 second, without polling, and can read and send under a recipient allowlist.
 
 Built around [Himalaya](https://github.com/pimalaya/himalaya) for a plain
-IMAP/SMTP account, running on Ubuntu 24.04 under the OpenClaw, Hermes Agent or
-Claude Code harness. OpenClaw on macOS is supported through per-user launchd
-LaunchAgents.
+IMAP/SMTP account, running on Ubuntu 24.04 under the OpenClaw, Hermes Agent,
+Claude Code or OpenAI Codex harness. OpenClaw and Codex on macOS are supported
+through per-user launchd LaunchAgents.
 
 ---
 
@@ -29,7 +29,8 @@ minutes of checking that it really works.
 The agent needs an email account of its own and the connection details for it,
 written into a `.env` file. **If your agent runs under a harness, that file
 belongs in the harness's own workspace folder** (`~/.hermes/workspace/.env`,
-`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env`), which is where the
+`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env`,
+`~/.codex/workspace/.env`), which is where the
 agent is told to look and where this tool reads it from. On a host with no
 harness, put it in the clone.
 
@@ -141,8 +142,8 @@ If it sends, stop and tell whoever set it up. Something is wrong.
 Hermes operators configure two authenticated routes as described in
 [`HERMES.md`](../HERMES.md).
 
-Claude Code works differently from the other two, and the difference is not
-cosmetic. Nothing outside a Claude Code session can speak into it, so mail is
+Claude Code and OpenAI Codex work differently from the other two, and the difference is not
+cosmetic. Mail is
 not pushed to the agent: the agent comes and gets it. Its session-start hook
 replays what arrived while nothing was running and then asks the agent to arm a
 watch for what lands next. Nothing can enforce that from outside, so it is the
@@ -264,7 +265,7 @@ scripts/idle_listener.py  supervised user service. Holds an IMAP IDLE connection
   ├─► harness/dispatch.py         the one supervised consumer. Reads the journal,
   │                               hands each event to a runtime adapter, and moves
   │                               the cursor only once the runtime accepts it
-  │     └─► harness/adapters/     openclaw, hermes and claudecode. The only code
+  │     └─► harness/adapters/     openclaw, hermes, claudecode and codex. The only code
   │                               here that knows what a harness is
   ├─► harness/session_start.py    shows what is still queued; never acknowledges
   └─► harness/rotate_logs.py      copytruncate rotation, on a user timer
@@ -289,18 +290,19 @@ to clone is how you choose where to install.
 
 - Repo: anywhere. `~/.openclaw/workspace/paynani` on OpenClaw,
   `~/.hermes/workspace/paynani` on Hermes Agent,
-  `~/.claude/workspace/paynani` on Claude Code, if you have no preference;
+  `~/.claude/workspace/paynani` on Claude Code, or
+  `~/.codex/workspace/paynani` on OpenAI Codex, if you have no preference;
   every generated path is resolved from where the scripts are, so an existing
   clone needs no move.
 - Secret env: your harness's workspace `.env` when there is exactly one
   (`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
-  `~/.claude/workspace/.env`), and `<clone>/.env` when there is not. Mode `600`,
+  `~/.claude/workspace/.env`, `~/.codex/workspace/.env`), and `<clone>/.env` when there is not. Mode `600`,
   ignored by git, never committed. It is read where it lies and never copied into
   the clone: a second copy of a password is a second thing that can leak. Ask the
   install rather than guessing, with `python3 harness/paths.py env`.
 - Event state: `<clone>/state/`
 - Route secrets: `<clone>/hermes/`, mode `600`. **Hermes only**: on OpenClaw
-  and Claude Code that directory does not exist and nothing is missing
+  Claude Code and OpenAI Codex that directory does not exist and nothing is missing
 - User units: `~/.config/systemd/user/paynani-idle.service`,
   `paynani-dispatch.service`, `paynani-logrotate.service` and
   `paynani-logrotate.timer` on Ubuntu, or the three `com.paynani.*.plist` files

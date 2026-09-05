@@ -84,7 +84,7 @@ Si votre agent tourne sous un harness, ce fichier appartient au dossier workspac
 de ce harness, c'est là qu'on demande à l'agent de regarder :
 
 ```bash
-cd ~/.hermes/workspace        # ou ~/.openclaw/workspace, ~/.claude/workspace (votre harness)
+cd ~/.hermes/workspace        # ou ~/.openclaw/workspace, ~/.claude/workspace, ~/.codex/workspace (votre harness)
 touch .env
 chmod 600 .env
 ```

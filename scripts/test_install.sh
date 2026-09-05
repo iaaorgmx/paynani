@@ -199,6 +199,9 @@ check_status 'help is runnable' 0 --help
 [[ "$LAST_OUTPUT" == *'--runtime openclaw'* ]] || {
     printf 'FAIL help documents OpenClaw\n'; fail=$((fail + 1));
 }
+[[ "$LAST_OUTPUT" == *'--runtime codex'* ]] || {
+    printf 'FAIL help documents Codex\n'; fail=$((fail + 1));
+}
 [[ "$LAST_OUTPUT" == *'--upgrade'* && "$LAST_OUTPUT" == *'--uninstall'* ]] || {
     printf 'FAIL help documents upgrade and uninstall modes\n'; fail=$((fail + 1));
 }
@@ -249,8 +252,12 @@ check_status 'duplicate flag is rejected' 64 \
     --runtime openclaw --dry-run --dry-run
 check_status 'Hermes options cannot leak into OpenClaw flow' 64 \
     --runtime openclaw --profile default
+check_status 'Hermes options cannot leak into Codex flow' 64 \
+    --runtime codex --profile default
 check_status 'non-interactive cannot leak into OpenClaw flow' 64 \
     --runtime openclaw --non-interactive
+check_status 'non-interactive cannot leak into Codex flow' 64 \
+    --runtime codex --non-interactive
 check_status 'delivery target requires a chat ID' 64 \
     --runtime hermes --deliver telegram
 check_status 'profile and delivery configuration are alternatives' 64 \
@@ -310,6 +317,26 @@ check_status 'migrated OpenClaw upgrade is idempotent' 0 \
 reset_install; rm -rf "$FAKE_SYSTEMD_STATE"
 mkdir -p "$FAKE_SYSTEMD_STATE"
 
+check_status 'fresh Codex convergence creates managed artifacts' 10 \
+    --runtime codex
+runtime_env="$clone/runtime.env"
+[[ "$(stat -c %a "$runtime_env")" == 600 ]] || {
+    printf 'FAIL Codex generated runtime configuration is not mode 0600\n'
+    fail=$((fail + 1))
+}
+[[ "$(<"$runtime_env")" == 'PAYNANI_RUNTIME=codex' ]] || {
+    printf 'FAIL generated runtime configuration selects Codex\n'
+    fail=$((fail + 1))
+}
+[[ "$LAST_OUTPUT" == *'codex_spool_probe=accepted'* &&
+   "$LAST_OUTPUT" == *'verification_smoke=codex-spool result=writable'* &&
+   "$LAST_OUTPUT" == *'session-arming=session-start-only'* ]] || {
+    printf 'FAIL Codex convergence did not report spool-only verification\n'
+    fail=$((fail + 1))
+}
+check_status 'second Codex convergence is idempotent' 0 --runtime codex
+reset_install; rm -rf "$FAKE_SYSTEMD_STATE"
+mkdir -p "$FAKE_SYSTEMD_STATE"
 
 # A fresh filesystem-only OpenClaw convergence creates each managed artifact,
 # then atomically records ownership, verifies the installed units, proves the

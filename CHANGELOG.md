@@ -2,6 +2,31 @@
 
 ## Sin publicar
 
+- **La reposición de Claude Code ya no salta correo en silencio.** Antes mostraba
+  los 20 renglones más recientes del spool y armaba el watch al final del
+  archivo, así que con un rezago mayor a 20 los más viejos quedaban acusados sin
+  que nadie los hubiera visto. Ahora drena del más viejo al más nuevo y acusa
+  solo hasta el último renglón efectivamente mostrado: el resto sigue pendiente y
+  llega por el watch. El arreglo salió del runtime de Codex y aplica a los dos.
+
+- **OpenAI Codex entra como runtime `codex`**
+  ([#44](https://github.com/iaaorgmx/paynani/issues/44)).
+
+  La entrega sigue el modelo conservador de los runtimes que jalan: el dispatcher
+  escribe una línea durable en `state/codex.spool`, con `fsync`, y solo entonces
+  avanza el cursor. `ACCEPTED` significa *spooled, not seen*: ninguna sesión viva
+  de Codex queda probada por esa escritura.
+
+  La sesión se entera mediante un hook `SessionStart` registrado aparte con
+  `scripts/codex_hook.py --install`, que mezcla en `~/.codex/hooks.json` sin
+  reemplazar hooks ajenos y hace copia de respaldo antes de tocar un archivo
+  existente. Esta primera versión no usa `codex queue`: el correo que llegue a
+  media sesión espera al siguiente startup, resume, clear o compact.
+
+  También se agregó `~/.codex/workspace/.env` a los tres resolutores de rutas, el
+  soporte de `scripts/install.sh --runtime codex`, el reporte de healthcheck para
+  `codex.spool`, documentación y `scripts/test_codex.py`.
+
 - **La página de configuración del buzón no llevaba la marca.** Ahora abre con el
   logotipo, y sale de `brand/` sin que exista una segunda copia del dibujo.
 

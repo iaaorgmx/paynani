@@ -51,6 +51,7 @@ file per harness:
 | OpenClaw | `~/.openclaw/workspace/.env` |
 | Hermes Agent | `~/.hermes/workspace/.env` |
 | Claude Code | `~/.claude/workspace/.env` |
+| OpenAI Codex | `~/.codex/workspace/.env` |
 
 A clone that was set up with its own `.env` inside it keeps that instead; the
 command above answers with whichever this host has, and it reads the harness's
@@ -124,6 +125,12 @@ first. That hook is what makes a session aware of mail at all, and it is the one
 piece the installer deliberately does not converge, because Claude Code's
 settings file is the operator's and holds configuration this project knows
 nothing about.
+
+For an OpenAI Codex runtime, register the session-start hook after installing —
+`scripts/codex_hook.py --install` — and read `INSTALL.md` §6 *"OpenAI Codex"*
+first. Codex support is session-start replay in this version: mail that lands
+mid-session waits in `state/codex.spool` until startup, resume, clear, or compact
+runs the hook.
 
 On **macOS**, `scripts/install.sh` delegates to `scripts/install_macos.py`, which
 renders and converges two LaunchAgents in `~/Library/LaunchAgents` instead of

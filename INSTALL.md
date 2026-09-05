@@ -16,6 +16,7 @@ delivery verification, which the installer deliberately does not create or infer
 scripts/install.sh --runtime openclaw --dry-run
 scripts/install.sh --runtime hermes --profile PROFILE --dry-run
 scripts/install.sh --runtime hermes --deliver telegram --chat-id CHAT_ID --dry-run
+scripts/install.sh --runtime codex --dry-run
 scripts/install.sh --runtime openclaw --upgrade --dry-run
 scripts/install.sh --runtime hermes --uninstall --dry-run
 ```
@@ -347,6 +348,7 @@ in the workspace folder of its own installation directory:
 | OpenClaw | `~/.openclaw/workspace/.env` |
 | Hermes Agent | `~/.hermes/workspace/.env` |
 | Claude Code | `~/.claude/workspace/.env` |
+| OpenAI Codex | `~/.codex/workspace/.env` |
 
 The resolver reads that file where it lies; nothing needs to be moved, copied or
 linked. Only the credentials resolve to the harness — state, `runtime.env`, the
@@ -724,7 +726,7 @@ cursor only once that adapter reports the runtime accepted it. A template is in
 [`systemd/paynani-dispatch.service`](systemd/paynani-dispatch.service).
 
 **Choose the runtime with `PAYNANI_RUNTIME`** in that unit: `openclaw`,
-`hermes`, or `auto`. `auto` picks only when exactly one supported runtime is
+`hermes`, `claudecode`, `codex`, or `auto`. `auto` picks only when exactly one supported runtime is
 present on the host, and refuses rather than guessing when none or several are.
 Set it explicitly if this machine runs more than one harness.
 
@@ -823,6 +825,26 @@ session has picked up yet. Read that as information, not as a fault: unread byte
 with no session open is this runtime's normal resting state. Whether a session
 has armed a watch is not observable from outside one, and the healthcheck says so
 rather than guessing.
+
+### OpenAI Codex
+
+Codex is a pull runtime in this release. The dispatcher writes each rendered
+notification to `state/codex.spool` and returns success only after the line is
+durable on disk. That means `ACCEPTED` is **spooled, not seen**: no live Codex
+session has necessarily read it.
+
+Register the Codex SessionStart hook explicitly:
+
+```bash
+scripts/codex_hook.py --print     # show the fragment, change nothing
+scripts/codex_hook.py --install   # merge it into ~/.codex/hooks.json, backing up first
+scripts/codex_hook.py --check     # exits 0 when registered
+```
+
+This MVP does not use `codex queue` and does not push mid-session mail into a
+running TUI. Codex replays unread `codex.spool` lines at startup, resume, clear,
+or compact. Mail that arrives while a Codex session is already running waits for
+the next one of those events.
 
 ---
 

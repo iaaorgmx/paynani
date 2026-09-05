@@ -117,7 +117,8 @@ pgrep -af idle_listener.py                           # no debe salir nada
 **Primero averigua dónde están, porque en la mayoría de las instalaciones no
 están en el clon.** Cuando el host tiene un harness, la contraseña del buzón vive
 en el `.env` del workspace de ese harness (`~/.openclaw/workspace/.env`,
-`~/.hermes/workspace/.env`, `~/.claude/workspace/.env`) y `<clon>/.env` ni
+`~/.hermes/workspace/.env`, `~/.claude/workspace/.env`,
+`~/.codex/workspace/.env`) y `<clon>/.env` ni
 siquiera existe. Un `rm -f .env` desde el clon no borraría nada en ese caso, y te
 dejaría creyendo que borraste la contraseña.
 

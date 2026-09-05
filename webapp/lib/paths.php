@@ -27,7 +27,7 @@ declare(strict_types=1);
  * The OpenClaw root is listed because it is an instance of the rule rather than
  * an exception to it.
  */
-const HARNESS_ROOTS         = ['.openclaw', '.hermes', '.claude'];
+const HARNESS_ROOTS         = ['.openclaw', '.hermes', '.claude', '.codex'];
 const HARNESS_ENV_RELATIVE  = 'workspace/.env';
 
 const ENV_BASENAME = '.env';

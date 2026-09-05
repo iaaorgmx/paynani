@@ -15,7 +15,7 @@ puede leer y enviar dentro de una lista de destinatarios autorizados.
 
 Construido sobre [Himalaya](https://github.com/pimalaya/himalaya) para una cuenta
 IMAP/SMTP común y corriente, en Ubuntu 24.04 bajo el harness OpenClaw, Hermes
-Agent o Claude Code.
+Agent, Claude Code u OpenAI Codex.
 
 ---
 
@@ -29,7 +29,8 @@ tercero son dos minutos para revisar que de verdad funciona.
 El agente necesita su propia cuenta de correo, y los datos de conexión de esa
 cuenta escritos en un archivo `.env`. **Si tu agente corre bajo un harness, ese
 archivo va en la carpeta workspace del propio harness** (`~/.hermes/workspace/.env`,
-`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env`), que es donde se le
+`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env`,
+`~/.codex/workspace/.env`), que es donde se le
 dice al agente que mire y de donde esta herramienta lo lee. En un host sin
 harness, ponlo dentro del clon.
 
@@ -114,13 +115,13 @@ Si lo manda, detente y avísale a quien lo instaló. Algo está mal.
 Quien opere Hermes configura dos rutas autenticadas como se describe en
 [`HERMES.md`](HERMES.md).
 
-Claude Code funciona distinto a los otros dos, y la diferencia no es cosmética.
-Nada fuera de una sesión de Claude Code puede hablarle, así que el correo no se
-le empuja al agente: el agente va por él. Su hook de inicio de sesión reproduce
-lo que llegó mientras no había nada corriendo y luego le pide al agente que arme
-una vigilancia para lo que llegue después. Nada puede obligarlo desde afuera,
-así que ese es el único paso que depende de que el agente haga lo que se le
-dijo. Ver [`INSTALL.md`](INSTALL.md) §6.
+Claude Code y OpenAI Codex funcionan distinto a los otros dos, y la diferencia
+no es cosmética. El correo no se les empuja al agente: el agente va por él. En
+Claude Code el hook de inicio de sesión reproduce lo que llegó mientras no había
+nada corriendo y luego le pide al agente que arme una vigilancia para lo que
+llegue después. En Codex esta primera versión repone en `SessionStart`; lo que
+llegue a media sesión aparece hasta el siguiente inicio, reanudación, limpieza o
+compactación. Ver [`INSTALL.md`](INSTALL.md) §6.
 
 ## Qué va a poder hacer tu agente
 
@@ -244,7 +245,7 @@ scripts/idle_listener.py  Servicio systemd --user. Mantiene abierta una conexió
   ├─► harness/dispatch.py         el único consumidor supervisado. Lee el diario,
   │                               entrega cada evento a un adaptador de runtime y
   │                               solo avanza el cursor cuando el runtime lo acepta
-  │     └─► harness/adapters/     openclaw, hermes y claudecode. Lo único aquí
+  │     └─► harness/adapters/     openclaw, hermes, claudecode y codex. Lo único aquí
   │                               que sabe qué es un harness
   ├─► harness/session_start.py    muestra lo encolado; nunca lo da por entregado
   └─► harness/rotate_logs.py      rotación con copytruncate, en un timer de usuario
@@ -265,17 +266,18 @@ El clon *es* la instalación: todo lo que le pertenece vive dentro de él, así 
 elegir dónde clonar es cómo eliges dónde instalar.
 
 - Repositorio: donde sea; `~/.openclaw/workspace/paynani` en OpenClaw,
-  `~/.hermes/workspace/paynani` en Hermes Agent o
-  `~/.claude/workspace/paynani` en Claude Code si no hay preferencia
+  `~/.hermes/workspace/paynani` en Hermes Agent,
+  `~/.claude/workspace/paynani` en Claude Code o
+  `~/.codex/workspace/paynani` en OpenAI Codex si no hay preferencia
 - Credenciales: el `.env` del workspace de tu harness cuando hay exactamente uno
   (`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
-  `~/.claude/workspace/.env`) y `<clon>/.env` cuando no. Permisos `600`, ignorado
+  `~/.claude/workspace/.env`, `~/.codex/workspace/.env`) y `<clon>/.env` cuando no. Permisos `600`, ignorado
   por git, nunca se sube. Se lee donde está y nunca se copia al clon: una segunda
   copia de una contraseña es una segunda cosa que se puede filtrar. Pregúntale a
   la instalación en vez de adivinar, con `python3 harness/paths.py env`
 - Estado y eventos: `<clon>/state/`
 - Secretos de ruta: `<clon>/hermes/`, permisos `600`. **Solo en Hermes**: en
-  OpenClaw y en Claude Code ese directorio no existe y no falta nada
+  OpenClaw, Claude Code y OpenAI Codex ese directorio no existe y no falta nada
 - Unidades de usuario: `~/.config/systemd/user/paynani-idle.service`,
   `paynani-dispatch.service`, `paynani-logrotate.service` y
   `paynani-logrotate.timer`, lo único que queda fuera del clon, porque systemd

@@ -256,11 +256,10 @@ OpenClaw adapter does not start an agent run from incoming mail. If you port
 this to another harness, that runtime delivery boundary is the part to inspect
 first; the rest is harness-independent.
 
-### The three runtimes, and where each stops being ours
+### The four runtimes, and where each stops being ours
 
-That delivery boundary is worth stating for all three, because it is the same
-question answered three different ways, and answering it is most of what porting
-to a fourth would involve.
+That delivery boundary is worth stating for all four, because it is the same
+question answered four different ways.
 
 `dispatch.py` moves its cursor only when an adapter reports `ACCEPTED`. What
 `ACCEPTED` means is the adapter's judgement, and it is never *"a person read
@@ -271,11 +270,12 @@ it"* — no runtime can tell us that. Each one draws the line somewhere earlier:
 | OpenClaw | `openclaw system event --mode now` | the event is enqueued on the main session | that the heartbeat injected it, or that the session survived to run one |
 | Hermes | authenticated HTTP route | `200 status=delivered` on the notify route; `202 status=accepted` on the roster route | for `202`, that the queued agent run ever completed |
 | Claude Code | append to `state/session.spool` | the bytes are on disk | that any session ever read them — a file write cannot fail informatively |
+| OpenAI Codex | append to `state/codex.spool` | the bytes are on disk | that any session ever read them; this MVP replays only on SessionStart |
 
 Read down the last column and the shape is one thing: **every runtime has a point
 past which this project cannot see, and the runtimes differ only in how early it
-comes.** Claude Code's is the earliest, which is why it is the one that needed a
-session-start hook. Hermes is explicit about it in its own contract, which is why
+comes.** Claude Code's and Codex's are the earliest, which is why they need
+session-start replay. Hermes is explicit about it in its own contract, which is why
 `HERMES.md` documents `202` as *"completion is unconfirmed"* rather than as
 success. OpenClaw's looks the latest and is not
 ([#108](https://github.com/julianflores/agenteiamail/issues/108)).
@@ -351,11 +351,11 @@ of the session that produced it works for months and then does not.
 
 ---
 
-## Why one runtime pulls
+## Why some runtimes pull
 
-Claude Code is the exception to the section above, and it is worth understanding
-before changing anything in `adapters/claudecode.py`, `session_watch.sh`, or the
-Claude Code branch of `session_start.py`.
+Claude Code and OpenAI Codex are exceptions to the section above, and it is worth
+understanding before changing anything in their adapters, `session_watch.sh`, or
+the pull-runtime branch of `session_start.py`.
 
 **Nothing outside a Claude Code session can speak into it.** There is no
 `claude system event`. `claude -p --resume` starts a fresh headless turn and
@@ -373,7 +373,7 @@ The offset is what makes two readers safe: the hook replays through byte *N* and
 asks for the watch to be armed **at** *N*, so nothing falls in the gap between the
 hook finishing and the monitor attaching, and nothing is shown twice.
 
-### What the other two runtimes use instead
+### What the push runtimes use instead
 
 The obvious question is why OpenClaw and Hermes need no equivalent, and the
 answer is that they already have one: **the queue is their catch-up.**
@@ -392,11 +392,26 @@ moves whether or not any session ever reads the line — *spooled means durable,
 not seen*. The queue stops being a backstop the moment delivery cannot fail, and
 the hook is what replaces it.
 
-**Session catch-up is therefore a Claude Code mechanism by necessity, not a
-feature the other runtimes are missing.** `harness/session_start.py` exists for
-this runtime; on the other two, nothing invokes it and nothing should. It is
-worth saying plainly because the reverse was implied for two releases, and it
-cost an investigation.
+**Session catch-up is therefore a pull-runtime mechanism by necessity, not a
+feature the push runtimes are missing.** `harness/session_start.py` exists for
+Claude Code and OpenAI Codex; on OpenClaw and Hermes, nothing invokes it and
+nothing should. It is worth saying plainly because the reverse was implied for
+two releases, and it cost an investigation.
+
+### Why Codex is pull-only in this release
+
+Codex CLI has a `codex queue` command, but this repository does not use it for
+runtime delivery yet. The command existing is not the same as proving the
+systemd service can discover the right live session, that queuing has the right
+trust boundary for mail notifications, or that its exit statuses divide cleanly
+into `retry()` and `config()`.
+
+So the Codex adapter takes the conservative half that is already proven by
+Claude Code: write one durable line to `state/codex.spool`, and let
+`harness/session_start.py` replay unread lines through Codex's SessionStart hook.
+Unlike Claude Code, this MVP has no Monitor equivalent. Mail that arrives while
+a Codex session is running waits until the next startup, resume, clear, or
+compact event. That is a product limitation, not a dispatch failure.
 
 ### Where that guarantee stops
 
@@ -426,10 +441,10 @@ it is
 ### The spool is not named `*.log`, and that is load-bearing
 
 `rotate_logs.py` rotates every `*.log` in the state directory. Rotation renumbers
-bytes. Two readers index this file by offset, so a rotation landing between a
-replay and an arming resumes at the wrong place: mail shown twice, or mail
-stepped over that nobody ever saw. The second is indistinguishable from a quiet
-mailbox, which is the failure this whole repository exists to prevent.
+bytes. Pull-runtime readers index spools by offset, so a rotation landing between
+a replay and an acknowledgement resumes at the wrong place: mail shown twice, or
+mail stepped over that nobody ever saw. The second is indistinguishable from a
+quiet mailbox, which is the failure this whole repository exists to prevent.
 
 The cost is a file that grows without bound. That is accepted, because it grows
 by one line per message, and the alternative is a rotation scheme that would have
@@ -438,9 +453,10 @@ to move two independent readers' cursors atomically.
 ### One record is exactly one line
 
 A rendered notification can carry a line break — a folded subject is the usual
-source. Letting it through makes the monitor report one message as two and leaves
-every later offset a line out of step with the file it indexes into. The adapter
-flattens line breaks before appending; `scripts/test_claudecode.py` pins it.
+source. Letting it through makes a pull-runtime reader report one message as two
+and leaves every later offset a line out of step with the file it indexes into.
+The adapters flatten line breaks before appending; `scripts/test_claudecode.py`
+and `scripts/test_codex.py` pin it.
 
 ### Why the watch takes a lock, when the other runtimes forbid one outright
 

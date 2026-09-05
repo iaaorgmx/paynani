@@ -352,10 +352,10 @@ def reply_facts(cursor):
 
 def spool_facts(selected):
     """
-    How much of the Claude Code spool no session has picked up yet.
+    How much of a pull-runtime spool no session has picked up yet.
 
     **Reported, never judged.** Unread bytes with no session open is the normal
-    resting state of this runtime, not a fault — mail waits in the spool exactly
+    resting state of these runtimes, not a fault — mail waits in the spool exactly
     so a session that starts tomorrow still sees it.
 
     The check the PRD originally asked for, "unread bytes and no watch attached",
@@ -363,13 +363,18 @@ def spool_facts(selected):
     be seen from out here. Rather than infer it from a proxy and call the guess a
     health state, this reports what is true and says what it does not know.
     """
-    if selected != "claudecode":
+    if selected not in ("claudecode", "codex"):
         return None
     out = {"spool": None, "bytes_total": 0, "bytes_unread": 0,
            "session_arming": "unobservable"}
     try:
-        from adapters import claudecode as cc
-        spool = cc.spool_path()
+        if selected == "claudecode":
+            from adapters import claudecode as adapter
+            offset_name = "session.offset"
+        else:
+            from adapters import codex as adapter
+            offset_name = "codex.offset"
+        spool = adapter.spool_path()
     except Exception:
         return out
     out["spool"] = str(spool)
@@ -378,10 +383,12 @@ def spool_facts(selected):
     except OSError:
         return out
     try:
-        offset = int((spool.parent / "session.offset").read_text(encoding="utf-8").strip() or 0)
+        offset = int((spool.parent / offset_name).read_text(encoding="utf-8").strip() or 0)
     except (OSError, ValueError):
         offset = 0
     out["bytes_unread"] = max(0, out["bytes_total"] - offset)
+    if selected == "codex":
+        out["session_arming"] = "session-start-only"
     return out
 
 
@@ -612,7 +619,7 @@ def assess(facts):
     # reports the shape and says so rather than picking one.
     reply = facts.get("reply") or {}
     unanswered = reply.get("unanswered_age_seconds")
-    # On Claude Code, "delivered" means the bytes are in the spool, and mail
+    # On pull runtimes, "delivered" means the bytes are in the spool, and mail
     # waiting there for a session that has not started yet is the resting state
     # of that runtime rather than a fault — spool_facts() says so, and this must
     # agree with it. Unread bytes mean the mail demonstrably has not reached an
@@ -703,8 +710,12 @@ def render(facts, problems, warnings):
         out.append(f"spool        {spool['spool']}")
         out.append(f"             {spool['bytes_unread']} byte(s) not yet picked up "
                    f"by a session, of {spool['bytes_total']}")
-        out.append("             whether a session has armed a watch is not "
-                   "observable from here; unread bytes with no session open is normal")
+        if spool.get("session_arming") == "session-start-only":
+            out.append("             Codex replays this only at startup, resume, clear, "
+                       "or compact; mid-session mail waits for the next session event")
+        else:
+            out.append("             whether a session has armed a watch is not "
+                       "observable from here; unread bytes with no session open is normal")
     if runtime["selected"]:
         reach = "reachable" if runtime["reachable"] else "NOT REACHABLE"
         out.append(f"             {reach}" + (f": {runtime['detail']}" if runtime["detail"] else ""))
