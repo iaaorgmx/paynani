@@ -422,13 +422,16 @@ message, because Codex receives that text as user input and the mail body is not
 trusted until the agent fetches the event from the journal and verifies the
 roster decision.
 
-The spool stays because a live session is optional. If `codex queue` succeeds,
-`state/codex.offset` advances through the line that was just queued, so the next
-SessionStart replay will not show it again. If there is no active session, the
-event remains spooled and either waits for the next SessionStart replay or, when
-`PAYNANI_CODEX_MODE=agent` is set, starts a headless `codex exec` run. That mode
-is off by default for the same reason as Claude Code's agent mode: it widens
-what inbound roster mail can cause on the machine.
+The spool stays because a live session is optional. If `codex queue` succeeds
+and the new line is exactly the next unread spool record, `state/codex.offset`
+advances through it so the next SessionStart replay will not show it again. If
+older unread lines are still ahead of it, the offset does not move: replaying the
+queued line later is acceptable, but skipping unseen mail is not. If there is no
+active session, the event remains spooled and either waits for the next
+SessionStart replay or, when `PAYNANI_CODEX_MODE=agent` is set, starts a
+headless `codex exec` run. That mode is off by default for the same reason as
+Claude Code's agent mode: it widens what inbound roster mail can cause on the
+machine.
 
 Queue failures are classified by stderr, not only by exit code. Exit `0` means
 queued and accepted. Exit `2` is configuration. Exit `1` with `No active session

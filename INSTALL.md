@@ -831,8 +831,9 @@ rather than guessing.
 Codex delivery has two paths in this release. The dispatcher first writes each
 rendered notification to `state/codex.spool` and only then tries to wake a live
 Codex session with `codex queue`. If that queue call succeeds, paynani advances
-`state/codex.offset` through the same spool line so the next `SessionStart`
-replay does not show it again.
+`state/codex.offset` through the same spool line only when no older unread spool
+line would be skipped. With backlog, the queued line may replay later; duplicate
+delivery is the chosen failure mode over silent loss.
 
 Register the Codex hooks explicitly:
 

@@ -99,6 +99,19 @@ class SpoolDelivery(unittest.TestCase):
         self.assertEqual(str(codex.spool_path().stat().st_size),
                          codex.offset_path().read_text(encoding="utf-8"))
 
+    def test_live_queue_acceptance_does_not_skip_unread_backlog(self):
+        self.register_session()
+        codex.spool_path().parent.mkdir(parents=True, exist_ok=True)
+        codex.spool_path().write_text("old one\nold two\n", encoding="utf-8")
+        codex.offset_path().write_text("0", encoding="utf-8")
+        with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+            with mock.patch.object(codex.subprocess, "run",
+                                   lambda *a, **kw: self.queue_result(0)):
+                result = codex.deliver(envelope("new", event_id="imap:INBOX:42:8"))
+        self.assertTrue(result.ok, result.detail)
+        self.assertEqual("0", codex.offset_path().read_text(encoding="utf-8"))
+        self.assertEqual(self.spool_text(), "old one\nold two\nnew\n")
+
     def test_live_queue_message_names_only_the_event_id(self):
         self.register_session()
         calls = []
@@ -160,6 +173,20 @@ class SpoolDelivery(unittest.TestCase):
         self.assertEqual(calls[0][:3], ["/usr/bin/codex", "exec", "--cd"])
         self.assertEqual(str(codex.spool_path().stat().st_size),
                          codex.offset_path().read_text(encoding="utf-8"))
+
+    def test_agent_mode_acceptance_does_not_skip_unread_backlog(self):
+        codex.spool_path().parent.mkdir(parents=True, exist_ok=True)
+        codex.spool_path().write_text("old\n", encoding="utf-8")
+        codex.offset_path().write_text("0", encoding="utf-8")
+        env = {"PAYNANI_CODEX_MODE": "agent"}
+        with mock.patch.dict(os.environ, env):
+            with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+                with mock.patch.object(codex.subprocess, "run",
+                                       lambda *a, **kw: self.queue_result(0)):
+                    result = codex.deliver(envelope("agent", event_id="evt-agent"))
+        self.assertTrue(result.ok, result.detail)
+        self.assertEqual("0", codex.offset_path().read_text(encoding="utf-8"))
+        self.assertEqual(self.spool_text(), "old\nagent\n")
 
     def test_failed_agent_mode_still_accepts_the_spooled_event(self):
         env = {"PAYNANI_CODEX_MODE": "agent"}

@@ -114,10 +114,11 @@ def _append(text):
     flattened = text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
     line = flattened.rstrip() + "\n"
     with open(spool, "a", encoding="utf-8") as handle:
+        start = handle.tell()
         handle.write(line)
         handle.flush()
         os.fsync(handle.fileno())
-        return handle.tell()
+        return start, handle.tell()
 
 
 def _write_text_atomic(path, text):
@@ -130,6 +131,21 @@ def _write_text_atomic(path, text):
 
 def _acknowledge_spool(through):
     _write_text_atomic(offset_path(), str(int(through)))
+
+
+def _acknowledge_spool_if_contiguous(start, through):
+    """
+    Advance only when this line was the next unread spool record.
+
+    If the offset is behind start, older mail has not been shown yet. Repeating a
+    queued line is survivable; skipping unseen mail is not.
+    """
+    try:
+        current = int(offset_path().read_text(encoding="utf-8").strip() or 0)
+    except (OSError, ValueError):
+        current = 0
+    if current == int(start):
+        _acknowledge_spool(through)
 
 
 def _registered_session_id():
@@ -229,7 +245,7 @@ def deliver(envelope):
         return config("event has no event_id to queue")
 
     try:
-        through = _append(text)
+        start, through = _append(text)
     except OSError as exc:
         return config(
             f"could not write {spool_path()}: {exc}. Mail is being journalled but "
@@ -240,7 +256,7 @@ def deliver(envelope):
     if queued is not None:
         if queued.ok:
             try:
-                _acknowledge_spool(through)
+                _acknowledge_spool_if_contiguous(start, through)
             except (OSError, ValueError):
                 pass
         return queued
@@ -249,7 +265,7 @@ def deliver(envelope):
         result = _start_agent_run(envelope)
         if result.ok:
             try:
-                _acknowledge_spool(through)
+                _acknowledge_spool_if_contiguous(start, through)
             except (OSError, ValueError):
                 pass
         else:
