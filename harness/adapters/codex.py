@@ -4,9 +4,9 @@ The OpenAI Codex adapter: deliver an event to a live session, with replay.
 
 Codex CLI's public hook contract gives paynani a SessionStart replay point, and
 Codex CLI 0.153.4 also has an undocumented `codex queue` command that was tested
-on a live idle TUI. The adapter therefore writes every rendered notification to
-`state/codex.spool` first, then queues a fixed instruction into the active thread
-when a SessionStart hook has registered one.
+on a live idle TUI. The adapter therefore writes every event id plus rendered
+notification to `state/codex.spool` first, then queues a fixed instruction into
+the active thread when a SessionStart hook has registered one.
 
 The spool is deliberately not a `*.log`. `rotate_logs.py` rotates log files, and
 rotation renumbers bytes. The session-side replay reads by byte offset, so a
@@ -14,6 +14,7 @@ rotated spool would either repeat mail or step over mail nobody saw.
 """
 
 import os
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -102,7 +103,7 @@ def check():
     return accepted(str(spool))
 
 
-def _append(text):
+def _append(text, event_id):
     """
     Append one physical line and fsync it before reporting success.
 
@@ -112,7 +113,11 @@ def _append(text):
     spool = spool_path()
     spool.parent.mkdir(parents=True, exist_ok=True)
     flattened = text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
-    line = flattened.rstrip() + "\n"
+    record = {
+        "event_id": event_id.replace("\r\n", " ").replace("\n", " ").replace("\r", " "),
+        "notification_text": flattened.rstrip(),
+    }
+    line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
     with open(spool, "a", encoding="utf-8") as handle:
         start = handle.tell()
         handle.write(line)
@@ -245,7 +250,7 @@ def deliver(envelope):
         return config("event has no event_id to queue")
 
     try:
-        start, through = _append(text)
+        start, through = _append(text, _event_id(envelope))
     except OSError as exc:
         return config(
             f"could not write {spool_path()}: {exc}. Mail is being journalled but "

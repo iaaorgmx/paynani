@@ -713,6 +713,8 @@ def render(facts, problems, warnings):
         if spool.get("session_arming") == "queue-or-replay":
             out.append("             Codex wakes a registered live session with codex queue; "
                        "unread bytes wait for SessionStart replay")
+            out.append("             picked up here means shown to SessionStart, not that "
+                       "the agent read the mail body or answered it")
         else:
             out.append("             whether a session has armed a watch is not "
                        "observable from here; unread bytes with no session open is normal")
