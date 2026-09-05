@@ -2,6 +2,21 @@
 
 ## Sin publicar
 
+- **La reposición de Codex ya exige atender el correo repuesto**
+  ([#53](https://github.com/iaaorgmx/paynani/issues/53)).
+
+  Cuando `SessionStart` repone líneas desde `state/codex.spool`, ahora emite un
+  `systemMessage` aunque el journal ya no tenga backlog pendiente, y ese aviso
+  se compone con fallas del listener o dispatcher en vez de perder contra ellas.
+  Los nuevos registros de `codex.spool` conservan el `event_id` junto a la
+  notificación renderizada, y el replay reutiliza la misma instrucción por
+  `event_id` que manda la ruta viva de `codex queue`; las líneas antiguas de
+  texto plano siguen funcionando con resolución contra el journal. Cada correo
+  de roster sigue siendo trabajo pendiente hasta verificarlo y leer o descartar
+  deliberadamente el cuerpo exacto. `healthcheck.py` aclara la misma frontera: el
+  offset de `codex.spool` significa que la sesión recogió el replay, no que el
+  agente ya leyó o respondió el correo.
+
 - **Codex puede despertar una sesión viva con `codex queue`**
   ([#48](https://github.com/iaaorgmx/paynani/issues/48)).
 

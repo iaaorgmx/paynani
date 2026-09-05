@@ -410,8 +410,9 @@ published contract: the behavior is covered by tests and called out in
 
 The live path is now the primary one. Codex's `SessionStart` hook receives a
 documented `session_id` in its stdin payload, and `harness/session_start.py`
-writes that id to `state/codex.session`. The dispatcher writes the rendered
-notification line to `state/codex.spool`, then the Codex adapter runs:
+writes that id to `state/codex.session`. The dispatcher writes a one-line JSON
+record carrying the `event_id` and rendered notification to `state/codex.spool`,
+then the Codex adapter runs:
 
 ```bash
 codex queue --thread "$(cat state/codex.session)" --message "Procesa el evento paynani <event_id> del journal..."
@@ -422,12 +423,15 @@ message, because Codex receives that text as user input and the mail body is not
 trusted until the agent fetches the event from the journal and verifies the
 roster decision.
 
-The spool stays because a live session is optional. If `codex queue` succeeds
-and the new line is exactly the next unread spool record, `state/codex.offset`
-advances through it so the next SessionStart replay will not show it again. If
-older unread lines are still ahead of it, the offset does not move: replaying the
-queued line later is acceptable, but skipping unseen mail is not. If there is no
-active session, the event remains spooled and either waits for the next
+The spool stays because a live session is optional. New records carry the
+`event_id` so SessionStart can emit the same instruction as the live queue path
+without joining rendered text back against the journal; old text-only spool lines
+still replay by resolving the rendered line against the journal when possible.
+If `codex queue` succeeds and the new line is exactly the next unread spool
+record, `state/codex.offset` advances through it so the next SessionStart replay
+will not show it again. If older unread lines are still ahead of it, the offset
+does not move: replaying the queued line later is acceptable, but skipping unseen
+mail is not. If there is no active session, the event remains spooled and either waits for the next
 SessionStart replay or, when `PAYNANI_CODEX_MODE=agent` is set, starts a
 headless `codex exec` run. That mode is off by default for the same reason as
 Claude Code's agent mode: it widens what inbound roster mail can cause on the

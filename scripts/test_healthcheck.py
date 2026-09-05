@@ -668,6 +668,8 @@ check("the Codex spool state records queue-or-replay delivery",
 code, text = f.exit_code()
 check("the Codex report states live queue plus replay", True,
       "codex queue" in text and "SessionStart replay" in text)
+check("the Codex report says picked up does not mean answered", True,
+      "not that the agent read the mail body or answered it" in text)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
