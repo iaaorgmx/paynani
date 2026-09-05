@@ -2,6 +2,13 @@
 
 ## Sin publicar
 
+- **La reposición de Claude Code ya no salta correo en silencio.** Antes mostraba
+  los 20 renglones más recientes del spool y armaba el watch al final del
+  archivo, así que con un rezago mayor a 20 los más viejos quedaban acusados sin
+  que nadie los hubiera visto. Ahora drena del más viejo al más nuevo y acusa
+  solo hasta el último renglón efectivamente mostrado: el resto sigue pendiente y
+  llega por el watch. El arreglo salió del runtime de Codex y aplica a los dos.
+
 - **OpenAI Codex entra como runtime `codex`**
   ([#44](https://github.com/iaaorgmx/paynani/issues/44)).
 

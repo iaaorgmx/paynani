@@ -357,7 +357,7 @@ def main():
             parts.append(
                 f"Mail that arrived while no session was watching "
                 f"({len(spool_lines)} message(s)"
-                + (f", trimmed to the most recent {MAX_REPLAY}" if spool_capped else "")
+                + (f", showing the oldest {MAX_REPLAY}" if spool_capped else "")
                 + "):\n" + "\n".join(spool_lines)
             )
         else:
