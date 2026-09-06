@@ -951,6 +951,12 @@ Do not report success until every line passes.
 #    reach the remote, which is not the same as being up to date.
 scripts/version.sh
 
+# 0b. And which checkout that actually is. VERSION can still name the current
+#     release while the tree sits on main, ahead of the tag; a field report or a
+#     reproduction needs both facts.
+git rev-parse --short HEAD
+git status --short --branch
+
 # 1. Running, and for more than a moment
 systemctl --user is-active paynani-idle.service
 systemctl --user show paynani-idle.service -p ActiveEnterTimestamp
@@ -991,6 +997,9 @@ grep ", roster]" state/mail.log | tail -1
 # No output means the agent will not act on your mail. Check that the address in
 # roster.md matches the From address your mail actually arrives with.
 
+# 6e. The whole Python suite. Run each script; do NOT use unittest discover.
+for t in scripts/test_*.py; do python3 "$t" || echo "FAILED: $t"; done
+
 # 7. Survives restart without replaying or losing anything
 systemctl --user restart paynani-idle.service
 tail -2 state/idle.err.log  # expect "resuming from uid N"
@@ -1004,6 +1013,13 @@ finishing, not hanging; `systemctl` returns when it is done.
 uid N"* proves state persistence. If it says baseline after a restart, the state
 file is not being written, and the next reboot will silently swallow every message
 that arrived while the machine was off.
+
+**Do not verify with `python3 -m unittest discover`.** Several of these scripts
+are self-contained executables that call `sys.exit(0)` when imported, so
+discovery reports them as import errors and the run ends `FAILED (errors=6)` on
+a healthy tree. The same six appear on every runtime; they are an artefact of
+the loader, not a result. Run each script directly, as test 6e does, and read
+its own exit status.
 
 **Worth asking your external sender for more than one message.** A plain one, one
 with accented characters in the subject, and one shaped like a GitHub notification
