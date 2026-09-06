@@ -208,9 +208,18 @@ launchctl print gui/$(id -u)/com.paynani.dispatch
 ### 1.2 Does the mail server advertise IDLE?
 
 ```bash
-git clone <this repo> && cd paynani
+git clone --branch <newest tag> <this repo> && cd paynani
 python3 scripts/preflight.py
 ```
+
+**Clone the newest tag, not `main`.** A bare `git clone` gives you `main`, which
+is usually ahead of the newest release: you get unreleased commits nobody
+installed on purpose, and `scripts/version.sh` compares against tags, so it
+reports the tag's number for a tree that is not that tag. Two field installs in
+a row took `main` because this line did not say otherwise. `git tag --sort=-v:refname
+| head -1` names the tag to use. Install `main` deliberately or not at all --
+and if you do, say so in your field report, because it changes what your report
+is about.
 
 You need three greens: login succeeds, **IDLE advertised: True**, and a
 `UIDVALIDITY` number comes back.
