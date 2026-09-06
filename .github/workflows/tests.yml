@@ -1,0 +1,39 @@
+name: tests
+
+# Every pull request, and every commit that lands on main. The second one is not
+# redundant: it catches a merge whose result differs from what either side
+# tested, which is the case a per-PR check cannot see.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install what the suite shells out to
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y php-cli
+
+      - name: Refuse to run a suite that would silently skip checks
+        # A green run that verified less than it claims is worse than a red one.
+        # Without php, scripts/test_paths.sh skips 22 checks and still passes, so
+        # the absence of an interpreter would read as success.
+        run: |
+          for tool in php openssl python3 bash; do
+            command -v "$tool" >/dev/null || {
+              echo "missing: $tool -- the suite would skip checks and still report green"
+              exit 1
+            }
+          done
+          php --version | head -1
+
+      - name: Run the suite
+        run: scripts/test_all.sh
