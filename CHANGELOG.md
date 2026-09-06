@@ -1,6 +1,32 @@
 # Changelog
 
-## Sin publicar
+## 0.3.0 — 2026-09-06
+
+**paynani entrega a OpenAI Codex, y sabe despertar una sesión que está viva.** 23
+commits desde 0.2.0.
+
+Hasta ahora el correo llegaba a un harness que ya estaba mirando. Codex no mira:
+solo lee su contexto en un evento de sesión, así que un mensaje que entraba a
+media sesión esperaba a la siguiente. Esta versión cierra las dos mitades — el
+dispatcher encola contra la sesión viva con `codex queue`, y lo que entró con la
+sesión cerrada se repone al arrancar, ya no como contexto informativo sino como
+trabajo que hay que atender.
+
+**Si tu instalación corre con `PAYNANI_RUNTIME=auto`, lee esto antes de jalar.**
+El dispatcher no elige entre runtimes: si en este host ahora se detecta también
+el binario de `codex`, `auto` encuentra dos, se niega a adivinar y el servicio no
+arranca. La salida lo dice con esas palabras. El arreglo es nombrar el runtime en
+`runtime.env`, que es por instalación y no viaja en el repo:
+
+```
+PAYNANI_RUNTIME=claudecode
+```
+
+Fuera de ese caso basta `git pull`. No hay estado que migrar: los registros
+nuevos de `state/codex.spool` se escriben como JSON de una línea con su
+`event_id`, y los que ya estaban en texto plano se siguen reponiendo por el
+camino de respaldo. En un host de Codex falta registrar los hooks una vez con
+`scripts/codex_hook.py --install`.
 
 - **La reposición de Codex ya exige atender el correo repuesto**
   ([#53](https://github.com/iaaorgmx/paynani/issues/53)).
