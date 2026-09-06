@@ -997,8 +997,9 @@ grep ", roster]" state/mail.log | tail -1
 # No output means the agent will not act on your mail. Check that the address in
 # roster.md matches the From address your mail actually arrives with.
 
-# 6e. The whole Python suite. Run each script; do NOT use unittest discover.
-for t in scripts/test_*.py; do python3 "$t" || echo "FAILED: $t"; done
+# 6e. The whole suite -- every Python and shell test, one summary.
+#     This is the entry point; do NOT use `python3 -m unittest discover`.
+scripts/test_all.sh
 
 # 7. Survives restart without replaying or losing anything
 systemctl --user restart paynani-idle.service
@@ -1014,12 +1015,14 @@ uid N"* proves state persistence. If it says baseline after a restart, the state
 file is not being written, and the next reboot will silently swallow every message
 that arrived while the machine was off.
 
-**Do not verify with `python3 -m unittest discover`.** Several of these scripts
-are self-contained executables that call `sys.exit(0)` when imported, so
-discovery reports them as import errors and the run ends `FAILED (errors=6)` on
-a healthy tree. The same six appear on every runtime; they are an artefact of
-the loader, not a result. Run each script directly, as test 6e does, and read
-its own exit status.
+**Run the suite with `scripts/test_all.sh`, not `python3 -m unittest discover`.**
+Only four of the test files define `unittest.TestCase` classes; the other seven
+are self-contained assertion scripts. Discovery cannot run those: six exit at
+import and are reported as errors -- `FAILED (errors=6)` on a healthy tree, on
+every runtime -- and the seventh imports cleanly and contributes no tests at
+all, so its checks are skipped in silence. Both halves are the loader reporting
+on a suite it did not run. `test_all.sh` executes each file and reads its exit
+status, which is the only thing that reflects what actually passed.
 
 **Worth asking your external sender for more than one message.** A plain one, one
 with accented characters in the subject, and one shaped like a GitHub notification
