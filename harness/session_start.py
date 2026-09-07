@@ -90,6 +90,13 @@ def unit_state(unit):
         return "unknown"
 
 
+# dispatch.py:main() writes exactly this line, once, right after it claims the
+# lock and before it delivers anything — the only line that names a process
+# starting rather than something that happened during one. That makes it the
+# marker for "the current dispatcher startup" that dispatcher_faults() cuts on.
+_STARTUP_PREFIX = ev.ROUTINE_PREFIX + ev.STARTUP_NOTE
+
+
 def dispatcher_faults():
     """
     Recent watcher complaints, newest last.
@@ -105,11 +112,23 @@ def dispatcher_faults():
         text = DISPATCH_ERR.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
+    all_lines = text.splitlines()
+    # A line written before the dispatcher now running was even born describes a
+    # process that is gone, not a problem this install has. Without this cut, one
+    # unmarked line from before the ok: prefix existed (#15) stayed a permanent
+    # false PROBLEMS report, surviving every later restart that started clean
+    # (#59). When no startup line is found — an install too old to have written
+    # one — nothing is cut and every line is still weighed, which is the
+    # pre-existing, safe-side behaviour.
+    start = 0
+    for i, ln in enumerate(all_lines):
+        if ln.startswith(_STARTUP_PREFIX):
+            start = i + 1
     # Routine notes are dropped. The dispatcher marks them, because it is the
     # only party that knows which of its own lines is a complaint — and the line
     # it writes on every successful startup used to make this hook announce
     # PROBLEMS on every healthy install (#15).
-    lines = [ln for ln in text.splitlines()
+    lines = [ln for ln in all_lines[start:]
              if ln.strip() and not ln.startswith(ev.ROUTINE_PREFIX)]
     return lines[-MAX_DISPATCH_ERR:]
 
@@ -509,13 +528,15 @@ def main():
             "ARM THE MAIL WATCH NOW, before doing anything else, with a persistent "
             "Monitor running exactly:\n\n"
             f"    bash {SESSION_WATCH} {STATE_DIR} {spool_through}\n\n"
-            "Each stdout line is one new mail notification. The byte offset is not "
-            "optional and must not be rounded: this hook has replayed the spool "
-            "through exactly that byte, so starting anywhere else either repeats "
-            "messages or steps over ones nobody has seen. Arming is also what "
-            "acknowledges the replay above — if you skip it, the next session "
-            "shows these same messages again, and no new mail reaches you for the "
-            "rest of this one."
+            "Each stdout line is one new mail notification, except a line saying "
+            "the watch could not be armed because another session already holds "
+            "it — that one is not mail. The byte offset is not optional and must "
+            "not be rounded: this hook has replayed the spool through exactly "
+            "that byte, so starting anywhere else either repeats messages or "
+            "steps over ones nobody has seen. Arming is also what acknowledges "
+            "the replay above — if you skip it, the next session shows these "
+            "same messages again, and no new mail reaches you for the rest of "
+            "this one."
         )
     elif runtime == "codex":
         if spool_lines:

@@ -65,6 +65,25 @@ class DispatcherFaults(unittest.TestCase):
         self.log.write_text("delivering to claudecode (/x)\n")
         self.assertEqual(1, len(self.ss.dispatcher_faults()))
 
+    def test_a_stale_unmarked_line_is_ignored_once_the_dispatcher_restarted(self):
+        # #59: on a host old enough to have an unmarked line from before the ok:
+        # prefix existed, every clean restart since must retire it, not keep
+        # citing it forever.
+        self.log.write_text(
+            "delivering to claudecode (/x)\n"
+            + self.ev.ROUTINE_PREFIX + "delivering to claudecode (/x)\n")
+        self.assertEqual([], self.ss.dispatcher_faults())
+
+    def test_a_real_fault_after_the_latest_startup_still_counts(self):
+        # The other half of #59's fix: cutting on the latest startup must not
+        # start swallowing genuine complaints that come after it (#15, reversed).
+        self.log.write_text(
+            self.ev.ROUTINE_PREFIX + "delivering to claudecode (/x)\n"
+            "claudecode cannot deliver imap:INBOX:1:5: spool is full\n")
+        faults = self.ss.dispatcher_faults()
+        self.assertEqual(1, len(faults))
+        self.assertIn("spool is full", faults[0])
+
     def test_an_empty_log_is_not_a_fault(self):
         self.log.write_text("")
         self.assertEqual([], self.ss.dispatcher_faults())
@@ -74,12 +93,26 @@ class DispatcherFaults(unittest.TestCase):
         source = (ROOT / "harness" / "dispatch.py").read_text()
         self.assertIn("def note(message):", source)
         self.assertIn("log(ev.ROUTINE_PREFIX + message)", source)
-        for routine in ("delivering to {runtime}", "delivery recovered",
-                        "compacted the event journal"):
+        self.assertIn("note(f\"{ev.STARTUP_NOTE}{runtime}\"", source)
+        for routine in ("delivery recovered", "compacted the event journal"):
             self.assertIn(routine, source)
             line = next(ln for ln in source.splitlines() if routine in ln and "(" in ln)
             self.assertTrue(line.strip().startswith("note("),
                             f"routine line is not marked: {line.strip()}")
+
+    def test_the_startup_marker_is_one_constant_not_two_literals(self):
+        """
+        #59 review: dispatch.py used to write "delivering to {runtime}" as a bare
+        literal while session_start.py matched "delivering to " as a second, typed
+        by hand. A test that also typed the string twice would keep passing the
+        day only one of those changed. Reading both sources for the same
+        constant is the only check that would actually catch that drift.
+        """
+        dispatch_source = (ROOT / "harness" / "dispatch.py").read_text()
+        session_start_source = (ROOT / "harness" / "session_start.py").read_text()
+        self.assertIn("ev.STARTUP_NOTE", dispatch_source)
+        self.assertIn("ev.STARTUP_NOTE", session_start_source)
+        self.assertEqual(self.ev.STARTUP_NOTE, "delivering to ")
 
 
 class SpoolDelivery(unittest.TestCase):
@@ -352,7 +385,11 @@ class Watcher(unittest.TestCase):
         second = sp.run(["bash", str(self.WATCH), str(self.state), "0"],
                         capture_output=True, text=True, timeout=10)
         self.assertEqual(second.returncode, 0)
-        self.assertIn("already watching", second.stderr)
+        # stdout, not stderr (#62): a Monitor only turns stdout into a
+        # notification, so the second session must see this line to know it
+        # is not armed rather than mistaking silence for a quiet mailbox.
+        self.assertIn("already watching", second.stdout)
+        self.assertEqual(second.stderr, "")
 
     def test_arming_records_the_offset_it_was_given(self):
         """Arming is the acknowledgement; it must land before any mail does."""
