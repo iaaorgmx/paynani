@@ -9,13 +9,26 @@ Mensageiro de elite: os paynani eram os corredores e mensageiros oficiais do Imp
 
 [Español (MX)](../README.md) · [English (US)](README.en-US.md) · [Español (ES)](README.es-ES.md) · [Français (FR)](README.fr-FR.md) · **Português (BR)**
 
-E-mail com aviso imediato para um agente de IA. Ele fica sabendo que chegou
-mensagem em cerca de um segundo, sem ficar consultando a caixa, e consegue ler e
-enviar dentro de uma lista de destinatários autorizados.
+O paynani permite que seu agente de IA leia automaticamente o próprio e-mail
+poucos segundos depois que ele chega, processe as mensagens recebidas e atenda às
+instruções do e-mail como faria um colega humano.
 
-Construído sobre o [Himalaya](https://github.com/pimalaya/himalaya) para uma conta
-IMAP/SMTP comum, no Ubuntu 24.04 sob o ambiente OpenClaw, Hermes Agent ou Claude
-Code ou OpenAI Codex.
+Todos os e-mails recebidos são lidos, mas só se seguem as instruções dos que vêm
+de uma lista de contatos autorizados.
+
+O paynani foi construído sobre o [Himalaya](https://github.com/pimalaya/himalaya)
+e funciona com uma conta IMAP/SMTP comum.
+
+**Usar é totalmente gratuito!** Você não precisa contratar nenhum serviço
+adicional para dar ao seu agente um endereço de e-mail que ele possa usar
+sozinho.
+
+Atualmente é usado por agentes de IA como OpenClaw, Hermes Agent, Claude Code e
+OpenAI Codex.
+
+Desenvolvido e testado em Linux (Ubuntu 24.04) e macOS (26.4.1).
+
+Feito com amor por humanos e agentes de IA, do México para o mundo.
 
 ---
 
