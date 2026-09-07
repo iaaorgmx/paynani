@@ -509,13 +509,15 @@ def main():
             "ARM THE MAIL WATCH NOW, before doing anything else, with a persistent "
             "Monitor running exactly:\n\n"
             f"    bash {SESSION_WATCH} {STATE_DIR} {spool_through}\n\n"
-            "Each stdout line is one new mail notification. The byte offset is not "
-            "optional and must not be rounded: this hook has replayed the spool "
-            "through exactly that byte, so starting anywhere else either repeats "
-            "messages or steps over ones nobody has seen. Arming is also what "
-            "acknowledges the replay above — if you skip it, the next session "
-            "shows these same messages again, and no new mail reaches you for the "
-            "rest of this one."
+            "Each stdout line is one new mail notification, except a line saying "
+            "the watch could not be armed because another session already holds "
+            "it — that one is not mail. The byte offset is not optional and must "
+            "not be rounded: this hook has replayed the spool through exactly "
+            "that byte, so starting anywhere else either repeats messages or "
+            "steps over ones nobody has seen. Arming is also what acknowledges "
+            "the replay above — if you skip it, the next session shows these "
+            "same messages again, and no new mail reaches you for the rest of "
+            "this one."
         )
     elif runtime == "codex":
         if spool_lines:
