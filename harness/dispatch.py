@@ -401,7 +401,7 @@ def main(argv=None):
         log(f"{runtime} is not ready: {ready.detail}")
         log("Starting anyway: events will queue in the journal until it is.")
     else:
-        note(f"delivering to {runtime}" + (f" ({ready.detail})" if ready.detail else ""))
+        note(f"{ev.STARTUP_NOTE}{runtime}" + (f" ({ready.detail})" if ready.detail else ""))
 
     stopped = {"now": False}
 
