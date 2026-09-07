@@ -107,6 +107,11 @@ like style and are not.
 > is [`CHANGELOG.md`](CHANGELOG.md). `scripts/version.sh` says which version you
 > are on and whether there is a newer one.
 >
+> If the host used to run `agenteiamail` and is being renamed to `paynani`, read
+> [`MIGRATION.md`](MIGRATION.md) first. That path has extra cleanup: Himalaya may
+> still have the old account as default, live agent instructions may still call
+> the old `send.sh`, and systemd may remember deleted `agenteiamail-*` units.
+>
 > One upgrade hazard predates both files and is worth naming here, because a
 > clone old enough to hit it is too old to be told about it any other way.
 >
