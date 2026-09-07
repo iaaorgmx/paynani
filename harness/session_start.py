@@ -94,7 +94,7 @@ def unit_state(unit):
 # lock and before it delivers anything — the only line that names a process
 # starting rather than something that happened during one. That makes it the
 # marker for "the current dispatcher startup" that dispatcher_faults() cuts on.
-_STARTUP_PREFIX = ev.ROUTINE_PREFIX + "delivering to "
+_STARTUP_PREFIX = ev.ROUTINE_PREFIX + ev.STARTUP_NOTE
 
 
 def dispatcher_faults():

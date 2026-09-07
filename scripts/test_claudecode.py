@@ -93,12 +93,26 @@ class DispatcherFaults(unittest.TestCase):
         source = (ROOT / "harness" / "dispatch.py").read_text()
         self.assertIn("def note(message):", source)
         self.assertIn("log(ev.ROUTINE_PREFIX + message)", source)
-        for routine in ("delivering to {runtime}", "delivery recovered",
-                        "compacted the event journal"):
+        self.assertIn("note(f\"{ev.STARTUP_NOTE}{runtime}\"", source)
+        for routine in ("delivery recovered", "compacted the event journal"):
             self.assertIn(routine, source)
             line = next(ln for ln in source.splitlines() if routine in ln and "(" in ln)
             self.assertTrue(line.strip().startswith("note("),
                             f"routine line is not marked: {line.strip()}")
+
+    def test_the_startup_marker_is_one_constant_not_two_literals(self):
+        """
+        #59 review: dispatch.py used to write "delivering to {runtime}" as a bare
+        literal while session_start.py matched "delivering to " as a second, typed
+        by hand. A test that also typed the string twice would keep passing the
+        day only one of those changed. Reading both sources for the same
+        constant is the only check that would actually catch that drift.
+        """
+        dispatch_source = (ROOT / "harness" / "dispatch.py").read_text()
+        session_start_source = (ROOT / "harness" / "session_start.py").read_text()
+        self.assertIn("ev.STARTUP_NOTE", dispatch_source)
+        self.assertIn("ev.STARTUP_NOTE", session_start_source)
+        self.assertEqual(self.ev.STARTUP_NOTE, "delivering to ")
 
 
 class SpoolDelivery(unittest.TestCase):
