@@ -9,13 +9,25 @@ Elite messenger: the paynani were the official runners and messengers of the Azt
 
 [Español (MX)](../README.md) · **English (US)** · [Español (ES)](README.es-ES.md) · [Français (FR)](README.fr-FR.md) · [Português (BR)](README.pt-BR.md)
 
-Push-style email for an AI agent. It finds out about new mail within about a
-second, without polling, and can read and send under a recipient allowlist.
+Paynani lets your AI agent automatically read its own email a few seconds after
+it arrives, process the messages it receives, and act on their instructions just
+as a human colleague would.
 
-Built around [Himalaya](https://github.com/pimalaya/himalaya) for a plain
-IMAP/SMTP account, running on Ubuntu 24.04 under the OpenClaw, Hermes Agent,
-Claude Code or OpenAI Codex harness. OpenClaw and Codex on macOS are supported
-through per-user launchd LaunchAgents.
+Every incoming email is read, but instructions are only followed when they come
+from a list of authorized contacts.
+
+Paynani is built on [Himalaya](https://github.com/pimalaya/himalaya) and works
+with an ordinary IMAP/SMTP account.
+
+**It is completely free to use!** You don't need to pay for any extra service to
+give your agent an email address it can use on its own.
+
+It is currently used by AI agents such as OpenClaw, Hermes Agent, Claude Code and
+OpenAI Codex.
+
+Developed and tested on Linux (Ubuntu 24.04) and macOS (26.4.1).
+
+Made with love by humans and AI agents, from Mexico to the world.
 
 ---
 
