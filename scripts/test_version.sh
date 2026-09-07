@@ -213,6 +213,49 @@ seed_cache "$(date +%s)" 1.9.0
 run 1.10.0 --line
 assert "a legacy two-field cache is refreshed" 'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
 
+# ---- a host without timeout(1) (#68) --------------------------------------
+#
+# `timeout` is GNU coreutils and macOS does not ship it. Wrapping the remote
+# call in a command that is not there made latest_version() fail on every macOS
+# install, permanently -- and "could not find out" reads like a passing network
+# glitch, so nobody investigates. Found by Ximena on the first macOS install,
+# after three of my four predictions about that host turned out to be wrong.
+#
+# Simulated with a PATH that has everything except timeout and gtimeout: a
+# symlink farm, because a trimmed literal PATH loses tools the script needs for
+# unrelated reasons and would pass for the wrong reason.
+notimeout="$tmp/notimeout-bin"
+mkdir -p "$notimeout"
+_old_ifs=$IFS; IFS=:
+for _d in $PATH; do
+    [ -d "$_d" ] || continue
+    for _f in "$_d"/*; do
+        [ -x "$_f" ] || continue
+        _b=${_f##*/}
+        case "$_b" in timeout|gtimeout) continue ;; esac
+        [ -e "$notimeout/$_b" ] || ln -s "$_f" "$notimeout/$_b" 2>/dev/null
+    done
+done
+IFS=$_old_ifs
+
+if PATH="$notimeout" command -v timeout >/dev/null 2>&1; then
+    # The farm did not actually hide it, so anything below would pass for the
+    # wrong reason. Say so instead of reporting a green that means nothing.
+    assert "the no-timeout farm really hides timeout" 'false'
+else
+    fresh
+    printf '%s\n' "1.10.0" >"$clone/VERSION"
+    out=$(PATH="$notimeout" "$clone/scripts/version.sh" 2>&1); rc=$?
+    assert "the report resolves latest without timeout" '[ "$rc" -eq 0 ]'
+    assert "without timeout it does not give up"  '! grep -q "could not find out" <<<"$out"'
+    assert "without timeout it names the tag"     'grep -q "latest:    1.10.0" <<<"$out"'
+
+    fresh
+    out=$(PATH="$notimeout" "$clone/scripts/version.sh" --line 2>&1); rc=$?
+    assert "--line resolves latest without timeout" '[ "$rc" -eq 0 ]'
+    assert "--line without timeout says latest"     'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
+fi
+
 fresh; run 1.0.0 --line
 assert "--line behind exits 2"           '[ "$rc" -eq 2 ]'
 assert "--line behind says OUT OF DATE"  'grep -q "OUT OF DATE" <<<"$out"'
