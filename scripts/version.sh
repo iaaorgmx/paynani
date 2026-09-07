@@ -43,7 +43,26 @@ latest_version() {
     # that has gone private asks for a username on a terminal nobody is watching
     # and blocks until something kills it.
     local out
-    out=$(GIT_TERMINAL_PROMPT=0 timeout "$REMOTE_TIMEOUT" \
+    # `timeout` is GNU coreutils and macOS does not ship it. Wrapping the remote
+    # call in a command that is not there made every macOS install fail this
+    # check permanently and silently -- `could not find out` reads like a passing
+    # network glitch, so nobody investigates, and the version check is dead for
+    # the life of the host (#68, found by Ximena on the first macOS install).
+    #
+    # Homebrew's coreutils installs the GNU tools under a g prefix, so gtimeout
+    # is the same program when it exists.
+    #
+    # Degrading without the ceiling is the right trade, and the comment above
+    # says why: GIT_TERMINAL_PROMPT=0 is the protection that matters, and it
+    # survives here. A check that works without an upper bound beats one that
+    # always fails.
+    local -a limit=()
+    if command -v timeout >/dev/null 2>&1; then
+        limit=(timeout "$REMOTE_TIMEOUT")
+    elif command -v gtimeout >/dev/null 2>&1; then
+        limit=(gtimeout "$REMOTE_TIMEOUT")
+    fi
+    out=$(GIT_TERMINAL_PROMPT=0 ${limit[@]+"${limit[@]}"} \
               git -C "$REPO" ls-remote --tags --refs origin 'v*' 2>/dev/null) || return 1
     printf '%s\n' "$out" \
         | sed -n 's#.*refs/tags/v##p' \
