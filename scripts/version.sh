@@ -43,7 +43,26 @@ latest_version() {
     # that has gone private asks for a username on a terminal nobody is watching
     # and blocks until something kills it.
     local out
-    out=$(GIT_TERMINAL_PROMPT=0 timeout "$REMOTE_TIMEOUT" \
+    # `timeout` is GNU coreutils and macOS does not ship it. Wrapping the remote
+    # call in a command that is not there made every macOS install fail this
+    # check permanently and silently -- `could not find out` reads like a passing
+    # network glitch, so nobody investigates, and the version check is dead for
+    # the life of the host (#68, found by Ximena on the first macOS install).
+    #
+    # Homebrew's coreutils installs the GNU tools under a g prefix, so gtimeout
+    # is the same program when it exists.
+    #
+    # Degrading without the ceiling is the right trade, and the comment above
+    # says why: GIT_TERMINAL_PROMPT=0 is the protection that matters, and it
+    # survives here. A check that works without an upper bound beats one that
+    # always fails.
+    local -a limit=()
+    if command -v timeout >/dev/null 2>&1; then
+        limit=(timeout "$REMOTE_TIMEOUT")
+    elif command -v gtimeout >/dev/null 2>&1; then
+        limit=(gtimeout "$REMOTE_TIMEOUT")
+    fi
+    out=$(GIT_TERMINAL_PROMPT=0 ${limit[@]+"${limit[@]}"} \
               git -C "$REPO" ls-remote --tags --refs origin 'v*' 2>/dev/null) || return 1
     printf '%s\n' "$out" \
         | sed -n 's#.*refs/tags/v##p' \
@@ -76,32 +95,65 @@ if [ "$mode" = "--line" ]; then
     now=$(date +%s)
     stamp=0
     cached=""
+    cached_inst=""
     if [ -r "$CACHE" ]; then
-        read -r stamp cached < "$CACHE" 2>/dev/null || true
+        # Second LINE added for #61, not a third field on the first one.
+        #
+        # A third field looks tidier and breaks the previous version: its reader
+        # is `read -r stamp cached`, and with two variables the second one keeps
+        # the whole rest of the line, so `cached` came back as "0.3.0 0.3.0".
+        # That is a real rollback path -- a field host trying a release
+        # candidate, or two clones sharing PAYNANI_STATE, which is how this was
+        # found. `read` stops at the first newline, so an older paynani reads
+        # line 1 and never learns line 2 exists.
+        { read -r stamp cached; read -r cached_inst; } < "$CACHE" 2>/dev/null || true
         case "$stamp" in
             ''|*[!0-9]*) stamp=0 ;;   # unreadable stamp means overdue, not current
         esac
     fi
 
-    if [ $((now - stamp)) -ge "$MAX_AGE" ]; then
+    # Refresh when the day is up, and also when the installed version has moved
+    # since the cache was written. A git pull that changes VERSION is strong
+    # evidence that the tag landscape moved too, and it is the exact moment the
+    # cached answer turns dangerous: #61 caught this line telling an agent it
+    # was AHEAD of a tag that had been published two releases earlier, and the
+    # agent spent the session recommending a tag that already existed.
+    from_cache=1
+    if [ $((now - stamp)) -ge "$MAX_AGE" ] || [ "$cached_inst" != "$inst" ]; then
         if latest=$(latest_version); then
             cached="$latest"
         else
             cached="?"
         fi
         mkdir -p "$STATE_DIR"
-        printf '%s %s\n' "$now" "$cached" > "$CACHE"
+        printf '%s %s\n%s\n' "$now" "$cached" "$inst" > "$CACHE"
         stamp="$now"
+        from_cache=0
+    fi
+
+    # What the cache cannot fix, it must disclose. A network check per session is
+    # what the cache exists to avoid, so the answer can still be up to a day old
+    # -- but an agent told "the newest tag is X" reads a fact, while one told
+    # "as of a check 20h ago" knows to ask. The bare form is the one that got
+    # believed for a whole session (#61).
+    age_note=""
+    if [ "$from_cache" -eq 1 ]; then
+        age=$((now - stamp))
+        if [ "$age" -ge 3600 ]; then
+            age_note=" [from a check $((age / 3600))h ago]"
+        else
+            age_note=" [from a check $((age / 60))m ago]"
+        fi
     fi
 
     if [ "$cached" = "?" ] || [ -z "$cached" ]; then
         # Never round this up to "current". Not knowing is its own answer.
-        echo "paynani $inst (update status unknown: the last check could not reach the remote; run scripts/version.sh)"
+        echo "paynani $inst (update status unknown: the last check could not reach the remote; run scripts/version.sh)$age_note"
         exit 1
     fi
 
     if is_newer "$inst" "$cached"; then
-        echo "paynani $inst is OUT OF DATE: $cached has been released. Read CHANGELOG.md for what changed between them, then UPGRADE.md. Some releases need a step beyond git pull."
+        echo "paynani $inst is OUT OF DATE: $cached has been released. Read CHANGELOG.md for what changed between them, then UPGRADE.md. Some releases need a step beyond git pull.$age_note"
         exit 2
     fi
 
@@ -114,11 +166,11 @@ if [ "$mode" = "--line" ]; then
         #
         # Exit 0 matches the report, where this is not an error: there is
         # genuinely nothing to pull.
-        echo "paynani $inst is AHEAD of the newest tag ($cached): running untagged code, so there is nothing to pull. Run scripts/version.sh for the long form."
+        echo "paynani $inst is AHEAD of the newest tag ($cached): running untagged code, so there is nothing to pull. Run scripts/version.sh for the long form.$age_note"
         exit 0
     fi
 
-    echo "paynani $inst (latest)"
+    echo "paynani $inst (latest)$age_note"
     exit 0
 fi
 

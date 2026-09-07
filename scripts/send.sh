@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Send via Himalaya, but only to allowlisted recipients.
 #
-#   send.sh [--check] [--cc <address>] [--attach <path>]... <to> <subject> <body-file>
+#   send.sh [--check] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>
 #
 # Anything not in roster.md exits 2 and sends nothing. That is the point: this
 # agent reads mail all day and acts on the part of it that comes from the roster,
@@ -9,11 +9,15 @@
 # --cc is held to the same rule -- it is a second address this agent writes to,
 # not a lesser one, so it is checked against the roster exactly like <to>.
 #
-# --attach may be repeated; the files ride in the order given. With none, the
-# message is byte-for-byte what it was before attachments existed: a single-part
-# text/plain. With one or more it becomes multipart/mixed, and the body is the
-# first part rather than the whole message. A field report that could only be
-# pasted into the body is what asked for this (#38).
+# --html adds a text/html alternative to the required plain-text body. With no
+# attachments the message becomes multipart/alternative; with attachments the
+# outer message is multipart/mixed and its first part is that alternative pair.
+#
+# --attach may be repeated; the files ride in the order given. With none and no
+# --html, the message is byte-for-byte what it was before attachments existed: a
+# single-part text/plain. With one or more it becomes multipart/mixed, and the
+# body is the first part rather than the whole message. A field report that could
+# only be pasted into the body is what asked for this (#38).
 #
 # --check prints the message it would send and sends nothing. Use it to prove
 # this script can find its credentials, which the roster tests cannot: the roster
@@ -48,6 +52,7 @@ ACCOUNT="paynani"
 
 check_only=""
 cc=""
+htmlfile=""
 attachments=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -57,6 +62,10 @@ while [ $# -gt 0 ]; do
             ;;
         --cc)
             cc=${2:?--cc requires an address}
+            shift 2
+            ;;
+        --html)
+            htmlfile=${2:?--html requires a path}
             shift 2
             ;;
         --attach)
@@ -69,11 +78,16 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-to=${1:?usage: send.sh [--check] [--cc <address>] [--attach <path>]... <to> <subject> <body-file>}
+to=${1:?usage: send.sh [--check] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
 
 [ -f "$bodyfile" ] || { echo "no such body file: $bodyfile" >&2; exit 1; }
+if [ -n "$htmlfile" ] && { [ ! -f "$htmlfile" ] || [ ! -r "$htmlfile" ]; }; then
+    echo "REFUSED: cannot read html body $htmlfile" >&2
+    echo "Nothing was sent. Check the path, or drop the --html." >&2
+    exit 2
+fi
 
 # Attachments are checked before anything is built, so a bad path costs nothing
 # and half a message is never sent. Exit 2 is the same code the roster refusal
@@ -229,7 +243,7 @@ msgid="<$(date -u +%Y%m%d%H%M%S).$$.${RANDOM}@${from_addr##*@}>"
 
 # --- Attachments -------------------------------------------------------------
 #
-# Only computed when there is something to attach, so the no-attachment path
+# Only computed when there is something to separate, so the plain-text-only path
 # stays exactly the message this script sent before: same headers, same order,
 # single part. A separator that could appear in the content would truncate the
 # message at that line, so it carries 128 bits of randomness and a prefix no
@@ -237,6 +251,10 @@ msgid="<$(date -u +%Y%m%d%H%M%S).$$.${RANDOM}@${from_addr##*@}>"
 boundary=""
 if [ ${#attachments[@]} -gt 0 ]; then
     boundary="=_paynani_$(openssl rand -hex 16)"
+fi
+alternative_boundary=""
+if [ -n "$htmlfile" ]; then
+    alternative_boundary="=_paynani_alt_$(openssl rand -hex 16)"
 fi
 
 # A filename is a header parameter, and the quoting rules that protect the From
@@ -312,6 +330,37 @@ attachment_part() {
     printf '\n'
 }
 
+plain_body_part() {
+    printf 'Content-Type: text/plain; charset=UTF-8\n'
+    printf 'Content-Transfer-Encoding: 8bit\n'
+    printf '\n'
+    cat "$bodyfile"
+    # A body file that does not end in a newline would otherwise put the next
+    # separator on the same line as its last word, and a separator that is not
+    # alone on its line is not a separator.
+    printf '\n'
+}
+
+html_body_part() {
+    printf 'Content-Type: text/html; charset=UTF-8\n'
+    printf 'Content-Transfer-Encoding: quoted-printable\n'
+    printf '\n'
+    python3 -c 'import quopri, sys; quopri.encode(sys.stdin.buffer, sys.stdout.buffer, quotetabs=True)' < "$htmlfile"
+    printf '\n'
+}
+
+alternative_body_part() {
+    if [ -n "$boundary" ]; then
+        printf 'Content-Type: multipart/alternative; boundary="%s"\n' "$alternative_boundary"
+        printf '\n'
+    fi
+    printf -- '--%s\n' "$alternative_boundary"
+    plain_body_part
+    printf -- '--%s\n' "$alternative_boundary"
+    html_body_part
+    printf -- '--%s--\n' "$alternative_boundary"
+}
+
 build_message() {
     printf 'Date: %s\n' "$date_hdr"
     printf 'Message-ID: %s\n' "$msgid"
@@ -322,6 +371,8 @@ build_message() {
     # where they describe the body rather than the whole message.
     if [ -n "$boundary" ]; then
         printf 'Content-Type: multipart/mixed; boundary="%s"\n' "$boundary"
+    elif [ -n "$htmlfile" ]; then
+        printf 'Content-Type: multipart/alternative; boundary="%s"\n' "$alternative_boundary"
     else
         printf 'Content-Type: text/plain; charset=UTF-8\n'
         printf 'Content-Transfer-Encoding: 8bit\n'
@@ -347,19 +398,20 @@ build_message() {
     fi
     printf 'Subject: %s\n' "$(encode_header "$subject")"
     printf '\n'
-    if [ -z "$boundary" ]; then
+    if [ -z "$boundary" ] && [ -z "$htmlfile" ]; then
         cat "$bodyfile"
         return
     fi
+    if [ -z "$boundary" ]; then
+        alternative_body_part
+        return
+    fi
     printf -- '--%s\n' "$boundary"
-    printf 'Content-Type: text/plain; charset=UTF-8\n'
-    printf 'Content-Transfer-Encoding: 8bit\n'
-    printf '\n'
-    cat "$bodyfile"
-    # A body file that does not end in a newline would otherwise put the closing
-    # separator on the same line as its last word, and a separator that is not
-    # alone on its line is not a separator.
-    printf '\n'
+    if [ -n "$htmlfile" ]; then
+        alternative_body_part
+    else
+        plain_body_part
+    fi
     for _paynani_file in ${attachments[@]+"${attachments[@]}"}; do
         attachment_part "$_paynani_file"
     done
