@@ -216,10 +216,49 @@ python3 scripts/preflight.py
 is usually ahead of the newest release: you get unreleased commits nobody
 installed on purpose, and `scripts/version.sh` compares against tags, so it
 reports the tag's number for a tree that is not that tag. Two field installs in
-a row took `main` because this line did not say otherwise. `git tag --sort=-v:refname
-| head -1` names the tag to use. Install `main` deliberately or not at all --
-and if you do, say so in your field report, because it changes what your report
-is about.
+a row took `main` because this line did not say otherwise. Install `main`
+deliberately or not at all -- and if you do, say so in your field report, because
+it changes what your report is about.
+
+The tag to use is the newest one that is **not** a release candidate:
+
+```bash
+git tag --sort=-v:refname | grep -v -- '-rc' | head -1
+```
+
+The `grep` is not decoration. Release-candidate tags sort above the release they
+precede, so a bare `git tag --sort=-v:refname | head -1` hands you `v0.4.0-rc1`
+over `v0.3.0` -- the same accident this section exists to prevent, arriving
+through the command meant to prevent it.
+
+### 1.2a If you were asked to install a release candidate
+
+A tag ending in `-rc<N>`, such as `v0.4.0-rc1`, is cut from a green `main` and is
+**not** a release. Install one only when someone asked you to by name, and never
+because it was the newest thing the tag list offered.
+
+```bash
+git clone --branch v0.4.0-rc1 <this repo> && cd paynani
+```
+
+**Why these exist at all.** CI proves less than it appears to: the suite fakes
+`himalaya`, so a green run says a message is well-formed and says nothing about
+whether a real provider accepts it. In `agenteiamail` that gap let through two
+bugs that no amount of CI would have caught -- a missing `From:` header, and a
+`554 spam` rejection -- and both surfaced on a live host on first contact with a
+real mail server. A release candidate is how that contact happens on purpose,
+on one or two hosts, before a tag that everyone installs.
+
+**What a field host owes back.** Say the exact ref you installed, in those words,
+in your report. A report that says "I installed paynani" is ambiguous the moment
+candidates exist, and an rc report that reads like a release report is worse than
+no report: it puts a candidate's behaviour on the release's record.
+
+If the candidate holds up it is promoted -- the release tag lands on the same
+commit, so nothing is rebuilt and nothing moves under you. If it does not, the
+fix goes to `main` and `rc2` follows. Either way the ref you were given keeps
+pointing at exactly the commit you tested, which is the whole reason this is a
+tag and not a branch.
 
 You need three greens: login succeeds, **IDLE advertised: True**, and a
 `UIDVALIDITY` number comes back.
