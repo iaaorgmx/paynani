@@ -66,6 +66,25 @@ state="$tmp/state"
 export PAYNANI_STATE="$state"
 fresh() { rm -rf "$state"; }   # --line caches for a day; each case starts clean
 
+# Seeding a cache by hand is a fixture, and a fixture that fails silently is
+# worse than no fixture: the test still runs, --line just takes the cold path,
+# and every assertion about cache behaviour passes without touching a cache.
+# That is exactly what happened here before Ocelotl caught it (#61 review) --
+# `fresh` removes $state, so a bare `> "$state/version.check"` had nowhere to
+# land. This creates the directory and refuses to continue if the write fails.
+seed_cache() {   # seed_cache <stamp> <cached-latest> [cached-installed]
+    mkdir -p "$state" || { echo "seed_cache: cannot create $state" >&2; exit 1; }
+    if [ $# -ge 3 ]; then
+        printf '%s %s %s\n' "$1" "$2" "$3" >"$state/version.check" || {
+            echo "seed_cache: cannot write $state/version.check" >&2; exit 1; }
+    else
+        printf '%s %s\n' "$1" "$2" >"$state/version.check" || {
+            echo "seed_cache: cannot write $state/version.check" >&2; exit 1; }
+    fi
+    [ -s "$state/version.check" ] || {
+        echo "seed_cache: wrote an empty cache; the fixture did not take" >&2; exit 1; }
+}
+
 # ---- ordering -------------------------------------------------------------
 
 run 1.10.0
@@ -161,7 +180,7 @@ assert "--line ahead names the newest tag" 'grep -q "AHEAD of the newest tag (1.
 # 1. The installed version moving is evidence the tag landscape moved with it.
 #    A cache written while 1.9.0 was installed must not answer for 1.10.0.
 fresh
-printf '%s 1.9.0 1.9.0\n' "$(date +%s)" >"$state/version.check"
+seed_cache "$(date +%s)" 1.9.0 1.9.0
 run 1.10.0 --line
 assert "--line refreshes when VERSION moved under the cache" \
     '! grep -q "AHEAD of the newest tag (1.9.0)" <<<"$out"'
@@ -180,7 +199,7 @@ assert "a cached --line is still one line" '[ "$(wc -l <<<"$out")" -eq 1 ]'
 #    pair from #61: --line said AHEAD while --report said Up to date, at the
 #    same moment, on the same host.
 fresh
-printf '%s 1.9.0 1.9.0\n' "$(date +%s)" >"$state/version.check"
+seed_cache "$(date +%s)" 1.9.0 1.9.0
 run 1.10.0 --line;   line_out=$out
 run 1.10.0 --report; report_out=$out
 assert "--line and --report agree on a stale in-TTL cache" \
@@ -190,7 +209,7 @@ assert "--line and --report agree on a stale in-TTL cache" \
 #    match, so it refreshes rather than being trusted. No migration step, and
 #    the safe direction.
 fresh
-printf '%s 1.9.0\n' "$(date +%s)" >"$state/version.check"
+seed_cache "$(date +%s)" 1.9.0
 run 1.10.0 --line
 assert "a legacy two-field cache is refreshed" 'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
 
