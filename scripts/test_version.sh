@@ -149,6 +149,51 @@ assert "--line ahead is one line"        '[ "$(wc -l <<<"$out")" -eq 1 ]'
 assert "--line ahead does not claim latest" '! grep -q "(latest)" <<<"$out"'
 assert "--line ahead names the newest tag" 'grep -q "AHEAD of the newest tag (1.10.0)" <<<"$out"'
 
+# ---- the cache behind --line (#61) ----------------------------------------
+#
+# --line answers from a cache with a one-day TTL, and that is the right call: a
+# session must not pay for a network round trip. But the cached value can span
+# several releases, and while it does, --line reads exactly like a fresh fact.
+# It cost a whole session once: the hook said "0.2.0 is AHEAD of the newest tag
+# (0.1.0)" with 0.2.0 tagged the day before, and the agent spent hours
+# recommending a tag that already existed.
+
+# 1. The installed version moving is evidence the tag landscape moved with it.
+#    A cache written while 1.9.0 was installed must not answer for 1.10.0.
+fresh
+printf '%s 1.9.0 1.9.0\n' "$(date +%s)" >"$state/version.check"
+run 1.10.0 --line
+assert "--line refreshes when VERSION moved under the cache" \
+    '! grep -q "AHEAD of the newest tag (1.9.0)" <<<"$out"'
+assert "--line refreshed says latest"    'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
+assert "the refreshed cache records the installed version" \
+    '[ "$(cut -d" " -f3 "$state/version.check")" = "1.10.0" ]'
+
+# 2. What the cache cannot fix it must disclose. The second call inside the TTL
+#    is answered from disk, and has to say so: an agent told "the newest tag is
+#    X" reads a fact, one told "as of a check 20h ago" knows to ask.
+run 1.10.0 --line
+assert "a cached --line names its age"   'grep -q "from a check" <<<"$out"'
+assert "a cached --line is still one line" '[ "$(wc -l <<<"$out")" -eq 1 ]'
+
+# 3. And the two forms must stop contradicting each other. This is the exact
+#    pair from #61: --line said AHEAD while --report said Up to date, at the
+#    same moment, on the same host.
+fresh
+printf '%s 1.9.0 1.9.0\n' "$(date +%s)" >"$state/version.check"
+run 1.10.0 --line;   line_out=$out
+run 1.10.0 --report; report_out=$out
+assert "--line and --report agree on a stale in-TTL cache" \
+    '! { grep -q "AHEAD" <<<"$line_out" && grep -Fq "Up to date." <<<"$report_out"; }'
+
+# 4. A two-field cache written by an older paynani has no installed version to
+#    match, so it refreshes rather than being trusted. No migration step, and
+#    the safe direction.
+fresh
+printf '%s 1.9.0\n' "$(date +%s)" >"$state/version.check"
+run 1.10.0 --line
+assert "a legacy two-field cache is refreshed" 'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
+
 fresh; run 1.0.0 --line
 assert "--line behind exits 2"           '[ "$rc" -eq 2 ]'
 assert "--line behind says OUT OF DATE"  'grep -q "OUT OF DATE" <<<"$out"'
@@ -166,7 +211,10 @@ git -C "$clone" remote set-url origin "$remote"
 printf 'garbage\n' >"$state/version.check"
 run 1.0.0 --line
 assert "corrupt cache re-checks"         '[ "$rc" -eq 2 ]'
-assert "corrupt cache is replaced"       'grep -qE "^[0-9]+ 1.10.0$" "$state/version.check"'
+# The third field is the installed version at the moment of writing (#61); the
+# cache is what it compares against on the next call, so its shape is part of
+# what "replaced with something well-formed" means.
+assert "corrupt cache is replaced"       'grep -qE "^[0-9]+ 1\.10\.0 1\.0\.0$" "$state/version.check"'
 
 # ---- --installed ----------------------------------------------------------
 

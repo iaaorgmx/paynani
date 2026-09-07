@@ -76,32 +76,59 @@ if [ "$mode" = "--line" ]; then
     now=$(date +%s)
     stamp=0
     cached=""
+    cached_inst=""
     if [ -r "$CACHE" ]; then
-        read -r stamp cached < "$CACHE" 2>/dev/null || true
+        # Third field added for #61. A two-field line written by an older
+        # version leaves cached_inst empty, which fails the match below and
+        # refreshes -- the safe direction, and no migration step.
+        read -r stamp cached cached_inst < "$CACHE" 2>/dev/null || true
         case "$stamp" in
             ''|*[!0-9]*) stamp=0 ;;   # unreadable stamp means overdue, not current
         esac
     fi
 
-    if [ $((now - stamp)) -ge "$MAX_AGE" ]; then
+    # Refresh when the day is up, and also when the installed version has moved
+    # since the cache was written. A git pull that changes VERSION is strong
+    # evidence that the tag landscape moved too, and it is the exact moment the
+    # cached answer turns dangerous: #61 caught this line telling an agent it
+    # was AHEAD of a tag that had been published two releases earlier, and the
+    # agent spent the session recommending a tag that already existed.
+    from_cache=1
+    if [ $((now - stamp)) -ge "$MAX_AGE" ] || [ "$cached_inst" != "$inst" ]; then
         if latest=$(latest_version); then
             cached="$latest"
         else
             cached="?"
         fi
         mkdir -p "$STATE_DIR"
-        printf '%s %s\n' "$now" "$cached" > "$CACHE"
+        printf '%s %s %s\n' "$now" "$cached" "$inst" > "$CACHE"
         stamp="$now"
+        from_cache=0
+    fi
+
+    # What the cache cannot fix, it must disclose. A network check per session is
+    # what the cache exists to avoid, so the answer can still be up to a day old
+    # -- but an agent told "the newest tag is X" reads a fact, while one told
+    # "as of a check 20h ago" knows to ask. The bare form is the one that got
+    # believed for a whole session (#61).
+    age_note=""
+    if [ "$from_cache" -eq 1 ]; then
+        age=$((now - stamp))
+        if [ "$age" -ge 3600 ]; then
+            age_note=" [from a check $((age / 3600))h ago]"
+        else
+            age_note=" [from a check $((age / 60))m ago]"
+        fi
     fi
 
     if [ "$cached" = "?" ] || [ -z "$cached" ]; then
         # Never round this up to "current". Not knowing is its own answer.
-        echo "paynani $inst (update status unknown: the last check could not reach the remote; run scripts/version.sh)"
+        echo "paynani $inst (update status unknown: the last check could not reach the remote; run scripts/version.sh)$age_note"
         exit 1
     fi
 
     if is_newer "$inst" "$cached"; then
-        echo "paynani $inst is OUT OF DATE: $cached has been released. Read CHANGELOG.md for what changed between them, then UPGRADE.md. Some releases need a step beyond git pull."
+        echo "paynani $inst is OUT OF DATE: $cached has been released. Read CHANGELOG.md for what changed between them, then UPGRADE.md. Some releases need a step beyond git pull.$age_note"
         exit 2
     fi
 
@@ -114,11 +141,11 @@ if [ "$mode" = "--line" ]; then
         #
         # Exit 0 matches the report, where this is not an error: there is
         # genuinely nothing to pull.
-        echo "paynani $inst is AHEAD of the newest tag ($cached): running untagged code, so there is nothing to pull. Run scripts/version.sh for the long form."
+        echo "paynani $inst is AHEAD of the newest tag ($cached): running untagged code, so there is nothing to pull. Run scripts/version.sh for the long form.$age_note"
         exit 0
     fi
 
-    echo "paynani $inst (latest)"
+    echo "paynani $inst (latest)$age_note"
     exit 0
 fi
 
