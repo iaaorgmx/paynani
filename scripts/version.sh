@@ -97,10 +97,16 @@ if [ "$mode" = "--line" ]; then
     cached=""
     cached_inst=""
     if [ -r "$CACHE" ]; then
-        # Third field added for #61. A two-field line written by an older
-        # version leaves cached_inst empty, which fails the match below and
-        # refreshes -- the safe direction, and no migration step.
-        read -r stamp cached cached_inst < "$CACHE" 2>/dev/null || true
+        # Second LINE added for #61, not a third field on the first one.
+        #
+        # A third field looks tidier and breaks the previous version: its reader
+        # is `read -r stamp cached`, and with two variables the second one keeps
+        # the whole rest of the line, so `cached` came back as "0.3.0 0.3.0".
+        # That is a real rollback path -- a field host trying a release
+        # candidate, or two clones sharing PAYNANI_STATE, which is how this was
+        # found. `read` stops at the first newline, so an older paynani reads
+        # line 1 and never learns line 2 exists.
+        { read -r stamp cached; read -r cached_inst; } < "$CACHE" 2>/dev/null || true
         case "$stamp" in
             ''|*[!0-9]*) stamp=0 ;;   # unreadable stamp means overdue, not current
         esac
@@ -120,7 +126,7 @@ if [ "$mode" = "--line" ]; then
             cached="?"
         fi
         mkdir -p "$STATE_DIR"
-        printf '%s %s %s\n' "$now" "$cached" "$inst" > "$CACHE"
+        printf '%s %s\n%s\n' "$now" "$cached" "$inst" > "$CACHE"
         stamp="$now"
         from_cache=0
     fi

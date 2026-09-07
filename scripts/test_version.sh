@@ -75,9 +75,10 @@ fresh() { rm -rf "$state"; }   # --line caches for a day; each case starts clean
 seed_cache() {   # seed_cache <stamp> <cached-latest> [cached-installed]
     mkdir -p "$state" || { echo "seed_cache: cannot create $state" >&2; exit 1; }
     if [ $# -ge 3 ]; then
-        printf '%s %s %s\n' "$1" "$2" "$3" >"$state/version.check" || {
+        printf '%s %s\n%s\n' "$1" "$2" "$3" >"$state/version.check" || {
             echo "seed_cache: cannot write $state/version.check" >&2; exit 1; }
     else
+        # One line only: the shape an older paynani wrote, and still writes.
         printf '%s %s\n' "$1" "$2" >"$state/version.check" || {
             echo "seed_cache: cannot write $state/version.check" >&2; exit 1; }
     fi
@@ -186,7 +187,7 @@ assert "--line refreshes when VERSION moved under the cache" \
     '! grep -q "AHEAD of the newest tag (1.9.0)" <<<"$out"'
 assert "--line refreshed says latest"    'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
 assert "the refreshed cache records the installed version" \
-    '[ "$(cut -d" " -f3 "$state/version.check")" = "1.10.0" ]'
+    '[ "$(sed -n 2p "$state/version.check")" = "1.10.0" ]'
 
 # 2. What the cache cannot fix it must disclose. The second call inside the TTL
 #    is answered from disk, and has to say so: an agent told "the newest tag is
@@ -212,6 +213,28 @@ fresh
 seed_cache "$(date +%s)" 1.9.0
 run 1.10.0 --line
 assert "a legacy two-field cache is refreshed" 'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
+
+# 5. And the other direction, which is the one that bit: a cache written by THIS
+#    version, read by the PREVIOUS one. The old reader is `read -r stamp cached`,
+#    and with two variables the second keeps the whole rest of the line — so a
+#    third field on line 1 came back as "1.10.0 1.10.0" and poisoned every
+#    comparison downstream. Found by running the command from a clone on main
+#    after this branch had written the cache; no amount of reading the diff
+#    would have shown it, because both ends of the new format are new code.
+#
+#    Nothing here parses with the new reader on purpose. This asserts the
+#    compatibility contract itself.
+fresh
+run 1.10.0 --line                      # let version.sh write a real cache
+old_stamp=""; old_cached=""
+{ read -r old_stamp old_cached; } < "$state/version.check"
+assert "the previous reader still sees one clean version" \
+    '[ "$old_cached" = "1.10.0" ]'
+assert "the previous reader is not handed a second value" \
+    'case "$old_cached" in *" "*) false ;; *) true ;; esac'
+assert "the installed version lives on its own line" \
+    '[ "$(sed -n 2p "$state/version.check")" = "1.10.0" ]'
+
 
 # ---- a host without timeout(1) (#68) --------------------------------------
 #
@@ -273,10 +296,11 @@ git -C "$clone" remote set-url origin "$remote"
 printf 'garbage\n' >"$state/version.check"
 run 1.0.0 --line
 assert "corrupt cache re-checks"         '[ "$rc" -eq 2 ]'
-# The third field is the installed version at the moment of writing (#61); the
+# Line 2 is the installed version at the moment of writing (#61) -- a second
+# line, not a third field, so the previous version's reader is unaffected. The
 # cache is what it compares against on the next call, so its shape is part of
 # what "replaced with something well-formed" means.
-assert "corrupt cache is replaced"       'grep -qE "^[0-9]+ 1\.10\.0 1\.0\.0$" "$state/version.check"'
+assert "corrupt cache is replaced"       '[ "$(sed -n 1p "$state/version.check" | cut -d" " -f2)" = "1.10.0" ] && [ "$(sed -n 2p "$state/version.check")" = "1.0.0" ]'
 
 # ---- --installed ----------------------------------------------------------
 
