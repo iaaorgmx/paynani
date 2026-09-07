@@ -9,7 +9,7 @@ Mensajero élite: Los paynani eran los corredores y mensajeros oficiales del Imp
 
 **Español (MX)** · [English (US)](i18n/README.en-US.md) · [Español (ES)](i18n/README.es-ES.md) · [Français (FR)](i18n/README.fr-FR.md) · [Português (BR)](i18n/README.pt-BR.md)
 
-Paynani le permite a tu agente de IA leer automáticamente tu correo electrónico
+Paynani le permite a tu agente de IA leer automáticamente su correo electrónico
 unos segundos después de que llega, procesar los mensajes recibidos y atender las
 instrucciones del correo tal como lo haría un colaborador humano.
 
