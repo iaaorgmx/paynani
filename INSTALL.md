@@ -208,9 +208,18 @@ launchctl print gui/$(id -u)/com.paynani.dispatch
 ### 1.2 Does the mail server advertise IDLE?
 
 ```bash
-git clone <this repo> && cd paynani
+git clone --branch <newest tag> <this repo> && cd paynani
 python3 scripts/preflight.py
 ```
+
+**Clone the newest tag, not `main`.** A bare `git clone` gives you `main`, which
+is usually ahead of the newest release: you get unreleased commits nobody
+installed on purpose, and `scripts/version.sh` compares against tags, so it
+reports the tag's number for a tree that is not that tag. Two field installs in
+a row took `main` because this line did not say otherwise. `git tag --sort=-v:refname
+| head -1` names the tag to use. Install `main` deliberately or not at all --
+and if you do, say so in your field report, because it changes what your report
+is about.
 
 You need three greens: login succeeds, **IDLE advertised: True**, and a
 `UIDVALIDITY` number comes back.
@@ -951,6 +960,12 @@ Do not report success until every line passes.
 #    reach the remote, which is not the same as being up to date.
 scripts/version.sh
 
+# 0b. And which checkout that actually is. VERSION can still name the current
+#     release while the tree sits on main, ahead of the tag; a field report or a
+#     reproduction needs both facts.
+git rev-parse --short HEAD
+git status --short --branch
+
 # 1. Running, and for more than a moment
 systemctl --user is-active paynani-idle.service
 systemctl --user show paynani-idle.service -p ActiveEnterTimestamp
@@ -991,6 +1006,10 @@ grep ", roster]" state/mail.log | tail -1
 # No output means the agent will not act on your mail. Check that the address in
 # roster.md matches the From address your mail actually arrives with.
 
+# 6e. The whole suite -- every Python and shell test, one summary.
+#     This is the entry point; do NOT use `python3 -m unittest discover`.
+scripts/test_all.sh
+
 # 7. Survives restart without replaying or losing anything
 systemctl --user restart paynani-idle.service
 tail -2 state/idle.err.log  # expect "resuming from uid N"
@@ -1004,6 +1023,15 @@ finishing, not hanging; `systemctl` returns when it is done.
 uid N"* proves state persistence. If it says baseline after a restart, the state
 file is not being written, and the next reboot will silently swallow every message
 that arrived while the machine was off.
+
+**Run the suite with `scripts/test_all.sh`, not `python3 -m unittest discover`.**
+Only four of the test files define `unittest.TestCase` classes; the other seven
+are self-contained assertion scripts. Discovery cannot run those: six exit at
+import and are reported as errors -- `FAILED (errors=6)` on a healthy tree, on
+every runtime -- and the seventh imports cleanly and contributes no tests at
+all, so its checks are skipped in silence. Both halves are the loader reporting
+on a suite it did not run. `test_all.sh` executes each file and reads its exit
+status, which is the only thing that reflects what actually passed.
 
 **Worth asking your external sender for more than one message.** A plain one, one
 with accented characters in the subject, and one shaped like a GitHub notification

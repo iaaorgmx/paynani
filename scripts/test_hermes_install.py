@@ -73,7 +73,12 @@ class HermesInstallerTest(unittest.TestCase):
         # ignore rules keep those artifacts out of `git status`, that leak is
         # invisible until something reads them back.
         self.clone = self.home / "workspace" / "paynani"
-        self.clone.parent.mkdir(parents=True)
+        # Explicit mode, like every other fixture directory above: a bare mkdir
+        # inherits the ambient umask, and on a host with a permissive one this
+        # tree comes out group- and world-writable. install.sh then refuses to
+        # converge into it -- correctly -- and four of these tests fail before
+        # they reach what they are actually testing.
+        self.clone.parent.mkdir(parents=True, mode=0o700)
         shutil.copytree(ROOT, self.clone, symlinks=True)
         for leftover in ("state", ".env", "runtime.env", "install.manifest", "hermes"):
             target = self.clone / leftover

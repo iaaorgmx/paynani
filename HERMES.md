@@ -173,8 +173,26 @@ Do not call the installation complete after `GET /health`.
    route surfaces it rather than leaving it as an ignored head-of-line event.
 7. Stop the test gateway, send another message, and confirm the journal cursor
    does not advance. Restart the gateway and confirm the same event is then
-   accepted.
+   accepted. **"Test gateway" means an instance you are not running inside.**
+   An agent hosted by the gateway under test cannot perform this step at all --
+   it would be stopping the process that is observing -- so on a single-gateway
+   host this one belongs to the operator, like the restart in section 1. Say so
+   and leave it open rather than reporting the verification complete.
 8. Confirm `scripts/send.sh` still refuses a recipient absent from `roster.md`.
+
+Once `runtime.env` exists, a local non-destructive probe exercises both signed
+routes and `listener.error` with the exact secrets and URLs the dispatcher will
+use:
+
+```bash
+env $(grep -v '^#' runtime.env) python3 scripts/hermes_smoke.py
+```
+
+It prints one line per probe: `hermes_health_probe=accepted`,
+`hermes_notify_smoke=delivered`, `hermes_notify_listener_error_smoke=delivered`
+and `hermes_roster_smoke=accepted completion=unconfirmed`. It does not replace
+the external emails above, and it cannot replace step 7 — it proves the routes
+answer, not that a human saw the result.
 
 `scripts/healthcheck.py` records the last adapter detail. For Hermes agent mode,
 that detail deliberately distinguishes transport acceptance from completion.
