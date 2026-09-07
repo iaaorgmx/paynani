@@ -26,7 +26,8 @@ START_EVENT = "SessionStart"
 END_EVENT = "SessionEnd"
 START_MATCHER = "startup|resume|clear|compact"
 END_MATCHER = ".*"
-TIMEOUT = 15
+START_TIMEOUT = 15
+END_TIMEOUT = 3
 ADDITIONAL_CONTEXT_LIMIT = 5000
 
 
@@ -42,7 +43,7 @@ def start_fragment():
     return {
         "type": "command",
         "command": start_command(),
-        "timeout": TIMEOUT,
+        "timeout": START_TIMEOUT,
         "statusMessage": "Checking paynani",
         "additionalContextLimit": ADDITIONAL_CONTEXT_LIMIT,
     }
@@ -52,7 +53,7 @@ def end_fragment():
     return {
         "type": "command",
         "command": end_command(),
-        "timeout": TIMEOUT,
+        "timeout": END_TIMEOUT,
         "statusMessage": "Clearing paynani session",
     }
 
@@ -75,27 +76,41 @@ def load(path):
         )
 
 
-def _event_has_command(settings, event, command_text):
+def _event_has_fragment(settings, event, matcher, fragment):
     for entry in settings.get("hooks", {}).get(event, []) or []:
+        if entry.get("matcher") != matcher:
+            continue
         for hook in entry.get("hooks", []) or []:
-            if (hook.get("command") or "") == command_text:
+            if hook == fragment:
                 return True
     return False
 
 
 def already_registered(settings):
-    return (_event_has_command(settings, START_EVENT, start_command())
-            and _event_has_command(settings, END_EVENT, end_command()))
+    return (_event_has_fragment(settings, START_EVENT, START_MATCHER, start_fragment())
+            and _event_has_fragment(settings, END_EVENT, END_MATCHER, end_fragment()))
+
+
+def _merge_event(hooks, event, matcher, fragment):
+    entries = hooks.setdefault(event, [])
+    command_text = fragment["command"]
+    for entry in entries:
+        hook_list = entry.get("hooks", []) or []
+        for index, hook in enumerate(hook_list):
+            if (hook.get("command") or "") == command_text:
+                hook_list[index] = fragment
+                if len(hook_list) == 1:
+                    entry["matcher"] = matcher
+                return
+    entries.append({"matcher": matcher, "hooks": [fragment]})
 
 
 def merge(settings):
     hooks = settings.setdefault("hooks", {})
-    if not _event_has_command(settings, START_EVENT, start_command()):
-        hooks.setdefault(START_EVENT, []).append(
-            {"matcher": START_MATCHER, "hooks": [start_fragment()]})
-    if not _event_has_command(settings, END_EVENT, end_command()):
-        hooks.setdefault(END_EVENT, []).append(
-            {"matcher": END_MATCHER, "hooks": [end_fragment()]})
+    if not _event_has_fragment(settings, START_EVENT, START_MATCHER, start_fragment()):
+        _merge_event(hooks, START_EVENT, START_MATCHER, start_fragment())
+    if not _event_has_fragment(settings, END_EVENT, END_MATCHER, end_fragment()):
+        _merge_event(hooks, END_EVENT, END_MATCHER, end_fragment())
     return settings
 
 

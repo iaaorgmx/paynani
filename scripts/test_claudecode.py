@@ -371,7 +371,11 @@ class Watcher(unittest.TestCase):
         second = sp.run(["bash", str(self.WATCH), str(self.state), "0"],
                         capture_output=True, text=True, timeout=10)
         self.assertEqual(second.returncode, 0)
-        self.assertIn("already watching", second.stderr)
+        # stdout, not stderr (#62): a Monitor only turns stdout into a
+        # notification, so the second session must see this line to know it
+        # is not armed rather than mistaking silence for a quiet mailbox.
+        self.assertIn("already watching", second.stdout)
+        self.assertEqual(second.stderr, "")
 
     def test_arming_records_the_offset_it_was_given(self):
         """Arming is the acknowledgement; it must land before any mail does."""

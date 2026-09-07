@@ -524,15 +524,35 @@ class HookRegistration(unittest.TestCase):
         self.assertEqual(self.commands("SessionStart"), [self.hook.start_command()])
         self.assertEqual(self.commands("SessionEnd"), [self.hook.end_command()])
 
+    def test_existing_codex_hooks_are_converged(self):
+        import json
+        old_end = self.hook.end_fragment()
+        old_end["timeout"] = 15
+        self.settings.write_text(json.dumps({
+            "hooks": {
+                "SessionStart": [{"matcher": self.hook.START_MATCHER, "hooks": [self.hook.start_fragment()]}],
+                "SessionEnd": [{"matcher": self.hook.END_MATCHER, "hooks": [old_end]}],
+            },
+        }), encoding="utf-8")
+        self.assertFalse(self.hook.already_registered(self.load()))
+        self.run_install()
+        after = self.load()
+        self.assertTrue(self.hook.already_registered(after))
+        self.assertEqual(self.commands("SessionStart"), [self.hook.start_command()])
+        self.assertEqual(self.commands("SessionEnd"), [self.hook.end_command()])
+        self.assertEqual(after["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"], 3)
+
     def test_fragments_use_codex_hook_shapes(self):
         self.run_install()
         entry = self.load()["hooks"]["SessionStart"][0]
         hook = entry["hooks"][0]
         self.assertEqual(entry["matcher"], self.hook.START_MATCHER)
+        self.assertEqual(hook["timeout"], 15)
         self.assertEqual(hook["additionalContextLimit"], self.hook.ADDITIONAL_CONTEXT_LIMIT)
         end_entry = self.load()["hooks"]["SessionEnd"][0]
         end_hook = end_entry["hooks"][0]
         self.assertEqual(end_entry["matcher"], self.hook.END_MATCHER)
+        self.assertEqual(end_hook["timeout"], 3)
         self.assertNotIn("additionalContextLimit", end_hook)
         self.assertIn("--session-end", end_hook["command"])
 

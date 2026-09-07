@@ -31,7 +31,12 @@ mkdir -p "$STATE_DIR"
 # accuracy of both.
 exec 9>"$LOCK"
 if ! flock -n 9; then
-	echo "[watch] another session is already watching this spool; not arming a second." >&2
+	# stdout, not stderr (#62). From Claude Code's side, stderr on this command
+	# goes to a file nothing reads; the session sees "Monitor ended without
+	# producing output (exit 0)", which is indistinguishable from a quiet
+	# mailbox. A stdout line is a notification and actually reaches the session
+	# that just found out it is not armed.
+	echo "[watch] another session is already watching this spool; not arming a second."
 	exit 0
 fi
 
