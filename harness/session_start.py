@@ -90,6 +90,13 @@ def unit_state(unit):
         return "unknown"
 
 
+# dispatch.py:main() writes exactly this line, once, right after it claims the
+# lock and before it delivers anything — the only line that names a process
+# starting rather than something that happened during one. That makes it the
+# marker for "the current dispatcher startup" that dispatcher_faults() cuts on.
+_STARTUP_PREFIX = ev.ROUTINE_PREFIX + "delivering to "
+
+
 def dispatcher_faults():
     """
     Recent watcher complaints, newest last.
@@ -105,11 +112,23 @@ def dispatcher_faults():
         text = DISPATCH_ERR.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
+    all_lines = text.splitlines()
+    # A line written before the dispatcher now running was even born describes a
+    # process that is gone, not a problem this install has. Without this cut, one
+    # unmarked line from before the ok: prefix existed (#15) stayed a permanent
+    # false PROBLEMS report, surviving every later restart that started clean
+    # (#59). When no startup line is found — an install too old to have written
+    # one — nothing is cut and every line is still weighed, which is the
+    # pre-existing, safe-side behaviour.
+    start = 0
+    for i, ln in enumerate(all_lines):
+        if ln.startswith(_STARTUP_PREFIX):
+            start = i + 1
     # Routine notes are dropped. The dispatcher marks them, because it is the
     # only party that knows which of its own lines is a complaint — and the line
     # it writes on every successful startup used to make this hook announce
     # PROBLEMS on every healthy install (#15).
-    lines = [ln for ln in text.splitlines()
+    lines = [ln for ln in all_lines[start:]
              if ln.strip() and not ln.startswith(ev.ROUTINE_PREFIX)]
     return lines[-MAX_DISPATCH_ERR:]
 

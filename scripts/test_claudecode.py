@@ -65,6 +65,25 @@ class DispatcherFaults(unittest.TestCase):
         self.log.write_text("delivering to claudecode (/x)\n")
         self.assertEqual(1, len(self.ss.dispatcher_faults()))
 
+    def test_a_stale_unmarked_line_is_ignored_once_the_dispatcher_restarted(self):
+        # #59: on a host old enough to have an unmarked line from before the ok:
+        # prefix existed, every clean restart since must retire it, not keep
+        # citing it forever.
+        self.log.write_text(
+            "delivering to claudecode (/x)\n"
+            + self.ev.ROUTINE_PREFIX + "delivering to claudecode (/x)\n")
+        self.assertEqual([], self.ss.dispatcher_faults())
+
+    def test_a_real_fault_after_the_latest_startup_still_counts(self):
+        # The other half of #59's fix: cutting on the latest startup must not
+        # start swallowing genuine complaints that come after it (#15, reversed).
+        self.log.write_text(
+            self.ev.ROUTINE_PREFIX + "delivering to claudecode (/x)\n"
+            "claudecode cannot deliver imap:INBOX:1:5: spool is full\n")
+        faults = self.ss.dispatcher_faults()
+        self.assertEqual(1, len(faults))
+        self.assertIn("spool is full", faults[0])
+
     def test_an_empty_log_is_not_a_fault(self):
         self.log.write_text("")
         self.assertEqual([], self.ss.dispatcher_faults())
