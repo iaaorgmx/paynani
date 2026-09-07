@@ -5,9 +5,12 @@
   </picture>
 </h1>
 
+Mensajero élite: Los paynani eran los corredores y mensajeros oficiales del Imperio Azteca.
+
 **Español (MX)** · [English (US)](i18n/README.en-US.md) · [Español (ES)](i18n/README.es-ES.md) · [Français (FR)](i18n/README.fr-FR.md) · [Português (BR)](i18n/README.pt-BR.md)
 
-Los paynani eran los corredores y mensajeros oficiales del Imperio Azteca.
+> Los paynani eran los corredores y mensajeros oficiales del Imperio Azteca.
+
 Paynani le permite a su agente de IA leer automáticamente su correo electrónico
 unos segundos después de que llega, procesar los mensajes recibidos y atender las
 instrucciones del correo tal como lo haría un colaborador humano.
@@ -19,7 +22,8 @@ Paynani fue construido sobre
 [Himalaya](https://github.com/pimalaya/himalaya) y funciona con una cuenta
 IMAP/SMTP común y corriente.
 
-**¡Usarlo es totalmente gratis!** No necesitas contratar ningún servicio
+**¡Usarlo es totalmente gratis!** 
+No necesitas contratar ningún servicio
 adicional para darle a tu agente una dirección de correo electrónico que pueda
 usar automáticamente.
 
