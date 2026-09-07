@@ -1,5 +1,129 @@
 # Changelog
 
+## 0.4.0 — 2026-09-07
+
+**`main` ya no depende de que nadie se acuerde de correr las pruebas.** 27 commits
+desde 0.3.0.
+
+Hasta esta versión la disciplina existía y funcionaba —todo entraba por PR, la
+suite se corría— pero nada la obligaba. Ahora hay una compuerta: cada PR y cada
+commit que llega a `main` corren la suite completa en GitHub Actions, y `main`
+está protegida requiriendo que ese check pase. Un PR con una prueba rota ya no se
+marca en rojo y se fusiona igual: no se puede fusionar.
+
+**Si tu instalación corre sobre Codex, hay un paso que sí tienes que dar.**
+
+```
+scripts/codex_hook.py --install
+```
+
+El hook declaraba un timeout de 15 s para `SessionEnd` y Codex lo topa a 3, así
+que imprimía una advertencia amarilla en cada arranque de sesión. Ya declara 3.
+Pero **el arreglo no llega solo a un host que ya tiene el hook instalado**: hay
+que volver a correr `--install`, que ahora converge un hook existente en lugar de
+limitarse a no duplicarlo. Sin ese paso la advertencia sigue saliendo con el
+código nuevo.
+
+Fuera de ese caso basta `git pull`. No hay estado que migrar.
+
+### Correo sustantivo, sin salirse de la compuerta
+
+`scripts/send.sh` acepta `--html` y construye `multipart/alternative`, con
+adjuntos o sin ellos. Antes, un correo que por política tenía que salir en HTML
+tenía que mandarse con otra herramienta — y eso significaba **sin validación
+contra `roster.md`, sin registro en `state/sent.log` y sin rechazo de
+destinatarios fuera de lista**. La política de formato y la compuerta de correo
+eran excluyentes; ya no lo son.
+
+La parte HTML sale en `quoted-printable`, no en `8bit`. No es un detalle de
+estilo: RFC 5321 limita una línea a 998 octetos y el HTML de correo real la pasa
+con facilidad, porque los estilos van en línea. Una línea larga la rechaza el
+servidor o —peor— la parte a media declaración y el lector recibe HTML roto sin
+error en ningún lado.
+
+### Una sesión que no pudo armar el watch ahora se entera
+
+En `claudecode`, cuando otra sesión ya tenía tomado el spool, el aviso salía por
+stderr — que desde el harness va a un archivo que nadie abre. La sesión veía
+`Monitor ended without producing output (exit 0)`, indistinguible de un buzón
+tranquilo, y creía que había armado el watch cuando no lo había hecho. Ahora sale
+por stdout, que es el canal que sí notifica.
+
+Es la primera mitad del arreglo. La segunda —distinguir un dueño vivo del lock de
+uno huérfano o suspendido— sigue abierta.
+
+### Un fallo viejo deja de anunciarse para siempre
+
+Un solo renglón heredado en `state/dispatch.err.log`, escrito antes de que
+existiera el prefijo de rutina, dejaba el aviso de fallos encendido de forma
+permanente: cada sesión arrancaba anunciando un problema que no existía, en un
+host donde el dispatcher entregaba bien. Ahora el corte es temporal — solo cuentan
+los renglones posteriores al arranque actual del dispatcher, porque un fallo de un
+proceso que ya murió no describe al que está corriendo.
+
+Un host que grita PROBLEMS en cada arranque enseña a ignorar el aviso, y ese
+hábito es el que hace peligrosa la advertencia que sí importe.
+
+### La suite tiene un punto de entrada, y no es el que parecía
+
+```
+scripts/test_all.sh
+```
+
+**No uses `python3 -m unittest discover`.** Solo cuatro de los archivos de prueba
+definen clases `unittest.TestCase`; los otros siete son scripts de aserciones. La
+detección automática no puede correrlos: seis salen en el import y se reportan
+como errores —`FAILED (errors=6)` en un árbol sano, en cualquier runtime— y el
+séptimo importa limpio y no aporta ninguna prueba. Las dos mitades son el cargador
+opinando sobre una suite que no corrió. Dos personas llegaron a `discover` por
+reflejo, en runtimes distintos, antes de que existiera este script.
+
+### Clona el tag, no `main`
+
+`INSTALL.md` decía `git clone <this repo>`, que entrega `main`. Tres instalaciones
+de campo seguidas se llevaron código sin publicar sin haberlo decidido. Ahora la
+instrucción nombra el tag y explica cómo obtenerlo:
+
+```
+git tag --sort=-v:refname | grep -v -- '-rc' | head -1
+```
+
+El `grep` no es adorno: los candidatos de release ordenan por encima del release
+que preceden, así que sin él la línea entregaría un `rc` a quien pidió un release.
+
+### `MIGRATION.md`, para quien viene de agenteiamail
+
+Documento nuevo, escrito por quien hizo esa migración en su propio host. Cubre lo
+que sobrevive al renombre y estorba después: la cuenta vieja de Himalaya que sigue
+siendo la predeterminada, las instrucciones vivas que apuntan al script de envío
+anterior, y las unidades de systemd que systemd recuerda aunque su archivo ya no
+exista.
+
+Separa además tres caminos que la documentación trataba como uno: instalación
+limpia, actualización de paynani, y migración por renombre.
+
+### El flujo de release candidate, documentado
+
+`INSTALL.md` describe ahora qué es un tag `-rc<N>`, por qué existe y qué debe
+reportar de vuelta el host que lo instala. Existe porque CI prueba menos de lo que
+parece: la suite finge `himalaya`, así que un verde dice que el mensaje está bien
+formado y no dice nada sobre si un proveedor real lo acepta. En `agenteiamail` ese
+hueco dejó pasar dos bugs —un `From:` faltante y un rechazo `554 spam`— que solo
+aparecieron en un host vivo.
+
+**Esta versión sale primero como `v0.4.0-rc1`.** Si aguanta en los hosts de campo,
+el tag `v0.4.0` cae en el mismo commit.
+
+### Y lo que aprendimos de la primera instalación sobre Hermes
+
+El reporte de campo de Atenea Buffay-Hermes dejó cuatro cambios en la
+documentación, con su autoría. El más útil no fue un dato que faltaba sino una
+frase que hacía trabajo que nadie leía: el paso 7 de la verificación dice "el
+gateway **de prueba**", y esa palabra significa una instancia dentro de la cual no
+estás corriendo. Un agente hospedado por el gateway bajo prueba no puede ejecutar
+ese paso: tendría que detener el proceso que lo observa. En un host de un solo
+gateway, ese paso es del operador.
+
 ## 0.3.0 — 2026-09-06
 
 **paynani entrega a OpenAI Codex, y sabe despertar una sesión que está viva.** 23
