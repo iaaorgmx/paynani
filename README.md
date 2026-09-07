@@ -243,6 +243,7 @@ quien modifica el código, y el código se queda en inglés.
 | [`AGENTS.md`](AGENTS.md) | **(en)** Lo que sigue el agente. Empieza aquí si eres uno. |
 | [`INSTALL.md`](INSTALL.md) | **(en)** La secuencia de instalación, paso por paso |
 | [`UPGRADE.md`](UPGRADE.md) | **(en)** Llevar una instalación ya existente a una versión más nueva |
+| [`MIGRATION.md`](MIGRATION.md) | **(en)** Migrar un host que antes corría `agenteiamail` |
 | [`HERMES.md`](HERMES.md) | **(en)** El adaptador de Hermes Agent: rutas, firmas y confianza |
 | [`DESIGN.md`](DESIGN.md) | **(en)** Por qué las piezas son así; léelo antes de cambiar cualquier cosa |
 | [`CHANGELOG.md`](CHANGELOG.md) | **(en)** Qué cambió en cada versión, y cuáles piden algo más que un pull |

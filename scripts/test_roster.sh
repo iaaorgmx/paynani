@@ -24,6 +24,10 @@ trap 'rm -rf "$tmp"' EXIT
 roster="$tmp/roster.md"
 body="$tmp/body.txt"
 echo "hi" >"$body"
+html="$tmp/body.html"
+printf '<!doctype html><html><body><p>hi</p></body></html>\n' >"$html"
+long_html="$tmp/long-body.html"
+python3 -c 'from pathlib import Path; Path(__import__("sys").argv[1]).write_text("<html><body><p style=\"" + "x" * 1200 + "\">hola</p></body></html>\n", encoding="utf-8")' "$long_html"
 
 > "$tmp/sent.eml"
 export CAPTURE="$tmp/sent.eml"
@@ -289,6 +293,70 @@ assert "the record names the cc"        'grep -q "cc=second_contact@example.org"
 assert "message-id stays last with a cc" \
     '[ "$(sed -n "s/.*message-id=//p" "$sent_log")" = "$(grep -m1 "^Message-ID: " "$CAPTURE" | sed "s/^Message-ID: //")" ]'
 
+# --- HTML alternatives ---------------------------------------------------------
+#
+# #64: substantive mail needs multipart/alternative, but send.sh is the roster
+# gate and the audit log. If HTML has to be sent outside this script, the safe
+# path and the required format become mutually exclusive.
+: >"$CAPTURE"
+send_ok --html "$html" "jjulianfe@gmail.com" "html body" "$body"
+assert "--html makes multipart/alternative" \
+    'grep -qE "^Content-Type: multipart/alternative; boundary=\"=_paynani_alt_[0-9a-f]{32}\"\$" "$CAPTURE"'
+assert "--html includes plain and html parts" \
+    'python3 -c "
+import email, email.policy, sys
+m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
+assert m.get_content_type() == \"multipart/alternative\", m.get_content_type()
+parts = m.get_payload()
+assert [p.get_content_type() for p in parts] == [\"text/plain\", \"text/html\"]
+assert parts[0].get_content() == \"hi\n\"
+assert parts[1].get_content() == \"<!doctype html><html><body><p>hi</p></body></html>\n\"
+" "$CAPTURE"'
+assert "--html uses quoted-printable" \
+    'grep -qx "Content-Transfer-Encoding: quoted-printable" "$CAPTURE"'
+
+: >"$CAPTURE"
+send_ok --html "$long_html" "jjulianfe@gmail.com" "long html body" "$body"
+assert "--html keeps long lines inside SMTP limits" \
+    'python3 -c "
+import sys
+data = open(sys.argv[1], \"rb\").read().splitlines()
+too_long = [line for line in data if len(line) > 998]
+assert not too_long, max(map(len, too_long), default=0)
+" "$CAPTURE"'
+assert "--html long body round-trips" \
+    'python3 -c "
+import email, email.policy, pathlib, sys
+m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
+html = pathlib.Path(sys.argv[2]).read_text(encoding=\"utf-8\")
+part = [p for p in m.walk() if p.get_content_type() == \"text/html\"]
+assert len(part) == 1, part
+assert part[0].get_content() == html
+" "$CAPTURE" "$long_html"'
+
+: >"$CAPTURE"
+checked_html="$tmp/checked-html.eml"
+"$SEND" --check --html "$html" "jjulianfe@gmail.com" "html check" "$body" >"$checked_html" 2>/dev/null
+assert "--check prints the HTML MIME" \
+    'grep -qE "^Content-Type: multipart/alternative; boundary=\"=_paynani_alt_[0-9a-f]{32}\"\$" "$checked_html" && grep -qx "Content-Type: text/html; charset=UTF-8" "$checked_html"'
+assert "--check with --html sends nothing" '[ ! -s "$CAPTURE" ]'
+
+: >"$CAPTURE"
+"$SEND" --html "$html" "jjulianfe@gmail.com" "missing plain" >/dev/null 2>&1 && hrc=0 || hrc=$?
+assert "--html still requires a plain body" '[ "${hrc:-0}" -ne 0 ] && [ ! -s "$CAPTURE" ]'
+
+: >"$CAPTURE"
+"$SEND" --html "$tmp/no-such.html" "jjulianfe@gmail.com" "missing html" "$body" >/dev/null 2>&1 && mhrc=0 || mhrc=$?
+assert "a missing html body exits 2" '[ "${mhrc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'
+
+: >"$CAPTURE"
+"$SEND" --html "$html" "stranger@example.com" "bad html recipient" "$body" >/dev/null 2>&1 && bhrc=0 || bhrc=$?
+assert "--html keeps the roster gate" '[ "${bhrc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'
+
+rm -rf "$sent_state"
+PAYNANI_STATE="$sent_state" send_ok --html "$html" "jjulianfe@gmail.com" "html logged" "$body"
+assert "--html sends are recorded" 'grep -q "to=jjulianfe@gmail.com" "$sent_log" && grep -q "subject=html logged" "$sent_log"'
+
 # --- Attachments ---------------------------------------------------------------
 #
 # #38: send.sh built a single-part text/plain and nothing else, so a field report
@@ -316,6 +384,24 @@ assert "the attachment is base64"          'grep -qx "Content-Transfer-Encoding:
 assert "the attachment is named"           'grep -qx "Content-Disposition: attachment; filename=\"datos.csv\"" "$CAPTURE"'
 assert "the type is named"                 'grep -qx "Content-Type: text/csv" "$CAPTURE"'
 assert "the closing separator is present"  'grep -qE "^--=_paynani_[0-9a-f]{32}--\$" "$CAPTURE"'
+
+: >"$CAPTURE"
+send_ok --html "$html" --attach "$attach_dir/datos.csv" "jjulianfe@gmail.com" "html con adjunto" "$body"
+assert "--html with --attach keeps multipart/mixed outside" \
+    'grep -qE "^Content-Type: multipart/mixed; boundary=\"=_paynani_[0-9a-f]{32}\"\$" "$CAPTURE"'
+assert "--html with --attach nests alternative first" \
+    'python3 -c "
+import email, email.policy, sys
+m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
+assert m.get_content_type() == \"multipart/mixed\", m.get_content_type()
+top = m.get_payload()
+assert top[0].get_content_type() == \"multipart/alternative\", top[0].get_content_type()
+assert [p.get_content_type() for p in top[0].get_payload()] == [\"text/plain\", \"text/html\"]
+attachments = [p for p in m.walk() if p.get_content_disposition() == \"attachment\"]
+assert len(attachments) == 1, attachments
+assert attachments[0].get_filename() == \"datos.csv\"
+assert attachments[0].get_payload(decode=True) == b\"col1,col2\n1,2\n\"
+" "$CAPTURE"'
 
 # The bytes have to come back out. Everything above could pass on a message whose
 # attachment decoded to something else, or to nothing.
