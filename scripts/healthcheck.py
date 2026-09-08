@@ -185,7 +185,8 @@ def tail(path, lines=1):
 def listener_facts():
     out = {"unit": unit_state(LISTENER_UNIT), "mailbox": None,
            "last_uid": None, "uidvalidity": None, "heartbeat_at": None,
-           "heartbeat_age_seconds": None, "last_error": None}
+           "heartbeat_age_seconds": None, "last_error": None,
+           "last_error_age_seconds": None}
     try:
         state = json.loads(LISTENER_STATE.read_text())
         out["mailbox"] = state.get("mailbox")
@@ -199,6 +200,13 @@ def listener_facts():
         pass
     last = tail(IDLE_ERR)
     out["last_error"] = last[0] if last else None
+    try:
+        # Unlike queue and heartbeat ages, the useful fact here is the write
+        # time itself: a retrying listener keeps touching the diagnostic file
+        # even while it cannot complete an IDLE cycle.
+        out["last_error_age_seconds"] = max(0, int(time.time() - IDLE_ERR.stat().st_mtime))
+    except OSError:
+        pass
     return out
 
 
@@ -595,9 +603,15 @@ def assess(facts):
             warnings.append("the listener state has no heartbeat_at; this listener is from "
                             "a version that does not report heartbeat, so its liveness is unknown")
         elif heartbeat_age > STALE_LISTENER_HEARTBEAT:
-            problems.append(f"the listener last reported {heartbeat_age}s ago and its unit "
-                            "cannot be queried: it is probably dead, and this host has no "
-                            "supervisor to restart it")
+            error_age = listener.get("last_error_age_seconds")
+            if error_age is not None and error_age < STALE_LISTENER_HEARTBEAT:
+                problems.append(f"the listener last completed a cycle {heartbeat_age}s ago "
+                                "but is still logging retries: it is running and cannot "
+                                "reach the mail server, so restarting it will not help")
+            else:
+                problems.append(f"the listener last reported {heartbeat_age}s ago and its unit "
+                                "cannot be queried: it is probably dead, and this host has no "
+                                "supervisor to restart it")
         else:
             warnings.append("the listener unit cannot be queried on this host "
                             "(no observable service manager); its state is unknown, not stopped")
