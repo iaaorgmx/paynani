@@ -21,6 +21,17 @@ SEND="$(cd "$(dirname "$0")" && pwd)/send.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+# Before the test redirects send.sh's state, remember the log a live send would
+# use. The assertion at the end proves the suite did not write there.
+# shellcheck source=envpath.sh
+. "$(cd "$(dirname "$0")" && pwd)/envpath.sh"
+live_sent_log="$(paynani_state_dir)/sent.log"
+live_sent_before=0
+if [ -e "$live_sent_log" ]; then
+    live_sent_before=$(wc -c < "$live_sent_log")
+fi
+export PAYNANI_STATE="$tmp/state"
+
 roster="$tmp/roster.md"
 body="$tmp/body.txt"
 echo "hi" >"$body"
@@ -490,6 +501,12 @@ import roster
 print(" ".join(sorted(roster.roster_addresses(Path(sys.argv[1]) / "roster.md.example"))))
 ' "$repo")
 assert "shipped template contributes no addresses" '[ -z "$template_addrs" ]'
+
+live_sent_after=0
+if [ -e "$live_sent_log" ]; then
+    live_sent_after=$(wc -c < "$live_sent_log")
+fi
+assert "the live sent.log did not grow" '[ "$live_sent_after" -eq "$live_sent_before" ]'
 
 echo
 echo "$pass passed, $fail failed"
