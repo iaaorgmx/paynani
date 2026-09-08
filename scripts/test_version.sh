@@ -66,6 +66,26 @@ state="$tmp/state"
 export PAYNANI_STATE="$state"
 fresh() { rm -rf "$state"; }   # --line caches for a day; each case starts clean
 
+# Seeding a cache by hand is a fixture, and a fixture that fails silently is
+# worse than no fixture: the test still runs, --line just takes the cold path,
+# and every assertion about cache behaviour passes without touching a cache.
+# That is exactly what happened here before Ocelotl caught it (#61 review) --
+# `fresh` removes $state, so a bare `> "$state/version.check"` had nowhere to
+# land. This creates the directory and refuses to continue if the write fails.
+seed_cache() {   # seed_cache <stamp> <cached-latest> [cached-installed]
+    mkdir -p "$state" || { echo "seed_cache: cannot create $state" >&2; exit 1; }
+    if [ $# -ge 3 ]; then
+        printf '%s %s\n%s\n' "$1" "$2" "$3" >"$state/version.check" || {
+            echo "seed_cache: cannot write $state/version.check" >&2; exit 1; }
+    else
+        # One line only: the shape an older paynani wrote, and still writes.
+        printf '%s %s\n' "$1" "$2" >"$state/version.check" || {
+            echo "seed_cache: cannot write $state/version.check" >&2; exit 1; }
+    fi
+    [ -s "$state/version.check" ] || {
+        echo "seed_cache: wrote an empty cache; the fixture did not take" >&2; exit 1; }
+}
+
 # ---- ordering -------------------------------------------------------------
 
 run 1.10.0
@@ -149,6 +169,116 @@ assert "--line ahead is one line"        '[ "$(wc -l <<<"$out")" -eq 1 ]'
 assert "--line ahead does not claim latest" '! grep -q "(latest)" <<<"$out"'
 assert "--line ahead names the newest tag" 'grep -q "AHEAD of the newest tag (1.10.0)" <<<"$out"'
 
+# ---- the cache behind --line (#61) ----------------------------------------
+#
+# --line answers from a cache with a one-day TTL, and that is the right call: a
+# session must not pay for a network round trip. But the cached value can span
+# several releases, and while it does, --line reads exactly like a fresh fact.
+# It cost a whole session once: the hook said "0.2.0 is AHEAD of the newest tag
+# (0.1.0)" with 0.2.0 tagged the day before, and the agent spent hours
+# recommending a tag that already existed.
+
+# 1. The installed version moving is evidence the tag landscape moved with it.
+#    A cache written while 1.9.0 was installed must not answer for 1.10.0.
+fresh
+seed_cache "$(date +%s)" 1.9.0 1.9.0
+run 1.10.0 --line
+assert "--line refreshes when VERSION moved under the cache" \
+    '! grep -q "AHEAD of the newest tag (1.9.0)" <<<"$out"'
+assert "--line refreshed says latest"    'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
+assert "the refreshed cache records the installed version" \
+    '[ "$(sed -n 2p "$state/version.check")" = "1.10.0" ]'
+
+# 2. What the cache cannot fix it must disclose. The second call inside the TTL
+#    is answered from disk, and has to say so: an agent told "the newest tag is
+#    X" reads a fact, one told "as of a check 20h ago" knows to ask.
+run 1.10.0 --line
+assert "a cached --line names its age"   'grep -q "from a check" <<<"$out"'
+assert "a cached --line is still one line" '[ "$(wc -l <<<"$out")" -eq 1 ]'
+
+# 3. And the two forms must stop contradicting each other. This is the exact
+#    pair from #61: --line said AHEAD while --report said Up to date, at the
+#    same moment, on the same host.
+fresh
+seed_cache "$(date +%s)" 1.9.0 1.9.0
+run 1.10.0 --line;   line_out=$out
+run 1.10.0 --report; report_out=$out
+assert "--line and --report agree on a stale in-TTL cache" \
+    '! { grep -q "AHEAD" <<<"$line_out" && grep -Fq "Up to date." <<<"$report_out"; }'
+
+# 4. A two-field cache written by an older paynani has no installed version to
+#    match, so it refreshes rather than being trusted. No migration step, and
+#    the safe direction.
+fresh
+seed_cache "$(date +%s)" 1.9.0
+run 1.10.0 --line
+assert "a legacy two-field cache is refreshed" 'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
+
+# 5. And the other direction, which is the one that bit: a cache written by THIS
+#    version, read by the PREVIOUS one. The old reader is `read -r stamp cached`,
+#    and with two variables the second keeps the whole rest of the line — so a
+#    third field on line 1 came back as "1.10.0 1.10.0" and poisoned every
+#    comparison downstream. Found by running the command from a clone on main
+#    after this branch had written the cache; no amount of reading the diff
+#    would have shown it, because both ends of the new format are new code.
+#
+#    Nothing here parses with the new reader on purpose. This asserts the
+#    compatibility contract itself.
+fresh
+run 1.10.0 --line                      # let version.sh write a real cache
+old_stamp=""; old_cached=""
+{ read -r old_stamp old_cached; } < "$state/version.check"
+assert "the previous reader still sees one clean version" \
+    '[ "$old_cached" = "1.10.0" ]'
+assert "the previous reader is not handed a second value" \
+    'case "$old_cached" in *" "*) false ;; *) true ;; esac'
+assert "the installed version lives on its own line" \
+    '[ "$(sed -n 2p "$state/version.check")" = "1.10.0" ]'
+
+
+# ---- a host without timeout(1) (#68) --------------------------------------
+#
+# `timeout` is GNU coreutils and macOS does not ship it. Wrapping the remote
+# call in a command that is not there made latest_version() fail on every macOS
+# install, permanently -- and "could not find out" reads like a passing network
+# glitch, so nobody investigates. Found by Ximena on the first macOS install,
+# after three of my four predictions about that host turned out to be wrong.
+#
+# Simulated with a PATH that has everything except timeout and gtimeout: a
+# symlink farm, because a trimmed literal PATH loses tools the script needs for
+# unrelated reasons and would pass for the wrong reason.
+notimeout="$tmp/notimeout-bin"
+mkdir -p "$notimeout"
+_old_ifs=$IFS; IFS=:
+for _d in $PATH; do
+    [ -d "$_d" ] || continue
+    for _f in "$_d"/*; do
+        [ -x "$_f" ] || continue
+        _b=${_f##*/}
+        case "$_b" in timeout|gtimeout) continue ;; esac
+        [ -e "$notimeout/$_b" ] || ln -s "$_f" "$notimeout/$_b" 2>/dev/null
+    done
+done
+IFS=$_old_ifs
+
+if PATH="$notimeout" command -v timeout >/dev/null 2>&1; then
+    # The farm did not actually hide it, so anything below would pass for the
+    # wrong reason. Say so instead of reporting a green that means nothing.
+    assert "the no-timeout farm really hides timeout" 'false'
+else
+    fresh
+    printf '%s\n' "1.10.0" >"$clone/VERSION"
+    out=$(PATH="$notimeout" "$clone/scripts/version.sh" 2>&1); rc=$?
+    assert "the report resolves latest without timeout" '[ "$rc" -eq 0 ]'
+    assert "without timeout it does not give up"  '! grep -q "could not find out" <<<"$out"'
+    assert "without timeout it names the tag"     'grep -q "latest:    1.10.0" <<<"$out"'
+
+    fresh
+    out=$(PATH="$notimeout" "$clone/scripts/version.sh" --line 2>&1); rc=$?
+    assert "--line resolves latest without timeout" '[ "$rc" -eq 0 ]'
+    assert "--line without timeout says latest"     'grep -q "paynani 1.10.0 (latest)" <<<"$out"'
+fi
+
 fresh; run 1.0.0 --line
 assert "--line behind exits 2"           '[ "$rc" -eq 2 ]'
 assert "--line behind says OUT OF DATE"  'grep -q "OUT OF DATE" <<<"$out"'
@@ -166,7 +296,11 @@ git -C "$clone" remote set-url origin "$remote"
 printf 'garbage\n' >"$state/version.check"
 run 1.0.0 --line
 assert "corrupt cache re-checks"         '[ "$rc" -eq 2 ]'
-assert "corrupt cache is replaced"       'grep -qE "^[0-9]+ 1.10.0$" "$state/version.check"'
+# Line 2 is the installed version at the moment of writing (#61) -- a second
+# line, not a third field, so the previous version's reader is unaffected. The
+# cache is what it compares against on the next call, so its shape is part of
+# what "replaced with something well-formed" means.
+assert "corrupt cache is replaced"       '[ "$(sed -n 1p "$state/version.check" | cut -d" " -f2)" = "1.10.0" ] && [ "$(sed -n 2p "$state/version.check")" = "1.0.0" ]'
 
 # ---- --installed ----------------------------------------------------------
 
