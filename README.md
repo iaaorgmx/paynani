@@ -72,7 +72,8 @@ Crea una cuenta de correo para el agente y escribe sus datos de conexión en un
 archivo `.env`. Si tu agente corre bajo un harness, ese `.env` va en el workspace
 del harness (`~/.hermes/workspace/.env`, `~/.openclaw/workspace/.env`,
 `~/.claude/workspace/.env` o `~/.codex/workspace/.env`). En un host sin harness,
-puede vivir dentro del clon.
+puede vivir dentro del clon. Si no sabes dónde quedó, pregúntale a la instalación
+con `python3 harness/paths.py env`.
 
 [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md) explica qué cuenta usar, dónde encontrar
 el servidor IMAP/SMTP y cómo escribir el archivo sin exponer la contraseña al
@@ -173,7 +174,8 @@ No basta con ver que no hay mensajes pendientes. Para revisar el sistema usa:
 python3 scripts/healthcheck.py
 ```
 
-Ese chequeo revisa credenciales, listener, dispatcher, runtime, journal y cursor.
+Ese chequeo revisa los servicios, las credenciales, la cola, la entrega al
+harness y el roster.
 Si necesitas investigar una instalación rota, sigue [`INSTALL.md`](INSTALL.md) y
 [`HERMES.md`](HERMES.md) antes de tocar credenciales o servicios.
 
