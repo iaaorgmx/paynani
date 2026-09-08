@@ -132,27 +132,33 @@ Con Paynani configurado, tu agente puede:
 
 ## Qué cambia en la computadora
 
-La instalación no solo copia archivos. También deja piezas vivas para que el
-correo llegue aunque no tengas una terminal abierta:
+Vale la pena saberlo antes de aceptar. El agente tiene instrucciones de reportarte
+todo esto cuando termine, y puedes exigirle la lista:
 
-- crea o actualiza el archivo `.env` con la configuración IMAP/SMTP del buzón;
-- detecta la ruta correcta del harness con `python3 harness/paths.py env` antes
-  de escribir la configuración en vez de adivinar;
-- instala cuatro unidades de `systemd --user`: listener, dispatcher y timers de
-  salud/recuperación;
-- activa *lingering* para que esos servicios puedan seguir corriendo después de
-  cerrar sesión;
-- crea archivos locales de estado, incluyendo un journal de eventos, un cursor de
-  último UID aceptado y un roster con permisos explícitos;
-- ajusta permisos para que los secretos locales queden privados para tu usuario.
+- Cuatro unidades de usuario de systemd, no una. Dos corren todo el tiempo y se
+  reinician solas si fallan: el escucha (`paynani-idle.service`) y el repartidor
+  (`paynani-dispatch.service`). Las otras dos rotan las bitácoras:
+  `paynani-logrotate.timer`, que se activa solo, y `paynani-logrotate.service`,
+  que es `static` porque la dispara el temporizador y no se habilita por su
+  cuenta. En macOS son tres *LaunchAgents* equivalentes: `com.paynani.idle`,
+  `com.paynani.dispatch` y `com.paynani.logrotate`
+- Un archivo de credenciales con permisos `600`: el `.env` del workspace de tu
+  harness si lo guardas ahí, y si no, `.env` dentro del clon. Se lee donde está y
+  nunca se copia
+- Archivos de bitácora y estado en `state/` dentro del clon
+- *Lingering* activado para tu usuario, para que el servicio sobreviva cuando
+  cierras sesión
+- Una regla permanente agregada a las instrucciones del propio agente
 
 Todo esto es reversible; [`UNINSTALL.md`](UNINSTALL.md) quita cada punto de esa
-lista.
+lista, en un orden que no te deja trabajando de memoria.
 
-El comando de limpieza peligroso en una instalación viva es `git clean -xdf`, que
-borra archivos ignorados: la contraseña del buzón, los dos secretos de ruta de
-Hermes (`<clon>/hermes/`, solo en Hermes), la lista de destinatarios y la marca
-del último UID. Usa `git clean -df`.
+`.gitignore` mantiene los secretos fuera de `git status` y `scripts/install.sh`
+se niega a escribir si alguno está versionado o no ignorado. Lo que eso no evita
+es `git clean -xdf`, que borra los archivos ignorados: en una instalación viva
+eso es la contraseña del buzón, los dos secretos de ruta de Hermes
+(`<clon>/hermes/`, solo en Hermes), la lista de destinatarios y la marca del
+último UID. Usa `git clean -df`.
 
 ## Seguridad y límites
 
@@ -188,7 +194,7 @@ Paynani no es responsable de:
 
 > [!IMPORTANT]
 > Una cola vacía no prueba que Paynani esté sano. `scripts/healthcheck.py` revisa
-> listener, dispatcher, credenciales, runtime y cursor.
+> servicios, credenciales, cola, entrega al harness y roster.
 
 No basta con ver que no hay mensajes pendientes. Para revisar el sistema usa:
 
@@ -245,17 +251,29 @@ propias reglas de confianza.
 | Autorizar remitentes | `roster.md` y [`roster.md.example`](roster.md.example) |
 | Enviar correo desde la frontera segura | [`scripts/send.sh`](scripts/send.sh) |
 
+Construido y verificado de extremo a extremo el **`2026-08-09`**.
+
 ## Cómo mantenerlo al día
 
-Antes de actualizar una instalación viva, lee [`CHANGELOG.md`](CHANGELOG.md) y
-confirma si hay cambios de migración, servicios o variables de entorno. Después,
-actualiza desde el repositorio, corre la verificación y revisa que el listener y
-el dispatcher sigan activos.
+La versión instalada está en [`VERSION`](VERSION), y al agente se le dice cuál
+está corriendo al inicio de cada sesión, junto con si ya salió alguna más nueva.
 
-No hagas una limpieza destructiva del clon sin revisar `## Qué cambia en la
-computadora`: ahí están los archivos locales que no deben borrarse por accidente.
+Puedes preguntarle lo mismo directamente:
 
-## Idiomas y mantenimiento
+```bash
+scripts/version.sh
+```
+
+Lee la versión publicada de las etiquetas de este repositorio, así que no hay
+cuenta ni token de por medio, y avisa claramente cuando no pudo alcanzar la red,
+en vez de dar por actualizada una instalación nada más porque nada lo contradijo.
+
+Actualizar es [`UPGRADE.md`](UPGRADE.md), y lo que cambió entre dos versiones
+está en [`CHANGELOG.md`](CHANGELOG.md). Lee primero el changelog: de vez en
+cuando una versión necesita algo más que un `git pull`, y la forma en que falla
+saltárselo es un listener que funciona hasta el siguiente reinicio.
+
+## Idiomas
 
 `README.md` es la fuente en español de México. Las traducciones mantenidas son:
 
@@ -269,16 +287,16 @@ es-MX.
 
 ## La propiedad a la que sirve todo lo demás
 
-Paynani existe para que el correo del agente no falle en silencio. Si llega un
-mensaje, debe quedar un rastro durable; si el runtime lo acepta, debe avanzar el
-cursor; si no está autorizado, debe avisarse sin obedecer; y si algo se rompe,
-debe haber una verificación que diga dónde.
+**Nunca fallar en silencio.** La latencia era el problema fácil: IDLE lo resolvió
+en una tarde. Todo lo demás que hay aquí existe porque el fallo caro no es ir
+lento, es **decir con confianza que no hay correo nuevo estando ciego**.
 
-Esa propiedad pesa más que cualquier comodidad de instalación: es mejor detenerse
-con un error claro que perder un correo, repetir una tarea o convertir texto no
-confiable en instrucciones.
+Por eso el último UID visto se guarda mensaje por mensaje, por eso se revisa
+`UIDVALIDITY` en cada conexión, por eso la bitácora de errores se vigila junto con
+la de eventos, y por eso el hook de inicio de sesión pregunta si el servicio de
+verdad está corriendo. [`DESIGN.md`](DESIGN.md) explica cada uno y qué se rompe
+sin él.
 
-Construido y verificado de extremo a extremo el 2026-08-09.
 
 ## De dónde viene el nombre
 
