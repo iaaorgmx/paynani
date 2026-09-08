@@ -231,6 +231,12 @@ check("and says the listener cannot reach the mail server", True,
       and "but is still logging retries: it is running and cannot reach the mail server, "
       "so restarting it will not help" in text)
 
+f = Fixture(units={hc.LISTENER_UNIT: "unknown", hc.DISPATCH_UNIT: "active"}).heartbeat(16 * 60)
+code, text = f.exit_code()
+check("a stale listener with no error log at all is still called probably dead", 1, code)
+check("and does not claim it is reaching the mail server", True,
+      "it is probably dead" in text and "still logging retries" not in text)
+
 f = (Fixture(units={hc.LISTENER_UNIT: "unknown", hc.DISPATCH_UNIT: "active"})
      .heartbeat(16 * 60).listener_error(16 * 60))
 code, text = f.exit_code()
