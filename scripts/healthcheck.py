@@ -86,6 +86,11 @@ DISPATCH_LAUNCHD_LABEL = "com.paynani.dispatch"
 # nobody is draining is noticed within a working session.
 STALE_QUEUE = float(os.environ.get("HEALTH_STALE_QUEUE", 15 * 60))
 
+# A listener with no observable service manager needs its own pulse. This is
+# deliberately wider than the listener's five-minute IDLE refresh, so one slow
+# turn is not a fault but a dead process is still visible inside a session.
+STALE_LISTENER_HEARTBEAT = 15 * 60
+
 # How long roster mail may sit answered by nothing before that is worth saying
 # out loud. An agent reads the message, does what it asks and then replies, and
 # what it was asked to do can legitimately take a while, so this is deliberately
@@ -179,12 +184,17 @@ def tail(path, lines=1):
 
 def listener_facts():
     out = {"unit": unit_state(LISTENER_UNIT), "mailbox": None,
-           "last_uid": None, "uidvalidity": None, "last_error": None}
+           "last_uid": None, "uidvalidity": None, "heartbeat_at": None,
+           "heartbeat_age_seconds": None, "last_error": None}
     try:
         state = json.loads(LISTENER_STATE.read_text())
         out["mailbox"] = state.get("mailbox")
         out["last_uid"] = state.get("last_uid")
         out["uidvalidity"] = state.get("uidvalidity")
+        out["heartbeat_at"] = state.get("heartbeat_at")
+        heartbeat = _stamp_seconds(out["heartbeat_at"])
+        if heartbeat is not None:
+            out["heartbeat_age_seconds"] = max(0, int(time.time() - heartbeat))
     except (OSError, ValueError):
         pass
     last = tail(IDLE_ERR)
@@ -580,8 +590,17 @@ def assess(facts):
                                         facts["runtime"], facts["config"])
 
     if listener["unit"] == "unknown":
-        warnings.append("the listener unit cannot be queried on this host "
-                        "(no observable service manager); its state is unknown, not stopped")
+        heartbeat_age = listener.get("heartbeat_age_seconds")
+        if heartbeat_age is None:
+            warnings.append("the listener state has no heartbeat_at; this listener is from "
+                            "a version that does not report heartbeat, so its liveness is unknown")
+        elif heartbeat_age > STALE_LISTENER_HEARTBEAT:
+            problems.append(f"the listener last reported {heartbeat_age}s ago and its unit "
+                            "cannot be queried: it is probably dead, and this host has no "
+                            "supervisor to restart it")
+        else:
+            warnings.append("the listener unit cannot be queried on this host "
+                            "(no observable service manager); its state is unknown, not stopped")
     elif listener["unit"] != "active":
         problems.append(f"the listener is {listener['unit']}: no new mail is being detected at all")
     if listener["last_uid"] is None:
