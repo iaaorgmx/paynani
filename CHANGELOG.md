@@ -1,5 +1,82 @@
 # Changelog
 
+## Sin publicar
+
+**El README dejó de ser mitad puerta humana y mitad manual del agente.** Catorce
+commits desde 0.4.0, todos de documentación: ninguna línea de código cambió.
+
+### El diagnóstico no era la prosa, era el vocabulario
+
+El README anterior estaba bien escrito y era correcto. Seguía siendo ilegible
+para alguien sin formación técnica, y eso no se arregla escribiendo mejor:
+
+```
+22 términos especializados · ~90 apariciones · 1,738 palabras de prosa
+                                  ≈ una pieza de jerga cada 19 palabras
+```
+
+Las tres más pesadas caían en las primeras 40 líneas sin explicarse nunca:
+`harness` once veces, `roster` quince, `runtime` tres. Nadie fuera de este
+proyecto sabe qué es un *harness*, así que quien no es técnico lo topaba en la
+línea 23 y concluía, en silencio, que la página no era para él.
+
+Medido después del cambio, la jerga baja de **39 apariciones a 12**. Las que
+quedan son nombres literales de archivo o viven dentro de un bloque plegable.
+`harness` ahora se presenta antes de usarse; `journal` pasó a «se anota en
+disco», `cursor` a «solo marca una como entregada cuando el agente confirma», y
+`UIDVALIDITY` a «se revisa que el buzón siga siendo el mismo».
+
+### La mecánica interna bajó de la portada
+
+El diagrama de tubería con `state/events.jsonl` se fue, y en su lugar quedaron
+tres frases en español llano más el enlace a `DESIGN.md`, que ya explicaba todo
+eso con mucho más cuidado del que cabe en un README. Un diagrama de *pipeline*
+arriba es una señal de «esto no es para ti».
+
+Los nombres exactos de las cuatro unidades de systemd **no se perdieron**: se
+movieron a un `<details>` plegable. La lista visible de «Qué cambia en la
+computadora» dice ahora *dos servicios que quedan corriendo y se reinician
+solos*, y quien necesite `paynani-logrotate.timer` lo abre.
+
+### Lo que la reescritura borró, y volvió
+
+Este trabajo salió en cinco vueltas, y en el camino se borraron cosas que había
+que devolver: la sección de consentimiento con las unidades y la regla permanente
+que se agrega a las instrucciones del agente, el aviso de que `git clean -xdf`
+se lleva la contraseña del buzón, el mecanismo de actualización completo, toda
+referencia a `UNINSTALL.md`, y el pie que declara cuál idioma gana.
+
+Dos se recuperaron al final y son las más humanas del documento: el párrafo de
+apertura, y la etimología náhuatl completa, que había quedado en tres líneas. Que
+la sección menos técnica del README sea también la más legible para quien no es
+técnico no es casualidad.
+
+### Las cuatro traducciones no estaban atrasadas
+
+Estaban traduciendo un documento que ya no existe. Las cuatro conservaban
+`Arquitectura de entrega por entorno` y `Rutas en esta máquina`, secciones que la
+reescritura eliminó, así que se reconstruyeron enteras en vez de parchearse.
+
+Esa reconstrucción trajo una restricción que las traducciones antes no tenían: la
+reducción de jerga **es** el cambio, y en inglés `harness`, `listener`,
+`dispatcher`, `journal`, `cursor` y `runtime` son las palabras naturales. Una
+traducción fiel las repone sola y deshace el trabajo sin que nadie lo note. Las
+cinco versiones quedaron medidas entre 12 y 15 términos.
+
+### Sobre `blader/humanizer`
+
+Se evaluó el skill para este objetivo y no era la herramienta. Quita señales de
+escritura de IA —contrastes no-X-sino-Y, cierres de una línea, tríadas forzadas,
+rayas largas como conector— y el README ya pasaba casi limpio: **0 rayas largas,
+0 no-X-sino-Y, 0 comillas curvas**. Sirve como pasada de acabado, no como el
+arreglo. Sus listas de palabras además son de inglés, así que sobre una fuente
+es-MX solo transfieren los patrones estructurales.
+
+### Lo que sigue pendiente
+
+La prueba que de verdad cuenta no se ha hecho: dárselo a leer a alguien no
+técnico y ver en qué renglón se detiene. Todo lo anterior son proxies.
+
 ## 0.4.0 — 2026-09-07
 
 **`main` ya no depende de que nadie se acuerde de correr las pruebas.** 30 commits
