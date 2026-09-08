@@ -57,11 +57,13 @@ entrada no confiable; `roster.md` define quién puede generar trabajo.
 
 ## Antes de empezar
 
-Antes de pedirle al agente que instale Paynani, ten preparadas tres cosas:
+Necesitas tres cosas:
 
-- un buzón dedicado para el agente, no tu correo personal;
-- una terminal abierta en la misma máquina donde corre el harness;
-- tu nombre y tu dirección de correo para que el agente cree `roster.md`.
+1. un buzón propio para el agente, no tu correo personal;
+2. una terminal abierta en la misma máquina donde corre el harness;
+3. una forma segura de escribir las credenciales en `.env`, sin pegarlas al chat;
+4. una lista `roster.md` con las personas o notificadores que sí pueden generar
+   trabajo.
 
 ## Configúralo en tres pasos
 
@@ -268,8 +270,6 @@ propias reglas de confianza.
 | Autorizar remitentes | `roster.md` y [`roster.md.example`](roster.md.example) |
 | Enviar correo desde la frontera segura | [`scripts/send.sh`](scripts/send.sh) |
 
-Construido y verificado de extremo a extremo el **`2026-08-09`**.
-
 ## Cómo mantenerlo al día
 
 La versión instalada está en [`VERSION`](VERSION), y al agente se le dice cuál
@@ -314,6 +314,7 @@ la de eventos, y por eso el hook de inicio de sesión pregunta si el servicio de
 verdad está corriendo. [`DESIGN.md`](DESIGN.md) explica cada uno y qué se rompe
 sin él.
 
+Construido y verificado de extremo a extremo el 2026-08-09.
 
 ## De dónde viene el nombre
 
