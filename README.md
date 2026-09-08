@@ -13,6 +13,12 @@ Le da a tu agente un buzón propio, detecta correo nuevo en segundos y entrega
 cada evento por una ruta supervisada, sin perder mensajes en silencio y sin
 convertir cualquier correo en una instrucción autorizada.
 
+**¡Usarlo es totalmente gratis!** No necesitas contratar ningún servicio
+adicional para instalarlo: usa el buzón IMAP/SMTP que tú le des al agente y corre
+en tu propia máquina o en el harness donde ya trabajas.
+
+Desarrollado y probado usando Linux (Ubuntu 24.04) y macOS (26.4.1).
+
 Con Paynani, tu agente puede:
 
 - enterarse cuando llega correo nuevo;
@@ -40,26 +46,6 @@ Sirve si quieres que un agente:
 No es para delegar criterio humano a cualquier mensaje que llegue. El correo es
 entrada no confiable; `roster.md` define quién puede generar trabajo.
 
-## Antes de empezar
-
-Necesitas tres cosas:
-
-1. un buzón propio para el agente, no tu correo personal;
-2. una forma segura de escribir las credenciales en `.env`, sin pegarlas al chat;
-3. una lista `roster.md` con las personas o notificadores que sí pueden generar trabajo.
-
-> [!CAUTION]
-> Nunca pegues contraseñas de correo en un chat. Usa `MAILBOX_SETUP.md` o el
-> formulario de `scripts/setup_web.sh` para que el agente no vea secretos.
-
-> [!WARNING]
-> `roster.md` autoriza trabajo; no prueba identidad criptográfica. Un correo no
-> listado puede avisarse, pero no debe convertirse en tarea.
-
-> [!IMPORTANT]
-> Una cola vacía no prueba que Paynani esté sano. `scripts/healthcheck.py` revisa
-> listener, dispatcher, credenciales, runtime y cursor.
-
 ## Configúralo en tres pasos
 
 El primer paso lo haces tú, el segundo es pegar una instrucción y el tercero son
@@ -78,6 +64,10 @@ con `python3 harness/paths.py env`.
 [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md) explica qué cuenta usar, dónde encontrar
 el servidor IMAP/SMTP y cómo escribir el archivo sin exponer la contraseña al
 agente.
+
+> [!CAUTION]
+> Nunca pegues contraseñas de correo en un chat. Usa [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md)
+> o el formulario de `scripts/setup_web.sh` para que el agente no vea secretos.
 
 Haz este paso tú. Si el agente te pide la contraseña en el chat, dile que no.
 
@@ -140,7 +130,35 @@ Con Paynani configurado, tu agente puede:
 - avisar sobre correo no autorizado sin obedecerlo;
 - conservar eventos en un journal para que un reinicio no borre trabajo pendiente.
 
+## Qué cambia en la computadora
+
+La instalación no solo copia archivos. También deja piezas vivas para que el
+correo llegue aunque no tengas una terminal abierta:
+
+- crea o actualiza el archivo `.env` con la configuración IMAP/SMTP del buzón;
+- detecta la ruta correcta del harness con `python3 harness/paths.py env` antes
+  de escribir la configuración en vez de adivinar;
+- instala cuatro unidades de `systemd --user`: listener, dispatcher y timers de
+  salud/recuperación;
+- activa *lingering* para que esos servicios puedan seguir corriendo después de
+  cerrar sesión;
+- crea archivos locales de estado, incluyendo un journal de eventos, un cursor de
+  último UID aceptado y un roster con permisos explícitos;
+- ajusta permisos para que los secretos locales queden privados para tu usuario.
+
+Todo esto es reversible; [`UNINSTALL.md`](UNINSTALL.md) quita cada punto de esa
+lista.
+
+El comando de limpieza peligroso en una instalación viva es `git clean -xdf`, que
+borra archivos ignorados: la contraseña del buzón, los dos secretos de ruta de
+Hermes (`<clon>/hermes/`, solo en Hermes), la lista de destinatarios y la marca
+del último UID. Usa `git clean -df`.
+
 ## Seguridad y límites
+
+> [!WARNING]
+> `roster.md` autoriza trabajo; no prueba identidad criptográfica. Un correo no
+> listado puede avisarse, pero no debe convertirse en tarea.
 
 Paynani separa tres cosas que suelen confundirse:
 
@@ -148,7 +166,7 @@ Paynani separa tres cosas que suelen confundirse:
 |---|---|
 | Correo recibido | Hay un mensaje en el buzón. |
 | Coincidencia en `roster.md` | Ese remitente o notificador está autorizado para generar trabajo. |
-| Identidad autenticada | No la promete Paynani por sí solo. Depende del proveedor y de validaciones externas. |
+| Identidad autenticada | Paynani no la promete por sí solo; depende del proveedor y de validaciones externas. |
 
 Paynani sí es responsable de:
 
@@ -167,6 +185,10 @@ Paynani no es responsable de:
 - convertir correo no listado en instrucciones operativas.
 
 ## Cómo saber si está sano
+
+> [!IMPORTANT]
+> Una cola vacía no prueba que Paynani esté sano. `scripts/healthcheck.py` revisa
+> listener, dispatcher, credenciales, runtime y cursor.
 
 No basta con ver que no hay mensajes pendientes. Para revisar el sistema usa:
 
@@ -218,9 +240,20 @@ propias reglas de confianza.
 | Integrarlo con Hermes Agent | [`HERMES.md`](HERMES.md) |
 | Entender por qué no debe fallar en silencio | [`DESIGN.md`](DESIGN.md) |
 | Migrar desde agenteiamail | [`MIGRATION.md`](MIGRATION.md) |
+| Quitar Paynani | [`UNINSTALL.md`](UNINSTALL.md) |
 | Ver cambios por versión | [`CHANGELOG.md`](CHANGELOG.md) |
 | Autorizar remitentes | `roster.md` y [`roster.md.example`](roster.md.example) |
 | Enviar correo desde la frontera segura | [`scripts/send.sh`](scripts/send.sh) |
+
+## Cómo mantenerlo al día
+
+Antes de actualizar una instalación viva, lee [`CHANGELOG.md`](CHANGELOG.md) y
+confirma si hay cambios de migración, servicios o variables de entorno. Después,
+actualiza desde el repositorio, corre la verificación y revisa que el listener y
+el dispatcher sigan activos.
+
+No hagas una limpieza destructiva del clon sin revisar `## Qué cambia en la
+computadora`: ahí están los archivos locales que no deben borrarse por accidente.
 
 ## Idiomas y mantenimiento
 
@@ -234,6 +267,19 @@ propias reglas de confianza.
 No existe ni debe crearse `i18n/README.es-MX.md`: esta página ya es la versión
 es-MX.
 
+## La propiedad a la que sirve todo lo demás
+
+Paynani existe para que el correo del agente no falle en silencio. Si llega un
+mensaje, debe quedar un rastro durable; si el runtime lo acepta, debe avanzar el
+cursor; si no está autorizado, debe avisarse sin obedecer; y si algo se rompe,
+debe haber una verificación que diga dónde.
+
+Esa propiedad pesa más que cualquier comodidad de instalación: es mejor detenerse
+con un error claro que perder un correo, repetir una tarea o convertir texto no
+confiable en instrucciones.
+
+Construido y verificado de extremo a extremo el 2026-08-09.
+
 ## De dónde viene el nombre
 
 Los paynani eran corredores y mensajeros oficiales del Imperio Azteca. Este
@@ -241,3 +287,6 @@ proyecto toma el nombre de esa función: llevar mensajes rápido, con ruta clara
 sin perderlos en silencio.
 
 Hecho con amor por humanos y agentes de IA, desde México para el mundo.
+
+<sub>Este archivo es la fuente de verdad. Las versiones en otros idiomas son
+traducciones: si alguna contradice a esta, **gana el español (MX)**.</sub>
