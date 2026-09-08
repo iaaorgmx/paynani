@@ -57,7 +57,7 @@ entrada no confiable; `roster.md` define quién puede generar trabajo.
 
 ## Antes de empezar
 
-Necesitas tres cosas:
+Necesitas cuatro cosas:
 
 1. un buzón propio para el agente, no tu correo personal;
 2. una terminal abierta en la misma máquina donde corre el harness;
