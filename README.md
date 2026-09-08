@@ -5,6 +5,8 @@
   </picture>
 </h1>
 
+Mensajero élite: Los paynani eran los corredores y mensajeros oficiales del Imperio Azteca.
+
 **Español (MX)** · [English (US)](i18n/README.en-US.md) · [Español (ES)](i18n/README.es-ES.md) · [Français (FR)](i18n/README.fr-FR.md) · [Português (BR)](i18n/README.pt-BR.md)
 
 Paynani es un puente de correo para agentes de IA.
@@ -13,9 +15,15 @@ Le da a tu agente un buzón propio, detecta correo nuevo en segundos y entrega
 cada evento por una ruta supervisada, sin perder mensajes en silencio y sin
 convertir cualquier correo en una instrucción autorizada.
 
+Paynani fue construido sobre [Himalaya](https://github.com/pimalaya/himalaya)
+y funciona con una cuenta IMAP/SMTP común y corriente.
+
 **¡Usarlo es totalmente gratis!** No necesitas contratar ningún servicio
 adicional para instalarlo: usa el buzón IMAP/SMTP que tú le des al agente y corre
 en tu propia máquina o en el harness donde ya trabajas.
+
+Actualmente es utilizado por agentes de IA como OpenClaw, Hermes Agent, Claude
+Code y OpenAI Codex.
 
 Desarrollado y probado usando Linux (Ubuntu 24.04) y macOS (26.4.1).
 
@@ -23,6 +31,7 @@ Con Paynani, tu agente puede:
 
 - enterarse cuando llega correo nuevo;
 - leer y responder desde su propio buzón;
+- leer y enviar con Himalaya, usando el buzón que configuraste;
 - actuar solo cuando el remitente coincide con tu `roster.md`.
 
 Paynani no reemplaza tu criterio ni autentica mágicamente a quien escribe: separa
@@ -45,6 +54,14 @@ Sirve si quieres que un agente:
 
 No es para delegar criterio humano a cualquier mensaje que llegue. El correo es
 entrada no confiable; `roster.md` define quién puede generar trabajo.
+
+## Antes de empezar
+
+Antes de pedirle al agente que instale Paynani, ten preparadas tres cosas:
+
+- un buzón dedicado para el agente, no tu correo personal;
+- una terminal abierta en la misma máquina donde corre el harness;
+- tu nombre y tu dirección de correo para que el agente cree `roster.md`.
 
 ## Configúralo en tres pasos
 
