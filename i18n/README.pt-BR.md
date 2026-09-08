@@ -9,22 +9,25 @@ Mensageiro de elite: os paynani eram os corredores e mensageiros oficiais do Imp
 
 [Español (MX)](../README.md) · [English (US)](README.en-US.md) · [Español (ES)](README.es-ES.md) · [Français (FR)](README.fr-FR.md) · **Português (BR)**
 
-O paynani permite que seu agente de IA leia automaticamente o próprio e-mail
-poucos segundos depois que ele chega, processe as mensagens recebidas e atenda às
+Paynani permite que o seu agente de IA leia automaticamente o próprio e-mail
+poucos segundos depois de ele chegar, processe as mensagens recebidas e atenda às
 instruções do e-mail como faria um colega humano.
 
-Todos os e-mails recebidos são lidos, mas só se seguem as instruções dos que vêm
-de uma lista de contatos autorizados.
+Todos os e-mails recebidos são lidos, mas só se seguem as instruções dos e-mails
+que vêm de uma lista de contatos autorizados. Essa lista quem escreve é você, e
+ela mora num arquivo chamado `roster.md`.
 
-O paynani foi construído sobre o [Himalaya](https://github.com/pimalaya/himalaya)
-e funciona com uma conta IMAP/SMTP comum.
+Paynani foi construído sobre [Himalaya](https://github.com/pimalaya/himalaya) e
+funciona com uma conta de e-mail comum, do mesmo tipo que você configuraria em
+qualquer programa de e-mail.
 
-**Usar é totalmente gratuito!** Você não precisa contratar nenhum serviço
-adicional para dar ao seu agente um endereço de e-mail que ele possa usar
-sozinho.
+**Usar é totalmente grátis!** Você não precisa contratar nenhum serviço adicional
+para dar ao seu agente um endereço de e-mail que ele possa usar sozinho.
 
-Atualmente é usado por agentes de IA como OpenClaw, Hermes Agent, Claude Code e
-OpenAI Codex.
+Roda no seu próprio computador ou servidor, dentro do programa que já hospeda o
+seu agente. Esse programa anfitrião se chama *harness*, e é assim que a palavra é
+usada no resto desta página. Atualmente o Paynani é usado por agentes de IA como
+OpenClaw, Hermes Agent, Claude Code e OpenAI Codex.
 
 Desenvolvido e testado em Linux (Ubuntu 24.04) e macOS (26.4.1).
 
@@ -32,148 +35,278 @@ Feito com amor por humanos e agentes de IA, do México para o mundo.
 
 ---
 
+## Para quem é
+
+Para quem quer dar ao seu agente um endereço de e-mail de verdade sem misturar
+ali a caixa pessoal, as senhas ou as decisões de confiança.
+
+Serve se você quer que o seu agente:
+
+- receba tarefas por e-mail, suas ou do seu time;
+- avise quando chegar algo que valha a pena olhar;
+- responda da própria conta, não da sua;
+- se recuse a obedecer, ou a escrever, a quem não estiver na sua lista.
+
+Não serve para delegar o seu critério a qualquer mensagem que chegue. E-mail
+qualquer um manda, então o Paynani trata tudo o que entra como não confiável até
+que o remetente bata com a sua lista.
+
+## Antes de começar
+
+Você precisa de quatro coisas:
+
+1. uma conta de e-mail dedicada ao agente, não o seu e-mail pessoal;
+2. acesso a um terminal na máquina onde o seu agente roda;
+3. um momento para escrever você mesmo a senha num arquivo, sem colar num chat;
+4. seu nome e seu endereço de e-mail, para a lista de contatos autorizados.
+
+Só isso. Não é preciso uma API de e-mail, nem um serviço no meio, nem conta nova
+em lugar nenhum.
+
 ## Como configurar no seu agente
 
-Três passos. O primeiro é só seu, o segundo é colar um texto, e o terceiro são
-dois minutos conferindo que funciona de verdade.
+Três passos. O primeiro você faz sozinho, o segundo é colar um texto, e o
+terceiro são dois minutos para conferir que funciona de verdade.
 
-### Passo 1: Dê uma caixa de e-mail a ele
+### Passo 1: dê a ele uma caixa de e-mail
 
-O agente precisa de uma conta de e-mail própria, e dos dados de conexão dessa
-conta escritos em um arquivo `.env`. **Se o seu agente roda sob um harness, esse
-arquivo fica na pasta workspace do próprio harness** (`~/.hermes/workspace/.env`,
-`~/.openclaw/workspace/.env`, `~/.claude/workspace/.env`,
-`~/.codex/workspace/.env`), que é onde o agente é
-instruído a olhar e de onde esta ferramenta o lê. Em um host sem harness,
-coloque-o dentro do clone.
+O agente precisa da própria conta de e-mail, e dos dados de conexão dessa conta
+escritos num arquivo chamado `.env`. **Se o seu agente roda sob um harness, esse
+arquivo vai na pasta `workspace` do próprio harness**
+(`~/.hermes/workspace/.env`, `~/.openclaw/workspace/.env`,
+`~/.claude/workspace/.env`, `~/.codex/workspace/.env`), que é onde se diz ao
+agente para olhar e de onde esta ferramenta o lê. Sem harness, o arquivo pode
+morar dentro da pasta do projeto. E se você não souber onde ele foi parar, dá
+para perguntar à instalação com `python3 harness/paths.py env`.
 
-**O [MAILBOX_SETUP.pt-BR.md](MAILBOX_SETUP.pt-BR.md) explica passo a passo**: qual conta usar,
-onde encontrar o nome do servidor (a única parte que sempre dá errado), e como
+**O [MAILBOX_SETUP.pt-BR.md](MAILBOX_SETUP.pt-BR.md) explica passo a passo**: que
+conta usar, onde encontrar o nome do servidor (a parte que sempre falha) e como
 fica o arquivo.
 
-Faça você mesmo, em vez de pedir ao agente. É preciso uma senha, e senha não deve
-passar por um chat.
+> [!CAUTION]
+> Faça você, não peça ao agente. É preciso uma senha, e senha não deve passar por
+> um chat: a que você cola numa conversa fica ali para sempre, e nenhum cuidado
+> posterior desfaz isso. Se preferir não usar o terminal,
+> `scripts/setup_web.sh` abre um formulário local que escreve o arquivo por você.
 
-### Passo 2: Aponte o agente para este repositório
+### Passo 2: aponte o agente para este repositório
 
-Cole isto para o seu agente:
+Cole isto no seu agente:
 
 ```text
-Verifique as configurações da
-sua conta de e-mail; elas estão
-na pasta workspace do diretório
-de instalação do seu Harness.
+Revisa la configuración de tu
+cuenta de correo electrónico;
+está en la carpeta workspace del
+directorio de instalación de tu
+Harness.
 
 ../workspace/.env
 
-Depois, instale este repositório
-para poder usá-la:
+Después, instala este
+repositorio para poder usarla:
 https://github.com/iaaorgmx/paynani
 
-Siga as instruções do arquivo
-AGENTS.md do repositório.
+Sigue las instrucciones del
+archivo AGENTS.md del
+repositorio.
 
-Você vai precisar do meu nome e
-do meu endereço de e-mail para o
-arquivo roster.md.
+Vas a necesitar mi nombre y mi
+dirección de correo electrónico
+para el archivo roster.md.
 
-Pergunte o que precisar.
+Pregúntame lo que necesites.
 ```
 
 Todo o resto de que o agente precisa está no repositório, então o texto só
 precisa apontar para lá.
 
-Espere perguntas antes de ele começar. Se o Passo 1 correu bem, devem ser
-poucas, e se ele pedir a senha, recuse: uma senha colada num chat fica naquela
-conversa para sempre, e nenhum cuidado posterior desfaz isso. Isso não é passo de
-nenhuma destas instruções.
+Espere perguntas antes de ele começar. Se o Passo 1 deu certo, devem ser poucas.
+Se ele pedir a senha, diga não: isso não é um passo destas instruções.
 
-### Passo 3: Teste você mesmo
+### Passo 3: teste você mesmo
 
 O agente roda a própria lista de verificação e vai dizer que passou. Dois minutos
-de teste seus valem mais, porque você estará testando o que de fato importa: se
-ele percebe, e se ele fica dentro dos próprios limites.
+de testes seus valem mais, porque você estaria testando o que de fato importa:
+que ele perceba, e que fique dentro dos limites dele.
 
 **Teste 1: mande um e-mail para ele, com acento no assunto.**
 
-Do seu próprio endereço, com um assunto tipo `Teste de e-mail: ã, ç, é, tudo bem?`
-Depois pergunte ao agente o que acabou de chegar.
+Do seu próprio endereço, com um assunto como
+`Prueba de correo: ñ, á, ¿qué tal?` Depois pergunte ao agente o que acabou de
+chegar.
 
-Em poucos segundos ele deve responder, e **o assunto tem que voltar legível**. Se
-em vez disso você vir `=?utf-8?q?...`, a decodificação de cabeçalhos está
-quebrada, o que importa muito mais do que parece, porque em português isso é
-praticamente toda mensagem que você vai receber.
+Em uns dois segundos ele deve dizer, e **o assunto tem que aparecer legível**. Se
+no lugar disso você vir `=?utf-8?q?...`, tem algo quebrado no jeito como ele lê
+os cabeçalhos, e isso importa muito mais do que parece: se você trabalha em
+português ou espanhol, é praticamente toda mensagem que vai receber.
 
-O acento é o ponto inteiro deste teste. Um assunto em inglês sem acento passa,
-funcionando ou não a decodificação.
+O acento é todo o sentido deste teste. Um assunto em inglês sem acento passa,
+funcionando ou não.
 
 **Teste 2: peça que ele escreva para um desconhecido.**
 
 Primeiro peça que ele mande algo para você, e confirme que chega. Depois peça que
 mande uma mensagem para um endereço que **não** esteja na lista de autorizados.
 
-Ele tem que recusar. Não pedir permissão, não consultar você antes: recusar, e
-dizer que o endereço não está na lista. Essa lista é toda a razão pela qual é
+Ele tem que se recusar. Não pedir permissão, não consultar você antes: recusar, e
+dizer que aquele endereço não está na lista. Essa lista é toda a razão pela qual é
 seguro deixar um agente que lê e-mail não confiável também poder enviar, então
-vale a pena vê-la funcionando uma vez com os próprios olhos.
+vale a pena vê-la funcionar uma vez com os próprios olhos.
 
-Se ele enviar, pare e avise quem instalou. Alguma coisa está errada.
-
----
-
-## Arquitetura de entrega por ambiente
-
-Quem opera o Hermes configura duas rotas autenticadas conforme descrito em
-[`HERMES.md`](../HERMES.md).
-
-O Claude Code e o OpenAI Codex funcionam de um jeito diferente dos outros dois, e a diferença não
-é cosmética. O correio não é empurrado para o agente,
-então o e-mail não é empurrado até o agente: o agente é que vai buscá-lo. O hook
-de início de sessão reproduz o que chegou enquanto nada estava rodando e então
-pede que o agente arme uma vigilância para o que chegar depois. Nada consegue
-impor isso de fora, então esse é o único passo que depende de o agente fazer o
-que lhe foi dito. Veja [`INSTALL.md`](../INSTALL.md) §6.
+Se ele mandar, pare e avise quem instalou. Algo está errado.
 
 ## O que o seu agente vai conseguir fazer
 
-- **Saber de e-mail novo em cerca de um segundo**, sem ficar consultando e sem
-  você pedir.
-- **Ler e enviar** pelo Himalaya, usando a caixa que você configurou.
-- **Enviar só para endereços que você aprovou**, listados em `roster.md`.
-  Qualquer outro é recusado de cara, sem nem perguntar.
-- **Trabalhar a partir do e-mail enviado por esses mesmos endereços aprovados.**
-  Você manda uma tarefa por e-mail, ele faz e responde com o resultado. Sem aviso
-  de recebimento antes e sem pedir permissão; você já deu ao se colocar na lista.
-- **Deixar o e-mail dos outros em paz.** O que chega de um endereço fora da lista
-  é apenas reportado a você.
+- **Saber de e-mail novo em cerca de um segundo**, sem ficar checando e sem você
+  pedir.
+- **Ler e enviar** a partir da caixa que você configurou.
+- **Enviar só para endereços que você aprovou**, os da sua lista. Qualquer outro é
+  recusado de cara, sem nem perguntar.
+- **Trabalhar com o e-mail que esses mesmos endereços aprovados mandam.** Você
+  escreve uma tarefa, ele faz e responde por e-mail. Sem confirmação prévia e sem
+  pedir permissão; você já deu ao se colocar na lista.
+- **Deixar em paz o e-mail dos outros.** O que vem de um endereço fora da lista é
+  relatado para você, e nada além disso.
+- **Não perder o que chegou** se a máquina reiniciar no meio de uma tarefa. Cada
+  mensagem detectada é anotada em disco antes de ser entregue.
 
 ## O que isso muda no computador
 
-Vale saber antes de aceitar. O agente tem instrução de relatar tudo isso ao
+Vale saber antes de aceitar. O agente tem instruções de relatar tudo isso quando
 terminar, e você pode cobrar a lista:
 
-- Quatro units de usuário do systemd, não uma. Duas rodam continuamente e
-  reiniciam sozinhas em caso de falha: o ouvinte (`paynani-idle.service`) e o
-  despachante (`paynani-dispatch.service`). As outras duas rotacionam os
-  registros: `paynani-logrotate.timer`, que se ativa sozinho, e
-  `paynani-logrotate.service`, que é `static` porque o timer o dispara e ele não
-  se habilita por conta própria. No macOS são três *LaunchAgents* equivalentes:
-  `com.paynani.idle`, `com.paynani.dispatch` e `com.paynani.logrotate`
-- Um arquivo de credenciais com permissão `600`: o `.env` do workspace do seu
-  harness, se você o mantém lá, ou `.env` dentro do clone. Ele é lido onde está e
-  nunca é copiado
-- Arquivos de log e estado em `state/` dentro do clone
-- *Lingering* ativado para o usuário, para o serviço sobreviver ao logout
-- Uma regra permanente adicionada às instruções do próprio agente
+- **Dois serviços que ficam rodando o tempo todo** e reiniciam sozinhos se
+  falharem: o que escuta a caixa e o que entrega as mensagens ao seu agente. São
+  instalados como serviços do seu usuário, não do sistema.
+- **Mais dois que só cuidam de aparar os registros** para que não cresçam sem fim.
+- **Um arquivo com a senha da caixa**, legível só pelo seu usuário. É lido onde
+  você deixou e nunca copiado para outro lugar.
+- **Arquivos de registro e de estado** dentro da pasta do projeto.
+- **Permissão para que esses serviços continuem vivos depois que você sai da
+  sessão.**
+- **Uma regra permanente acrescentada às instruções do próprio agente.**
 
-Tudo isso é reversível; [`UNINSTALL.md`](UNINSTALL.en-US.md) remove cada item dessa
-lista, numa ordem que não deixa você trabalhando de memória.
+Tudo isso é reversível; o [`UNINSTALL.md`](../UNINSTALL.md) remove cada ponto
+dessa lista, numa ordem que não deixa você trabalhando de memória.
+
+<details>
+<summary>Os nomes exatos, se você precisar</summary>
+
+Quatro unidades de usuário do systemd, não uma. Duas rodam o tempo todo e
+reiniciam sozinhas se falharem: o ouvinte (`paynani-idle.service`) e o
+distribuidor (`paynani-dispatch.service`). As outras duas rotacionam os
+registros: `paynani-logrotate.timer`, que se ativa sozinho, e
+`paynani-logrotate.service`, que é `static` porque quem o dispara é o
+temporizador e ele não se habilita por conta própria. No macOS são três
+*LaunchAgents* equivalentes: `com.paynani.idle`, `com.paynani.dispatch` e
+`com.paynani.logrotate`.
+
+O arquivo de credenciais leva permissões `600`: o `.env` do workspace do seu
+harness se você guardar ali, e se não, `.env` dentro do clone. Os registros e o
+estado moram em `state/`, dentro do clone. O *lingering* é o que mantém os
+serviços vivos depois que você sai da sessão.
+
+</details>
+
+O `.gitignore` mantém os segredos fora do `git status` e o `scripts/install.sh`
+se recusa a escrever se algum deles estiver versionado ou não ignorado. O que isso
+não evita é o `git clean -xdf`, que apaga os arquivos ignorados: numa instalação
+viva isso é a senha da caixa, os dois segredos de rota do Hermes
+(`<clone>/hermes/`, só no Hermes), a lista de destinatários e a marca da última
+mensagem vista. Use `git clean -df`.
+
+## Segurança e limites
+
+> [!WARNING]
+> A sua lista de contatos autorizados decide de quem o seu agente aceita
+> trabalho. Ela não prova quem é essa pessoa. Um e-mail de alguém que não está na
+> lista é relatado para você, e para por aí.
+
+O agente trabalha a partir do e-mail dele, então a pergunta não é se ele obedece a
+instruções que chegam por e-mail. Obedece, esse é o ponto. A pergunta é **de
+quem**.
+
+- O `roster.md` é uma lista de correspondência exata, e é toda a resposta. Se o
+  remetente está na lista, o agente faz o que a mensagem pede e responde. Se não
+  está, ele avisa que o e-mail chegou e não faz mais nada com ele.
+- A correspondência é sobre o remetente que a mensagem carrega, e só sobre esse.
+  Um desconhecido não consegue tomar emprestado um endereço da sua lista
+  colocando-o em outro campo.
+- **Com uma exceção que você declara:** os *notificadores*. Se o seu time se
+  coordena numa plataforma que manda e-mail em nome das pessoas (GitHub, Jira,
+  Linear), você pode declarar o endereço dela e contra qual parte da sua lista
+  conferir o autor. Aí aquela notificação conta como e-mail daquela pessoa.
+  Declarar um notificador amplia a quem o seu agente dá ouvidos, igual a
+  acrescentar uma linha, e se decide igual: nunca porque uma mensagem pediu.
+- **Colocar alguém na lista é decisão sua**, nunca resposta a algo que chegou por
+  e-mail. Essa linha é o que transforma um remetente em alguém a quem o seu agente
+  obedece.
+- Sem lista não há ninguém confiável. Uma instalação nova lê e-mail e não age
+  sobre nada até você escrevê-la.
+
+Vale saber em que tudo isso se apoia: o seu provedor de e-mail. Os filtros que
+Gmail, Outlook e os demais aplicam são o que evita que falsificar um remetente
+seja trivial, e eles agem antes de a mensagem chegar à caixa. Aponte o Paynani
+para uma caixa sem essa filtragem e a lista protege menos do que parece.
+
+## Como saber se está saudável
+
+> [!IMPORTANT]
+> Não haver mensagens pendentes não prova que o Paynani está saudável. Fica
+> exatamente com essa cara quando ele parou de escutar.
+
+Peça ao seu agente que rode a verificação de saúde e mostre a saída:
+
+```bash
+python3 scripts/healthcheck.py
+```
+
+Ela revisa os serviços, as credenciais, a fila de mensagens, a entrega ao seu
+agente e a lista de autorizados. O que você quer ver é que os serviços estão
+vivos, que nada está travado e que a configuração está sendo lida do lugar certo.
+Se algo falhar, o relatório diz qual peça, não só que não há e-mail.
+
+As opções longas e os modos de falha estão no [`INSTALL.md`](../INSTALL.md).
+
+## Como é construído, em resumo
+
+Um serviço mantém aberta uma conexão com o seu servidor de e-mail, do tipo em que
+o servidor avisa sozinho assim que chega algo, sem ninguém ficar perguntando.
+Quando uma mensagem chega, esse serviço a anota em disco antes de qualquer outra
+coisa. Um segundo serviço lê essas anotações e as entrega ao seu agente, e só
+marca uma como entregue quando o agente confirma que recebeu.
+
+Essa separação é o que evita perder e-mail quando algo cai no meio do caminho. O
+[`DESIGN.md`](../DESIGN.md) explica cada peça, por que ela é assim e o que quebra
+sem ela.
+
+## O que pertence a este repositório
+
+Aqui moram a instalação, os dois serviços, os scripts de envio, a lista de
+autorizados, os testes e a documentação de operação.
+
+Aqui não moram a sua caixa, nem a sua senha, nem uma garantia de que quem escreve
+é quem diz ser. Isso cabe ao seu provedor de e-mail, ao seu arquivo `.env` e ao
+seu próprio critério sobre quem entra.
+
+## Se você quiser..., leia...
+
+| Se você quiser... | Leia |
+|---|---|
+| Preparar a caixa sem expor senhas | [`MAILBOX_SETUP.pt-BR.md`](MAILBOX_SETUP.pt-BR.md) |
+| Instalar o Paynani | [`AGENTS.md`](../AGENTS.md) e [`INSTALL.md`](../INSTALL.md) |
+| Integrar com o Hermes Agent | [`HERMES.md`](../HERMES.md) |
+| Entender por que ele não deve falhar em silêncio | [`DESIGN.md`](../DESIGN.md) |
+| Migrar do agenteiamail | [`MIGRATION.md`](../MIGRATION.md) |
+| Remover o Paynani | [`UNINSTALL.md`](../UNINSTALL.md) |
+| Ver mudanças por versão | [`CHANGELOG.md`](../CHANGELOG.md) |
+| Autorizar remetentes | `roster.md` e [`roster.md.example`](../roster.md.example) |
+| Enviar e-mail pela fronteira segura | [`scripts/send.sh`](../scripts/send.sh) |
 
 ## Mantendo atualizado
 
-A versão instalada está em [`VERSION`](../VERSION), e o agente é avisado de qual
-ele está rodando no início de cada sessão, junto com a existência de alguma mais
-nova.
+A versão instalada está em [`VERSION`](../VERSION), e ao agente se diz qual ele
+está rodando no início de cada sessão, junto com se já saiu alguma mais nova.
 
 Você pode perguntar o mesmo diretamente:
 
@@ -181,132 +314,41 @@ Você pode perguntar o mesmo diretamente:
 scripts/version.sh
 ```
 
-Ele lê a versão publicada nas tags deste repositório, então não há conta nem token
-envolvido, e diz com todas as letras quando não conseguiu alcançar a rede, em vez
-de dar uma instalação como atual só porque nada disse o contrário.
+Ele lê a versão publicada a partir das etiquetas deste repositório, então não há
+conta nem token no meio, e avisa claramente quando não conseguiu alcançar a rede,
+em vez de dar uma instalação como atualizada só porque nada disse o contrário.
 
-Atualizar é [`UPGRADE.md`](../UPGRADE.md), e o que mudou entre duas versões está em
-[`CHANGELOG.md`](../CHANGELOG.md). Leia o changelog primeiro: de vez em quando uma
-versão precisa de algo além de um `git pull`, e o jeito que isso falha é um
-listener que funciona até o próximo boot.
+Atualizar é o [`UPGRADE.md`](../UPGRADE.md), e o que mudou entre duas versões
+está no [`CHANGELOG.md`](../CHANGELOG.md). Leia o changelog primeiro: de vez em
+quando uma versão precisa de algo além de um `git pull`, e o jeito como pular
+isso falha é um serviço que funciona até o próximo reinício.
 
-## Segurança
+## Idiomas
 
-O agente trabalha a partir do e-mail dele, então a pergunta não é se ele obedece
-instruções que chegam por e-mail (obedece, é esse o propósito) mas **de quem**.
+O `README.md` é a fonte em espanhol do México. As traduções mantidas são:
 
-- `roster.md` é uma lista de correspondência exata, e é a resposta inteira. Se o
-  remetente está nela, o agente faz o que a mensagem pede e responde. Se não está,
-  ele avisa que o e-mail chegou e não faz mais nada com ele.
-- A correspondência é só sobre `From`. Um `Reply-To` apontando para alguém aprovado
-  não concede nada, então um desconhecido não consegue pegar emprestado um endereço
-  da lista com um cabeçalho.
-- **Adicionar alguém ao `roster.md` é decisão sua**, nunca resposta a algo que
-  chegou por e-mail. Essa linha é o que transforma um remetente em alguém que seu
-  agente obedece, então vale tratá-la como o que é.
-- Sem arquivo de roster ninguém é confiável; uma instalação nova lê e-mail e não
-  age sobre nada até você escrever a lista.
-- A senha fica num arquivo com permissão `600` fora do repositório, e nunca passa
-  por uma conversa de chat.
+- [`i18n/README.en-US.md`](README.en-US.md);
+- [`i18n/README.es-ES.md`](README.es-ES.md);
+- [`i18n/README.fr-FR.md`](README.fr-FR.md);
+- [`i18n/README.pt-BR.md`](README.pt-BR.md).
 
-Repare no que este design depende: no seu provedor de e-mail. SPF, DKIM e DMARC são
-aplicados antes de qualquer coisa chegar à caixa de entrada, e é isso que impede
-que forjar um `From` seja trivial. Se você apontar isto para uma caixa sem esse
-filtro, o roster protege menos do que parece.
-
----
-
-## O resto do repositório
-
-Os marcados com **(en)** estão em inglês: são a documentação para agentes e para
-quem modifica o código, e o código permanece em inglês. O restante está em
-espanhol (MX), que é a fonte da verdade.
-
-| | |
-|---|---|
-| [`MAILBOX_SETUP.pt-BR.md`](MAILBOX_SETUP.pt-BR.md) | Passo 1: a caixa de e-mail e o arquivo `.env` |
-| [`webapp/README.md`](../webapp/README.md) | **(en)** O Passo 1 sem terminal: um formulário local |
-| [`AGENTS.md`](../AGENTS.md) | **(en)** O que o agente segue. Comece aqui se você for um. |
-| [`INSTALL.md`](../INSTALL.md) | **(en)** A sequência de instalação, passo a passo |
-| [`CHANGELOG.md`](../CHANGELOG.md) | **(en)** O que mudou em cada versão, e quais pedem mais que um pull |
-| [`HERMES.md`](../HERMES.md) | **(en)** O adaptador do Hermes Agent: rotas, assinaturas e confiança |
-| [`UPGRADE.md`](../UPGRADE.md) | **(en)** Levar uma instalação existente para uma versão mais nova |
-| [`DESIGN.md`](../DESIGN.md) | **(en)** Por que as peças têm essa forma; leia antes de mudar qualquer coisa |
-| [`UNINSTALL.md`](UNINSTALL.en-US.md) | **(en)** Como tirar tudo de volta |
-
-```
-scripts/idle_listener.py  Serviço systemd --user. Mantém uma conexão IMAP IDLE
-  │                       aberta; o servidor avisa assim que chega mensagem.
-  │  uma linha por mensagem
-  ▼
-<clone>/state/
-  mail.log                o fluxo de eventos
-  idle.err.log            diagnóstico, monitorado à parte
-  events.jsonl            a fila: um envelope canônico por linha
-  dispatch.offset         até onde a entrega foi confirmada
-  │
-  ├─► harness/dispatch.py         o único consumidor supervisionado. Lê o diário,
-  │                               entrega cada evento a um adaptador de runtime e
-  │                               só avança o cursor quando o runtime aceita
-  │     └─► harness/adapters/     openclaw, hermes, claudecode e codex. O único código
-  │                               aqui que sabe o que é um harness
-  ├─► harness/session_start.py    mostra o que está na fila; nunca dá por entregue
-  └─► harness/rotate_logs.py      rotação com copytruncate, num timer de usuário
-
-scripts/version.sh        a versão instalada contra a mais recente publicada, e o
-                          que fazer com a diferença.
-himalaya                  lê e envia. O listener nunca baixa corpos de mensagem.
-scripts/send.sh + roster.md  o envio é restrito a destinatários autorizados.
-scripts/roster.py         a mesma lista, lida pelo listener para marcar remetentes.
-scripts/preflight.py      prova que a máquina consegue rodar isto antes de instalar.
-webapp/ + setup_web.sh    um formulário local que escreve o arquivo de credenciais,
-                          para quem não quer terminal. Só por loopback.
-```
-
-## Caminhos nesta máquina
-
-O clone *é* a instalação: tudo o que pertence a ela vive dentro dele, então
-escolher onde clonar é como você escolhe onde instalar.
-
-- Repositório: em qualquer lugar; `~/.openclaw/workspace/paynani` no OpenClaw,
-  `~/.hermes/workspace/paynani` no Hermes Agent,
-  `~/.claude/workspace/paynani` no Claude Code ou
-  `~/.codex/workspace/paynani` no OpenAI Codex se não houver preferência
-- Credenciais: o `.env` do workspace do seu harness quando há exatamente um
-  (`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`,
-  `~/.claude/workspace/.env`, `~/.codex/workspace/.env`), e `<clone>/.env` quando não. Permissão `600`,
-  ignorado pelo git, nunca versionado. Ele é lido onde está e nunca é copiado
-  para o clone: uma segunda cópia de uma senha é uma segunda coisa que pode
-  vazar. Pergunte à instalação em vez de adivinhar, com
-  `python3 harness/paths.py env`
-- Estado e eventos: `<clone>/state/`
-- Segredos de rota: `<clone>/hermes/`, permissão `600`. **Apenas no Hermes**: no
-  OpenClaw, Claude Code e OpenAI Codex esse diretório não existe e não falta nada
-- Units de usuário: `~/.config/systemd/user/paynani-idle.service`,
-  `paynani-dispatch.service`, `paynani-logrotate.service` e
-  `paynani-logrotate.timer`, a única coisa fora do clone, porque o systemd não
-  lê units de outro lugar. No macOS, os três `.plist` de `com.paynani.*` em
-  `~/Library/LaunchAgents/`
-
-O `.gitignore` mantém os segredos fora do `git status`, e o `scripts/install.sh`
-se recusa a escrever se algum deles estiver versionado ou não ignorado. O que isso
-não evita é `git clean -xdf`, que apaga arquivos ignorados: numa instalação viva
-isso é a senha da caixa, os dois segredos de rota, a lista de destinatários e o
-último UID. Use `git clean -df`.
+Não existe e não deve ser criado `i18n/README.es-MX.md`: a página fonte já é a
+versão es-MX.
 
 ## A propriedade que todo o resto serve
 
-**Nunca falhar em silêncio.** A latência era o problema fácil: o IDLE resolveu numa
-tarde. Todo o resto existe porque a falha cara não é ser lento, é **afirmar com
-confiança que não há e-mail novo estando cego**.
+**Nunca falhar em silêncio.** A latência era o problema fácil: foi resolvida numa
+tarde assim que o servidor pôde avisar sozinho. Todo o resto existe porque a falha
+cara não é ser lento, é **dizer com confiança que não há e-mail novo estando
+cego**.
 
-Por isso o último UID visto é gravado mensagem a mensagem, por isso o
-`UIDVALIDITY` é conferido a cada conexão, por isso o log de erros é monitorado
-junto com o de eventos, e por isso o hook de início de sessão pergunta se o
-serviço está mesmo rodando. O [`DESIGN.md`](../DESIGN.md) explica cada um e o que
-quebra sem ele.
+Por isso a última mensagem vista é guardada uma a uma, por isso cada conexão
+confere se a caixa continua a mesma, por isso o registro de erros é vigiado junto
+com o de eventos, e por isso ao iniciar uma sessão se pergunta se o serviço está
+mesmo rodando. O [`DESIGN.md`](../DESIGN.md) explica cada um deles e o que quebra
+sem ele.
 
-Construído e verificado de ponta a ponta em 09/08/2026.
+Construído e verificado de ponta a ponta em 2026-08-09.
 
 ## De onde vem o nome
 
@@ -348,4 +390,4 @@ vai buscar o correio no lugar de quem não pode estar em toda parte.
 
 ---
 
-<sub>Traduzido de [`README.md`](../README.md) no commit `2b1fc9c`, que é a fonte da verdade. Se algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e nos avise, porque significa que esta tradução ficou para trás.</sub>
+<sub>Traduzido de [`README.md`](../README.md), que é a fonte da verdade. Se algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e nos avise, porque significa que esta tradução ficou para trás.</sub>
