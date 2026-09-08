@@ -2,7 +2,7 @@
 
 ## 0.4.0 — 2026-09-07
 
-**`main` ya no depende de que nadie se acuerde de correr las pruebas.** 27 commits
+**`main` ya no depende de que nadie se acuerde de correr las pruebas.** 30 commits
 desde 0.3.0.
 
 Hasta esta versión la disciplina existía y funcionaba —todo entraba por PR, la
@@ -102,6 +102,96 @@ exista.
 Separa además tres caminos que la documentación trataba como uno: instalación
 limpia, actualización de paynani, y migración por renombre.
 
+### `MIGRATION.md` ya no puede dar un falso limpio
+
+El paso que busca instrucciones viejas usaba `rg` con `2>/dev/null`. ripgrep no es
+parte de una instalación base en ningún lado —ni en macOS ni en un Ubuntu
+mínimo— y este repositorio no lo exige; silenciar stderr encima es lo que lo
+volvía peligroso en vez de meramente ausente. En un host sin ripgrep la línea
+imprimía **nada**, y en esa sección nada se lee como «no quedan instrucciones
+viejas». Alguien tacharía el paso con el heartbeat todavía apuntando a un
+`send.sh` que ya no existe, que es exactamente el residuo que el paso existe para
+atrapar. Ahora es `grep -rn`, y los errores se ven.
+
+### Un listener sin supervisor observable ahora tiene pulso
+
+`healthcheck.py` preguntaba por la unidad y trataba cualquier respuesta que no
+fuera `active` como una parada. En un host donde la unidad **no se puede
+consultar** —sin systemd observable, sin launchd— eso convertía «no sé» en «está
+caído», y el reporte gritaba un problema que nadie podía arreglar porque nunca
+existió. Ahora `unknown` se declara como lo que es: estado desconocido, no
+detenido.
+
+Eso deja un hueco real: si nadie puede consultar la unidad, ¿cómo se sabe que el
+listener sigue vivo? Con su propio pulso. El listener escribe `heartbeat_at` en su
+estado al cerrar cada ciclo de IDLE, y el chequeo lo usa cuando la unidad no es
+consultable. El umbral son 15 minutos, deliberadamente más ancho que el refresco
+de IDLE de cinco, para que un ciclo lento no se reporte como falla y un proceso
+muerto sí se vea dentro de la misma sesión.
+
+Y distingue dos cosas que se veían iguales y piden lo contrario: un listener
+muerto y uno vivo que no alcanza el servidor. Si el pulso está viejo pero
+`idle.err.log` se sigue escribiendo, el proceso está corriendo y reintentando, y
+el reporte lo dice con todas sus letras —«reiniciarlo no va a ayudar»— en vez de
+mandar a alguien a reiniciar un servicio que ya está arriba. Un pulso viejo sin
+bitácora de errores reciente sí es la otra: probablemente muerto, en un host sin
+supervisor que lo levante.
+
+### `version.sh` deja de creerle a un cache vencido
+
+El cache de `--line` se refrescaba solo por tiempo, y eso abría una ventana en la
+que la respuesta era falsa sin decirlo: un `git pull` que cambia `VERSION` es la
+evidencia más fuerte de que el panorama de tags también se movió, y es justo el
+momento en que el dato guardado se vuelve peligroso. Pasó (#61): la línea le dijo
+a un agente que iba ADELANTE de un tag publicado dos versiones antes, y la sesión
+entera se fue recomendando un tag que ya existía. Ahora el cache se invalida
+también cuando la versión instalada cambia.
+
+Lo que el cache no puede arreglar, ahora lo declara. La respuesta puede seguir
+teniendo hasta un día de vieja —evitar un chequeo de red por sesión es para lo que
+existe— pero ya no se presenta como un hecho fresco: la línea trae su edad,
+`[from a check 20h ago]`. Un agente al que le dicen «el tag más nuevo es X» lee un
+hecho; uno al que le dicen «según un chequeo de hace 20 horas» sabe que puede
+preguntar.
+
+La versión instalada se guarda en una **segunda línea**, no en un tercer campo de
+la primera. Un tercer campo se ve más limpio y rompe la versión anterior: su
+lector es `read -r stamp cached`, y con dos variables la segunda se queda con todo
+el resto del renglón, así que `cached` regresaba como `"0.3.0 0.3.0"`. Ese es un
+camino de rollback real —un host de campo probando un release candidate, o dos
+clones compartiendo `PAYNANI_STATE`, que es como se encontró—. `read` se detiene
+en el primer salto de línea, así que un paynani viejo lee la línea 1 y nunca se
+entera de que hay una línea 2.
+
+### macOS ya no reprueba el chequeo de versión para siempre
+
+`timeout` es de GNU coreutils y macOS no lo trae. Envolver la llamada remota en un
+comando que no existe hacía que **toda** instalación de macOS fallara este chequeo
+de forma permanente y silenciosa: `could not find out` se lee como un tropiezo de
+red pasajero, así que nadie lo investiga, y el chequeo de versión queda muerto por
+el resto de la vida del host (#68, hallado por Ximena en la primera instalación
+sobre macOS).
+
+Ahora degrada sin el techo cuando no hay `timeout` —o usa `gtimeout`, que es el
+mismo programa cuando Homebrew instaló coreutils—. Es el intercambio correcto:
+`GIT_TERMINAL_PROMPT=0` es la protección que importa y esa sobrevive, y un chequeo
+que funciona sin cota superior le gana a uno que siempre falla.
+
+### La suite deja de escribir en el `sent.log` vivo
+
+`test_roster.sh` corría contra el directorio de estado real, así que en un host
+con instalación viva las pruebas ensuciaban el registro de envíos de producción.
+Ahora redirige `PAYNANI_STATE` a un temporal y, al final, **afirma** que el
+`sent.log` vivo no creció ni un byte. La prueba de que la suite no toca lo vivo es
+parte de la suite.
+
+### La apertura del README, y las cuatro traducciones
+
+La apertura se reescribió para decir qué es paynani antes de decir cómo se
+instala, se corrigieron tres defectos de ese texto y un posesivo que cambiaba el
+sentido —el agente lee **su** correo, no el tuyo—, y las cuatro traducciones de
+`i18n/` se pusieron al día con el español.
+
 ### El flujo de release candidate, documentado
 
 `INSTALL.md` describe ahora qué es un tag `-rc<N>`, por qué existe y qué debe
@@ -111,8 +201,14 @@ formado y no dice nada sobre si un proveedor real lo acepta. En `agenteiamail` e
 hueco dejó pasar dos bugs —un `From:` faltante y un rechazo `554 spam`— que solo
 aparecieron en un host vivo.
 
-**Esta versión sale primero como `v0.4.0-rc1`.** Si aguanta en los hosts de campo,
-el tag `v0.4.0` cae en el mismo commit.
+**Esta versión salió primero como `v0.4.0-rc1`, y el proceso hizo su trabajo.**
+El candidato destapó en hosts vivos lo que la suite no podía ver: el chequeo de
+versión muerto en macOS, el listener sin supervisor observable reportado como
+caído, y el cache que aseguraba una versión publicada dos releases antes. Los 15
+commits que siguieron al tag son esos arreglos, y por eso `v0.4.0` **no** cae en
+el mismo commit que el candidato: cae en `main`, con ellos adentro. Un final que
+se publicara en el commit del rc dejaría fuera justo lo que el rc sirvió para
+encontrar.
 
 ### Y lo que aprendimos de la primera instalación sobre Hermes
 
