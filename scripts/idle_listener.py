@@ -365,8 +365,17 @@ def load_state(path):
         return {}
 
 
+def timestamp():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
 def save_state(path, mailbox, validity, last_uid):
-    state = {"mailbox": mailbox, "uidvalidity": validity, "last_uid": last_uid}
+    state = {
+        "mailbox": mailbox,
+        "uidvalidity": validity,
+        "last_uid": last_uid,
+        "heartbeat_at": timestamp(),
+    }
     if str(path) == "none":
         return state
     try:
@@ -534,6 +543,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
 
             while not _stop:
                 idle(conn, IDLE_REFRESH)
+                state = save_state(state_path, mailbox, validity, last_uid)
                 # Check unconditionally, not only when IDLE reported a change:
                 # mail landing between DONE and the next IDLE produces no EXISTS we
                 # can see, and would sit unnoticed until the *next* message arrived.

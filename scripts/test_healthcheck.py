@@ -62,8 +62,12 @@ class Fixture:
         hc.DELIVERY = self.dir / "delivery.json"
         hc.SENT_LOG = self.dir / "sent.log"
 
-        hc.LISTENER_STATE.write_text(json.dumps(
-            {"mailbox": "INBOX", "uidvalidity": "42", "last_uid": 117}))
+        hc.LISTENER_STATE.write_text(json.dumps({
+            "mailbox": "INBOX",
+            "uidvalidity": "42",
+            "last_uid": 117,
+            "heartbeat_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }))
 
         env = self.dir / "env"
         env.write_text("PAYNANI_EMAIL=agent@example.com\n"
@@ -148,6 +152,24 @@ class Fixture:
             hc.SENT_LOG.write_text("", encoding="utf-8")
         return self
 
+    def heartbeat(self, age_seconds=None):
+        state = json.loads(hc.LISTENER_STATE.read_text())
+        if age_seconds is None:
+            state.pop("heartbeat_at", None)
+        else:
+            stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                  time.gmtime(time.time() - age_seconds))
+            state["heartbeat_at"] = stamp
+        hc.LISTENER_STATE.write_text(json.dumps(state))
+        return self
+
+    def listener_error(self, age_seconds=0):
+        hc.IDLE_ERR.write_text("connection lost (TimeoutError); retrying in 300s\n",
+                               encoding="utf-8")
+        stamp = time.time() - age_seconds
+        os.utime(hc.IDLE_ERR, (stamp, stamp))
+        return self
+
     def run(self):
         facts = {
             "listener": hc.listener_facts(),
@@ -199,6 +221,36 @@ check("an unqueryable listener is not treated as stopped", 0, code)
 check("and says the listener state is unknown, not stopped", True,
       "the listener unit cannot be queried on this host (no observable service manager); "
       "its state is unknown, not stopped" in text)
+
+f = (Fixture(units={hc.LISTENER_UNIT: "unknown", hc.DISPATCH_UNIT: "active"})
+     .heartbeat(16 * 60).listener_error(60))
+code, text = f.exit_code()
+check("an unqueryable listener with stale heartbeat but fresh retries is a failure", 1, code)
+check("and says the listener cannot reach the mail server", True,
+      "the listener last completed a cycle" in text
+      and "but is still logging retries: it is running and cannot reach the mail server, "
+      "so restarting it will not help" in text)
+
+f = Fixture(units={hc.LISTENER_UNIT: "unknown", hc.DISPATCH_UNIT: "active"}).heartbeat(16 * 60)
+code, text = f.exit_code()
+check("a stale listener with no error log at all is still called probably dead", 1, code)
+check("and does not claim it is reaching the mail server", True,
+      "it is probably dead" in text and "still logging retries" not in text)
+
+f = (Fixture(units={hc.LISTENER_UNIT: "unknown", hc.DISPATCH_UNIT: "active"})
+     .heartbeat(16 * 60).listener_error(16 * 60))
+code, text = f.exit_code()
+check("an unqueryable listener with a stale heartbeat is a failure", 1, code)
+check("and says the listener is probably dead", True,
+      "the listener last reported" in text
+      and "its unit cannot be queried: it is probably dead, and this host has no "
+      "supervisor to restart it" in text)
+
+f = Fixture(units={hc.LISTENER_UNIT: "unknown", hc.DISPATCH_UNIT: "active"}).heartbeat()
+code, text = f.exit_code()
+check("an old listener with no heartbeat is not called dead", 0, code)
+check("and says this version reports no heartbeat", True,
+      "this listener is from a version that does not report heartbeat" in text)
 
 f = Fixture(units={hc.LISTENER_UNIT: "active", hc.DISPATCH_UNIT: "failed"})
 code, _ = f.exit_code()

@@ -14,7 +14,7 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from idle_listener import KEEPALIVE_OPTIONS, describe, decode_hdr, keepalive
+from idle_listener import KEEPALIVE_OPTIONS, describe, decode_hdr, keepalive, save_state
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 
@@ -197,6 +197,13 @@ def main():
         check(encoded == "Prueba de correo — ñ, á, ¿qué tal?", f"decoded to {encoded!r}")
         check("\n" not in describe("a@b.c", encoded, "", trusted=True),
               "one message is always one line")
+
+        state = save_state(tmp / "idle.json", "INBOX", "42", 117)
+        check(state["mailbox"] == "INBOX" and state["uidvalidity"] == "42"
+              and state["last_uid"] == 117,
+              "listener state still records mailbox, uidvalidity and uid")
+        check("heartbeat_at" in state and state["heartbeat_at"].endswith("Z"),
+              "listener state records a UTC heartbeat")
 
     # --- keepalive, the thing that makes a dead connection announce itself ----
     #
