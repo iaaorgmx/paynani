@@ -579,13 +579,19 @@ def assess(facts):
     listener, queue, runtime, config = (facts["listener"], facts["queue"],
                                         facts["runtime"], facts["config"])
 
-    if listener["unit"] != "active":
+    if listener["unit"] == "unknown":
+        warnings.append("the listener unit cannot be queried on this host "
+                        "(no observable service manager); its state is unknown, not stopped")
+    elif listener["unit"] != "active":
         problems.append(f"the listener is {listener['unit']}: no new mail is being detected at all")
     if listener["last_uid"] is None:
         warnings.append("the listener has no recorded position yet, so it has not "
                         "completed a first pass over the mailbox")
 
-    if facts["dispatcher_unit"] != "active":
+    if facts["dispatcher_unit"] == "unknown":
+        warnings.append("the dispatcher unit cannot be queried on this host "
+                        "(no observable service manager); its state is unknown, not stopped")
+    elif facts["dispatcher_unit"] != "active":
         problems.append(f"the dispatcher is {facts['dispatcher_unit']}: mail is being "
                         "journalled but nothing is delivering it")
 
