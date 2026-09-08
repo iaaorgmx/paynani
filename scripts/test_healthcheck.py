@@ -193,9 +193,23 @@ code, text = f.exit_code()
 check("a dead listener is a failure, not a quiet mailbox", 1, code)
 check("and says no mail is being detected at all", True, "detected at all" in text)
 
+f = Fixture(units={hc.LISTENER_UNIT: "unknown", hc.DISPATCH_UNIT: "active"})
+code, text = f.exit_code()
+check("an unqueryable listener is not treated as stopped", 0, code)
+check("and says the listener state is unknown, not stopped", True,
+      "the listener unit cannot be queried on this host (no observable service manager); "
+      "its state is unknown, not stopped" in text)
+
 f = Fixture(units={hc.LISTENER_UNIT: "active", hc.DISPATCH_UNIT: "failed"})
 code, _ = f.exit_code()
 check("a failed dispatcher is a failure", 1, code)
+
+f = Fixture(units={hc.LISTENER_UNIT: "active", hc.DISPATCH_UNIT: "unknown"})
+code, text = f.exit_code()
+check("an unqueryable dispatcher is not treated as stopped", 0, code)
+check("and says the dispatcher state is unknown, not stopped", True,
+      "the dispatcher unit cannot be queried on this host (no observable service manager); "
+      "its state is unknown, not stopped" in text)
 
 f = Fixture(reachable=False)
 code, text = f.exit_code()
