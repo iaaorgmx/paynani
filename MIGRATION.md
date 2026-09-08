@@ -85,13 +85,24 @@ must become:
 Search the places that usually survive a rename:
 
 ```bash
-rg -n 'agenteiamail|workspace/agenteiamail|agenteiamail/scripts/send\.sh' \
+grep -rn 'agenteiamail' \
   ~/.openclaw/AGENTS.md \
   ~/.openclaw/HEARTBEAT.md \
   ~/.openclaw/workflows \
-  ~/.config \
-  2>/dev/null
+  ~/.config
 ```
+
+**`grep`, not `rg`, and no `2>/dev/null` on this one.** ripgrep is not part of a
+base install anywhere -- not on macOS, not on a minimal Ubuntu -- and this repo
+does not require it. Silencing stderr on top of that is what makes it dangerous
+rather than merely absent: on a host without ripgrep the line prints *nothing*,
+and in this section nothing reads as "no old instructions remain". You would tick
+this step off with the heartbeat still pointing at a `send.sh` that no longer
+exists, which is the exact leftover the step exists to catch.
+
+Errors here are worth seeing. A path that does not exist on your host prints one
+line and costs nothing; a search tool that is not installed prints one line and
+saves you from a false clean.
 
 Edit each live instruction file that still points at the old product:
 
