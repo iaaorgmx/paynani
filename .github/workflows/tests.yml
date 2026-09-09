@@ -79,33 +79,53 @@ jobs:
           bash --version | head -1
           sw_vers
 
-      - name: Run the suite
-        run: scripts/test_all.sh
-
-      - name: The set of suites that skip here must be exactly the expected one
-        # test_all.sh hides each suite's output, so a suite that started skipping
-        # would show as `ok` and the run would be green having checked less. On
-        # Linux nothing skips; on macOS exactly one thing does, and it says so.
-        # Ask each suite directly and compare the set.
+      - name: Run each suite on its own, with its output
+        # test_all.sh runs every suite with the output suppressed, which is the
+        # right shape for a platform we understand and the wrong one for a
+        # platform we are meeting for the first time: it would tell us six
+        # things failed and not one word about why. So this job runs them one at
+        # a time and prints what they said. It also collects the skips in the
+        # same pass, because a suite that skips and a suite that fails are
+        # different answers and both are hidden by a bare `ok`.
         run: |
-          expected="test_install.sh"
-          actual=""
+          failed=""
+          skipped=""
           for t in scripts/test_*.py scripts/test_*.sh; do
             base=$(basename "$t")
             [ "$base" = "test_all.sh" ] && continue
+            echo "::group::$base"
+            rc=0
             case "$base" in
-              *.py) out=$(python3 "$t" 2>&1 || true) ;;
-              *)    out=$(bash "$t" 2>&1 || true) ;;
+              *.py) out=$(python3 "$t" 2>&1) || rc=$? ;;
+              *)    out=$(bash "$t" 2>&1) || rc=$? ;;
             esac
+            printf '%s\n' "$out"
+            echo "::endgroup::"
+            if [ "$rc" -ne 0 ]; then
+              failed="$failed $base"
+              echo "::error title=$base::exited $rc on macOS"
+            fi
             if printf '%s' "$out" | grep -qiE '^skip |suite skipped'; then
-              actual="$actual $base"
+              skipped="$skipped $base"
             fi
           done
-          actual=$(printf '%s' "$actual" | tr ' ' '\n' | sed '/^$/d' | sort)
+          echo
+          echo "skipped:$skipped"
+          echo "failed:$failed"
+          printf '%s' "$failed" | tr ' ' '\n' | sed '/^$/d' > /tmp/failed.txt
+          printf '%s' "$skipped" | tr ' ' '\n' | sed '/^$/d' > /tmp/skipped.txt
+
+      - name: The set of suites that skip here must be exactly the expected one
+        # A suite that started skipping would otherwise read as success, and a
+        # green run that verified less than the last one is the failure this
+        # repository cares about most.
+        if: always()
+        run: |
+          expected="test_install.sh"
+          actual=$(sort /tmp/skipped.txt 2>/dev/null || true)
           expected=$(printf '%s' "$expected" | tr ' ' '\n' | sed '/^$/d' | sort)
           if [ "$actual" != "$expected" ]; then
             echo "the set of suites that skip on macOS is not the one this job expects."
-            echo "A new skip means the suite checks less than it did, and green would hide it."
             echo "expected:"
             printf '%s\n' "$expected"
             echo "actual:"
@@ -114,3 +134,13 @@ jobs:
           fi
           echo "skip set unchanged:"
           printf '%s\n' "$actual"
+
+      - name: Fail if any suite failed
+        if: always()
+        run: |
+          if [ -s /tmp/failed.txt ]; then
+            echo "suites that fail on macOS:"
+            cat /tmp/failed.txt
+            exit 1
+          fi
+          echo "every suite that runs on macOS passed"
