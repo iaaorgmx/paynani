@@ -37,3 +37,80 @@ jobs:
 
       - name: Run the suite
         run: scripts/test_all.sh
+
+  # The same suite, on the platform nobody on this team can see. #61, #68 and #80
+  # are one family -- a GNU tool assumed present -- and every one of them was
+  # found by a person with a Mac rather than by a check. Measured before writing
+  # this: 16 of the 17 suites already run on Darwin, and the version.sh that
+  # shipped in v0.4.0-rc1 wrapped its remote call in `timeout` unconditionally,
+  # so test_version.sh would have gone red here on the pull request that
+  # introduced #68.
+  #
+  # Not a required check yet, deliberately. Let it report first; make it block
+  # once what it reports is understood.
+  suite-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install what the suite shells out to
+        # Apple stopped shipping php with macOS, so it is not a given here the
+        # way it is on the Ubuntu image. Installing it unconditionally is
+        # cheaper than branching on whether this month's runner image has it.
+        run: brew install php
+
+      - name: Refuse to run a suite that would silently skip checks
+        # Same rule as the Linux job, and the same reason: without php,
+        # scripts/test_paths.sh skips 22 checks and still passes, so a missing
+        # interpreter would read as success.
+        run: |
+          for tool in php openssl python3 bash; do
+            command -v "$tool" >/dev/null || {
+              echo "missing: $tool -- the suite would skip checks and still report green"
+              exit 1
+            }
+          done
+          php --version | head -1
+          # Recorded, not asserted: macOS ships bash 3.2, and scripts/install.sh
+          # uses `declare -A` and `mapfile`, which are bash 4. That is consistent
+          # today because install.sh is the systemd installer and macOS installs
+          # through scripts/install_macos.py instead. Printed so the day it stops
+          # being consistent is visible in the log.
+          bash --version | head -1
+          sw_vers
+
+      - name: Run the suite
+        run: scripts/test_all.sh
+
+      - name: The set of suites that skip here must be exactly the expected one
+        # test_all.sh hides each suite's output, so a suite that started skipping
+        # would show as `ok` and the run would be green having checked less. On
+        # Linux nothing skips; on macOS exactly one thing does, and it says so.
+        # Ask each suite directly and compare the set.
+        run: |
+          expected="test_install.sh"
+          actual=""
+          for t in scripts/test_*.py scripts/test_*.sh; do
+            base=$(basename "$t")
+            [ "$base" = "test_all.sh" ] && continue
+            case "$base" in
+              *.py) out=$(python3 "$t" 2>&1 || true) ;;
+              *)    out=$(bash "$t" 2>&1 || true) ;;
+            esac
+            if printf '%s' "$out" | grep -qiE '^skip |suite skipped'; then
+              actual="$actual $base"
+            fi
+          done
+          actual=$(printf '%s' "$actual" | tr ' ' '\n' | sed '/^$/d' | sort)
+          expected=$(printf '%s' "$expected" | tr ' ' '\n' | sed '/^$/d' | sort)
+          if [ "$actual" != "$expected" ]; then
+            echo "the set of suites that skip on macOS is not the one this job expects."
+            echo "A new skip means the suite checks less than it did, and green would hide it."
+            echo "expected:"
+            printf '%s\n' "$expected"
+            echo "actual:"
+            printf '%s\n' "$actual"
+            exit 1
+          fi
+          echo "skip set unchanged:"
+          printf '%s\n' "$actual"
