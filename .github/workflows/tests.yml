@@ -12,7 +12,12 @@ permissions:
   contents: read
 
 jobs:
-  suite:
+  # Named for the platform, not for the runner image, so it pairs with
+  # suite-macos below. Renaming this job renames the check GitHub reports,
+  # and main's branch protection requires it by name -- the two have to be
+  # changed together or every pull request waits forever for a check that
+  # no longer exists.
+  suite-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
