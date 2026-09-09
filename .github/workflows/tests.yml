@@ -12,7 +12,12 @@ permissions:
   contents: read
 
 jobs:
-  suite:
+  # Named for the platform, not for the runner image, so it pairs with
+  # suite-macos below. Renaming this job renames the check GitHub reports,
+  # and main's branch protection requires it by name -- the two have to be
+  # changed together or every pull request waits forever for a check that
+  # no longer exists.
+  suite-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,3 +42,110 @@ jobs:
 
       - name: Run the suite
         run: scripts/test_all.sh
+
+  # The same suite, on the platform nobody on this team can see. #61, #68 and #80
+  # are one family -- a GNU tool assumed present -- and every one of them was
+  # found by a person with a Mac rather than by a check. Measured before writing
+  # this: 16 of the 17 suites already run on Darwin, and the version.sh that
+  # shipped in v0.4.0-rc1 wrapped its remote call in `timeout` unconditionally,
+  # so test_version.sh would have gone red here on the pull request that
+  # introduced #68.
+  #
+  # Not a required check yet, deliberately. Let it report first; make it block
+  # once what it reports is understood.
+  suite-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install what the suite shells out to
+        # Apple stopped shipping php with macOS, so it is not a given here the
+        # way it is on the Ubuntu image. Installing it unconditionally is
+        # cheaper than branching on whether this month's runner image has it.
+        run: brew install php
+
+      - name: Refuse to run a suite that would silently skip checks
+        # Same rule as the Linux job, and the same reason: without php,
+        # scripts/test_paths.sh skips 22 checks and still passes, so a missing
+        # interpreter would read as success.
+        run: |
+          for tool in php openssl python3 bash; do
+            command -v "$tool" >/dev/null || {
+              echo "missing: $tool -- the suite would skip checks and still report green"
+              exit 1
+            }
+          done
+          php --version | head -1
+          # Recorded, not asserted: macOS ships bash 3.2, and scripts/install.sh
+          # uses `declare -A` and `mapfile`, which are bash 4. That is consistent
+          # today because install.sh is the systemd installer and macOS installs
+          # through scripts/install_macos.py instead. Printed so the day it stops
+          # being consistent is visible in the log.
+          bash --version | head -1
+          sw_vers
+
+      - name: Run each suite on its own, with its output
+        # test_all.sh runs every suite with the output suppressed, which is the
+        # right shape for a platform we understand and the wrong one for a
+        # platform we are meeting for the first time: it would tell us six
+        # things failed and not one word about why. So this job runs them one at
+        # a time and prints what they said. It also collects the skips in the
+        # same pass, because a suite that skips and a suite that fails are
+        # different answers and both are hidden by a bare `ok`.
+        run: |
+          failed=""
+          skipped=""
+          for t in scripts/test_*.py scripts/test_*.sh; do
+            base=$(basename "$t")
+            [ "$base" = "test_all.sh" ] && continue
+            echo "::group::$base"
+            rc=0
+            case "$base" in
+              *.py) out=$(python3 "$t" 2>&1) || rc=$? ;;
+              *)    out=$(bash "$t" 2>&1) || rc=$? ;;
+            esac
+            printf '%s\n' "$out"
+            echo "::endgroup::"
+            if [ "$rc" -ne 0 ]; then
+              failed="$failed $base"
+              echo "::error title=$base::exited $rc on macOS"
+            fi
+            if printf '%s' "$out" | grep -qiE '^skip |suite skipped'; then
+              skipped="$skipped $base"
+            fi
+          done
+          echo
+          echo "skipped:$skipped"
+          echo "failed:$failed"
+          printf '%s' "$failed" | tr ' ' '\n' | sed '/^$/d' > /tmp/failed.txt
+          printf '%s' "$skipped" | tr ' ' '\n' | sed '/^$/d' > /tmp/skipped.txt
+
+      - name: The set of suites that skip here must be exactly the expected one
+        # A suite that started skipping would otherwise read as success, and a
+        # green run that verified less than the last one is the failure this
+        # repository cares about most.
+        if: always()
+        run: |
+          expected="test_install.sh"
+          actual=$(sort /tmp/skipped.txt 2>/dev/null || true)
+          expected=$(printf '%s' "$expected" | tr ' ' '\n' | sed '/^$/d' | sort)
+          if [ "$actual" != "$expected" ]; then
+            echo "the set of suites that skip on macOS is not the one this job expects."
+            echo "expected:"
+            printf '%s\n' "$expected"
+            echo "actual:"
+            printf '%s\n' "$actual"
+            exit 1
+          fi
+          echo "skip set unchanged:"
+          printf '%s\n' "$actual"
+
+      - name: Fail if any suite failed
+        if: always()
+        run: |
+          if [ -s /tmp/failed.txt ]; then
+            echo "suites that fail on macOS:"
+            cat /tmp/failed.txt
+            exit 1
+          fi
+          echo "every suite that runs on macOS passed"
