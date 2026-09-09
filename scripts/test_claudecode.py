@@ -438,14 +438,23 @@ class Watcher(unittest.TestCase):
                           "the fixture PATH must not contain flock")
         return {**os.environ, "PATH": str(bin_dir)}
 
-    def _wait_for(self, predicate, what, limit=15):
+    def _wait_for(self, predicate, what, limit=15, diagnose=None):
+        """
+        `diagnose` is called only when the wait runs out, and that is the point.
+
+        It was first written as a string built at the call site, which is
+        evaluated before the waiting starts: the report came from the instant
+        the wait began, when the thing being waited for had had no time to
+        happen yet. It read like evidence and was a snapshot of nothing.
+        """
         import time
         deadline = time.time() + limit
         while time.time() < deadline:
             if predicate():
                 return
             time.sleep(0.1)
-        self.fail(f"timed out waiting for {what}")
+        self.fail(f"timed out waiting for {what}"
+                  + (diagnose() if diagnose is not None else ""))
 
     def _what_the_watcher_saw(self, out):
         """
@@ -476,6 +485,18 @@ class Watcher(unittest.TestCase):
                         report.append(f"{pid}: {got.stdout.strip() or '(no such process)'}")
         else:
             report.append("--- the lock --- (no owner file)")
+        # Two things look identical from out here: a loop that never asked, and
+        # an answer that came back wrong. So ask it ourselves, with the
+        # watcher's own function and the chain it recorded.
+        for line in (owner.read_text(encoding="utf-8").splitlines()
+                     if owner.exists() else []):
+            if line.startswith("chain="):
+                probe = (self._shell_function("chain_is_awake")
+                         + f'\nif chain_is_awake "{line[len("chain="):]}"; then\n'
+                         + '    echo AWAKE\nelse\n    echo SUSPENDED\nfi\n')
+                got = sp.run(["bash", "-c", probe], capture_output=True, text=True)
+                report += ["--- the watcher's own chain_is_awake says ---",
+                           got.stdout.strip() or got.stderr.strip() or "(nothing)"]
         return "\n".join(report)
 
     def _watcher_under_a_wrapper(self, out):
@@ -694,8 +715,8 @@ class Watcher(unittest.TestCase):
         # asserts a stronger property than the code offers, which is exactly what
         # this test did on its first run: it failed, correctly.
         self._wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
-                       "the watcher to notice the suspension"
-                       + self._what_the_watcher_saw(out))
+                       "the watcher to notice the suspension",
+                       diagnose=lambda: self._what_the_watcher_saw(out))
 
         with spool.open("a", encoding="utf-8") as handle:
             handle.write("adios\n")
@@ -776,8 +797,8 @@ echo "OK $chain"
 
         holder.send_signal(signal.SIGSTOP)
         self._wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
-                       "the watcher to notice the suspension"
-                       + self._what_the_watcher_saw(out))
+                       "the watcher to notice the suspension",
+                       diagnose=lambda: self._what_the_watcher_saw(out))
 
         # The watcher said it was stopping. That claim is about processes.
         self._wait_for(lambda: not (followers() & followed_by),
@@ -826,9 +847,50 @@ echo "OK $chain"
         for pid in chain:
             self.assertRegex(pid, r"^[0-9]+$")
 
+    def test_a_quiet_interval_does_not_end_the_watch(self):
+        """
+        A mailbox that goes quiet is the normal case, not the end of the watch.
+
+        The read has a timeout so the liveness checks do not depend on mail
+        arriving, and the loop told a timeout apart from end-of-stream by the
+        exit code: over 128 means it timed out. That rule arrived in bash 4.
+        Bash 3.2 answers 1 for a timeout, exactly as it does for end-of-file,
+        and macOS still ships 3.2 -- so there the watcher read the first quiet
+        two seconds as "nothing left to watch", broke out of the loop, and
+        exited without printing a word. Armed, holding the lock, gone.
+
+        Recorded rather than hidden: like the tail check above, this passes
+        against the broken script on bash 4 or newer, because there the code
+        really does say which happened. It earns its keep on the macOS job.
+        """
+        import subprocess as sp, time
+        spool = self.state / "session.spool"
+        spool.write_text("", encoding="utf-8")
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True)
+        self.addCleanup(lambda: (proc.kill(), proc.stdout.close(),
+                                 proc.stderr.close()))
+        self.assertTrue(self._wait_for_arming(proc), "the watcher did not arm")
+
+        # Longer than STATE_EVERY, so the read times out at least twice with
+        # nothing to show for it.
+        time.sleep(5)
+        self.assertIsNone(proc.poll(),
+                          "the watcher exited during a quiet interval")
+
+        with spool.open("a", encoding="utf-8") as handle:
+            handle.write("hola\n")
+        offset = self.state / "session.offset"
+        self._wait_for(lambda: offset.read_text().strip() == "5",
+                       "a line that arrived after the quiet interval")
+
     def _ancestors_function(self):
+        return self._shell_function("ancestors")
+
+    def _shell_function(self, name):
+        """The watcher's own definition, so a check runs the real thing."""
         source = self.WATCH.read_text(encoding="utf-8")
-        start = source.index("ancestors() {")
+        start = source.index(f"{name}() {{")
         end = source.index("\n}\n", start) + len("\n}\n")
         return source[start:end]
 

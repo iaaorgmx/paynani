@@ -250,8 +250,9 @@ cursor=$start
 # a fork between every message, so suspension is caught within STATE_EVERY
 # seconds instead. That interval is the most mail this can lose, and it is
 # written here rather than left implicit.
+# The interval between liveness checks, and the most mail this can lose: a
+# suspension that starts just after one check is noticed at the next.
 STATE_EVERY=2
-last_state_check=$SECONDS
 
 stop_watching() {   # reason
 	# stdout, because from Claude Code's side stderr goes to a file nothing
@@ -259,64 +260,75 @@ stop_watching() {   # reason
 	echo "[watch] $1; stopping without advancing the cursor, so the next session replays what is left."
 }
 
-# The read has a timeout so the checks do not depend on mail arriving.
+# The checks must not depend on mail arriving. Tying them to a line looks
+# harmless -- if nothing is arriving, nothing is being lost -- and it leaves a
+# watcher sitting on the lock of a session that ended hours ago, in a mailbox
+# that happens to be quiet.
 #
-# Tying them to a line looks harmless -- if nothing is arriving, nothing is being
-# lost -- and it leaves a watcher sitting on the lock of a session that ended
-# hours ago, in a mailbox that happens to be quiet. The next session then has to
-# clear it, which works, but a watcher that knows it is useless should say so and
-# go rather than wait to be found.
-# The reader runs in this shell rather than at the end of a pipeline, and `tail`
-# writes through a fifo instead of a pipe, because `cmd | while ...` puts the
-# loop in a subshell: `exit` there ends the subshell and leaves `tail` running,
-# and the script is then left waiting on a pipeline that will never finish.
+# That used to be `read -t`, and it rested on two things bash does not promise
+# equally everywhere. Returning over 128 for a timeout arrived in bash 4; 3.2
+# answers 1, the same as for end-of-file. And the timeout itself is not a thing
+# to lean on either: on the 3.2 that macOS still ships, a watcher with a stopped
+# grandparent recorded in its own chain sat there having printed one line and
+# never asked another question -- alive, holding the lock, checking nothing.
 #
-# GNU tail hides this. It notices the closed read end and goes, so the watcher
-# exits on Linux and the stopping path looks correct. BSD tail does not, and on
-# macOS the orphan sits there holding whatever descriptors it inherited -- under
-# a CI step that captures output with `$(...)`, that is the capture's own pipe,
-# so the step hangs until the runner is taken away rather than failing.
-#
-# A watcher that has decided to stop has to actually stop, on both platforms, so
-# the tail is something this shell owns a pid for and kills on the way out.
+# So the interval stops being a property of `read` and becomes data in the
+# stream. A ticker writes a token into the same fifo on a timer, the reader
+# blocks with no timeout at all, and a token means "no mail, ask the questions".
+# What was a promise about a builtin is now a line arriving, which is the one
+# thing this loop already knows how to handle.
+TICK="__paynani_tick_${$}_${RANDOM}"
+
 FIFO="$STATE_DIR/session.watch.$$.fifo"
 rm -f "$FIFO"
 if ! mkfifo "$FIFO" 2>/dev/null; then
 	echo "[watch] could not create the read fifo in $STATE_DIR; NOT armed. Mail will queue but nothing will show it."
 	exit 1
 fi
+
 tail -c "+$((start + 1))" -F "$SPOOL" 2>/dev/null >"$FIFO" &
 tail_pid=$!
-# Blocks until the writer above opens its end, which is why the tail is started
-# first. The fifo is unlinked immediately: both ends are held open by descriptor
-# from here on, and nothing else should be able to join the stream.
+# Both writers are short lines, well under PIPE_BUF, so a tick cannot land in
+# the middle of a message.
+( while :; do printf '%s\n' "$TICK"; sleep "$STATE_EVERY"; done ) >"$FIFO" &
+ticker_pid=$!
+
+# Blocks until a writer opens its end, which is why the writers start first. The
+# fifo is unlinked immediately: both ends are held open by descriptor from here
+# on, and nothing else can join the stream.
 exec 8<"$FIFO"
 rm -f "$FIFO"
-trap 'rm -rf "$LOCK_DIR"; kill "$tail_pid" 2>/dev/null' EXIT
 
-while :; do
-	if IFS= read -r -t "$STATE_EVERY" -u 8 line; then
-		got_line=yes
-	else
-		# Over 128 is the timeout; anything else is EOF or a read error, and
-		# there is nothing left to watch either way.
-		[ "$?" -gt 128 ] || break
-		got_line=""
-	fi
+# A watcher that has decided to stop has to actually stop, and that is about
+# processes rather than about the loop returning. The reader runs in this shell
+# rather than at the end of a pipeline for the same reason: `cmd | while ...`
+# puts the loop in a subshell, so `exit` there ends the subshell and leaves the
+# writers running. GNU tail hides that -- it notices the closed read end and
+# goes -- and BSD tail does not, so on macOS the orphan sat holding whatever
+# descriptors it had inherited. Under a CI step that captures output with
+# `$(...)`, that is the capture's own pipe, and the step hangs until the runner
+# is taken away rather than failing.
+trap 'rm -rf "$LOCK_DIR"; kill "$tail_pid" "$ticker_pid" 2>/dev/null' EXIT
 
+while IFS= read -r -u 8 line; do
+	# Cheap enough to ask on every line: `kill -0` is a builtin at ~25us, so a
+	# dead session is caught on the very next one and nothing is lost.
 	if ! chain_is_alive "$session_chain"; then
 		stop_watching "the session that armed this watch is gone"
 		exit 0
 	fi
-	if [ $((SECONDS - last_state_check)) -ge "$STATE_EVERY" ]; then
-		last_state_check=$SECONDS
+
+	if [ "$line" = "$TICK" ]; then
+		# The ticker outlives the tail, so end-of-mail has to be asked about
+		# rather than waited for.
+		kill -0 "$tail_pid" 2>/dev/null || break
+		# ~8.1ms, which is why it waits for a tick instead of riding every line.
 		if ! chain_is_awake "$session_chain"; then
 			stop_watching "the session that armed this watch is suspended"
 			exit 0
 		fi
+		continue
 	fi
-
-	[ -n "$got_line" ] || continue
 
 	width=$(printf '%s\n' "$line" | wc -c | tr -d ' ')
 	[ -n "$line" ] && printf '%s\n' "$line"
