@@ -9,6 +9,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 pass=0
 fail=0
 
+file_mode() {
+    if stat -c %a . >/dev/null 2>&1; then
+        stat -c %a "$1"
+    else
+        stat -f '%OLp' "$1"
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # This suite exercises systemd units, `loginctl` and ~/.config/systemd/user.
 # On a host without a systemd user session there is nothing here to test, and
@@ -320,7 +328,7 @@ mkdir -p "$FAKE_SYSTEMD_STATE"
 check_status 'fresh Codex convergence creates managed artifacts' 10 \
     --runtime codex
 runtime_env="$clone/runtime.env"
-[[ "$(stat -c %a "$runtime_env")" == 600 ]] || {
+[[ "$(file_mode "$runtime_env")" == 600 ]] || {
     printf 'FAIL Codex generated runtime configuration is not mode 0600\n'
     fail=$((fail + 1))
 }
@@ -345,18 +353,27 @@ check_status 'fresh OpenClaw convergence creates managed artifacts' 10 \
     --runtime openclaw
 manifest="$clone/install.manifest"
 runtime_env="$clone/runtime.env"
-[[ -f "$manifest" && ! -L "$manifest" && "$(stat -c %a "$manifest")" == 600 ]] || {
+[[ -f "$manifest" && ! -L "$manifest" && "$(file_mode "$manifest")" == 600 ]] || {
     printf 'FAIL ownership manifest is not a mode-0600 regular file\n'
     fail=$((fail + 1))
 }
-[[ "$(stat -c %a "$runtime_env")" == 600 ]] || {
+[[ "$(file_mode "$runtime_env")" == 600 ]] || {
     printf 'FAIL generated runtime configuration is not mode 0600\n'
     fail=$((fail + 1))
 }
+chmod 0644 "$runtime_env"
+if [[ "$(file_mode "$runtime_env")" == 644 ]]; then
+    printf 'ok   generated runtime configuration mode check detects 0644\n'
+    pass=$((pass + 1))
+else
+    printf 'FAIL generated runtime configuration mode check does not detect 0644\n'
+    fail=$((fail + 1))
+fi
+chmod 0600 "$runtime_env"
 # systemd does not create the parent of a StandardOutput=append: path, it fails
 # the unit. An install that converged the units and enabled them without this
 # directory leaves both services dead, and the only symptom is a quiet mailbox.
-[[ -d "$state_tree" && ! -L "$state_tree" && "$(stat -c %a "$state_tree")" == 700 ]] || {
+[[ -d "$state_tree" && ! -L "$state_tree" && "$(file_mode "$state_tree")" == 700 ]] || {
     printf 'FAIL convergence did not create the state tree as a mode-0700 directory\n'
     fail=$((fail + 1))
 }
