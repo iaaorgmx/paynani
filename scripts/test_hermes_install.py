@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import pathlib
+import platform
 import re
 import subprocess
 import sys
@@ -56,6 +57,26 @@ class _HermesFixture(BaseHTTPRequestHandler):
         pass
 
 
+# scripts/install.sh:17 hands the whole install to scripts/install_macos.py on
+# Darwin, and install_macos.py:215 refuses `--runtime hermes` with EX_USAGE:
+# Hermes is not a supported runtime on macOS. Every test in the class below
+# installs Hermes, so on macOS they asserted Linux exit codes against a platform
+# that had already said no -- `AssertionError: 10 != 64` with the refusal message
+# sitting in the failure text. Found by the macOS CI job in #104.
+#
+# This is a check on the operating system, on purpose, and it is not the kind
+# that caused #68 and #80. Those asked "GNU or BSD?" about a tool by asking about
+# the machine, and got it wrong the moment a machine had the other one. This asks
+# which installer the product dispatches to, and the product decides that by
+# operating system, because launchd and systemd are an operating system fact.
+HERMES_INSTALL_SUPPORTED = platform.system() != "Darwin"
+
+
+@unittest.skipUnless(
+    HERMES_INSTALL_SUPPORTED,
+    "hermes install is Linux-only: install.sh dispatches to install_macos.py, "
+    "which refuses --runtime hermes. The refusal itself is asserted below.",
+)
 class HermesInstallerTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -396,6 +417,71 @@ printf 'Hermes webhook support\\n'
         self.assertNotIn("hermes_notify_secret=", converged.stdout)
         self.assertNotIn("hermes_roster_secret=", converged.stdout)
         self.assertEqual(["GET", "POST", "POST", "POST"], [item[0] for item in _HermesFixture.requests])
+
+
+
+@unittest.skipIf(
+    HERMES_INSTALL_SUPPORTED,
+    "there is nothing to refuse on a platform where hermes installs",
+)
+class HermesRefusedOnMacOSTest(unittest.TestCase):
+    """
+    What macOS gets instead of the suite above.
+
+    Skipping the Hermes tests on macOS is correct and would have been a gap if it
+    stopped there: the platform would go from four false failures to no coverage,
+    and both look green. This asserts the behaviour that replaces them -- that
+    asking for Hermes on macOS is refused, cleanly, before anything is written.
+
+    The refusal is worth pinning rather than assuming. A future installer that
+    grew partial Hermes support, or one that started the install and failed
+    halfway, would both pass a test that only checked "not zero".
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = pathlib.Path(self.temp.name)
+        self.home = self.root / "home"
+        self.home.mkdir(mode=0o700)
+        self.clone = self.home / "workspace" / "paynani"
+        self.clone.parent.mkdir(parents=True, mode=0o700)
+        shutil.copytree(ROOT, self.clone, symlinks=True)
+        for leftover in ("state", ".env", "runtime.env", "install.manifest", "hermes"):
+            target = self.clone / leftover
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.exists():
+                target.unlink()
+        self.addCleanup(self.temp.cleanup)
+
+    def test_hermes_is_refused_before_anything_is_written(self):
+        completed = subprocess.run(
+            [
+                str(self.clone / "scripts" / "install.sh"),
+                "--runtime", "hermes",
+                "--profile", "default",
+                "--non-interactive",
+            ],
+            cwd=self.clone,
+            env={**os.environ, "HOME": str(self.home)},
+            text=True,
+            capture_output=True,
+        )
+        output = completed.stdout + completed.stderr
+
+        # 64 is EX_USAGE. Asserting the exact code rather than "nonzero" is the
+        # point: a crash halfway through an install is also nonzero.
+        self.assertEqual(64, completed.returncode, output)
+        self.assertIn("openclaw", output)
+        self.assertIn("codex", output)
+
+        # Refused means refused. An install that said no and still wrote is the
+        # failure this assertion exists for.
+        for leftover in ("install.manifest", "runtime.env", "hermes", "state"):
+            self.assertFalse(
+                (self.clone / leftover).exists(),
+                f"refused install wrote {leftover} into the install root",
+            )
 
 
 if __name__ == "__main__":
