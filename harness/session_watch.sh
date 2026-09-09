@@ -153,7 +153,8 @@ claim_lock() {
 	mkdir "$LOCK_DIR" 2>/dev/null || return 1
 	printf 'watcher=%s
 session=%s
-' "$watcher_pid" "$session_pid" >"$OWNER_FILE"
+chain=%s
+' "$watcher_pid" "$session_pid" "$session_chain" >"$OWNER_FILE"
 	# Release on every ordinary exit. A hard kill skips this, and the stale
 	# branch below is what covers that.
 	trap 'rm -rf "$LOCK_DIR"' EXIT
@@ -265,8 +266,36 @@ stop_watching() {   # reason
 # hours ago, in a mailbox that happens to be quiet. The next session then has to
 # clear it, which works, but a watcher that knows it is useless should say so and
 # go rather than wait to be found.
-tail -c "+$((start + 1))" -F "$SPOOL" 2>/dev/null | while :; do
-	if IFS= read -r -t "$STATE_EVERY" line; then
+# The reader runs in this shell rather than at the end of a pipeline, and `tail`
+# writes through a fifo instead of a pipe, because `cmd | while ...` puts the
+# loop in a subshell: `exit` there ends the subshell and leaves `tail` running,
+# and the script is then left waiting on a pipeline that will never finish.
+#
+# GNU tail hides this. It notices the closed read end and goes, so the watcher
+# exits on Linux and the stopping path looks correct. BSD tail does not, and on
+# macOS the orphan sits there holding whatever descriptors it inherited -- under
+# a CI step that captures output with `$(...)`, that is the capture's own pipe,
+# so the step hangs until the runner is taken away rather than failing.
+#
+# A watcher that has decided to stop has to actually stop, on both platforms, so
+# the tail is something this shell owns a pid for and kills on the way out.
+FIFO="$STATE_DIR/session.watch.$$.fifo"
+rm -f "$FIFO"
+if ! mkfifo "$FIFO" 2>/dev/null; then
+	echo "[watch] could not create the read fifo in $STATE_DIR; NOT armed. Mail will queue but nothing will show it."
+	exit 1
+fi
+tail -c "+$((start + 1))" -F "$SPOOL" 2>/dev/null >"$FIFO" &
+tail_pid=$!
+# Blocks until the writer above opens its end, which is why the tail is started
+# first. The fifo is unlinked immediately: both ends are held open by descriptor
+# from here on, and nothing else should be able to join the stream.
+exec 8<"$FIFO"
+rm -f "$FIFO"
+trap 'rm -rf "$LOCK_DIR"; kill "$tail_pid" 2>/dev/null' EXIT
+
+while :; do
+	if IFS= read -r -t "$STATE_EVERY" -u 8 line; then
 		got_line=yes
 	else
 		# Over 128 is the timeout; anything else is EOF or a read error, and

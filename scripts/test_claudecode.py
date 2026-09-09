@@ -426,7 +426,8 @@ class Watcher(unittest.TestCase):
         bin_dir = pathlib.Path(self.tmp.name) / "nobin"
         bin_dir.mkdir(exist_ok=True)
         for tool in ("bash", "sh", "ps", "awk", "tail", "wc", "tr", "mkdir",
-                     "rm", "mv", "cat", "sleep", "kill", "printf", "sed"):
+                     "mkfifo", "rm", "mv", "cat", "sleep", "kill", "printf",
+                     "sed"):
             found = sh.which(tool)
             if found:
                 link = bin_dir / tool
@@ -626,6 +627,107 @@ echo "OK $chain"
         done = sp.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
         self.assertEqual(0, done.returncode, done.stdout + done.stderr)
         self.assertTrue(done.stdout.startswith("OK "), done.stdout)
+
+    def test_the_watcher_takes_its_tail_with_it(self):
+        """
+        Stopping has to mean the processes are gone, not that the loop returned.
+
+        The reader used to be the tail of a pipeline, so `exit` ended a subshell
+        and left `tail -F` behind holding every descriptor it had inherited. GNU
+        tail hides this: it notices the closed read end and goes, so the orphan
+        only survives where the tail is BSD's, which is the one platform nobody
+        on this team can see.
+
+        What it costs there is not a failing check, it is a hung one. The macOS
+        job captures each suite with `out=$(python3 ...)`, and a capture ends
+        when every writer has closed the pipe -- not when the command exits. One
+        surviving tail holding that pipe ran the job 45m01s until the runner was
+        taken away, and a job that is taken away reports nothing at all.
+
+        Recorded rather than hidden: this check passes against the broken script
+        on a GNU host, because there the orphan reaps itself. It earns its keep
+        on the macOS job alone, which is the same argument that job was added
+        under.
+        """
+        import subprocess as sp, signal, time
+        spool = self.state / "session.spool"
+        spool.write_text("", encoding="utf-8")
+        out = self.state / "watch.out"
+
+        inner = f"exec bash {self.WATCH} {self.state} 0"
+        holder = sp.Popen(["bash", "-c", f"bash -c {inner!r} > {out} 2>&1"])
+        self.addCleanup(lambda: (holder.send_signal(signal.SIGCONT),
+                                 holder.kill(), holder.wait()))
+
+        def wait_for(predicate, what, limit=15):
+            deadline = time.time() + limit
+            while time.time() < deadline:
+                if predicate():
+                    return
+                time.sleep(0.1)
+            self.fail(f"timed out waiting for {what}")
+
+        def followers():
+            """The pids of every `tail` reading this test's own spool."""
+            listing = sp.run(["ps", "-eo", "pid=,args="],
+                             capture_output=True, text=True).stdout
+            return {line.split()[0] for line in listing.splitlines()
+                    if " tail " in f" {line} " and str(spool) in line}
+
+        wait_for((self.state / "session.offset").exists, "the watcher to arm")
+        wait_for(lambda: followers(), "the watcher to start following the spool")
+        followed_by = followers()
+
+        holder.send_signal(signal.SIGSTOP)
+        wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
+                 "the watcher to notice the suspension")
+
+        # The watcher said it was stopping. That claim is about processes.
+        wait_for(lambda: not (followers() & followed_by),
+                 f"the tail(s) {sorted(followed_by)} the watcher left behind")
+
+    def test_the_lock_records_the_chain_it_will_be_judged_by(self):
+        """
+        A later session decides whether to take this lock over by reading what
+        is written in it, so what the watcher checks and what it records have to
+        be the same thing.
+
+        They were not. The walk was collected and used for this watcher's own
+        loop, while the lock recorded a bare `session=$PPID` -- and the takeover
+        branch, finding no chain, fell back to judging that single pid. That pid
+        is the wrapper, which stays healthy while the session above it is
+        stopped, so the branch that exists to catch a suspended holder read a
+        wrapper in S and deferred to it. #62 through the other door.
+        """
+        import subprocess as sp, time
+        (self.state / "session.spool").write_text("", encoding="utf-8")
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True)
+        self.addCleanup(lambda: (proc.kill(), proc.stdout.close(),
+                                 proc.stderr.close()))
+        self.assertTrue(self._wait_for_arming(proc), "the watcher did not arm")
+
+        owner = (self.state / "session.watch.lock.d" / "owner")
+        deadline = time.time() + 5
+        recorded = {}
+        while time.time() < deadline:
+            fields = dict(line.split("=", 1)
+                          for line in owner.read_text(encoding="utf-8").splitlines()
+                          if "=" in line)
+            if "chain" in fields:
+                recorded = fields
+                break
+            time.sleep(0.05)
+
+        self.assertIn("chain", recorded,
+                      "the lock records no chain, so a later session judges the "
+                      "holder by one pid -- the wrapper, not the session")
+        chain = recorded["chain"].split()
+        self.assertTrue(chain, "the recorded chain is empty")
+        self.assertEqual(str(os.getpid()), chain[0],
+                         "the chain does not start at the process that armed it")
+        for pid in chain:
+            self.assertRegex(pid, r"^[0-9]+$")
 
     def _ancestors_function(self):
         source = self.WATCH.read_text(encoding="utf-8")
