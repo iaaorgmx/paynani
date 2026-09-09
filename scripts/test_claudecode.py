@@ -376,8 +376,12 @@ class Watcher(unittest.TestCase):
         first = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
                          stdout=sp.PIPE, stderr=sp.PIPE, text=True)
         self.addCleanup(lambda: (first.kill(), first.stdout.close(), first.stderr.close()))
+        # The lock is the directory, not the file. The file was the flock
+        # target and it is only created where `flock` exists, so waiting on it
+        # made this test hang on any host without it -- macOS, where the thing
+        # under test was broken in the first place (#105).
         deadline = __import__("time").time() + 5
-        while not (self.state / "session.watch.lock").exists():
+        while not (self.state / "session.watch.lock.d").exists():
             if __import__("time").time() > deadline:
                 self.fail("first watcher never took the lock")
             __import__("time").sleep(0.05)
@@ -405,6 +409,137 @@ class Watcher(unittest.TestCase):
                 self.fail("offset was never written")
             time.sleep(0.05)
         self.assertGreaterEqual(int(offset.read_text().strip()), 4)
+
+    # ---- a host without flock: what #105 was ------------------------------
+    #
+    # `flock` is util-linux and macOS does not ship it. The old guard read the
+    # missing command's exit 127 as "somebody else holds this", so every session
+    # on a Mac announced a watcher that did not exist and armed nothing.
+    #
+    # These run against a PATH built out of symlinks to what the script actually
+    # uses, minus flock. That is closer to the real thing than mocking, and it
+    # runs on Linux, so the platform that has the tool still proves the branch
+    # for the platform that does not.
+
+    def _path_without_flock(self):
+        import shutil as sh
+        bin_dir = pathlib.Path(self.tmp.name) / "nobin"
+        bin_dir.mkdir(exist_ok=True)
+        for tool in ("bash", "sh", "ps", "awk", "tail", "wc", "tr", "mkdir",
+                     "rm", "mv", "cat", "sleep", "kill", "printf", "sed"):
+            found = sh.which(tool)
+            if found:
+                link = bin_dir / tool
+                if not link.exists():
+                    link.symlink_to(found)
+        self.assertIsNone(sh.which("flock", path=str(bin_dir)),
+                          "the fixture PATH must not contain flock")
+        return {**os.environ, "PATH": str(bin_dir)}
+
+    def _wait_for_arming(self, proc, timeout=8):
+        import time
+        offset = self.state / "session.offset"
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if offset.exists() and (self.state / "session.watch.lock.d").exists():
+                return True
+            if proc.poll() is not None:
+                return False
+            time.sleep(0.05)
+        return False
+
+    def test_it_arms_without_the_flock_binary(self):
+        """#105: no flock is not the same as somebody else is watching."""
+        import subprocess as sp
+        (self.state / "session.spool").write_text("", encoding="utf-8")
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True,
+                        env=self._path_without_flock())
+        self.addCleanup(lambda: (proc.kill(), proc.stdout.close(), proc.stderr.close()))
+        self.assertTrue(self._wait_for_arming(proc),
+                        "the watcher did not arm on a host without flock")
+
+    def test_two_without_flock_still_yield_exactly_one_watcher(self):
+        """
+        The guard has to keep guarding once the binary it used is gone.
+
+        Losing exclusivity here is not a smaller bug than #105, it is the one the
+        guard was written for: two readers advancing one cursor is how events got
+        duplicated and the record of what had been seen was corrupted.
+        """
+        import subprocess as sp
+        env = self._path_without_flock()
+        (self.state / "session.spool").write_text("", encoding="utf-8")
+        first = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
+                         stdout=sp.PIPE, stderr=sp.PIPE, text=True, env=env)
+        self.addCleanup(lambda: (first.kill(), first.stdout.close(), first.stderr.close()))
+        self.assertTrue(self._wait_for_arming(first))
+
+        second = sp.run(["bash", str(self.WATCH), str(self.state), "0"],
+                        capture_output=True, text=True, timeout=15, env=env)
+        self.assertEqual(0, second.returncode)
+        self.assertIn("already watching", second.stdout)
+        self.assertEqual("", second.stderr)
+
+    # ---- a holder that is alive and useless: what #62 was -----------------
+
+    def test_a_suspended_session_is_taken_over_rather_than_deferred_to(self):
+        """
+        #62, and the reason this is not just a portability fix.
+
+        A watcher whose parent session had been suspended for nearly nine hours
+        kept draining the spool and advancing the cursor. The next session could
+        not arm, was not told, and never replayed the backlog either, because the
+        offset said it had been seen. Every indicator green, no mail delivered.
+
+        Alive is not the same as usable, and the guard has to ask the second
+        question.
+        """
+        import subprocess as sp, signal, time
+        (self.state / "session.spool").write_text("", encoding="utf-8")
+
+        # Something alive and stopped, standing in for the suspended session.
+        holder = sp.Popen(["sleep", "300"])
+        self.addCleanup(lambda: (holder.kill(), holder.wait()))
+        holder.send_signal(signal.SIGSTOP)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            state = sp.run(["ps", "-o", "state=", "-p", str(holder.pid)],
+                           capture_output=True, text=True).stdout.strip()
+            if state.startswith("T"):
+                break
+            time.sleep(0.05)
+        else:
+            self.skipTest("could not put the stand-in holder into a stopped state")
+
+        lock = self.state / "session.watch.lock.d"
+        lock.mkdir()
+        (lock / "owner").write_text(
+            f"watcher={holder.pid}\nsession={holder.pid}\n", encoding="utf-8")
+
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True)
+        self.addCleanup(lambda: (proc.kill(), proc.stdout.close(), proc.stderr.close()))
+        self.assertTrue(self._wait_for_arming(proc),
+                        "the watcher deferred to a suspended session instead of taking over")
+
+        owner = (lock / "owner").read_text(encoding="utf-8")
+        self.assertNotIn(f"session={holder.pid}", owner,
+                         "the suspended session still owns the lock")
+
+    def test_the_guard_never_asks_which_operating_system_this_is(self):
+        """
+        #61, #68 and #80 were all one mistake: asking about the machine to learn
+        about a tool. The rule this file enforces on itself is the one that
+        would have prevented them.
+        """
+        source = self.WATCH.read_text(encoding="utf-8")
+        code = "\n".join(line for line in source.splitlines()
+                          if not line.lstrip().startswith("#"))
+        for name in ("uname", "OSTYPE", "Darwin", "darwin"):
+            self.assertNotIn(name, code,
+                             f"the watcher decides something by {name}; "
+                             "detect the capability instead")
 
 
 class HookRegistration(unittest.TestCase):
