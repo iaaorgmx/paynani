@@ -527,6 +527,112 @@ class Watcher(unittest.TestCase):
         self.assertNotIn(f"session={holder.pid}", owner,
                          "the suspended session still owns the lock")
 
+    # ---- the cursor is a claim, and it stops when the claim stops being true --
+
+    def test_a_suspended_session_stops_the_cursor_rather_than_advancing_it(self):
+        """
+        #110, and the half of #62 that survived its own fix.
+
+        Two things are proved here at once, and the second is why the tree in
+        this test has three levels instead of two.
+
+        The cursor: a watcher that keeps advancing it while nothing is being
+        rendered marks mail as seen by nobody. The next session's hook reads that
+        cursor to decide what to replay, so those messages are skipped then and
+        never shown afterwards either -- 8h43m and 3299 bytes on one host.
+
+        The pid: the process to watch is not $PPID. The harness runs this through
+        a wrapper, so $PPID is a shell that stays healthy while the session above
+        it is stopped. The grandparent here stands in for the session and the
+        parent for that wrapper, which is the shape measured on a live host.
+        """
+        import subprocess as sp, signal, time
+        spool = self.state / "session.spool"
+        spool.write_text("", encoding="utf-8")
+        out = self.state / "watch.out"
+
+        # grandparent -> parent -> watcher, so stopping the grandparent leaves
+        # $PPID untouched. `exec` keeps the watcher as the parent's own process
+        # rather than adding a level.
+        inner = f"exec bash {self.WATCH} {self.state} 0"
+        holder = sp.Popen(["bash", "-c", f"bash -c {inner!r} > {out} 2>&1"])
+        self.addCleanup(lambda: (holder.send_signal(signal.SIGCONT),
+                                 holder.kill(), holder.wait()))
+
+        def wait_for(predicate, what, limit=15):
+            deadline = time.time() + limit
+            while time.time() < deadline:
+                if predicate():
+                    return
+                time.sleep(0.1)
+            self.fail(f"timed out waiting for {what}")
+
+        offset = self.state / "session.offset"
+        wait_for(offset.exists, "the watcher to arm")
+
+        # Healthy first, or the rest proves nothing: a watcher that never
+        # advances would pass the assertion below for the wrong reason.
+        with spool.open("a", encoding="utf-8") as handle:
+            handle.write("hola\n")
+        wait_for(lambda: offset.read_text().strip() == "5",
+                 "the cursor to advance while the session is healthy")
+
+        holder.send_signal(signal.SIGSTOP)
+        wait_for(lambda: sp.run(["ps", "-o", "state=", "-p", str(holder.pid)],
+                                capture_output=True, text=True).stdout.strip().startswith("T"),
+                 "the stand-in session to stop")
+
+        # Wait for the watcher to notice before writing, and this wait is the
+        # design rather than test slack. Suspension is caught on a timer because
+        # `ps` costs ~8.1ms against 25us for `kill -0`, so a line arriving inside
+        # that interval is still processed. Writing immediately after the stop
+        # asserts a stronger property than the code offers, which is exactly what
+        # this test did on its first run: it failed, correctly.
+        wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
+                 "the watcher to notice the suspension")
+
+        with spool.open("a", encoding="utf-8") as handle:
+            handle.write("adios\n")
+        time.sleep(3)
+        self.assertEqual("5", offset.read_text().strip(),
+                         "the cursor advanced past a line nobody could have seen")
+        self.assertIn("suspended", out.read_text(encoding="utf-8"))
+        self.assertIn("replays what is left", out.read_text(encoding="utf-8"))
+
+    def test_the_ancestor_chain_stops_where_this_user_stops(self):
+        """
+        The walk has to end at the last process this user can signal.
+
+        Walking to pid 1 collects the login shell's own ancestors and then kernel
+        threads, and `kill -0` fails on those for want of permission rather than
+        because they died. Reading that as "the session is gone" stopped the
+        watcher on the first line it ever read. Found by running it; kept so it
+        stays found.
+
+        The check happens inside the shell that collected the chain. Handing the
+        pids back to Python and testing them there races with the shell's own
+        exit: its ancestors include processes that are gone a moment later, and
+        the test failed for that instead of for the thing it is about.
+        """
+        import subprocess as sp
+        script = self._ancestors_function() + """
+chain=$(ancestors $PPID)
+[ -n "$chain" ] || { echo "EMPTY"; exit 1; }
+for pid in $chain; do
+    kill -0 "$pid" 2>/dev/null || { echo "UNSIGNALLABLE $pid"; exit 1; }
+done
+echo "OK $chain"
+"""
+        done = sp.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        self.assertTrue(done.stdout.startswith("OK "), done.stdout)
+
+    def _ancestors_function(self):
+        source = self.WATCH.read_text(encoding="utf-8")
+        start = source.index("ancestors() {")
+        end = source.index("\n}\n", start) + len("\n}\n")
+        return source[start:end]
+
     def test_the_guard_never_asks_which_operating_system_this_is(self):
         """
         #61, #68 and #80 were all one mistake: asking about the machine to learn
