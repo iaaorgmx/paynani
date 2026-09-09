@@ -447,6 +447,37 @@ class Watcher(unittest.TestCase):
             time.sleep(0.1)
         self.fail(f"timed out waiting for {what}")
 
+    def _what_the_watcher_saw(self, out):
+        """
+        Everything needed to tell apart the ways this can fail, printed on the
+        failure itself.
+
+        Twice now a wait timed out saying "the watcher never noticed the
+        suspension" when the watcher had in fact stopped for a different reason
+        and said so -- into a file nothing read. The message named the check that
+        ran out of time rather than what happened, and each round trip through a
+        runner nobody here can see cost a push.
+
+        So: what the watcher printed, the chain it decided to watch, and what
+        `ps` says about each pid in it, asked the same way the watcher asks.
+        """
+        import subprocess as sp
+        report = ["", "--- what the watcher printed ---",
+                  out.read_text(encoding="utf-8").rstrip() or "(nothing)"]
+        owner = self.state / "session.watch.lock.d" / "owner"
+        if owner.exists():
+            report += ["--- the lock ---", owner.read_text(encoding="utf-8").rstrip()]
+            for line in owner.read_text(encoding="utf-8").splitlines():
+                if line.startswith("chain="):
+                    report.append("--- ps, per pid in the chain ---")
+                    for pid in line[len("chain="):].split():
+                        got = sp.run(["ps", "-o", "state=,ppid=,comm=", "-p", pid],
+                                     capture_output=True, text=True)
+                        report.append(f"{pid}: {got.stdout.strip() or '(no such process)'}")
+        else:
+            report.append("--- the lock --- (no owner file)")
+        return "\n".join(report)
+
     def _watcher_under_a_wrapper(self, out):
         """
         Start a watcher three processes down and hand back the top one.
@@ -663,7 +694,8 @@ class Watcher(unittest.TestCase):
         # asserts a stronger property than the code offers, which is exactly what
         # this test did on its first run: it failed, correctly.
         self._wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
-                       "the watcher to notice the suspension")
+                       "the watcher to notice the suspension"
+                       + self._what_the_watcher_saw(out))
 
         with spool.open("a", encoding="utf-8") as handle:
             handle.write("adios\n")
@@ -744,7 +776,8 @@ echo "OK $chain"
 
         holder.send_signal(signal.SIGSTOP)
         self._wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
-                       "the watcher to notice the suspension")
+                       "the watcher to notice the suspension"
+                       + self._what_the_watcher_saw(out))
 
         # The watcher said it was stopping. That claim is about processes.
         self._wait_for(lambda: not (followers() & followed_by),
