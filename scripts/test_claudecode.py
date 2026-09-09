@@ -3,6 +3,7 @@
 
 import os
 import pathlib
+import shlex
 import sys
 import tempfile
 import unittest
@@ -437,6 +438,91 @@ class Watcher(unittest.TestCase):
                           "the fixture PATH must not contain flock")
         return {**os.environ, "PATH": str(bin_dir)}
 
+    def _wait_for(self, predicate, what, limit=15):
+        import time
+        deadline = time.time() + limit
+        while time.time() < deadline:
+            if predicate():
+                return
+            time.sleep(0.1)
+        self.fail(f"timed out waiting for {what}")
+
+    def _watcher_under_a_wrapper(self, out):
+        """
+        Start a watcher three processes down and hand back the top one.
+
+            bash            <- returned. Stands in for the session.
+            bash            <- the wrapper. This is the watcher's $PPID.
+            session_watch   <- here
+
+        That is the shape measured on a live host, and the reason the tests
+        below need it is that stopping the top one has to leave $PPID healthy --
+        otherwise they prove nothing about which process is being watched.
+
+        `& wait` at every level, and this is the part macOS taught us. A bash
+        whose `-c` argument is a single command may exec into it rather than
+        forking, and then the tree is one process wearing three names. Linux
+        bash kept the levels here and the runner's bash collapsed them, so
+        SIGSTOP landed on the watcher itself: it could not notice a suspension
+        because it was the thing suspended, and the test timed out saying the
+        watcher never noticed. Two commands cannot be exec'd into one, so the
+        levels stay.
+
+        Its own session, so the cleanup can take the whole tree down. A stopped
+        process ignores SIGTERM and its children outlive `holder.kill()`, which
+        leaks a watcher and a tail into every later test in this file.
+        """
+        import subprocess as sp
+        deepest = f"bash {self.WATCH} {self.state} 0 > {out} 2>&1 & wait"
+        wrapper = f"bash -c {shlex.quote(deepest)} & wait"
+        holder = sp.Popen(["bash", "-c", wrapper], start_new_session=True)
+        self.addCleanup(lambda: self._take_down_the_tree(holder))
+        return holder
+
+    def _take_down_the_tree(self, holder):
+        import signal
+        try:
+            group = os.getpgid(holder.pid)
+        except OSError:
+            return
+        for sig in (signal.SIGCONT, signal.SIGKILL):
+            try:
+                os.killpg(group, sig)
+            except OSError:
+                pass
+        holder.wait()
+
+    def _recorded_chain(self, timeout=8):
+        """The chain the watcher wrote into the lock, once it has written one."""
+        import time
+        owner = self.state / "session.watch.lock.d" / "owner"
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if owner.exists():
+                for line in owner.read_text(encoding="utf-8").splitlines():
+                    if line.startswith("chain="):
+                        chain = line[len("chain="):].split()
+                        if chain:
+                            return chain
+            time.sleep(0.05)
+        self.fail("the watcher never recorded a chain in its lock")
+
+    def _assert_three_levels(self, holder):
+        """
+        The tree the test believes in, checked against the one it got.
+
+        Without this a collapsed tree fails as a timeout on an unrelated
+        assertion, which is how an hour went on the wrong question.
+        """
+        chain = self._recorded_chain()
+        self.assertIn(str(holder.pid), chain,
+                      f"the watcher is not watching the process this test stops; "
+                      f"it recorded {chain}")
+        self.assertNotEqual(str(holder.pid), chain[0],
+                            "the wrapper collapsed: $PPID is the process this "
+                            "test stops, so stopping it proves nothing")
+        return chain
+
     def _wait_for_arming(self, proc, timeout=8):
         import time
         offset = self.state / "session.offset"
@@ -552,36 +638,23 @@ class Watcher(unittest.TestCase):
         spool.write_text("", encoding="utf-8")
         out = self.state / "watch.out"
 
-        # grandparent -> parent -> watcher, so stopping the grandparent leaves
-        # $PPID untouched. `exec` keeps the watcher as the parent's own process
-        # rather than adding a level.
-        inner = f"exec bash {self.WATCH} {self.state} 0"
-        holder = sp.Popen(["bash", "-c", f"bash -c {inner!r} > {out} 2>&1"])
-        self.addCleanup(lambda: (holder.send_signal(signal.SIGCONT),
-                                 holder.kill(), holder.wait()))
-
-        def wait_for(predicate, what, limit=15):
-            deadline = time.time() + limit
-            while time.time() < deadline:
-                if predicate():
-                    return
-                time.sleep(0.1)
-            self.fail(f"timed out waiting for {what}")
+        holder = self._watcher_under_a_wrapper(out)
 
         offset = self.state / "session.offset"
-        wait_for(offset.exists, "the watcher to arm")
+        self._wait_for(offset.exists, "the watcher to arm")
+        self._assert_three_levels(holder)
 
         # Healthy first, or the rest proves nothing: a watcher that never
         # advances would pass the assertion below for the wrong reason.
         with spool.open("a", encoding="utf-8") as handle:
             handle.write("hola\n")
-        wait_for(lambda: offset.read_text().strip() == "5",
-                 "the cursor to advance while the session is healthy")
+        self._wait_for(lambda: offset.read_text().strip() == "5",
+                       "the cursor to advance while the session is healthy")
 
         holder.send_signal(signal.SIGSTOP)
-        wait_for(lambda: sp.run(["ps", "-o", "state=", "-p", str(holder.pid)],
-                                capture_output=True, text=True).stdout.strip().startswith("T"),
-                 "the stand-in session to stop")
+        self._wait_for(lambda: sp.run(["ps", "-o", "state=", "-p", str(holder.pid)],
+                                      capture_output=True, text=True).stdout.strip().startswith("T"),
+                       "the stand-in session to stop")
 
         # Wait for the watcher to notice before writing, and this wait is the
         # design rather than test slack. Suspension is caught on a timer because
@@ -589,8 +662,8 @@ class Watcher(unittest.TestCase):
         # that interval is still processed. Writing immediately after the stop
         # asserts a stronger property than the code offers, which is exactly what
         # this test did on its first run: it failed, correctly.
-        wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
-                 "the watcher to notice the suspension")
+        self._wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
+                       "the watcher to notice the suspension")
 
         with spool.open("a", encoding="utf-8") as handle:
             handle.write("adios\n")
@@ -649,23 +722,12 @@ echo "OK $chain"
         on the macOS job alone, which is the same argument that job was added
         under.
         """
-        import subprocess as sp, signal, time
+        import subprocess as sp, signal
         spool = self.state / "session.spool"
         spool.write_text("", encoding="utf-8")
         out = self.state / "watch.out"
 
-        inner = f"exec bash {self.WATCH} {self.state} 0"
-        holder = sp.Popen(["bash", "-c", f"bash -c {inner!r} > {out} 2>&1"])
-        self.addCleanup(lambda: (holder.send_signal(signal.SIGCONT),
-                                 holder.kill(), holder.wait()))
-
-        def wait_for(predicate, what, limit=15):
-            deadline = time.time() + limit
-            while time.time() < deadline:
-                if predicate():
-                    return
-                time.sleep(0.1)
-            self.fail(f"timed out waiting for {what}")
+        holder = self._watcher_under_a_wrapper(out)
 
         def followers():
             """The pids of every `tail` reading this test's own spool."""
@@ -674,17 +736,19 @@ echo "OK $chain"
             return {line.split()[0] for line in listing.splitlines()
                     if " tail " in f" {line} " and str(spool) in line}
 
-        wait_for((self.state / "session.offset").exists, "the watcher to arm")
-        wait_for(lambda: followers(), "the watcher to start following the spool")
+        self._wait_for((self.state / "session.offset").exists,
+                       "the watcher to arm")
+        self._assert_three_levels(holder)
+        self._wait_for(followers, "the watcher to start following the spool")
         followed_by = followers()
 
         holder.send_signal(signal.SIGSTOP)
-        wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
-                 "the watcher to notice the suspension")
+        self._wait_for(lambda: "suspended" in out.read_text(encoding="utf-8"),
+                       "the watcher to notice the suspension")
 
         # The watcher said it was stopping. That claim is about processes.
-        wait_for(lambda: not (followers() & followed_by),
-                 f"the tail(s) {sorted(followed_by)} the watcher left behind")
+        self._wait_for(lambda: not (followers() & followed_by),
+                       f"the tail(s) {sorted(followed_by)} the watcher left behind")
 
     def test_the_lock_records_the_chain_it_will_be_judged_by(self):
         """
