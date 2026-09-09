@@ -22,7 +22,24 @@ SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # on whether the person running it happened to have paynani installed — the
 # result depended on undeclared local state, which is the failure this whole
 # repository is about. Overriding HOME was never enough on its own.
-CLONE=$(mktemp -d)
+# Every temporary directory in this suite goes through here.
+#
+# macOS resolves /var to /private/var, and every implementation under test
+# resolves the paths it hands back, so a raw `mktemp -d` builds an `expected`
+# string the code can never produce: expected /var/folders/…/.env against actual
+# /private/var/folders/…/.env. 27 assertions failed on macOS for that and not one
+# of them was about a path being wrong.
+#
+# `cd` plus `pwd -P` resolves symlinks using nothing but the shell. `realpath`
+# and `readlink -f` are both GNU, and macOS ships neither -- reaching for one of
+# them here would trade this defect for the family that caused #61, #68 and #80.
+tmpdir() {
+    local d
+    d=$(mktemp -d) || return 1
+    (cd "$d" && pwd -P)
+}
+
+CLONE=$(tmpdir)
 trap 'rm -rf "$CLONE"' EXIT
 mkdir -p "$CLONE/harness" "$CLONE/scripts" "$CLONE/webapp/lib"
 cp "$SOURCE_ROOT/harness/paths.py" "$CLONE/harness/"
@@ -135,7 +152,7 @@ agree_all() {   # description, home
 # A host with nothing on it. Everything hangs off the clone, and nothing is
 # written under ~/.config or ~/.local/state at all.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 agree_all "fresh host" "$home"
 check "fresh host: credentials are .env in the clone" "$ROOT/.env" "$(py "$home" "" env)"
 check "fresh host: state is one tree in the clone" "$ROOT/state" "$(py "$home" "" state)"
@@ -157,7 +174,7 @@ rm -rf "$home"
 # directory because it is named after this project would put an agent's
 # credentials somewhere the operator never chose.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.config/paynani" "$home/.local/state/paynani"
 agree_all "empty leftover directories" "$home"
 check "empty leftover directories: not adopted for credentials" "$ROOT/.env" "$(py "$home" "" env)"
@@ -169,7 +186,7 @@ rm -rf "$home"
 # disagree" property is conditional on neither being set, and this pins that
 # reading rather than leaving the docstring to carry it.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 check "PAYNANI_STATE alone moves state and leaves credentials" "$ROOT/.env" \
     "$(HOME="$home" PAYNANI_STATE=/srv/state python3 "$ROOT/harness/paths.py" env)"
 check "PAYNANI_STATE alone is honoured for state" "/srv/state" \
@@ -180,7 +197,7 @@ rm -rf "$home"
 # An install that said where its credentials are. Nothing second-guesses it,
 # including a harness file sitting right there.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.openclaw/workspace"
 printf 'AGENT_EMAIL_ACCOUNT=ignored@example.com\n' >"$home/.openclaw/workspace/.env"
 agree "explicit override" "$home" "/etc/paynani/env"; resolved=$RESOLVED
@@ -190,7 +207,7 @@ rm -rf "$home"
 # ---------------------------------------------------------------------------
 # The same for the state tree. An install that pinned it stays pinned.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 check "explicit state override: wins on a fresh host" "/srv/paynani-state" \
     "$(HOME="$home" PAYNANI_STATE=/srv/paynani-state python3 "$ROOT/harness/paths.py" state)"
 check "explicit state override: shell agrees" "/srv/paynani-state" \
@@ -206,7 +223,7 @@ rm -rf "$home"
 # would adopt it: the install would read credentials it was never given. Only
 # the names this project has ever written are looked at.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.config/apollo-agentmail" "$home/.hermes"
 printf 'ACCOUNT=someone-elses@example.com\n' >"$home/.config/apollo-agentmail/config"
 printf 'HERMES_TOKEN=not-ours\n' >"$home/.hermes/.env"
@@ -228,7 +245,7 @@ import sys; sys.path.insert(0, '$ROOT/harness')
 import paths; print(paths.repo_root())
 ")
 check "the repo root is this checkout" "$ROOT" "$found"
-home=$(mktemp -d)
+home=$(tmpdir)
 checkout="$home/elsewhere/paynani"
 mkdir -p "$checkout/harness"
 checkout=$(cd "$checkout" && pwd -P)
@@ -245,7 +262,7 @@ PY
 )
 check "the repo root is found from an arbitrary checkout" "$checkout" "$found"
 rm -rf "$home"
-check "the install root is the clone" "$ROOT" "$(py "$(mktemp -d)" "" root)"
+check "the install root is the clone" "$ROOT" "$(py "$(tmpdir)" "" root)"
 
 # ---------------------------------------------------------------------------
 # Every runtime-owned path is ignored by git.
@@ -293,7 +310,7 @@ fi
 # hang off the clone, and that split is deliberate: the harness owns that file
 # and this project does not.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.hermes/workspace"
 printf 'PAYNANI_EMAIL=agent@example.com\n' >"$home/.hermes/workspace/.env"
 agree_all "hermes harness" "$home"
@@ -323,7 +340,7 @@ rm -rf "$home"
 # #88 — so this pins all three in agreement the same way the hermes and
 # openclaw cases above do.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.claude/workspace"
 printf 'PAYNANI_EMAIL=agent@example.com\n' >"$home/.claude/workspace/.env"
 agree_all "claude harness" "$home"
@@ -349,7 +366,7 @@ rm -rf "$home"
 # only workspace/.env resolves under the runtime root, while state, runtime.env,
 # the manifest, Hermes secrets and the roster remain clone-owned.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.codex/workspace"
 printf 'PAYNANI_EMAIL=agent@example.com\n' >"$home/.codex/workspace/.env"
 agree_all "codex harness" "$home"
@@ -379,7 +396,7 @@ rm -rf "$home"
 # The unrelated-deployment case above plants exactly this file; this states the
 # reason separately so the next reader cannot delete one and keep the other.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.hermes"
 printf 'HERMES_TOKEN=not-ours\n' >"$home/.hermes/.env"
 agree_all "runtime own config" "$home"
@@ -397,7 +414,7 @@ rm -rf "$home"
 # this install keeps its own files. State, config and secrets stay in the
 # clone regardless.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.openclaw/workspace"
 printf 'AGENT_EMAIL_ACCOUNT=agent@example.com\n' >"$home/.openclaw/workspace/.env"
 agree_all "openclaw harness" "$home"
@@ -426,7 +443,7 @@ rm -rf "$home"
 # today. Since #72 the OpenClaw credentials file no longer pins the layout, so
 # this host is an ordinary one and the fallback is the clone's own file.
 # ---------------------------------------------------------------------------
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.hermes/workspace" "$home/.openclaw/workspace"
 printf 'PAYNANI_EMAIL=hermes@example.com\n' >"$home/.hermes/workspace/.env"
 printf 'AGENT_EMAIL_ACCOUNT=openclaw@example.com\n' >"$home/.openclaw/workspace/.env"
@@ -445,7 +462,7 @@ rm -rf "$home"
 # installer settles it with PAYNANI_ENV and records the answer here; before that
 # it settled it only for the systemd unit, and every other tool went on
 # resolving to a <clone>/.env that does not exist.
-home=$(mktemp -d)
+home=$(tmpdir)
 mkdir -p "$home/.openclaw/workspace" "$home/.claude/workspace"
 : >"$home/.openclaw/workspace/.env"
 : >"$home/.claude/workspace/.env"
