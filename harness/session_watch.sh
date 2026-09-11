@@ -53,42 +53,95 @@ OWNER_FILE="$LOCK_DIR/owner"
 # directory is removed on exit; a holder killed hard leaves it behind, and that
 # is what the liveness check below is for.
 #
-# Recorded inside: this watcher's pid, and the pid of the session that owns it.
-# The second one is the one that matters. In #62 the watcher itself was alive and
-# working perfectly -- it was the session above it that had stopped being able to
-# receive anything.
+# Recorded inside: this watcher's pid, and the chain of processes above it.
+#
+# The chain, and not $PPID, because $PPID is not the session. The harness runs
+# this through a wrapper, and the shape on a real host is:
+#
+#     claude --channels ...      Sl+   <- the session. This is what gets stopped.
+#     /bin/bash -c source ...    Ss    <- the wrapper. This is $PPID.
+#     bash session_watch.sh      S     <- here
+#
+# A stopped process does not stop its children: with the grandparent in state T
+# its child stayed in S, measured rather than assumed. So a check on $PPID reads
+# a wrapper that is perfectly healthy while the session above it is suspended,
+# and never fires -- which is the whole of #62 surviving its own fix.
 session_pid=$PPID
 watcher_pid=$$
 
-# Alive is not the same as usable, and this is the distinction #62 was about.
+# One `ps` per hop, so this runs once at arming and the answer is remembered.
+#
+# The walk stops at the first ancestor this user cannot signal, and that boundary
+# is the point rather than an optimisation. Walking to pid 1 collects the shell's
+# own ancestors and then kernel threads, and `kill -0` fails on those for lack of
+# permission -- not because they died. Reading that as "the session is gone"
+# stopped the watcher on the first line it ever read, which is how this was
+# found. What belongs in the chain is the processes this session owns, because
+# those are the ones whose suspension means nothing will be rendered.
+ancestors() {
+	local pid=$1 hops=0 out=""
+	while [ -n "$pid" ] && [ "$pid" -gt 1 ] 2>/dev/null && [ "$hops" -lt 12 ]; do
+		kill -0 "$pid" 2>/dev/null || break
+		out="$out $pid"
+		pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+		hops=$((hops + 1))
+	done
+	printf '%s' "${out# }"
+}
+session_chain=$(ancestors "$session_pid")
+
+# `kill -0` is a bash builtin: 25us and no fork, against 8.1ms for one `ps`.
+# That gap is why the loop below can afford to ask this on every single line and
+# only asks the expensive question on a timer.
+chain_is_alive() {   # chain
+	local pid
+	for pid in $1; do
+		kill -0 "$pid" 2>/dev/null || return 1
+	done
+	return 0
+}
+
+chain_is_awake() {   # chain
+	local pid state
+	for pid in $1; do
+		state=$(ps -o state= -p "$pid" 2>/dev/null | tr -d ' ')
+		case "$state" in
+			T*) return 1 ;;
+		esac
+	done
+	return 0
+}
+
+# The two callers of this want opposite things when the answer is unclear, and
+# saying so here is cheaper than discovering it twice.
+#
+# Taking over another watcher's lock: being wrong gives two readers on one
+# cursor, which is the corruption this guard exists to prevent. Err towards
+# leaving it alone.
+#
+# Stopping this watcher's own loop: being wrong costs one unnecessary re-arm,
+# and the mail stays in the spool because the cursor did not move. Err towards
+# stopping.
+#
+# So `session_is_usable` is the conservative one, and the loop below uses the
+# primitives directly instead of it.
 session_is_usable() {
 	local pid=$1 state
 	[ -n "$pid" ] || return 1
 	kill -0 "$pid" 2>/dev/null || return 1
-
-	# `ps -o state=` is POSIX and answers on both Linux and macOS, which is why
-	# it is here instead of /proc: a check that only works on the platform where
-	# the bug was found is how #105 happened.
 	state=$(ps -o state= -p "$pid" 2>/dev/null | tr -d ' ')
 	case "$state" in
-		T*)
-			# Suspended by SIGTSTP. Alive, and it will not render a line until
-			# somebody continues it -- which may be never. This is the case that
-			# ate nine hours of mail.
-			return 1
-			;;
-		"")
-			# The process exists and `ps` would not say what it is doing. Treat
-			# it as usable rather than steal from it: a wrong steal gives two
-			# watchers on one cursor, which is the corruption this guard exists
-			# to prevent. The caller says this out loud rather than deciding in
-			# silence.
-			return 0
-			;;
-		*)
-			return 0
-			;;
+		T*) return 1 ;;
+		"") return 0 ;;   # exists, and ps will not say. Do not steal from it.
+		*)  return 0 ;;
 	esac
+}
+
+chain_is_usable() {   # chain
+	[ -n "$1" ] || return 1
+	chain_is_alive "$1" || return 1
+	chain_is_awake "$1" || return 1
+	return 0
 }
 
 read_owner() {   # field
@@ -100,7 +153,8 @@ claim_lock() {
 	mkdir "$LOCK_DIR" 2>/dev/null || return 1
 	printf 'watcher=%s
 session=%s
-' "$watcher_pid" "$session_pid" >"$OWNER_FILE"
+chain=%s
+' "$watcher_pid" "$session_pid" "$session_chain" >"$OWNER_FILE"
 	# Release on every ordinary exit. A hard kill skips this, and the stale
 	# branch below is what covers that.
 	trap 'rm -rf "$LOCK_DIR"' EXIT
@@ -122,7 +176,9 @@ if ! claim_lock; then
 			echo "[watch] could not take the watch lock; NOT armed. Mail will queue but nothing will show it."
 			exit 1
 		}
-	elif session_is_usable "$held_session"; then
+	elif { held_chain=$(read_owner chain)
+	       if [ -n "$held_chain" ]; then chain_is_usable "$held_chain"
+	       else session_is_usable "$held_session"; fi; }; then
 		echo "[watch] another session is already watching this spool; not arming a second."
 		exit 0
 	else
@@ -175,7 +231,105 @@ cursor=$start
 # that were never shown -- which is indistinguishable from a quiet mailbox.
 # Blank lines are counted too, or the cursor drifts out of step with the file it
 # indexes into.
-tail -c "+$((start + 1))" -F "$SPOOL" 2>/dev/null | while IFS= read -r line; do
+# Advancing the cursor is a claim that somebody saw the line. This loop stops
+# making that claim the moment it stops being true (#110).
+#
+# What went wrong without this: a watcher whose session had been suspended kept
+# reading, kept printing to a descriptor nobody was attached to, and kept moving
+# the cursor -- 8h43m and 3299 bytes on one host. The next session's hook reads
+# that cursor to decide what to replay, so those messages were skipped then and
+# were never shown afterwards either. They had been acknowledged by nobody.
+#
+# Stopping is safe in a way that advancing is not. The mail stays in the spool,
+# the cursor still points before it, and the next session replays it. The worst
+# a false alarm costs is one re-arm.
+#
+# Two questions on two schedules, because they cost three orders of magnitude
+# apart. `kill -0` is a builtin at ~25us, so a dead session is caught on the very
+# next line and nothing is lost. `ps` is ~8.1ms, and asking it per line would put
+# a fork between every message, so suspension is caught within STATE_EVERY
+# seconds instead. That interval is the most mail this can lose, and it is
+# written here rather than left implicit.
+# The interval between liveness checks, and the most mail this can lose: a
+# suspension that starts just after one check is noticed at the next.
+STATE_EVERY=2
+
+stop_watching() {   # reason
+	# stdout, because from Claude Code's side stderr goes to a file nothing
+	# reads -- the same reason the lock message moved here (#62).
+	echo "[watch] $1; stopping without advancing the cursor, so the next session replays what is left."
+}
+
+# The checks must not depend on mail arriving. Tying them to a line looks
+# harmless -- if nothing is arriving, nothing is being lost -- and it leaves a
+# watcher sitting on the lock of a session that ended hours ago, in a mailbox
+# that happens to be quiet.
+#
+# That used to be `read -t`, and it rested on two things bash does not promise
+# equally everywhere. Returning over 128 for a timeout arrived in bash 4; 3.2
+# answers 1, the same as for end-of-file. And the timeout itself is not a thing
+# to lean on either: on the 3.2 that macOS still ships, a watcher with a stopped
+# grandparent recorded in its own chain sat there having printed one line and
+# never asked another question -- alive, holding the lock, checking nothing.
+#
+# So the interval stops being a property of `read` and becomes data in the
+# stream. A ticker writes a token into the same fifo on a timer, the reader
+# blocks with no timeout at all, and a token means "no mail, ask the questions".
+# What was a promise about a builtin is now a line arriving, which is the one
+# thing this loop already knows how to handle.
+TICK="__paynani_tick_${$}_${RANDOM}"
+
+FIFO="$STATE_DIR/session.watch.$$.fifo"
+rm -f "$FIFO"
+if ! mkfifo "$FIFO" 2>/dev/null; then
+	echo "[watch] could not create the read fifo in $STATE_DIR; NOT armed. Mail will queue but nothing will show it."
+	exit 1
+fi
+
+tail -c "+$((start + 1))" -F "$SPOOL" 2>/dev/null >"$FIFO" &
+tail_pid=$!
+# Both writers are short lines, well under PIPE_BUF, so a tick cannot land in
+# the middle of a message.
+( while :; do printf '%s\n' "$TICK"; sleep "$STATE_EVERY"; done ) >"$FIFO" &
+ticker_pid=$!
+
+# Blocks until a writer opens its end, which is why the writers start first. The
+# fifo is unlinked immediately: both ends are held open by descriptor from here
+# on, and nothing else can join the stream.
+exec 8<"$FIFO"
+rm -f "$FIFO"
+
+# A watcher that has decided to stop has to actually stop, and that is about
+# processes rather than about the loop returning. The reader runs in this shell
+# rather than at the end of a pipeline for the same reason: `cmd | while ...`
+# puts the loop in a subshell, so `exit` there ends the subshell and leaves the
+# writers running. GNU tail hides that -- it notices the closed read end and
+# goes -- and BSD tail does not, so on macOS the orphan sat holding whatever
+# descriptors it had inherited. Under a CI step that captures output with
+# `$(...)`, that is the capture's own pipe, and the step hangs until the runner
+# is taken away rather than failing.
+trap 'rm -rf "$LOCK_DIR"; kill "$tail_pid" "$ticker_pid" 2>/dev/null' EXIT
+
+while IFS= read -r -u 8 line; do
+	# Cheap enough to ask on every line: `kill -0` is a builtin at ~25us, so a
+	# dead session is caught on the very next one and nothing is lost.
+	if ! chain_is_alive "$session_chain"; then
+		stop_watching "the session that armed this watch is gone"
+		exit 0
+	fi
+
+	if [ "$line" = "$TICK" ]; then
+		# The ticker outlives the tail, so end-of-mail has to be asked about
+		# rather than waited for.
+		kill -0 "$tail_pid" 2>/dev/null || break
+		# ~8.1ms, which is why it waits for a tick instead of riding every line.
+		if ! chain_is_awake "$session_chain"; then
+			stop_watching "the session that armed this watch is suspended"
+			exit 0
+		fi
+		continue
+	fi
+
 	width=$(printf '%s\n' "$line" | wc -c | tr -d ' ')
 	[ -n "$line" ] && printf '%s\n' "$line"
 	cursor=$((cursor + width))
