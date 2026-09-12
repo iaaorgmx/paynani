@@ -19,6 +19,11 @@ Ten minutes, most of which is finding one hostname.
 > below, which it diagnoses by name instead of leaving you to find it.
 > See [`webapp/README.md`](../webapp/README.md).
 >
+> **That form needs PHP installed on the agent's machine.** If it does not have
+> it and cannot install it (most commonly: no `sudo`), ask it to run
+> `scripts/paynani onboard` instead — the same form, the same guarantees, without
+> that dependency.
+>
 > The rest of this page is the manual route, and remains worth reading: it explains
 > *why* each setting is what it is, which the form cannot.
 

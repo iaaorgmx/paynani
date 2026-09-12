@@ -19,6 +19,11 @@ Diez minutos, y la mayoría se te van en encontrar un nombre de servidor.
 > del servidor que viene más abajo, que te lo diagnostica por su nombre en vez de
 > dejarte encontrarlo. Ve [`webapp/README.md`](webapp/README.md).
 >
+> **Ese formulario necesita PHP instalado en la máquina del agente.** Si no lo
+> tiene y no lo puede instalar (lo más común: no tiene `sudo`), pídele que corra
+> `scripts/paynani onboard` en su lugar — el mismo formulario, las mismas
+> garantías, sin esa dependencia.
+>
 > El resto de esta página es la ruta manual, y vale la pena leerla de todos modos:
 > explica *por qué* cada ajuste es lo que es, y eso el formulario no lo puede
 > hacer.
