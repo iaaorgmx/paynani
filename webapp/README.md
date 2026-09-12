@@ -1,5 +1,11 @@
 # The setup page
 
+**Needs a PHP 8.1+ CLI on the host.** If that is not available and cannot be
+installed (no `sudo`, most commonly), `scripts/paynani onboard` is the same
+form, same guarantees, running on Python 3's standard library instead — which
+every other part of this repository already requires anyway. See issue #114
+for why both exist side by side for now.
+
 A form that collects the seven mailbox settings, signs in to the mail server to
 confirm they work, and, only if the server accepts the account, writes
 `.env` at the top of the clone.

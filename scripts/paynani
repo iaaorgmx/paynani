@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""
+paynani CLI.
+
+    paynani onboard [--port PORT]
+
+Starts the mailbox onboarding flow: a local, loopback-only web server prints
+a one-time link, a human fills in the seven mailbox settings, and the CLI
+writes .env once both IMAP and SMTP authenticate for real. See
+webapp/README.md for the same flow's PHP predecessor, and issue #114 for why
+this exists (an agent host frequently has no PHP CLI, and cannot install one
+without sudo, while every other part of paynani already requires only Python
+3's standard library).
+
+`onboard` is the only subcommand this first release implements. Two more are
+already on the roadmap — setting an individual .env key, and managing
+roster.md — planned as follow-up issues once this subcommand's shape has
+proven out; that is also why this is a subcommand and not a single top-level
+flag.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from paynani_lib import onboard  # noqa: E402
+
+DEFAULT_PORT = 8765
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="paynani", description="paynani CLI.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    onboard_parser = subparsers.add_parser(
+        "onboard", help="Start the mailbox onboarding web form and write .env."
+    )
+    onboard_parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help=f"Port to bind on 127.0.0.1 (default: {DEFAULT_PORT}).",
+    )
+
+    args = parser.parse_args(argv)
+
+    if args.command == "onboard":
+        return onboard.run(port=args.port)
+
+    parser.print_help()
+    return 64
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

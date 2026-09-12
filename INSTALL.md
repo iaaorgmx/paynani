@@ -347,8 +347,12 @@ transcript is a standing liability; transcripts get stored, exported and reviewe
 ## 3. Credentials
 
 **If the setup page already ran, this section is done.** `scripts/setup_web.sh`
-writes the credentials file and tells you where; see `AGENTS.md` step 2. Confirm
-and move on to §4 rather than creating a second file:
+writes the credentials file and tells you where; see `AGENTS.md` step 2. That
+form needs a PHP CLI on this host — where there is none and none can be
+installed (no `sudo`, most commonly), `scripts/paynani onboard` is the same
+form on Python 3's standard library instead, which this host already has by
+virtue of running paynani at all. Confirm and move on to §4 rather than
+creating a second file:
 
 ```bash
 ls -l "$(. scripts/envpath.sh && paynani_env_file)"

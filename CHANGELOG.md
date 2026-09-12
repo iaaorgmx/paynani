@@ -2,6 +2,33 @@
 
 ## Sin publicar
 
+**Configurar el `.env` ya no depende de tener PHP instalado.** `scripts/paynani
+onboard` levanta el mismo formulario de incorporación que `webapp/`, pero en
+Python 3 puro — la única dependencia que ya exige el resto de este
+repositorio (`harness/adapters/*.py`, `scripts/idle_listener.py`, etc.), no
+una nueva.
+
+El problema real: el agente que instala paynani en OpenClaw, Hermes Agent o
+Codex frecuentemente corre en un host sin PHP, y no puede instalarlo por su
+cuenta porque `apt-get install php8.3-cli` requiere `sudo`. El paso pensado
+para ayudar a alguien sin conocimientos técnicos terminaba siendo, en cambio,
+un bloqueo al momento de instalar para el agente que hace el trabajo.
+
+`scripts/paynani onboard [--port PUERTO]` reproduce exactamente la misma
+experiencia — enlace de un solo uso, solo loopback, nada se escribe hasta que
+un login IMAP y uno SMTP reales autentiquen ambos — usando únicamente
+`http.server`, `imaplib` y `smtplib` de la librería estándar. Los cinco
+catálogos de idioma (`webapp/i18n/*.php`) se portaron 1:1 a
+`scripts/paynani_lib/i18n_data/*.py`, mismas claves, mismo texto. La
+resolución de rutas y el `.env` en sí se reutilizan de `harness/paths.py`
+directamente, sin una cuarta implementación de esa regla.
+
+`webapp/` y `scripts/setup_web.sh` **no se retiran** en esta entrega; siguen
+siendo la ruta soportada donde ya se usan. Ver el PRD en el issue #114 para el
+razonamiento completo detrás de la elección de Python sobre Node.js, y las
+preguntas que quedan abiertas (retiro eventual de `webapp/`, superficie final
+del comando de cara a los subcomandos de `.env`/`roster.md` planeados).
+
 **El README dejó de ser mitad puerta humana y mitad manual del agente.** Catorce
 commits desde 0.4.0, todos de documentación: ninguna línea de código cambió.
 
