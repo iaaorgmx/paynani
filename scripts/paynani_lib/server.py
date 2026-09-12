@@ -33,6 +33,7 @@ PORT_HINTS = {
 }
 
 COOKIE_NAME = "paynani_psid"
+MAX_BODY_BYTES = 64 * 1024  # generous for 8 short fields; anything past it isn't this form
 
 # Process-lifetime only: this server exists for one onboarding run and exits
 # once the .env changes (see onboard.py), so there is nothing to persist
@@ -169,15 +170,22 @@ def make_handler(state_dir: Path):
         # ---- verbs ----------------------------------------------------------
 
         def do_GET(self):  # noqa: N802
+            # Loopback first, before anything else responds — including the
+            # static assets below. Serving them to a non-loopback request
+            # would not leak a credential, but it would break the one
+            # invariant this guard promises ("even bound to 0.0.0.0 by
+            # mistake, an off-machine request gets 403 and nothing else") and
+            # would announce paynani to whoever reached the port.
+            if not guard.is_loopback(self._client_ip()):
+                self._refuse_loopback()
+                return
+
             parsed = urlparse(self.path)
             if self._serve_static(parsed.path, self._static_content_type(parsed.path)):
                 return
             if parsed.path != "/":
                 self.send_response(404)
                 self.end_headers()
-                return
-            if not guard.is_loopback(self._client_ip()):
-                self._refuse_loopback()
                 return
 
             query = parse_qs(parsed.query)
@@ -218,7 +226,14 @@ def make_handler(state_dir: Path):
                 self._refuse_token()
                 return
 
-            length = int(self.headers.get("Content-Length", "0") or "0")
+            # A malformed header must not raise (int() on garbage) and a huge
+            # one must not be read in full: eight short fields never come
+            # close to this, so a request that does is not this form.
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+            except ValueError:
+                length = 0
+            length = max(0, min(length, MAX_BODY_BYTES))
             raw = self.rfile.read(length).decode("utf-8", errors="replace") if length else ""
             post = {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
 

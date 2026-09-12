@@ -104,7 +104,13 @@ def render_env(values: dict) -> str:
     """
     path = env_path()
     try:
-        existing = path.read_text(encoding="utf-8")
+        # newline='': Path.read_text() (no newline= parameter before Python
+        # 3.13) applies universal-newline translation on read, silently
+        # turning \r\n into \n before the CRLF check below ever sees it. The
+        # line-ending-preservation this function promises has to start from
+        # the untranslated bytes.
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            existing = fh.read()
     except OSError:
         existing = ""
 
@@ -125,6 +131,13 @@ def render_env(values: dict) -> str:
         out.append("")
         return "\n".join(out)
 
+    # The line ending already in the file, preserved rather than normalised to
+    # \n. "Only the seven keys this form owns are touched" has to hold in
+    # bytes, not just in content — rewriting every line's ending on a file a
+    # human or another tool wrote with \r\n would touch all of it while
+    # looking, to a diff of the text, like nothing changed.
+    newline = "\r\n" if "\r\n" in existing else "\n"
+
     lines = re.split(r"\r\n|\n|\r", existing.rstrip("\r\n"))
     seen: set[str] = set()
     for i, line in enumerate(lines):
@@ -136,7 +149,7 @@ def render_env(values: dict) -> str:
     for key in ENV_FIELDS:
         if key not in seen:
             lines.append(f"{key}={sanitise_value(values.get(key, ''))}")
-    return "\n".join(lines) + "\n"
+    return newline.join(lines) + newline
 
 
 def write_env(contents: str) -> tuple[bool, str]:
@@ -149,17 +162,37 @@ def write_env(contents: str) -> tuple[bool, str]:
 
     try:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        directory.chmod(0o700)
     except OSError:
         return False, t("f.mkdir_failed", dir=str(directory))
+    try:
+        directory.chmod(0o700)
+    except OSError:
+        # Not fatal, and deliberately not: this directory is not always one
+        # paynani owns (env_file() can resolve into a harness workspace, or
+        # a clone's top level shared with other things), and refusing to
+        # write a mailbox password over a permission bit this process cannot
+        # change is a worse failure than leaving that bit alone. PHP's
+        # envfile.php made the same choice with `@chmod`.
+        pass
 
-    # Write beside the target and rename, so an interrupted write cannot leave
-    # a half-file that the listener would read as a complete one.
-    tmp = path.with_name(path.name + ".tmp")
+    # Follow a symlink rather than replacing it: on a host where this path is
+    # linked at a harness .env, renaming over it would break the link and
+    # strand the listener on a file nobody updates. Resolved *before* writing
+    # anything, so the temp file below lands next to the real target and one
+    # `os.replace` covers both cases — the two used to diverge here, and the
+    # symlink branch lost the interrupted-write protection the plain-file one
+    # has, which is exactly backwards: that is the host where the listener is
+    # reading this file live.
+    target = path
+    if path.is_symlink():
+        resolved = readlink_absolute(path)
+        target = resolved if resolved is not None else path
+
+    tmp = target.with_name(target.name + ".tmp")
     try:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     except OSError:
-        return False, t("f.write_failed", dir=str(directory))
+        return False, t("f.write_failed", dir=str(target.parent))
 
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -168,28 +201,11 @@ def write_env(contents: str) -> tuple[bool, str]:
         tmp.unlink(missing_ok=True)
         return False, t("f.incomplete")
 
-    # Follow a symlink rather than replacing it: on a host where this path is
-    # linked at a harness .env, renaming over it would break the link and
-    # strand the listener on a file nobody updates.
-    target = path
-    if path.is_symlink():
-        resolved = readlink_absolute(path)
-        target = resolved if resolved is not None else path
-
-    if target != path:
-        try:
-            target.write_text(contents, encoding="utf-8")
-            target.chmod(0o600)
-        except OSError:
-            tmp.unlink(missing_ok=True)
-            return False, t("f.symlink_failed", target=str(target))
-        tmp.unlink(missing_ok=True)
-        return True, str(target)
-
     try:
-        os.replace(tmp, path)
+        os.replace(tmp, target)
     except OSError:
         tmp.unlink(missing_ok=True)
-        return False, t("f.rename_failed", path=str(path))
-    path.chmod(0o600)
-    return True, str(path)
+        msg_key = "f.symlink_failed" if target != path else "f.rename_failed"
+        return False, t(msg_key, target=str(target), path=str(target))
+    target.chmod(0o600)
+    return True, str(target)

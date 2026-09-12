@@ -15,7 +15,8 @@ para ayudar a alguien sin conocimientos técnicos terminaba siendo, en cambio,
 un bloqueo al momento de instalar para el agente que hace el trabajo.
 
 `scripts/paynani onboard [--port PUERTO]` reproduce exactamente la misma
-experiencia — enlace de un solo uso, solo loopback, nada se escribe hasta que
+experiencia — un enlace por ejecución que deja de servir en cuanto el proceso
+termina, solo loopback, nada se escribe hasta que
 un login IMAP y uno SMTP reales autentiquen ambos — usando únicamente
 `http.server`, `imaplib` y `smtplib` de la librería estándar. Los cinco
 catálogos de idioma (`webapp/i18n/*.php`) se portaron 1:1 a

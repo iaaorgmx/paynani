@@ -78,7 +78,20 @@ def probe_imap(host: str, port: int, user: str, password: str) -> dict:
     try:
         conn.login(user, password)
     except imaplib.IMAP4.error:
+        # A real protocol-level refusal (tagged NO/BAD): the connection is
+        # fine, the credentials are not.
         steps.append(step(False, t("p.auth_rejected"), t("p.auth_rejected_d")))
+        try:
+            conn.logout()
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "steps": steps}
+    except Exception as exc:  # noqa: BLE001
+        # Everything else -- a dropped socket, a TLS renegotiation failure,
+        # a timeout mid-exchange -- is a connection problem, not a rejected
+        # password, and belongs in the same translated categories the
+        # connect step above uses rather than an unhandled 500.
+        steps.append(step(False, t("p.no_tls", host=host, port=port), _explain_socket_error(exc, host)))
         try:
             conn.logout()
         except Exception:  # noqa: BLE001

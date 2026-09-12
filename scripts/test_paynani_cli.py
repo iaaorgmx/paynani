@@ -187,10 +187,23 @@ try:
     check("envfile: write_env writes to the resolved path", where == str(target))
     check("envfile: written file matches what was rendered", target.read_text(encoding="utf-8") == updated)
     check("envfile: file permissions are 0600", stat.S_IMODE(target.stat().st_mode) == 0o600)
+    check("envfile: no leftover .tmp file after a successful write", not (tmp / ".env.tmp").exists())
 
     round_tripped = envfile.read_env()
     check("envfile: read_env round-trips an owned value", round_tripped["AGENT_EMAIL_ACCOUNT"] == VALID["AGENT_EMAIL_ACCOUNT"])
     check("envfile: read_env also returns an unowned key", round_tripped.get("SOME_OTHER_TOKEN") == "do-not-touch-me")
+
+    crlf_file = tmp / "crlf.env"
+    crlf_file.write_bytes(
+        b"# a crlf file\r\nSOME_OTHER_TOKEN=keep-me\r\nAGENT_EMAIL_ACCOUNT=old@example.com\r\n"
+    )
+    os.environ["PAYNANI_ENV"] = str(crlf_file)
+    rendered = envfile.render_env(VALID)
+    check(
+        "envfile: a CRLF file's line ending is preserved, not normalised to LF",
+        "\r\n" in rendered and "\n\n" not in rendered.replace("\r\n", ""),
+    )
+    check("envfile: the untouched line inside a CRLF file still ends in \\r\\n", "SOME_OTHER_TOKEN=keep-me\r\n" in rendered)
 
     quoted = tmp / "quoted.env"
     quoted.write_text('KEY_A="value with spaces"\nKEY_B=\'single\'\nKEY_C=bare\n', encoding="utf-8")
@@ -202,7 +215,14 @@ try:
 
     # Symlink case: write_env must follow the link, never replace it, matching
     # the arrangement INSTALL.md recommends for harness-workspace credentials.
-    real_target = tmp / "real.env"
+    # The link and its target live in different directories on purpose: the
+    # bug this guards against wrote straight into the target with
+    # write_text() (truncate-then-write, no temp file), which this only
+    # catches if the temp file has somewhere of its own to be that isn't the
+    # link's directory.
+    real_dir = tmp / "harness_workspace"
+    real_dir.mkdir()
+    real_target = real_dir / "real.env"
     real_target.write_text("AGENT_EMAIL_ACCOUNT=old@example.com\n", encoding="utf-8")
     link = tmp / "linked.env"
     link.symlink_to(real_target)
@@ -215,6 +235,11 @@ try:
         "envfile: the real file behind the link received the write",
         f"AGENT_EMAIL_ACCOUNT={VALID['AGENT_EMAIL_ACCOUNT']}" in real_target.read_text(encoding="utf-8"),
     )
+    check(
+        "envfile: the symlink write left no leftover .tmp file in the target's directory",
+        not any(real_dir.glob("*.tmp")),
+    )
+    check("envfile: no stray .tmp file was left next to the link either", not any(tmp.glob("linked.env.tmp")))
 finally:
     os.environ.pop("PAYNANI_ENV", None)
     shutil.rmtree(tmp, ignore_errors=True)
@@ -287,6 +312,19 @@ try:
     r = conn.getresponse()
     r.read()
     check("e2e: a wrong token is refused with 403", r.status == 403)
+
+    # A static asset request must be refused for a non-loopback client before
+    # it is ever served -- regression test for the ordering bug where
+    # _serve_static() ran before the loopback check.
+    real_is_loopback = server_mod.guard.is_loopback
+    server_mod.guard.is_loopback = lambda addr: False
+    try:
+        conn.request("GET", "/assets/app.css")
+        r = conn.getresponse()
+        r.read()
+        check("e2e: a static asset is refused for a non-loopback client", r.status == 403)
+    finally:
+        server_mod.guard.is_loopback = real_is_loopback
 
     conn.request("GET", f"/?t={token}")
     r = conn.getresponse()
