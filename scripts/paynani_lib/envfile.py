@@ -195,7 +195,11 @@ def write_env(contents: str) -> tuple[bool, str]:
         return False, t("f.write_failed", dir=str(target.parent))
 
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        # newline="": the write-side mirror of the read fix above. Harmless
+        # on Linux/macOS today (os.linesep is "\n" there, so universal-
+        # newline translation on write is a no-op), but leaving it asymmetric
+        # is exactly how the read-side bug got there in the first place.
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
             fh.write(contents)
     except OSError:
         tmp.unlink(missing_ok=True)
@@ -207,5 +211,11 @@ def write_env(contents: str) -> tuple[bool, str]:
         tmp.unlink(missing_ok=True)
         msg_key = "f.symlink_failed" if target != path else "f.rename_failed"
         return False, t(msg_key, target=str(target), path=str(target))
-    target.chmod(0o600)
+    try:
+        target.chmod(0o600)
+    except OSError:
+        # Not fatal, same reasoning as the directory chmod above: the write
+        # already succeeded, and a target this process doesn't own the mode
+        # bits of should not turn a successful save into a reported failure.
+        pass
     return True, str(target)
