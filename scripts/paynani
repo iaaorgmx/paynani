@@ -10,11 +10,11 @@ paynani CLI.
 
 `onboard` starts the mailbox onboarding flow: a local, loopback-only web
 server prints a one-time link, a human fills in the seven mailbox settings,
-and the CLI writes .env once both IMAP and SMTP authenticate for real. See
-webapp/README.md for the same flow's PHP predecessor, and issue #114 for why
-this exists (an agent host frequently has no PHP CLI, and cannot install one
-without sudo, while every other part of paynani already requires only Python
-3's standard library).
+and the CLI writes .env once both IMAP and SMTP authenticate for real. It
+replaced an earlier PHP form retired in favor of this command (see
+CHANGELOG.md); issue #114 has the PRD and why this exists (an agent host
+frequently has no PHP CLI, and cannot install one without sudo, while every
+other part of paynani already requires only Python 3's standard library).
 
 `set` and `roster` are issue #116's follow-up to that PRD: changing one .env
 key, or one roster.md contact, without hand-editing either file or re-running

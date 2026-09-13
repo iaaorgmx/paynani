@@ -9,7 +9,7 @@ qu'un mot de passe ne doit pas transiter par une conversation.
 Dix minutes, dont l'essentiel passe à trouver un nom de serveur.
 
 > **Il existe un formulaire pour cela.** Si taper un fichier dans un terminal ne
-> vous dit rien, demandez à l'agent de lancer `scripts/setup_web.sh`. Cela ne
+> vous dit rien, demandez à l'agent de lancer `scripts/paynani onboard`. Cela ne
 > contrevient pas à la règle ci-dessus : l'agent ne fait qu'ouvrir une page sur sa
 > propre machine et vous en donner le lien. C'est vous qui saisissez le mot de
 > passe dans la page, il ne transite donc toujours pas par la conversation.
@@ -17,12 +17,7 @@ Dix minutes, dont l'essentiel passe à trouver un nom de serveur.
 > La page demande les mêmes réglages que décrit ce document, les vérifie auprès de
 > votre serveur de messagerie et écrit le fichier à votre place, y compris pour le
 > problème de nom d'hôte exposé plus bas, qu'elle diagnostique nommément au lieu de
-> vous laisser le découvrir. Voir [`webapp/README.md`](../webapp/README.md).
->
-> **Ce formulaire nécessite PHP installé sur la machine de l'agent.** S'il ne
-> l'a pas et ne peut pas l'installer (le plus souvent : pas de `sudo`),
-> demandez-lui de lancer `scripts/paynani onboard` à la place — le même
-> formulaire, les mêmes garanties, sans cette dépendance.
+> vous laisser le découvrir.
 >
 > Le reste de cette page est la voie manuelle, et reste utile à lire : elle explique
 > *pourquoi* chaque réglage est ce qu'il est, ce que le formulaire ne peut pas

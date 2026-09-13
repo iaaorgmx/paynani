@@ -8,8 +8,9 @@ web form has: only the affected key changes, everything else in the file
 survives byte-for-byte (line endings included), and the write is atomic.
 
 The live check before writing is what this command is for, rather than a
-one-line `sed -i`: it is the same reasoning webapp/README.md gives for the web
-form over a text editor, applied to a single field instead of all seven.
+one-line `sed -i`: catching a typo'd server name or a rotated password before
+it lands beats discovering it the next time the listener tries to connect,
+applied to a single field instead of all seven.
 """
 
 from __future__ import annotations

@@ -9,20 +9,15 @@ passar por um chat.
 Dez minutos, e a maior parte vai em achar um nome de servidor.
 
 > **Existe um formulário para isso.** Se digitar um arquivo num terminal não é o
-> que você quer fazer, peça ao agente para rodar `scripts/setup_web.sh`. Isso não
-> quebra a regra acima: o agente só sobe uma página na máquina dele e te passa o
-> link. A senha quem digita na página é você, então ela continua não passando pelo
-> chat.
+> que você quer fazer, peça ao agente para rodar `scripts/paynani onboard`. Isso
+> não quebra a regra acima: o agente só sobe uma página na máquina dele e te passa
+> o link. A senha quem digita na página é você, então ela continua não passando
+> pelo chat.
 >
 > A página pede os mesmos dados que este documento descreve, testa contra o seu
 > servidor de e-mail e escreve o arquivo para você, inclusive o problema do nome do
 > servidor que aparece mais abaixo, que ela diagnostica pelo nome em vez de deixar
-> você descobrir. Veja [`webapp/README.md`](../webapp/README.md).
->
-> **Esse formulário precisa de PHP instalado na máquina do agente.** Se ele não
-> tiver e não conseguir instalar (o mais comum: não tem `sudo`), peça para ele
-> rodar `scripts/paynani onboard` no lugar — o mesmo formulário, as mesmas
-> garantias, sem essa dependência.
+> você descobrir.
 >
 > O resto desta página é o caminho manual, e continua valendo a leitura: explica
 > *por que* cada ajuste é o que é, e isso o formulário não consegue fazer.

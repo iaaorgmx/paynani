@@ -346,13 +346,11 @@ transcript is a standing liability; transcripts get stored, exported and reviewe
 
 ## 3. Credentials
 
-**If the setup page already ran, this section is done.** `scripts/setup_web.sh`
-writes the credentials file and tells you where; see `AGENTS.md` step 2. That
-form needs a PHP CLI on this host — where there is none and none can be
-installed (no `sudo`, most commonly), `scripts/paynani onboard` is the same
-form on Python 3's standard library instead, which this host already has by
-virtue of running paynani at all. Confirm and move on to §4 rather than
-creating a second file:
+**If the setup page already ran, this section is done.** `scripts/paynani
+onboard` writes the credentials file and tells you where; see `AGENTS.md` step
+2. It needs nothing beyond Python 3's standard library, which this host
+already has by virtue of running paynani at all. Confirm and move on to §4
+rather than creating a second file:
 
 ```bash
 ls -l "$(. scripts/envpath.sh && paynani_env_file)"
@@ -413,9 +411,9 @@ manifest and `hermes/` stay in the clone, because the harness owns that one file
 and this project does not.
 
 Adding a runtime means adding its root to `HARNESS_ROOTS`, in
-[`harness/paths.py`](harness/paths.py), [`scripts/envpath.sh`](scripts/envpath.sh)
-and [`webapp/lib/paths.php`](webapp/lib/paths.php) together —
-`scripts/test_paths.sh` asserts the three agree.
+[`harness/paths.py`](harness/paths.py) and
+[`scripts/envpath.sh`](scripts/envpath.sh) together —
+`scripts/test_paths.sh` asserts the two agree.
 
 If two harnesses on one host each have credentials, neither is adopted and the
 answer falls back to the clone's own `.env`. Name the right one with

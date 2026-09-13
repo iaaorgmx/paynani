@@ -114,6 +114,6 @@ STRINGS = {
     'g.loopback_1': 'Esta página solo responde a peticiones desde la computadora donde corre.',
     'g.loopback_2': 'Si el agente está en un host remoto, reenvía el puerto en lugar de esto:',
     'g.token_1': 'A este enlace le falta su llave de un solo uso, o la llave cambió.',
-    'g.token_2': 'Pídele al agente que corra scripts/setup_web.sh otra vez y te mande el enlace nuevo.',
+    'g.token_2': 'Pídele al agente que corra paynani onboard otra vez y te mande el enlace nuevo.',
     'g.csrf': 'Ese formulario expiró. Recarga la página y llénalo de nuevo.',
 }

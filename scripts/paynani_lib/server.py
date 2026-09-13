@@ -18,9 +18,6 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness"))
-from paths import repo_root  # noqa: E402
-
 from . import guard, i18n
 from .brand import brand_svg
 from .envfile import ENV_FIELDS, read_env, render_env, write_env
@@ -166,8 +163,8 @@ def make_handler(state_dir: Path, saved_event=None):
 
         def _serve_static(self, rel_path: str, content_type: str) -> bool:
             asset_map = {
-                "/assets/app.css": repo_root() / "webapp" / "assets" / "app.css",
-                "/assets/lang.js": repo_root() / "webapp" / "assets" / "lang.js",
+                "/assets/app.css": Path(__file__).resolve().parent / "assets" / "app.css",
+                "/assets/lang.js": Path(__file__).resolve().parent / "assets" / "lang.js",
             }
             file = asset_map.get(rel_path)
             if file is None:

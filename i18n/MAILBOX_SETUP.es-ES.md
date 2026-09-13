@@ -9,20 +9,15 @@ contraseña no debe pasar por un chat.
 Diez minutos, y la mayor parte se te va en encontrar un nombre de servidor.
 
 > **Hay un formulario para esto.** Si escribir un fichero en una terminal no es lo
-> tuyo, pídele al agente que ejecute `scripts/setup_web.sh`. Eso no rompe la regla
-> de arriba: el agente solo levanta una página en su propia máquina y te pasa el
-> enlace. La contraseña la escribes tú en la página, así que sigue sin pasar por el
-> chat.
+> tuyo, pídele al agente que ejecute `scripts/paynani onboard`. Eso no rompe la
+> regla de arriba: el agente solo levanta una página en su propia máquina y te pasa
+> el enlace. La contraseña la escribes tú en la página, así que sigue sin pasar por
+> el chat.
 >
 > La página pide los mismos datos que describe este documento, los comprueba contra
 > tu servidor de correo y escribe el fichero por ti, incluido el problema del
 > nombre del servidor que viene más abajo, que te lo diagnostica por su nombre en
-> vez de dejarte dar con él. Ve [`webapp/README.md`](../webapp/README.md).
->
-> **Ese formulario necesita PHP instalado en la máquina del agente.** Si no lo
-> tiene y no lo puede instalar (lo más habitual: no tiene `sudo`), pídele que
-> ejecute `scripts/paynani onboard` en su lugar — el mismo formulario, las mismas
-> garantías, sin esa dependencia.
+> vez de dejarte dar con él.
 >
 > El resto de esta página es la ruta manual, y merece la pena leerla igualmente:
 > explica *por qué* cada ajuste es lo que es, y eso el formulario no puede

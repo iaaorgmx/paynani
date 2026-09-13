@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# One rule about where this install keeps its files, written in three languages.
+# One rule about where this install keeps its files, written in two languages.
 #
-# Python answers for the listener and preflight, shell for send.sh and the setup
-# script, PHP for the form. They agreed before this test existed only because
+# Python answers for the listener and preflight, shell for send.sh and
+# paynani onboard's launcher. They agreed before this test existed only because
 # they all hard-coded the same string; now they resolve, and a resolver that
 # drifts sends one half of the install to a file the other half never reads. The
 # symptom is an agent that starts, connects, and refuses to send.
@@ -41,18 +41,13 @@ tmpdir() {
 
 CLONE=$(tmpdir)
 trap 'rm -rf "$CLONE"' EXIT
-mkdir -p "$CLONE/harness" "$CLONE/scripts" "$CLONE/webapp/lib"
+mkdir -p "$CLONE/harness" "$CLONE/scripts"
 cp "$SOURCE_ROOT/harness/paths.py" "$CLONE/harness/"
 cp "$SOURCE_ROOT/scripts/envpath.sh" "$CLONE/scripts/"
-# paths.php es la tercera implementación de la regla y no requiere nada, así que
-# un solo archivo basta y la lista de arriba no vuelve a quedarse corta cuando
-# alguien agregue un require en otro lado.
-cp "$SOURCE_ROOT/webapp/lib/paths.php" "$CLONE/webapp/lib/"
 ROOT="$CLONE"
 
 pass=0
 fail=0
-skip=0
 
 check() {   # description, expected, actual
     if [ "$2" = "$3" ]; then
@@ -84,62 +79,19 @@ sh_() (
         roster)      paynani_roster ;;
     esac
 )
-php_() {
-    # Two different reasons to answer nothing, and they must not be conflated.
-    # NA means the form never needed this accessor, so nothing is lost by not
-    # asking. NOPHP means this host cannot check the PHP half of a question it
-    # does answer -- a real gap in coverage, and the only one worth counting.
-    #
-    # Applicability is decided first on purpose. Testing for php first would
-    # report every accessor as a missing check on a php-less host and overstate
-    # the gap by more than double, which is its own kind of wrong number.
-    #
-    # The form only ever needs these two, and they are the two that must not
-    # disagree with the tools it configures.
-    case "${3:-env}" in
-        env|state) ;;
-        *) echo SKIP_NA; return ;;
-    esac
-    command -v php >/dev/null 2>&1 || { echo SKIP_NOPHP; return; }
-    local out
-    out=$(HOME="$1" PAYNANI_ENV="${2:-}" php -r '
-        require "'"$ROOT"'/webapp/lib/paths.php";
-        echo "'"${3:-env}"'" === "env" ? env_path() : state_dir();
-    ' 2>&1)
-    # Un fatal de php sale por stderr y deja stdout vacío. Descartarlo con
-    # 2>/dev/null convertía «este archivo no carga» en «este archivo resuelve la
-    # cadena vacía», y el fallo se leía como un desacuerdo de rutas que no era.
-    # Una ruta siempre es absoluta; cualquier otra cosa es el error, y se
-    # devuelve para que aparezca en la línea «actual».
-    case "$out" in
-        /*) printf '%s\n' "$out" ;;
-        *)  printf 'PHP_ERROR: %s\n' "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-140)" ;;
-    esac
-}
-
 # Sets RESOLVED rather than printing it: this also prints check results, and a
 # caller capturing stdout would swallow them into the answer.
 RESOLVED=""
 agree() {   # description, home, [override], [what]
     local desc=$1 home=$2 override=${3:-} what=${4:-env}
-    local p s h
+    local p s
     p=$(py "$home" "$override" "$what")
     s=$(sh_ "$home" "$override" "$what")
-    h=$(php_ "$home" "$override" "$what")
     check "$desc: shell agrees with python" "$p" "$s"
-    case "$h" in
-        SKIP_NA)   ;;
-        SKIP_NOPHP)
-            # Not silence. A run without php checks two implementations of
-            # three, and a suite reporting "0 failed" either way is how #88's
-            # PHP half came to be "verified" on a host that never ran it.
-            skip=$((skip + 1)) ;;
-        *) check "$desc: php agrees with python" "$p" "$h" ;;
-    esac
     RESOLVED="$p"
 }
 
-# Every accessor, in one layout, from all three languages. The point is not the
+# Every accessor, in one layout, from both languages. The point is not the
 # individual answers — those are checked below — but that nothing drifts.
 agree_all() {   # description, home
     local desc=$1 home=$2 what
@@ -479,13 +431,5 @@ check "with nothing recorded, the fallback is the clone again" \
     "$CLONE/.env" "$(py "$home" "" env)"
 rm -f "$CLONE/runtime.env"
 
-if [ "$skip" -gt 0 ]; then
-    # php is not a prerequisite for running paynani -- AGENTS.md wants it
-    # only for the setup form -- so a host without it is fully supported and
-    # this is not a failure. It is only allowed to pass while it says so.
-    printf '\nskip %d php agreement checks (php not on PATH)\n' "$skip"
-printf '\n%d passed, %d failed, %d skipped (no php)\n' "$pass" "$fail" "$skip"
-else
-    printf '\n%d passed, %d failed\n' "$pass" "$fail"
-fi
+printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

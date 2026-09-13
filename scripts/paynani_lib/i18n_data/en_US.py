@@ -109,7 +109,7 @@ STRINGS = {
     'g.loopback_1': 'This page only answers requests from the computer it runs on.',
     'g.loopback_2': 'If the agent is on a remote host, forward the port instead of this:',
     'g.token_1': 'This link is missing its one-time key, or the key changed.',
-    'g.token_2': 'Ask the agent to run scripts/setup_web.sh again and send you the new link.',
+    'g.token_2': 'Ask the agent to run paynani onboard again and send you the new link.',
     'g.csrf': 'That form expired. Reload the page and fill it in again.',
     'f.mkdir_failed': 'Could not create {dir}.',
     'f.write_failed': 'Could not write in {dir}.',

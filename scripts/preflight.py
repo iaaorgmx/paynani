@@ -104,9 +104,9 @@ def main(argv=None) -> int:
         print("and there is no terminal to ask on.")
         print()
         print("This check needs an account to test, so it runs after the mailbox")
-        print("exists rather than before. If your human has not set one up, serve")
-        print("the form with scripts/setup_web.sh and run this again once it has")
-        print("written the file. AGENTS.md step 2 is the fork this belongs to.")
+        print("exists rather than before. If your human has not set one up, run")
+        print("scripts/paynani onboard and run this again once it has written the")
+        print("file. AGENTS.md step 2 is the fork this belongs to.")
         return 1
 
     # Named for a server, holding a port. Say so rather than dialling it.

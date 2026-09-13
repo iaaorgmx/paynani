@@ -87,7 +87,8 @@ fica o arquivo.
 > Faça você, não peça ao agente. É preciso uma senha, e senha não deve passar por
 > um chat: a que você cola numa conversa fica ali para sempre, e nenhum cuidado
 > posterior desfaz isso. Se preferir não usar o terminal,
-> `scripts/setup_web.sh` abre um formulário local que escreve o arquivo por você.
+> `scripts/paynani onboard` abre um formulário local que escreve o arquivo por
+> você.
 
 ### Passo 2: aponte o agente para este repositório
 

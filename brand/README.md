@@ -75,10 +75,10 @@ repintarlo por tema:
 .marca .logotipo { fill: var(--ink); }
 ```
 
-Así lo usa la página de configuración del buzón —`webapp/lib/brand.php` la
-inserta y `webapp/assets/app.css` la pinta—, que además no tenía alternativa: su
-`Content-Security-Policy` es `default-src 'none'` sin `img-src`, de modo que una
-imagen enlazada quedaría bloqueada.
+Así lo usa la página de configuración del buzón —`scripts/paynani_lib/brand.py`
+la inserta y `scripts/paynani_lib/assets/app.css` la pinta—, que además no
+tenía alternativa: su `Content-Security-Policy` es `default-src 'none'` sin
+`img-src`, de modo que una imagen enlazada quedaría bloqueada.
 
 **Si editas o regeneras los SVG, conserva las dos clases.**
 
@@ -94,7 +94,7 @@ está en [`OFL-Spectral.txt`](OFL-Spectral.txt).
 
 Para la interfaz y la documentación **no se usa Spectral ni ninguna otra fuente
 remota**: va la tipografía del sistema. La razón está escrita en
-`webapp/assets/app.css` y no es estética — paynani se instala en hosts que pueden
+`scripts/paynani_lib/assets/app.css` y no es estética — paynani se instala en hosts que pueden
 no tener salida a internet, y ahí una fuente remota no falla con estruendo, falla
 en silencio.
 
