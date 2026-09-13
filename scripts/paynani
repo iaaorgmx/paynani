@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from paynani_lib import onboard, roster_cli, set_cli  # noqa: E402
+from paynani_lib import i18n, onboard, roster_cli, set_cli  # noqa: E402
 
 DEFAULT_PORT = 8765
 
@@ -75,6 +75,15 @@ def main(argv: list[str] | None = None) -> int:
     roster_remove.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
 
     args = parser.parse_args(argv)
+
+    # `set` and `roster` are terminal commands whose own strings are English,
+    # but i18n.LANG_DEFAULT is es-MX (right for onboard's web form, which
+    # negotiates per-request) and nothing else ever calls set_current() — so
+    # a message from validate.py reached the terminal in Spanish inside an
+    # English sentence. onboard is untouched here: server.py sets the
+    # language itself on every request, before this default could matter.
+    if args.command in ("set", "roster"):
+        i18n.set_current("en-US")
 
     if args.command == "onboard":
         return onboard.run(port=args.port)

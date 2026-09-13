@@ -473,6 +473,14 @@ check(
 # paynani_lib/set_cli.py
 # ---------------------------------------------------------------------------
 
+# scripts/paynani's entry point sets this for the `set`/`roster` subcommands
+# before dispatching (see its own comment for why); calling set_cli.run()
+# directly, as these tests do, skips that entry point, so it is set here to
+# match what a real invocation actually sees -- otherwise these tests would
+# run under whatever es-MX/en-US state the i18n tests above happened to
+# leave, which is not what any real `paynani set`/`paynani roster` sees.
+i18n.set_current("en-US")
+
 set_dir = Path(tempfile.mkdtemp(prefix="paynani-test-set-"))
 try:
     set_env = set_dir / ".env"
@@ -561,6 +569,38 @@ try:
 finally:
     os.environ.pop("PAYNANI_ENV", None)
     shutil.rmtree(set_dir, ignore_errors=True)
+
+
+# The language-consistency fix only exists at scripts/paynani's entry point
+# (set_cli.py itself has no i18n opinion), so it needs a real subprocess to
+# verify -- calling set_cli.run() in-process, as above, would not exercise it.
+lang_dir = Path(tempfile.mkdtemp(prefix="paynani-test-lang-"))
+try:
+    import subprocess
+
+    lang_env = lang_dir / ".env"
+    lang_env.write_text(
+        "AGENT_EMAIL_ACCOUNT=old@example.com\n"
+        "AGENT_EMAIL_PASSWORD=old-pass\n"
+        "AGENT_EMAIL_FROM_NAME=Old Name\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap.example.com\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST=smtp.example.com\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT=465\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ, PAYNANI_ENV=str(lang_env))
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "paynani"), "set", "AGENT_EMAIL_ACCOUNT", "new@example.com"],
+        capture_output=True, text=True, env=env, timeout=30,
+    )
+    combined = result.stdout + result.stderr
+    check(
+        "paynani set (subprocess): the validate.py message comes back in English, not es-MX",
+        "is missing" in combined and "Falta" not in combined,
+    )
+finally:
+    shutil.rmtree(lang_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
