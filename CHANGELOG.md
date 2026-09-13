@@ -2,6 +2,27 @@
 
 ## Sin publicar
 
+**`paynani onboard` ya se detiene solo aunque el `.env` guardado no haya
+cambiado de contenido.** Issue #118, encontrado por Julian probando el
+formulario manualmente: la condición de parada comparaba una huella del
+archivo antes y después, así que reenviar los mismos siete valores ya
+guardados —probar el formulario sin cambiar nada— dejaba el proceso corriendo
+para siempre pese a que el guardado sí había funcionado.
+
+Ese sondeo de huella era un resabio de `scripts/setup_web.sh`, donde el
+lanzador en bash y el servidor PHP son dos procesos separados sin forma de
+avisarse. En Python, servidor y lanzador comparten proceso: ahora el propio
+manejador que escribe el archivo activa un `threading.Event` justo después de
+que la pantalla de confirmación ya salió por el socket, y `onboard.py` se
+detiene en cuanto lo ve — sin esperar a que el contenido difiera de lo que
+había al arrancar. La comparación de huella se conserva como respaldo.
+
+De paso, un `SIGTERM` (por ejemplo `pkill`, en vez de Ctrl-C) dejaba el
+archivo de token de un solo uso sin borrar, porque Python no trata `SIGTERM`
+como `KeyboardInterrupt` por sí solo y el `finally` que limpia nunca corría.
+Ahora un manejador de `SIGTERM` lo enruta por la misma ruta que ya cubre
+Ctrl-C.
+
 **`paynani` gana dos comandos más: `set` y `roster`.** Issue #116, la
 continuación planeada de #114/#115.
 

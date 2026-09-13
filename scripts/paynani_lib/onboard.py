@@ -10,6 +10,7 @@ import getpass
 import hashlib
 import os
 import secrets
+import signal
 import socket
 import sys
 import threading
@@ -56,7 +57,18 @@ def run(port: int = 8765) -> int:
         pass
 
     target = env_file()
-    handler_cls = make_handler(state)
+    saved_event = threading.Event()
+    handler_cls = make_handler(state, saved_event)
+
+    # A plain `kill` (SIGTERM, no signal named) used to skip the `finally`
+    # below entirely -- Python does not treat SIGTERM as KeyboardInterrupt on
+    # its own, so the token file survived a process nothing gave a graceful
+    # way to stop. Routing it through the same exception the Ctrl-C path
+    # already handles means one cleanup path covers both.
+    def _handle_sigterm(signum, frame):
+        raise KeyboardInterrupt()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
 
     try:
         httpd = HTTPServer(("127.0.0.1", port), handler_cls)
@@ -92,17 +104,18 @@ def run(port: int = 8765) -> int:
     print("  The link works once, until this stops. Ctrl-C when finished.")
     print()
 
-    # Stop once the file has been written. Compare against how it looked at
-    # startup rather than merely checking that it exists — this can be run
-    # again to *change* settings, and an existing file would otherwise end
-    # this before the page had even been opened.
+    # Stop the moment a save actually succeeds. server.py sets saved_event
+    # from inside the request that just wrote the file, once the response
+    # carrying the confirmation page is already on the wire -- so this does
+    # not need to guess *whether* something changed the way polling a
+    # fingerprint would, only wait to be told. The fingerprint check survives
+    # as a fallback for the one thing the event cannot see: something other
+    # than this server's own save path replacing the file underneath it.
     before = _fingerprint(target)
     try:
         while server_thread.is_alive():
-            time.sleep(1)
-            now = _fingerprint(target)
-            if now != before:
-                time.sleep(2)  # let the confirmation page finish rendering
+            fired = saved_event.wait(timeout=1)
+            if fired or _fingerprint(target) != before:
                 print(f"  Settings saved to {target} — stopping.")
                 print()
                 break
