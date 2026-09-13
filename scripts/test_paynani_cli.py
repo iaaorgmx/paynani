@@ -301,7 +301,8 @@ os.environ["PAYNANI_STATE"] = str(e2e_state)
 token = "e2e-test-token"
 guard.token_path(e2e_state).write_text(token + "\n", encoding="utf-8")
 
-httpd = HTTPServer(("127.0.0.1", 0), make_handler(e2e_state))
+saved_event = threading.Event()
+httpd = HTTPServer(("127.0.0.1", 0), make_handler(e2e_state, saved_event))
 port = httpd.server_address[1]
 thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True)
 thread.start()
@@ -363,6 +364,7 @@ try:
         "e2e: validation runs before any probe and blocks the save",
         r.status == 200 and i18n.t("v.host_is_port") in page and not e2e_env.exists(),
     )
+    check("e2e: a blocked-by-validation submit does not set the saved event", not saved_event.is_set())
 
     server_mod.probe_imap = fake_probe_bad
     server_mod.probe_smtp = fake_probe_ok
@@ -377,6 +379,7 @@ try:
         "e2e: a failing IMAP probe blocks the save even when SMTP passes",
         r.status == 200 and not e2e_env.exists(),
     )
+    check("e2e: a failed probe does not set the saved event either", not saved_event.is_set())
 
     server_mod.probe_imap = fake_probe_ok
     server_mod.probe_smtp = fake_probe_ok
@@ -391,6 +394,16 @@ try:
     check(
         "e2e: the saved .env has the submitted account",
         f"AGENT_EMAIL_ACCOUNT={VALID['AGENT_EMAIL_ACCOUNT']}" in e2e_env.read_text(encoding="utf-8"),
+    )
+    # The regression test for the actual bug report: onboard.py must be able
+    # to learn a save happened without polling the file's content for a
+    # *change* -- resubmitting the exact same values the file already holds
+    # is a real use case (verifying the form still works) and must still stop
+    # the process, which a content-fingerprint comparison alone would miss.
+    check(
+        "e2e: a successful save sets the saved event, so onboard.py can stop "
+        "without waiting for the file's content to differ from what it was",
+        saved_event.is_set(),
     )
 finally:
     httpd.shutdown()

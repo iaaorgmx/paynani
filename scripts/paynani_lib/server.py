@@ -63,14 +63,28 @@ def _resolve_lang(session: dict, post: dict, query: dict) -> str:
     return i18n.LANG_DEFAULT
 
 
-def make_handler(state_dir: Path):
-    """A BaseHTTPRequestHandler bound to one state directory (where the
-    one-time token lives). A factory rather than a module-level class because
-    http.server.HTTPServer instantiates the handler itself, with no way to
-    pass extra constructor arguments through."""
+def make_handler(state_dir: Path, saved_event=None):
+    """
+    A BaseHTTPRequestHandler bound to one state directory (where the one-time
+    token lives) and, optionally, a threading.Event to set the moment a save
+    actually succeeds.
+
+    A factory rather than a module-level class because http.server.HTTPServer
+    instantiates the handler itself, with no way to pass extra constructor
+    arguments through.
+
+    `saved_event` exists so onboard.py can stop the instant this process
+    itself knows the file was written, rather than polling the file's
+    fingerprint from outside and waiting up to a second to notice — the
+    fingerprint approach setup_web.sh needs because there the bash launcher
+    and the PHP request handler are two separate processes with no way to
+    signal each other directly. Here they are the same process, so the
+    request that wrote the file can just say so.
+    """
 
     class Handler(BaseHTTPRequestHandler):
         STATE_DIR = state_dir
+        SAVED_EVENT = saved_event
         server_version = "paynani-onboard/1.0"
 
         # ---- plumbing -----------------------------------------------------
@@ -329,6 +343,17 @@ def make_handler(state_dir: Path):
                 csrf=_get_or_create_csrf(session),
             )
             self._html(200, body)
+
+            # Only after the response is on the wire: the browser needs to
+            # receive the confirmation page before this process is told it
+            # may shut down. Setting the event does not stop anything by
+            # itself -- onboard.py's main thread, not this request thread,
+            # calls httpd.shutdown() once it sees this, which matters because
+            # calling shutdown() from inside the very request it is handling
+            # would deadlock (it blocks until serve_forever's loop notices,
+            # which cannot happen while that loop is in here).
+            if saved is not None and self.SAVED_EVENT is not None:
+                self.SAVED_EVENT.set()
 
     return Handler
 
