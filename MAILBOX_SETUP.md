@@ -24,6 +24,11 @@ Diez minutos, y la mayoría se te van en encontrar un nombre de servidor.
 > `scripts/paynani onboard` en su lugar — el mismo formulario, las mismas
 > garantías, sin esa dependencia.
 >
+> Para cambiar un solo dato más adelante — rotar la contraseña, corregir un
+> nombre de servidor — no hace falta repetir todo esto: `paynani set CLAVE
+> VALOR` cambia esa clave sola, y por omisión vuelve a probarla contra tu
+> servidor antes de guardarla.
+>
 > El resto de esta página es la ruta manual, y vale la pena leerla de todos modos:
 > explica *por qué* cada ajuste es lo que es, y eso el formulario no lo puede
 > hacer.

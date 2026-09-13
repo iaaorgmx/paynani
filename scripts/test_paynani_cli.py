@@ -34,8 +34,10 @@ sys.path.insert(0, str(REPO / "scripts"))
 sys.path.insert(0, str(REPO / "harness"))
 
 from paynani_lib import envfile, guard, i18n, validate  # noqa: E402
+from paynani_lib import roster_cli, set_cli  # noqa: E402
 from paynani_lib.i18n_data import CATALOGUES  # noqa: E402
 from paynani_lib.server import make_handler  # noqa: E402
+import roster as roster_mod  # noqa: E402  (scripts/roster.py; REPO/scripts is already on sys.path above)
 
 failures = []
 
@@ -396,6 +398,208 @@ finally:
     os.environ.pop("PAYNANI_ENV", None)
     os.environ.pop("PAYNANI_STATE", None)
     shutil.rmtree(e2e_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# roster.py: add_contact() / remove_contact() (issue #116)
+# ---------------------------------------------------------------------------
+
+SHIPPED_ROSTER = (
+    "# a human's own comment\n"
+    "\n"
+    "| Name | Email | Type | GitHub |\n"
+    "|---|---|---|---|\n"
+    "| Julian Flores | jjulianfe@gmail.com | Human | julianflores |\n"
+    "| Metis Claude-Tob | metis.claude.tob@gmail.com | AI Agent | metisclaudetob |\n"
+    "\n"
+    "## Notifiers\n"
+    "\n"
+    "| Address | Header | Column |\n"
+    "|---|---|---|\n"
+    "| notifications@github.com | X-GitHub-Sender | GitHub |\n"
+)
+
+ok, added = roster_mod.add_contact(SHIPPED_ROSTER, "New Person", "new@example.com", type_="Human", github="newhandle")
+check("roster.add_contact: reports success", ok is True)
+check("roster.add_contact: new address is in the result", "new@example.com" in added)
+check(
+    "roster.add_contact: the comment before the table survives",
+    "# a human's own comment" in added,
+)
+check("roster.add_contact: the Notifiers table survives untouched", "## Notifiers" in added and "X-GitHub-Sender" in added)
+check(
+    "roster.add_contact: existing rows are untouched",
+    "| Julian Flores | jjulianfe@gmail.com | Human | julianflores |" in added,
+)
+check(
+    "roster.add_contact: new row lands in the contacts table, not after Notifiers",
+    added.index("new@example.com") < added.index("## Notifiers"),
+)
+
+ok, reason = roster_mod.add_contact(SHIPPED_ROSTER, "Dup", "jjulianfe@gmail.com")
+check("roster.add_contact: a duplicate address is refused", ok is False and "already" in reason)
+
+ok, reason = roster_mod.add_contact(SHIPPED_ROSTER, "X", "x@example.com", github="h")
+check(
+    "roster.add_contact: a column the file doesn't have is refused, not silently dropped",
+    ok is True,  # the shipped roster DOES have a GitHub column
+)
+LEGACY_ROSTER = "| Name | Email |\n|---|---|\n| Old Person | old@example.com |\n"
+ok, reason = roster_mod.add_contact(LEGACY_ROSTER, "X", "x@example.com", github="h")
+check(
+    "roster.add_contact: --github on a two-column roster is refused, not dropped",
+    ok is False and "GitHub column" in reason,
+)
+ok, legacy_added = roster_mod.add_contact(LEGACY_ROSTER, "New", "new@example.com")
+check("roster.add_contact: works on the plain two-column legacy format too", ok is True and "new@example.com" in legacy_added)
+
+ok, removed = roster_mod.remove_contact(SHIPPED_ROSTER, "jjulianfe@gmail.com")
+check("roster.remove_contact: reports success", ok is True)
+check("roster.remove_contact: the address is gone", "jjulianfe@gmail.com" not in removed)
+check("roster.remove_contact: the other contact survives", "metis.claude.tob@gmail.com" in removed)
+check("roster.remove_contact: the Notifiers table survives", "## Notifiers" in removed)
+
+ok, reason = roster_mod.remove_contact(SHIPPED_ROSTER, "nobody@example.com")
+check("roster.remove_contact: a nonexistent address is refused", ok is False and "not on the roster" in reason)
+
+round_trip_add_then_remove = roster_mod.remove_contact(added, "new@example.com")[1]
+check(
+    "roster.py: add then remove the same contact returns the original text",
+    round_trip_add_then_remove == SHIPPED_ROSTER,
+)
+
+
+# ---------------------------------------------------------------------------
+# paynani_lib/set_cli.py
+# ---------------------------------------------------------------------------
+
+set_dir = Path(tempfile.mkdtemp(prefix="paynani-test-set-"))
+try:
+    set_env = set_dir / ".env"
+    set_env.write_text(
+        "AGENT_EMAIL_ACCOUNT=old@example.com\n"
+        "AGENT_EMAIL_PASSWORD=old-pass\n"
+        "AGENT_EMAIL_FROM_NAME=Old Name\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap.example.com\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=993\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST=smtp.example.com\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT=465\n",
+        encoding="utf-8",
+    )
+    os.environ["PAYNANI_ENV"] = str(set_env)
+
+    class Args:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    r = set_cli.run(Args(key="NOT_A_REAL_KEY", value="x", skip_check=False))
+    check("set_cli: an unknown key is refused (exit 64)", r == 64)
+    check("set_cli: an unknown key changes nothing", set_env.read_text(encoding="utf-8").count("NOT_A_REAL_KEY") == 0)
+
+    r = set_cli.run(Args(key="AGENT_EMAIL_ACCOUNT", value="not-an-email", skip_check=True))
+    check("set_cli: field validation runs before writing", r == 1)
+    check("set_cli: a failed validation writes nothing", "not-an-email" not in set_env.read_text(encoding="utf-8"))
+
+    r = set_cli.run(Args(key="AGENT_EMAIL_FROM_NAME", value="New Name", skip_check=False))
+    check("set_cli: a key with no probe requirement needs no mocking to succeed", r == 0)
+    check("set_cli: the new value is on disk", "AGENT_EMAIL_FROM_NAME=New Name" in set_env.read_text(encoding="utf-8"))
+    check(
+        "set_cli: unrelated keys survive a set",
+        "AGENT_EMAIL_ACCOUNT=old@example.com" in set_env.read_text(encoding="utf-8"),
+    )
+
+    set_cli.probe_imap = fake_probe_bad
+    set_cli.probe_smtp = fake_probe_ok
+    r = set_cli.run(Args(key="AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST", value="imap2.example.com", skip_check=False))
+    check("set_cli: a failing live check blocks the write", r == 1)
+    check(
+        "set_cli: the old value is still on disk after a blocked write",
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap.example.com" in set_env.read_text(encoding="utf-8"),
+    )
+
+    set_cli.probe_imap = fake_probe_ok
+    r = set_cli.run(Args(key="AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST", value="imap2.example.com", skip_check=False))
+    check("set_cli: both probes passing writes the new value", r == 0)
+    check(
+        "set_cli: the new host is on disk",
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap2.example.com" in set_env.read_text(encoding="utf-8"),
+    )
+
+    r = set_cli.run(Args(key="AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST", value="smtp2.example.com", skip_check=True))
+    check("set_cli: --skip-check writes without calling any probe", r == 0)
+    check(
+        "set_cli: the skip-check value is on disk",
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST=smtp2.example.com" in set_env.read_text(encoding="utf-8"),
+    )
+finally:
+    os.environ.pop("PAYNANI_ENV", None)
+    shutil.rmtree(set_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# paynani_lib/roster_cli.py
+# ---------------------------------------------------------------------------
+
+roster_dir = Path(tempfile.mkdtemp(prefix="paynani-test-roster-cli-"))
+try:
+    roster_path = roster_dir / "roster.md"
+    roster_path.write_text(SHIPPED_ROSTER, encoding="utf-8")
+    real_roster_file = roster_cli.roster_file
+    roster_cli.roster_file = lambda: roster_path
+
+    class RArgs:
+        def __init__(self, **kw):
+            self.name = None
+            self.address = None
+            self.type = None
+            self.github = None
+            self.yes = False
+            self.__dict__.update(kw)
+
+    # Declining the confirmation must leave the file untouched.
+    import builtins
+
+    real_input = builtins.input
+    builtins.input = lambda prompt="": "n"
+    try:
+        r = roster_cli.run_add(RArgs(name="Nope", address="nope@example.com"))
+    finally:
+        builtins.input = real_input
+    check("roster_cli.run_add: declining the confirmation returns nonzero", r == 1)
+    check("roster_cli.run_add: declining the confirmation writes nothing", "nope@example.com" not in roster_path.read_text(encoding="utf-8"))
+
+    r = roster_cli.run_add(RArgs(name="New Person", address="new@example.com", type="Human", github="newhandle", yes=True))
+    check("roster_cli.run_add: --yes succeeds without a prompt", r == 0)
+    check("roster_cli.run_add: the new contact is on disk", "new@example.com" in roster_path.read_text(encoding="utf-8"))
+    check("roster_cli.run_add: the Notifiers table survives on disk", "## Notifiers" in roster_path.read_text(encoding="utf-8"))
+
+    r = roster_cli.run_add(RArgs(name="Dup", address="new@example.com", yes=True))
+    check("roster_cli.run_add: a duplicate is refused before any write attempt", r == 1)
+
+    # Force the regression-test safety net to fail, and confirm the write is
+    # reverted rather than left in place.
+    real_run_tests = roster_cli._run_regression_tests
+    roster_cli._run_regression_tests = lambda: (False, "simulated failure")
+    before = roster_path.read_text(encoding="utf-8")
+    try:
+        r = roster_cli.run_add(RArgs(name="Should Revert", address="revert@example.com", yes=True))
+    finally:
+        roster_cli._run_regression_tests = real_run_tests
+    check("roster_cli.run_add: a failing regression check returns nonzero", r == 1)
+    check(
+        "roster_cli.run_add: a failing regression check reverts the write",
+        roster_path.read_text(encoding="utf-8") == before,
+    )
+
+    r = roster_cli.run_remove(RArgs(address="new@example.com", yes=True))
+    check("roster_cli.run_remove: --yes succeeds without a prompt", r == 0)
+    check("roster_cli.run_remove: the contact is gone from disk", "new@example.com" not in roster_path.read_text(encoding="utf-8"))
+
+    r = roster_cli.run_remove(RArgs(address="ghost@example.com", yes=True))
+    check("roster_cli.run_remove: a nonexistent address is refused", r == 1)
+finally:
+    roster_cli.roster_file = real_roster_file
+    shutil.rmtree(roster_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
