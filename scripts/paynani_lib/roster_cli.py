@@ -98,48 +98,83 @@ def run_list(args) -> int:
     return 0
 
 
+def _print_diff(before: str, after: str) -> None:
+    """A multiset-aware line diff, good enough to show what one add/remove
+    changes. `Counter` rather than `x not in y.splitlines()` so a line that
+    merely repeats a different number of times is reported correctly instead
+    of looking unchanged because some other identical line still exists."""
+    from collections import Counter
+
+    before_counts = Counter(before.splitlines())
+    after_counts = Counter(after.splitlines())
+    for line in after.splitlines():
+        if after_counts[line] > before_counts[line]:
+            after_counts[line] -= 1
+            print(f"  + {line}")
+    for line in before.splitlines():
+        if before_counts[line] > after_counts[line]:
+            before_counts[line] -= 1
+            print(f"  - {line}")
+
+
+def _revert(path: Path, original: str, reason: str) -> int:
+    try:
+        _write_atomic(path, original)
+    except OSError as exc:
+        print(
+            f"Not saved: {reason} AND the revert itself failed ({exc}) — "
+            f"roster.md at {path} may now hold the rejected change. Restore it "
+            "by hand before trusting who this agent will act on.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"Not saved: {reason} Reverted.", file=sys.stderr)
+    return 1
+
+
 def _apply_change(new_text: str, expected_addresses, action_label: str, assume_yes: bool) -> int:
-    """Shared tail of add()/remove(): confirm, write, verify, run the
-    regression suite, and revert on any failure."""
+    """
+    Shared tail of add()/remove(): confirm, run the regression suite, write,
+    verify, and revert on any failure.
+
+    The regression suite runs *before* the write, not after: both scripts run
+    entirely against synthetic fixtures (see _run_regression_tests), so they
+    have nothing to learn from the new content and gain nothing by running
+    against a file already live with it. Checking first means send.sh and
+    idle_listener.py never see a change this command has not yet decided to
+    keep — versus checking after, where the window between "written" and
+    "reverted" is real time during which the live file already is the
+    rejected version.
+    """
     path = roster_file()
     original = _read(path)
 
     print(f"About to {action_label} roster.md:")
-    for line in new_text.splitlines():
-        if line not in original.splitlines():
-            print(f"  + {line}")
-    for line in original.splitlines():
-        if line not in new_text.splitlines():
-            print(f"  - {line}")
+    _print_diff(original, new_text)
 
     if not _confirm("Write this change?", assume_yes):
         print("Not saved: cancelled.")
         return 1
 
+    ok, output = _run_regression_tests()
+    if not ok:
+        print(
+            "Not saved: scripts/test_roster.sh or scripts/test_listener.py "
+            "failed. Nothing written. Output:\n" + output,
+            file=sys.stderr,
+        )
+        return 1
+
     _write_atomic(path, new_text)
 
     # The direct check: does the file this command just wrote actually parse
-    # to what was intended? Independent of, and stronger for this purpose
-    # than, the regression suite below.
+    # to what was intended? This one necessarily runs after the write — it is
+    # checking the write itself — so it is the only step with any exposure
+    # window at all, and that window is one in-process re-read, not a
+    # multi-second subprocess suite.
     actual_addresses = roster_mod.roster_addresses(path)
     if actual_addresses != expected_addresses:
-        _write_atomic(path, original)
-        print(
-            "Not saved: the written file did not parse back to the expected "
-            "address list. Reverted.",
-            file=sys.stderr,
-        )
-        return 1
-
-    ok, output = _run_regression_tests()
-    if not ok:
-        _write_atomic(path, original)
-        print(
-            "Not saved: scripts/test_roster.sh or scripts/test_listener.py "
-            "failed against the result. Reverted. Output:\n" + output,
-            file=sys.stderr,
-        )
-        return 1
+        return _revert(path, original, "the written file did not parse back to the expected address list.")
 
     print(f"roster.md updated ({path}).")
     return 0

@@ -531,6 +531,33 @@ try:
         "set_cli: the skip-check value is on disk",
         "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST=smtp2.example.com" in set_env.read_text(encoding="utf-8"),
     )
+
+    r = set_cli.run(Args(key="AGENT_EMAIL_PASSWORD", value="on-argv-not-allowed", skip_check=False))
+    check("set_cli: a password given on argv is refused (exit 64), not written", r == 64)
+    check(
+        "set_cli: the refused argv password never touched disk",
+        "on-argv-not-allowed" not in set_env.read_text(encoding="utf-8"),
+    )
+
+    # A neighbour field this probe needs (not the key being changed) is
+    # invalid/empty -- the exact shape that used to reach int('') and crash.
+    import re as _re
+
+    set_env.write_text(
+        _re.sub(
+            r"^AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT=.*$",
+            "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT=",
+            set_env.read_text(encoding="utf-8"),
+            flags=_re.MULTILINE,
+        ),
+        encoding="utf-8",
+    )
+    r = set_cli.run(Args(key="AGENT_EMAIL_ACCOUNT", value="new@example.com", skip_check=False))
+    check("set_cli: an invalid neighbour field is reported, not a traceback (exit 1)", r == 1)
+    check(
+        "set_cli: nothing is written when a neighbour field blocks the check",
+        "AGENT_EMAIL_ACCOUNT=new@example.com" not in set_env.read_text(encoding="utf-8"),
+    )
 finally:
     os.environ.pop("PAYNANI_ENV", None)
     shutil.rmtree(set_dir, ignore_errors=True)
@@ -586,11 +613,14 @@ try:
     r = roster_cli.run_add(RArgs(name="Dup", address="new@example.com", yes=True))
     check("roster_cli.run_add: a duplicate is refused before any write attempt", r == 1)
 
-    # Force the regression-test safety net to fail, and confirm the write is
-    # reverted rather than left in place. Swaps in a second, failing stub
-    # temporarily; restores the always-succeeds one above afterward, not the
-    # real function -- that only comes back in the outermost `finally` once
-    # this whole section is done.
+    # Force the regression-test safety net to fail. It runs before the write
+    # now (see roster_cli._apply_change's docstring), so "reverted" here means
+    # the write never happened at all -- the assertion is the same one that
+    # would catch a real revert bug (the file must be untouched), it is just
+    # that the mechanism is "never wrote" rather than "wrote then undid".
+    # Swaps in a second, failing stub temporarily; restores the always-
+    # succeeds one above afterward, not the real function -- that only comes
+    # back in the outermost `finally` once this whole section is done.
     always_ok_stub = roster_cli._run_regression_tests
     roster_cli._run_regression_tests = lambda: (False, "simulated failure")
     before = roster_path.read_text(encoding="utf-8")
@@ -600,7 +630,7 @@ try:
         roster_cli._run_regression_tests = always_ok_stub
     check("roster_cli.run_add: a failing regression check returns nonzero", r == 1)
     check(
-        "roster_cli.run_add: a failing regression check reverts the write",
+        "roster_cli.run_add: a failing regression check leaves the file untouched",
         roster_path.read_text(encoding="utf-8") == before,
     )
 
