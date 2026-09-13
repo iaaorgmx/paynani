@@ -547,6 +547,16 @@ try:
     real_roster_file = roster_cli.roster_file
     roster_cli.roster_file = lambda: roster_path
 
+    # Mocked for the whole section except the one test that deliberately
+    # forces a failure below. The real scripts/test_roster.sh and
+    # scripts/test_listener.py already have their own entries in
+    # scripts/test_all.sh; this suite has no business re-deciding pass/fail
+    # for them; a platform where they legitimately fail today (macOS,
+    # issue #112) would otherwise make every roster_cli success case here
+    # fail too, for a reason that has nothing to do with roster_cli.py.
+    real_run_tests = roster_cli._run_regression_tests
+    roster_cli._run_regression_tests = lambda: (True, "mocked: see test_roster.sh/test_listener.py's own entries")
+
     class RArgs:
         def __init__(self, **kw):
             self.name = None
@@ -577,14 +587,17 @@ try:
     check("roster_cli.run_add: a duplicate is refused before any write attempt", r == 1)
 
     # Force the regression-test safety net to fail, and confirm the write is
-    # reverted rather than left in place.
-    real_run_tests = roster_cli._run_regression_tests
+    # reverted rather than left in place. Swaps in a second, failing stub
+    # temporarily; restores the always-succeeds one above afterward, not the
+    # real function -- that only comes back in the outermost `finally` once
+    # this whole section is done.
+    always_ok_stub = roster_cli._run_regression_tests
     roster_cli._run_regression_tests = lambda: (False, "simulated failure")
     before = roster_path.read_text(encoding="utf-8")
     try:
         r = roster_cli.run_add(RArgs(name="Should Revert", address="revert@example.com", yes=True))
     finally:
-        roster_cli._run_regression_tests = real_run_tests
+        roster_cli._run_regression_tests = always_ok_stub
     check("roster_cli.run_add: a failing regression check returns nonzero", r == 1)
     check(
         "roster_cli.run_add: a failing regression check reverts the write",
@@ -599,6 +612,7 @@ try:
     check("roster_cli.run_remove: a nonexistent address is refused", r == 1)
 finally:
     roster_cli.roster_file = real_roster_file
+    roster_cli._run_regression_tests = real_run_tests
     shutil.rmtree(roster_dir, ignore_errors=True)
 
 
