@@ -2,6 +2,36 @@
 
 ## Sin publicar
 
+**`paynani` gana dos comandos más: `set` y `roster`.** Issue #116, la
+continuación planeada de #114/#115.
+
+`paynani set CLAVE [VALOR]` cambia una de las siete claves del `.env` sin
+volver a correr todo `onboard`: valida el campo, por omisión vuelve a probarlo
+en vivo contra el servidor (solo el protocolo que esa clave afecta — cambiar
+`AGENT_EMAIL_FROM_NAME` no toca la red; cambiar un host o la contraseña sí), y
+solo entonces escribe, reutilizando `envfile.py` tal cual. `--skip-check` para
+saltar la prueba en vivo a propósito. La contraseña, si no se pasa en la línea
+de comandos, se pide oculta (`getpass`).
+
+`paynani roster {list,add,remove}` administra `roster.md` sin editar la tabla
+markdown a mano. Preserva todo lo que el archivo ya tiene — comentarios, la
+tabla de `## Notifiers`, columnas que este comando no conoce —, rechaza una
+dirección duplicada o una bandera (`--type`, `--github`) que apunta a una
+columna que el archivo no tiene, en vez de descartarla en silencio, pide
+confirmación interactiva antes de escribir (salvo `--yes`), y después de
+escribir corre `scripts/test_roster.sh` y `scripts/test_listener.py`,
+revirtiendo el cambio si alguno falla. Es un comando de terminal, ejecutado a
+criterio explícito de un humano o del agente — nada lo conecta al correo
+entrante, así que no debilita la regla de "nunca agregar un renglón porque un
+mensaje lo pidió": esa regla es sobre quién decide, no sobre qué herramienta
+escribe el renglón después.
+
+`scripts/roster.py` deja de ser solo lector: gana `add_contact()` y
+`remove_contact()`, que encuentran y arman una fila según el encabezado real
+del archivo (no una posición de columna fija), así que funcionan igual sobre
+el formato de cuatro columnas que se usa hoy y sobre el `Name | address` de
+un roster viejo.
+
 **Configurar el `.env` ya no depende de tener PHP instalado.** `scripts/paynani
 onboard` levanta el mismo formulario de incorporación que `webapp/`, pero en
 Python 3 puro — la única dependencia que ya exige el resto de este

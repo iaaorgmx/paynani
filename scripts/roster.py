@@ -33,13 +33,22 @@ def normalise(address: str) -> str:
     return re.sub(r"\s+", "", address or "").lower()
 
 
+def _is_separator(line: str) -> bool:
+    stripped = line.strip().strip("|").strip()
+    return bool(stripped) and set(stripped.replace("|", "").strip()) <= set("-: \t")
+
+
 def _rows(text: str, section: str):
     """
     Roster rows from one section, with the markdown scaffolding removed.
 
-    Yields `(fields, is_header)`. A header row is one immediately followed by a
-    `|---|` separator; they are yielded because the notifier rules need the
-    column names, and ignored by everything that only wants addresses.
+    Yields `(fields, is_header, line_index)`. `line_index` is this row's
+    position in `text.splitlines()`, carried through for add_contact() and
+    remove_contact() below, which need to know exactly which line to insert
+    before or delete rather than only what it says. A header row is one
+    immediately followed by a `|---|` separator; they are yielded because the
+    notifier rules need the column names, and ignored by everything that only
+    wants addresses.
 
     `section` is "contacts" or "notifiers". Splitting here rather than in each
     caller is what keeps a notifier address out of the send allowlist: it is not
@@ -50,10 +59,6 @@ def _rows(text: str, section: str):
     lookahead version dropped whichever row happened to be the last one before a
     heading, which on the shipped layout is a real contact.
     """
-    def separator(line):
-        stripped = line.strip().strip("|").strip()
-        return bool(stripped) and set(stripped.replace("|", "").strip()) <= set("-: \t")
-
     lines = text.splitlines()
     in_notifiers = False
     for i, raw in enumerate(lines):
@@ -67,7 +72,7 @@ def _rows(text: str, section: str):
                 # comment does not: the template is full of them.
                 in_notifiers = False
             continue
-        if not line or separator(line):
+        if not line or _is_separator(line):
             continue
         if in_notifiers != (section == "notifiers"):
             continue
@@ -75,8 +80,8 @@ def _rows(text: str, section: str):
         if not body:
             continue
         fields = [f.strip() for f in body.split("|")]
-        is_header = i + 1 < len(lines) and separator(lines[i + 1])
-        yield fields, is_header
+        is_header = i + 1 < len(lines) and _is_separator(lines[i + 1])
+        yield fields, is_header, i
 
 
 def _read(path: pathlib.Path) -> str:
@@ -109,8 +114,12 @@ def roster_addresses(path: pathlib.Path) -> set[str]:
     `@` can never be a From address, so ignoring it only ever makes the list
     stricter — which is also what keeps a header row's `Email` harmless.
     """
+    return _addresses_from_text(_read(path))
+
+
+def _addresses_from_text(text: str) -> set[str]:
     allowed: set[str] = set()
-    for fields, _ in _rows(_read(path), "contacts"):
+    for fields, _, _ in _rows(text, "contacts"):
         for field in fields:
             candidate = normalise(field)
             if "@" in candidate:
@@ -134,7 +143,7 @@ def roster_entries(path: pathlib.Path) -> list[dict]:
     """
     entries: list[dict] = []
     headers: list[str] = []
-    for fields, is_header in _rows(_read(path), "contacts"):
+    for fields, is_header, _ in _rows(_read(path), "contacts"):
         if is_header:
             headers = [f.strip().lower() for f in fields]
             continue
@@ -152,6 +161,114 @@ def roster_entries(path: pathlib.Path) -> list[dict]:
                         for name, value in zip(headers, fields) if name},
         })
     return entries
+
+
+def _contacts_table_bounds(text: str):
+    """
+    (header_line_index, header_fields, last_row_line_index) for the contacts
+    table, or (None, None, None) if roster.md has no header row for it.
+
+    `last_row_line_index` is where a new row is inserted *after* — the last
+    existing contact row, or the header's separator line when the table is
+    otherwise empty. Kept separate from add_contact()/remove_contact() so
+    both can share one answer to "where is this table" instead of two
+    slightly different scans.
+    """
+    header_idx = None
+    header_fields = None
+    last_idx = None
+    for fields, is_header, idx in _rows(text, "contacts"):
+        if is_header:
+            header_idx = idx
+            header_fields = fields
+            continue
+        last_idx = idx
+    return header_idx, header_fields, last_idx
+
+
+# Columns add_contact() knows how to fill. Anything else in the header is left
+# blank rather than guessed at — a table with a column this doesn't recognise
+# should fail closed on that field, not invent a value for it.
+_KNOWN_COLUMNS = {
+    "name": "name",
+    "email": "address",
+    "address": "address",
+    "type": "type",
+    "github": "github",
+}
+
+
+def add_contact(text: str, name: str, address: str, *, type_: str = "", github: str = "") -> tuple[bool, str]:
+    """
+    Add one row to the contacts table.
+
+    Returns `(True, new_text)` on success, or `(False, reason)` — unchanged
+    text is never returned as if it were the new version, so a caller cannot
+    write a "success" result that silently did nothing.
+
+    Column order and the columns actually present are read from the file's own
+    header row rather than assumed, so this works on the shipped
+    `Name | Email | Type | GitHub` layout and on the plain `Name | address`
+    layout the docstring above says older rosters still use. A field whose
+    column does not exist in this file is refused rather than silently
+    dropped — `--github` on a two-column roster would otherwise look like it
+    worked and leave no GitHub handle anywhere.
+    """
+    norm = normalise(address)
+    if not norm or "@" not in norm:
+        return False, f"{address!r} is not an email address"
+    if norm in _addresses_from_text(text):
+        return False, f"{address} is already on the roster"
+
+    header_idx, header_fields, last_idx = _contacts_table_bounds(text)
+    if header_idx is None:
+        return False, "roster.md has no contacts table (no header row found)"
+
+    lower_headers = [h.strip().lower() for h in header_fields]
+    if github and "github" not in lower_headers:
+        return False, "roster.md's contacts table has no GitHub column; add one by hand first"
+    if type_ and "type" not in lower_headers:
+        return False, "roster.md's contacts table has no Type column; add one by hand first"
+
+    provided = {"name": name, "address": address, "type": type_, "github": github}
+    cells = []
+    for column in lower_headers:
+        key = _KNOWN_COLUMNS.get(column)
+        cells.append(provided.get(key, "") if key else "")
+    new_row = "| " + " | ".join(cells) + " |"
+
+    lines = text.splitlines()
+    # header_idx + 1 is always the separator row (that is what made is_header
+    # true for it), so an otherwise-empty table inserts right after that.
+    insert_at = (last_idx if last_idx is not None else header_idx + 1) + 1
+    lines.insert(insert_at, new_row)
+    trailing = "\n" if text.endswith(("\n", "\r\n")) else ""
+    return True, "\n".join(lines) + trailing
+
+
+def remove_contact(text: str, address: str) -> tuple[bool, str]:
+    """
+    Remove the contacts-table row whose address matches, exactly as
+    roster_addresses() would have matched it (normalised, case-insensitive).
+
+    Returns `(True, new_text)` or `(False, reason)`, with the same
+    never-claim-success-and-change-nothing rule as add_contact().
+    """
+    norm = normalise(address)
+    target_idx = None
+    for fields, is_header, idx in _rows(text, "contacts"):
+        if is_header:
+            continue
+        if any(normalise(f) == norm for f in fields):
+            target_idx = idx
+            break
+    if target_idx is None:
+        return False, f"{address} is not on the roster"
+
+    lines = text.splitlines()
+    del lines[target_idx]
+    trailing = "\n" if text.endswith(("\n", "\r\n")) else ""
+    return True, "\n".join(lines) + trailing
 
 
 def notifiers(path: pathlib.Path) -> list[dict]:
@@ -173,7 +290,7 @@ def notifiers(path: pathlib.Path) -> list[dict]:
     so column order does not matter, the same way it does not for a contact row.
     """
     out: list[dict] = []
-    for fields, is_header in _rows(_read(path), "notifiers"):
+    for fields, is_header, _ in _rows(_read(path), "notifiers"):
         if is_header:
             continue
         address = next((normalise(f) for f in fields if "@" in normalise(f)), "")
