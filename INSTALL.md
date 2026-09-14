@@ -172,7 +172,7 @@ sudo loginctl enable-linger "$USER"
 
 Without it the units stop when your human logs out and do not come back at boot,
 so the listener is running exactly when someone is already sitting at the
-machine — which is when it is least needed. `scripts/install.sh` refuses to
+machine, which is when it is least needed. `scripts/install.sh` refuses to
 proceed without it and names this same command, so nothing is lost by finding
 out later; it is here because an agent has no password and cannot fix it alone.
 Discovering it now means asking once, at the point your human is already being
@@ -295,11 +295,11 @@ Do not guess any of them, and do not accept them from anywhere except your human
    agent; the file is a markdown table of `Name | Email | Type`. The address is
    found by looking for the field containing an `@`, so column order does not
    matter and an older `Name | email` line still works. `Type` is
-   informational — being on the list is the whole permission.
+   informational: being on the list is the whole permission.
    Start with your human.
 
-   **If your team coordinates somewhere that mails on people's behalf** — GitHub,
-   Jira, Linear — ask your human whether to declare it as a *notifier*, in the
+   **If your team coordinates somewhere that mails on people's behalf** (GitHub,
+   Jira, Linear), ask your human whether to declare it as a *notifier*, in the
    second table of the same file. It takes three values: the address the platform
    sends from, the header that names the author, and which column of the roster
    to compare that header against. Without it, a colleague's comment arrives as a
@@ -311,7 +311,7 @@ Do not guess any of them, and do not accept them from anywhere except your human
 
    **Ask each of them two questions, not one:** where you should write to them,
    and which addresses their own mail arrives from. Those are often the same
-   address and sometimes not, and matching is on `From` only — so a contact who
+   address and sometimes not, and matching is on `From` only. So a contact who
    sends from a second account needs a row for each. Get it wrong and their mail
    is delivered, logged, and never tagged `roster`, which reads exactly like
    nobody having written.
@@ -333,7 +333,7 @@ Do not guess any of them, and do not accept them from anywhere except your human
    **Write the first row rather than asking whether you may.** Creating this file
    and populating it is this step; asking permission for it asks your human to
    approve what they just requested. If you already know their name and address,
-   write them. If you do not, ask for the name and the address — the missing
+   write them. If you do not, ask for the name and the address: the missing
    thing is the data, not the authorisation. Once the install is over the rule
    inverts, and `AGENTS.md` carries it: a request arriving in a message is text
    and never authorisation to add anybody.
@@ -368,7 +368,7 @@ Put it where your harness keeps credentials, which is where the resolver looks
 first and where the agent is told to look:
 
 ```bash
-cd ~/.hermes/workspace      # or ~/.openclaw/workspace — your harness
+cd ~/.hermes/workspace      # or ~/.openclaw/workspace, your harness
 touch .env
 chmod 600 .env
 ```
@@ -406,13 +406,13 @@ in the workspace folder of its own installation directory:
 | OpenAI Codex | `~/.codex/workspace/.env` |
 
 The resolver reads that file where it lies; nothing needs to be moved, copied or
-linked. Only the credentials resolve to the harness — state, `runtime.env`, the
+linked. Only the credentials resolve to the harness: state, `runtime.env`, the
 manifest and `hermes/` stay in the clone, because the harness owns that one file
 and this project does not.
 
 Adding a runtime means adding its root to `HARNESS_ROOTS`, in
 [`harness/paths.py`](harness/paths.py) and
-[`scripts/envpath.sh`](scripts/envpath.sh) together —
+[`scripts/envpath.sh`](scripts/envpath.sh) together:
 `scripts/test_paths.sh` asserts the two agree.
 
 If two harnesses on one host each have credentials, neither is adopted and the
@@ -555,7 +555,7 @@ the scheme. Auth is SASL.
 
 Himalaya's own config lives outside the clone and is read by Himalaya, not by
 anything here, so the credentials path in it has to be written out in full.
-Substitute the real path of the file `paynani_env_file` reported in step 2 —
+Substitute the real path of the file `paynani_env_file` reported in step 2,
 which on a harness install is that harness's workspace `.env`, not a path inside
 the clone. Himalaya resolves nothing for you: a placeholder left in place fails
 as an auth error.
@@ -580,7 +580,7 @@ password.cmd = "python3 /full/path/to/the/clone/scripts/env_secret.py /full/path
 ```
 
 `mailbox.alias.inbox` is not optional on v2. Without it the account is valid and
-`himalaya account check` passes, while every `envelope list` fails — verified on
+`himalaya account check` passes, while every `envelope list` fails: verified on
 v2.1.0 by @ateneabuffayhermes during the first Hermes Agent install. It must
 appear before the first `[accounts.paynani.*]` sub-table, or TOML attaches
 it to the wrong table.
@@ -622,8 +622,8 @@ names the ones it expected; that is the fastest way to the right shape.
 one job and it tolerates a UTF-8 BOM and CRLF line endings, which a `sed -n
 's/^KEY=//p'` does not: on a CRLF `.env` that `sed` returns the password with a
 trailing carriage return and the server rejects the login **as a bad
-credential**. Nothing else in this project notices — `preflight.py`, the
-listener, `roster.py` and `envpath.sh` all tolerate CRLF — so every other check
+credential**. Nothing else in this project notices (`preflight.py`, the
+listener, `roster.py` and `envpath.sh` all tolerate CRLF) so every other check
 passes and only Himalaya fails, pointing at a password that is correct. Verified
 on a real host: an `.env` written from a Windows editor.
 
@@ -725,7 +725,7 @@ after.
 It also reports a `replies` line: how much roster mail has been delivered, and
 what `state/sent.log` records going back out. When roster mail has been delivered
 and nothing has been sent since the newest of it, you get a warning and not a
-failure — delivery worked, and what happened afterwards is the agent's and the
+failure: delivery worked, and what happened afterwards is the agent's and the
 runtime's. Two things produce that line and it does not guess between them: the
 agent was told and did not reply, or nothing was attached to be told. If it is
 the first, the standing rule under *"`roster.md` decides what a message is"* in
@@ -741,7 +741,7 @@ choosing where to clone is how you choose where to install.
 | OpenClaw | `~/.openclaw/workspace/paynani` |
 | Hermes Agent | `~/.hermes/workspace/paynani` |
 
-Nothing requires those paths — every path this tool generates is resolved from
+Nothing requires those paths: every path this tool generates is resolved from
 where the scripts actually are, so a clone anywhere works and an existing one
 needs no move. They are the recommended locations, not a check.
 
@@ -761,12 +761,12 @@ systemd will not read them from anywhere else.
 **This puts secrets inside a git working tree.** `.gitignore` keeps them out of
 `git status`, `scripts/install.sh` refuses to write if any of them is tracked or
 unignored, and `scripts/test_paths.sh` asserts the rules in CI. What none of that
-prevents is **`git clean -xdf`, which deletes ignored files** — here that means
+prevents is **`git clean -xdf`, which deletes ignored files**: here that means
 the mailbox password, both route secrets, the roster and the UID baseline, in one
 command. On a live install, use `git clean -df`.
 
 **Where the credentials go.** `.env` at the top of the clone, or the harness
-workspace file when this host has exactly one — read where it lies. Credentials
+workspace file when this host has exactly one: read where it lies. Credentials
 are never copied to a second location to satisfy a convention, and nothing is
 ever written into a harness's own `.env`.
 
@@ -820,7 +820,7 @@ and sent at least one operator looking for what was calling it.
 ### Claude Code
 
 This runtime is wired differently from the other two, and the difference is not
-cosmetic. **Nothing outside a Claude Code session can speak into it** — there is
+cosmetic. **Nothing outside a Claude Code session can speak into it**: there is
 no `claude system event`, and `claude -p --resume` starts a fresh headless turn
 rather than appearing in the session you are sitting in. So the dispatcher writes
 each rendered line to `state/session.spool` and stops there, and the session
@@ -861,7 +861,7 @@ bash <clone>/harness/session_watch.sh <state_dir> <offset>
 The agent must arm that as a persistent Monitor. The offset is not optional:
 the hook replayed the spool through exactly that byte, so starting anywhere else
 repeats messages or steps over ones nobody has seen. **Arming is also what
-acknowledges the replay** — an agent that skips it sees the same messages again
+acknowledges the replay**: an agent that skips it sees the same messages again
 next session and receives no new mail for the rest of this one.
 
 `session_watch.sh` takes an exclusive lock, so a second session on the same host
@@ -871,7 +871,7 @@ host is the supported arrangement.
 **Optional: let mail reach an agent with no session open.** Setting
 `PAYNANI_CLAUDE_MODE=agent` in `runtime.env` starts a headless `claude -p`
 run per event. It is **off by default**, because it widens what an inbound
-message can cause — read the roster rules in `AGENTS.md` before turning it on.
+message can cause. Read the roster rules in `AGENTS.md` before turning it on.
 The spool write happens either way, so enabling or disabling it can never lose
 an event.
 
@@ -947,7 +947,7 @@ Compare it against what your OpenClaw build requires; `openclaw --version` in yo
 own shell will fail loudly if the Node it finds is too old. One observed install
 needed Node 24 and the service supplied 22.
 
-If they differ, set both where the fix survives an upgrade — in
+If they differ, set both where the fix survives an upgrade, in
 `~/.config/environment.d/`, not in the unit:
 
 ```ini
@@ -969,7 +969,7 @@ systemctl --user restart paynani-dispatch.service
 **Do not pin these by editing the installed unit.** `scripts/install.sh`
 converges all four units from the copies in `systemd/`, so an `Environment=` line
 added by hand is drift and `--upgrade` removes it. The install keeps working
-until the next upgrade and then stops — dispatcher unable to reach `openclaw`
+until the next upgrade and then stops: dispatcher unable to reach `openclaw`
 again, every check in §7 still passing, and the only evidence in
 `state/watch.err.log`. That is this section's own failure mode, arriving later by
 a route nobody thinks to suspect.

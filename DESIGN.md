@@ -263,13 +263,13 @@ question answered four different ways.
 
 `dispatch.py` moves its cursor only when an adapter reports `ACCEPTED`. What
 `ACCEPTED` means is the adapter's judgement, and it is never *"a person read
-it"* — no runtime can tell us that. Each one draws the line somewhere earlier:
+it"*: no runtime can tell us that. Each one draws the line somewhere earlier:
 
 | Runtime | Delivery | `ACCEPTED` means | What it does not prove |
 |---|---|---|---|
 | OpenClaw | `openclaw system event --mode now` | the event is enqueued on the main session | that the heartbeat injected it, or that the session survived to run one |
 | Hermes | authenticated HTTP route | `200 status=delivered` on the notify route; `202 status=accepted` on the roster route | for `202`, that the queued agent run ever completed |
-| Claude Code | append to `state/session.spool` | the bytes are on disk | that any session ever read them — a file write cannot fail informatively |
+| Claude Code | append to `state/session.spool` | the bytes are on disk | that any session ever read them: a file write cannot fail informatively |
 | OpenAI Codex | append to `state/codex.spool`, then `codex queue` to the registered thread | the event is either queued into a live Codex session or durably spooled for replay | that the agent completed the requested mail work |
 
 Read down the last column and the shape is one thing: **every runtime has a point
@@ -297,14 +297,14 @@ active, the dispatcher was active, `ACCEPTED` was recorded three times, and ever
 check this project offered said so
 ([#125](https://github.com/julianflores/agenteiamail/issues/125)).
 
-`scripts/healthcheck.py` now compares two records this project already keeps —
-roster mail the dispatcher has delivered, and sends recorded in `state/sent.log`
-since [#117](https://github.com/julianflores/agenteiamail/issues/117) — and says
+`scripts/healthcheck.py` now compares two records this project already keeps
+(roster mail the dispatcher has delivered, and sends recorded in `state/sent.log`
+since [#117](https://github.com/julianflores/agenteiamail/issues/117)) and says
 when roster mail has been delivered and nothing has gone out after it. It is a
 **warning and never a failure**, for the reason this whole section exists: what
 happens after a runtime accepts is not ours, and two very different things
-produce the same shape. Either the agent was told and did not reply — the
-standing rule in `AGENTS.md` never reaching its own persistent instructions — or
+produce the same shape. Either the agent was told and did not reply, the
+standing rule in `AGENTS.md` never reaching its own persistent instructions, or
 nothing was attached to be told, which is
 [#108](https://github.com/julianflores/agenteiamail/issues/108).
 
@@ -322,7 +322,7 @@ macOS has no systemd. It has launchd, and the substitution is not one-for-one in
 a way that matters:
 
 - A **LaunchAgent** in `~/Library/LaunchAgents` runs as the user, which is what a
-  mailbox with a mode `600` credentials file requires — and is tied to a login
+  mailbox with a mode `600` credentials file requires, and is tied to a login
   session.
 - A **LaunchDaemon** survives logout and runs as root, which is wrong for a
   personal mailbox.
@@ -381,7 +381,7 @@ The obvious question is why OpenClaw and Hermes need no equivalent, and the
 answer is that they already have one: **the queue is their catch-up.**
 
 `dispatch.py` moves the cursor only once a runtime has accepted an event, and
-`adapters/openclaw.py` treats a failed injection as retryable rather than fatal —
+`adapters/openclaw.py` treats a failed injection as retryable rather than fatal:
 its own words are that *"openclaw restarting, or a session not yet up, is a
 condition that clears on its own."* So on a push runtime, mail arriving with
 nothing running is not delivered, the cursor does not advance, and the dispatcher
@@ -390,7 +390,7 @@ consumed.
 
 Claude Code cannot borrow that, because its delivery always succeeds. Appending
 to a spool is a write to a file, so the adapter returns `ACCEPTED` and the cursor
-moves whether or not any session ever reads the line — *spooled means durable,
+moves whether or not any session ever reads the line: *spooled means durable,
 not seen*. The queue stops being a backstop the moment delivery cannot fail, and
 the hook is what replaces it.
 
@@ -462,7 +462,7 @@ can obtain, so this is invisible from here by construction.
 
 **The queue is the catch-up up to the point of acceptance, and no further.** That
 is still a materially stronger position than Claude Code's, where delivery is a
-file write that cannot fail — but it is not the unconditional claim it would be
+file write that cannot fail. But it is not the unconditional claim it would be
 easy to read the previous section as making.
 
 What happens to a queued event if OpenClaw restarts before the heartbeat delivers
@@ -483,7 +483,7 @@ to move two independent readers' cursors atomically.
 
 ### One record is exactly one line
 
-A rendered notification can carry a line break — a folded subject is the usual
+A rendered notification can carry a line break. A folded subject is the usual
 source. Letting it through makes a pull-runtime reader report one message as two
 and leaves every later offset a line out of step with the file it indexes into.
 The adapters flatten line breaks before appending; `scripts/test_claudecode.py`
@@ -497,7 +497,7 @@ stream racing on one cursor file, which duplicated events and corrupted the
 record of what had been seen.* That is a scar, not a preference.
 
 Claude Code cannot obey that rule, because a session that does not arm a watcher
-receives nothing at all. So the rule is not dropped — the guard moves. The
+receives nothing at all. So the rule is not dropped. The guard moves. The
 dispatcher writes the spool and never reads it, which leaves exactly one
 consumer, and `session_watch.sh` takes an exclusive `flock` so a second session
 refuses to arm rather than quietly halving the accuracy of both. Two sessions on
@@ -538,7 +538,7 @@ inside the clone and can find itself from `__file__`.
 **Credentials at a harness path with everything else in the clone is the
 ordinary arrangement**, not a split install: the harness owns that file, this
 project owns the clone, and neither is half of the other. A credentials file
-says where credentials are. It says nothing about whether there is an install —
+says where credentials are. It says nothing about whether there is an install,
 which is why nothing outside the clone is ever adopted as evidence of one.
 
 Twice in this project's history a comment asserted a guarantee the code did not
@@ -556,7 +556,7 @@ set to restore is recorded before the first stop and written into the
 transaction, so a unit the operator had deliberately stopped stays stopped, and
 so a resume in a different process still knows what to put back. A restore that
 fails is reported, names the unit, keeps the transaction for a retry, and exits
-nonzero — it is never folded into a success.
+nonzero. It is never folded into a success.
 
 **The cost of this layout is that secrets live in a git working tree.** Three
 things hold that line: anchored `.gitignore` rules, a fail-closed check in the
@@ -565,7 +565,7 @@ unignored, and assertions in `scripts/test_paths.sh` so a rule cannot be dropped
 without CI noticing. One thing does not: **`git clean -xdf` deletes ignored
 files**, and on a live install that is the mailbox password, both route secrets,
 the roster and the UID baseline, in one command. That is documented rather than
-prevented, because the alternative — leaving them untracked but unignored — trades
+prevented, because the alternative, leaving them untracked but unignored, trades
 a destructive command for a `git add -A` that publishes the password, and that is
 the worse failure.
 
@@ -576,8 +576,8 @@ is".
 
 ### What a complete assertion looks like
 
-A suite can assert artifacts — files in the right place, resolver agreeing,
-modes correct — and never ask whether mail is still being detected afterwards.
+A suite can assert artifacts (files in the right place, resolver agreeing,
+modes correct) and never ask whether mail is still being detected afterwards.
 That is how the same defect keeps arriving in a new costume: an operation that
 leaves the services stopped passes every assertion in the suite.
 
@@ -591,7 +591,7 @@ And the honest limit, because overclaiming here is the same mistake in a
 different place: `is-active` and start-call assertions establish **service
 state**, not **mail detection**. A running listener is not proof that mail is
 arriving. Proving detection needs a real host, real IMAP, and a message actually
-arriving — which is why releasing an install onto a live mailbox has its own gate
+arriving, which is why releasing an install onto a live mailbox has its own gate
 and is not something the suite can grant.
 
 ## Why the roster is the whole model

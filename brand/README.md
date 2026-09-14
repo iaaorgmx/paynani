@@ -4,8 +4,8 @@ El isotipo es **la voluta**: la voluta de la palabra con que los códices dibuja
 el habla saliendo de la boca, desenrollándose hacia afuera. Trazo de grosor
 parejo con puntas redondas.
 
-El manual completo —construcción, resguardo, usos incorrectos, color y
-tipografía— vive en el issue [#27](https://github.com/iaaorgmx/paynani/issues/27).
+El manual completo (construcción, resguardo, usos incorrectos, color y
+tipografía) vive en el issue [#27](https://github.com/iaaorgmx/paynani/issues/27).
 Esta carpeta es la fuente de verdad de los archivos.
 
 ## Qué archivo usar
@@ -75,8 +75,8 @@ repintarlo por tema:
 .marca .logotipo { fill: var(--ink); }
 ```
 
-Así lo usa la página de configuración del buzón —`scripts/paynani_lib/brand.py`
-la inserta y `scripts/paynani_lib/assets/app.css` la pinta—, que además no
+Así lo usa la página de configuración del buzón, `scripts/paynani_lib/brand.py`
+la inserta y `scripts/paynani_lib/assets/app.css` la pinta, que además no
 tenía alternativa: su `Content-Security-Policy` es `default-src 'none'` sin
 `img-src`, de modo que una imagen enlazada quedaría bloqueada.
 
@@ -88,13 +88,13 @@ El logotipo va **en curvas** dentro de los SVG, así que ningún archivo depende
 tener una fuente instalada.
 
 Las curvas provienen de **Spectral Medium**, de Production Type, distribuida bajo
-[SIL Open Font License 1.1](https://openfontlicense.org) —
+[SIL Open Font License 1.1](https://openfontlicense.org):
 *Copyright 2017 The Spectral Project Authors*. El texto completo de la licencia
 está en [`OFL-Spectral.txt`](OFL-Spectral.txt).
 
 Para la interfaz y la documentación **no se usa Spectral ni ninguna otra fuente
 remota**: va la tipografía del sistema. La razón está escrita en
-`scripts/paynani_lib/assets/app.css` y no es estética — paynani se instala en hosts que pueden
+`scripts/paynani_lib/assets/app.css` y no es estética: paynani se instala en hosts que pueden
 no tener salida a internet, y ahí una fuente remota no falla con estruendo, falla
 en silencio.
 
@@ -105,13 +105,13 @@ está en la lista.
 
 **El isotipo es un trazo, no una silueta.** De ahí sale casi todo lo demás. No se
 rellena, no se encierra en un círculo ni en una pastilla: la voluta es habla
-saliendo de una boca, y meterla en un contenedor la contradice — el encierro es
+saliendo de una boca, y meterla en un contenedor la contradice: el encierro es
 justamente lo que está dejando atrás. Si hace falta separarla del fondo, se
 cambia el fondo, no se le pone marco.
 
 **Un solo acento.** La grana cochinilla es el único color que la marca agrega. El
 jade se retiró para no acabar con un sistema de dos colores compitiendo. Si algo
-necesita un segundo color, es semántico —error, éxito, aviso— y no pertenece a la
+necesita un segundo color, es semántico (error, éxito, aviso) y no pertenece a la
 marca: no lo tomes de la paleta ni lo llames color de paynani.
 
 **El nombre es la otra mitad.** El isotipo va solo únicamente donde el nombre ya

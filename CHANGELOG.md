@@ -6,7 +6,7 @@
 cambiado de contenido.** Issue #118, encontrado por Julian probando el
 formulario manualmente: la condición de parada comparaba una huella del
 archivo antes y después, así que reenviar los mismos siete valores ya
-guardados —probar el formulario sin cambiar nada— dejaba el proceso corriendo
+guardados, probar el formulario sin cambiar nada, dejaba el proceso corriendo
 para siempre pese a que el guardado sí había funcionado.
 
 Ese sondeo de huella era un resabio de `scripts/setup_web.sh`, donde el
@@ -14,7 +14,7 @@ lanzador en bash y el servidor PHP son dos procesos separados sin forma de
 avisarse. En Python, servidor y lanzador comparten proceso: ahora el propio
 manejador que escribe el archivo activa un `threading.Event` justo después de
 que la pantalla de confirmación ya salió por el socket, y `onboard.py` se
-detiene en cuanto lo ve — sin esperar a que el contenido difiera de lo que
+detiene en cuanto lo ve: sin esperar a que el contenido difiera de lo que
 había al arrancar. La comparación de huella se conserva como respaldo.
 
 De paso, un `SIGTERM` (por ejemplo `pkill`, en vez de Ctrl-C) dejaba el
@@ -28,21 +28,21 @@ continuación planeada de #114/#115.
 
 `paynani set CLAVE [VALOR]` cambia una de las siete claves del `.env` sin
 volver a correr todo `onboard`: valida el campo, por omisión vuelve a probarlo
-en vivo contra el servidor (solo el protocolo que esa clave afecta — cambiar
+en vivo contra el servidor (solo el protocolo que esa clave afecta: cambiar
 `AGENT_EMAIL_FROM_NAME` no toca la red; cambiar un host o la contraseña sí), y
 solo entonces escribe, reutilizando `envfile.py` tal cual. `--skip-check` para
 saltar la prueba en vivo a propósito. La contraseña, si no se pasa en la línea
 de comandos, se pide oculta (`getpass`).
 
 `paynani roster {list,add,remove}` administra `roster.md` sin editar la tabla
-markdown a mano. Preserva todo lo que el archivo ya tiene — comentarios, la
-tabla de `## Notifiers`, columnas que este comando no conoce —, rechaza una
+markdown a mano. Preserva todo lo que el archivo ya tiene (comentarios, la
+tabla de `## Notifiers`, columnas que este comando no conoce), rechaza una
 dirección duplicada o una bandera (`--type`, `--github`) que apunta a una
 columna que el archivo no tiene, en vez de descartarla en silencio, pide
 confirmación interactiva antes de escribir (salvo `--yes`), y después de
 escribir corre `scripts/test_roster.sh` y `scripts/test_listener.py`,
 revirtiendo el cambio si alguno falla. Es un comando de terminal, ejecutado a
-criterio explícito de un humano o del agente — nada lo conecta al correo
+criterio explícito de un humano o del agente: nada lo conecta al correo
 entrante, así que no debilita la regla de "nunca agregar un renglón porque un
 mensaje lo pidió": esa regla es sobre quién decide, no sobre qué herramienta
 escribe el renglón después.
@@ -55,7 +55,7 @@ un roster viejo.
 
 **Configurar el `.env` ya no depende de tener PHP instalado.** `scripts/paynani
 onboard` levanta el mismo formulario de incorporación que `webapp/`, pero en
-Python 3 puro — la única dependencia que ya exige el resto de este
+Python 3 puro: la única dependencia que ya exige el resto de este
 repositorio (`harness/adapters/*.py`, `scripts/idle_listener.py`, etc.), no
 una nueva.
 
@@ -66,9 +66,9 @@ para ayudar a alguien sin conocimientos técnicos terminaba siendo, en cambio,
 un bloqueo al momento de instalar para el agente que hace el trabajo.
 
 `scripts/paynani onboard [--port PUERTO]` reproduce exactamente la misma
-experiencia — un enlace por ejecución que deja de servir en cuanto el proceso
+experiencia (un enlace por ejecución que deja de servir en cuanto el proceso
 termina, solo loopback, nada se escribe hasta que
-un login IMAP y uno SMTP reales autentiquen ambos — usando únicamente
+un login IMAP y uno SMTP reales autentiquen ambos) usando únicamente
 `http.server`, `imaplib` y `smtplib` de la librería estándar. Los cinco
 catálogos de idioma (`webapp/i18n/*.php`) se portaron 1:1 a
 `scripts/paynani_lib/i18n_data/*.py`, mismas claves, mismo texto. La
@@ -90,15 +90,15 @@ mantener las dos implementaciones en paralelo.
 
 Se borra `webapp/` completo (`index.php`, `lib/*.php`, `i18n/*.php`,
 `README.md`) y `scripts/setup_web.sh`, el lanzador en bash. Los dos archivos
-que `paynani onboard` sigue sirviendo en vivo — `app.css` y `lang.js` — se
+que `paynani onboard` sigue sirviendo en vivo, `app.css` y `lang.js`, se
 mueven a `scripts/paynani_lib/assets/` en vez de borrarse con el resto; server.py
 ya no depende de ninguna ruta bajo `webapp/`.
 
 `scripts/test_paths.sh` deja de comprobar `webapp/lib/paths.php` como tercera
 implementación de la regla de rutas: ahora son dos (Python y shell), no tres.
-Toda mención a `scripts/setup_web.sh` como ruta alterna al formulario —en
+Toda mención a `scripts/setup_web.sh` como ruta alterna al formulario (en
 `AGENTS.md`, `README.md`, `MAILBOX_SETUP.md`, `INSTALL.md` y sus cuatro
-traducciones— se actualiza a `scripts/paynani onboard`, y el párrafo entero
+traducciones) se actualiza a `scripts/paynani onboard`, y el párrafo entero
 sobre necesitar PHP y `sudo`/`apt-get` desaparece: ya no hay una ruta que
 dependa de eso.
 
@@ -166,8 +166,8 @@ cinco versiones quedaron medidas entre 12 y 15 términos.
 ### Sobre `blader/humanizer`
 
 Se evaluó el skill para este objetivo y no era la herramienta. Quita señales de
-escritura de IA —contrastes no-X-sino-Y, cierres de una línea, tríadas forzadas,
-rayas largas como conector— y el README ya pasaba casi limpio: **0 rayas largas,
+escritura de IA (contrastes no-X-sino-Y, cierres de una línea, tríadas forzadas,
+rayas largas como conector) y el README ya pasaba casi limpio: **0 rayas largas,
 0 no-X-sino-Y, 0 comillas curvas**. Sirve como pasada de acabado, no como el
 arreglo. Sus listas de palabras además son de inglés, así que sobre una fuente
 es-MX solo transfieren los patrones estructurales.
@@ -177,13 +177,13 @@ es-MX solo transfieren los patrones estructurales.
 La prueba que de verdad cuenta no se ha hecho: dárselo a leer a alguien no
 técnico y ver en qué renglón se detiene. Todo lo anterior son proxies.
 
-## 0.4.0 — 2026-09-07
+## 0.4.0: 2026-09-07
 
 **`main` ya no depende de que nadie se acuerde de correr las pruebas.** 30 commits
 desde 0.3.0.
 
-Hasta esta versión la disciplina existía y funcionaba —todo entraba por PR, la
-suite se corría— pero nada la obligaba. Ahora hay una compuerta: cada PR y cada
+Hasta esta versión la disciplina existía y funcionaba (todo entraba por PR, la
+suite se corría) pero nada la obligaba. Ahora hay una compuerta: cada PR y cada
 commit que llega a `main` corren la suite completa en GitHub Actions, y `main`
 está protegida requiriendo que ese check pase. Un PR con una prueba rota ya no se
 marca en rojo y se fusiona igual: no se puede fusionar.
@@ -207,7 +207,7 @@ Fuera de ese caso basta `git pull`. No hay estado que migrar.
 
 `scripts/send.sh` acepta `--html` y construye `multipart/alternative`, con
 adjuntos o sin ellos. Antes, un correo que por política tenía que salir en HTML
-tenía que mandarse con otra herramienta — y eso significaba **sin validación
+tenía que mandarse con otra herramienta, y eso significaba **sin validación
 contra `roster.md`, sin registro en `state/sent.log` y sin rechazo de
 destinatarios fuera de lista**. La política de formato y la compuerta de correo
 eran excluyentes; ya no lo son.
@@ -215,26 +215,26 @@ eran excluyentes; ya no lo son.
 La parte HTML sale en `quoted-printable`, no en `8bit`. No es un detalle de
 estilo: RFC 5321 limita una línea a 998 octetos y el HTML de correo real la pasa
 con facilidad, porque los estilos van en línea. Una línea larga la rechaza el
-servidor o —peor— la parte a media declaración y el lector recibe HTML roto sin
+servidor o, peor, la parte a media declaración y el lector recibe HTML roto sin
 error en ningún lado.
 
 ### Una sesión que no pudo armar el watch ahora se entera
 
 En `claudecode`, cuando otra sesión ya tenía tomado el spool, el aviso salía por
-stderr — que desde el harness va a un archivo que nadie abre. La sesión veía
+stderr, que desde el harness va a un archivo que nadie abre. La sesión veía
 `Monitor ended without producing output (exit 0)`, indistinguible de un buzón
 tranquilo, y creía que había armado el watch cuando no lo había hecho. Ahora sale
 por stdout, que es el canal que sí notifica.
 
-Es la primera mitad del arreglo. La segunda —distinguir un dueño vivo del lock de
-uno huérfano o suspendido— sigue abierta.
+Es la primera mitad del arreglo. La segunda, distinguir un dueño vivo del lock de
+uno huérfano o suspendido, sigue abierta.
 
 ### Un fallo viejo deja de anunciarse para siempre
 
 Un solo renglón heredado en `state/dispatch.err.log`, escrito antes de que
 existiera el prefijo de rutina, dejaba el aviso de fallos encendido de forma
 permanente: cada sesión arrancaba anunciando un problema que no existía, en un
-host donde el dispatcher entregaba bien. Ahora el corte es temporal — solo cuentan
+host donde el dispatcher entregaba bien. Ahora el corte es temporal: solo cuentan
 los renglones posteriores al arranque actual del dispatcher, porque un fallo de un
 proceso que ya murió no describe al que está corriendo.
 
@@ -250,7 +250,7 @@ scripts/test_all.sh
 **No uses `python3 -m unittest discover`.** Solo cuatro de los archivos de prueba
 definen clases `unittest.TestCase`; los otros siete son scripts de aserciones. La
 detección automática no puede correrlos: seis salen en el import y se reportan
-como errores —`FAILED (errors=6)` en un árbol sano, en cualquier runtime— y el
+como errores (`FAILED (errors=6)` en un árbol sano, en cualquier runtime) y el
 séptimo importa limpio y no aporta ninguna prueba. Las dos mitades son el cargador
 opinando sobre una suite que no corrió. Dos personas llegaron a `discover` por
 reflejo, en runtimes distintos, antes de que existiera este script.
@@ -282,8 +282,8 @@ limpia, actualización de paynani, y migración por renombre.
 ### `MIGRATION.md` ya no puede dar un falso limpio
 
 El paso que busca instrucciones viejas usaba `rg` con `2>/dev/null`. ripgrep no es
-parte de una instalación base en ningún lado —ni en macOS ni en un Ubuntu
-mínimo— y este repositorio no lo exige; silenciar stderr encima es lo que lo
+parte de una instalación base en ningún lado, ni en macOS ni en un Ubuntu
+mínimo, y este repositorio no lo exige; silenciar stderr encima es lo que lo
 volvía peligroso en vez de meramente ausente. En un host sin ripgrep la línea
 imprimía **nada**, y en esa sección nada se lee como «no quedan instrucciones
 viejas». Alguien tacharía el paso con el heartbeat todavía apuntando a un
@@ -294,7 +294,7 @@ atrapar. Ahora es `grep -rn`, y los errores se ven.
 
 `healthcheck.py` preguntaba por la unidad y trataba cualquier respuesta que no
 fuera `active` como una parada. En un host donde la unidad **no se puede
-consultar** —sin systemd observable, sin launchd— eso convertía «no sé» en «está
+consultar** (sin systemd observable, sin launchd) eso convertía «no sé» en «está
 caído», y el reporte gritaba un problema que nadie podía arreglar porque nunca
 existió. Ahora `unknown` se declara como lo que es: estado desconocido, no
 detenido.
@@ -309,7 +309,7 @@ muerto sí se vea dentro de la misma sesión.
 Y distingue dos cosas que se veían iguales y piden lo contrario: un listener
 muerto y uno vivo que no alcanza el servidor. Si el pulso está viejo pero
 `idle.err.log` se sigue escribiendo, el proceso está corriendo y reintentando, y
-el reporte lo dice con todas sus letras —«reiniciarlo no va a ayudar»— en vez de
+el reporte lo dice con todas sus letras, «reiniciarlo no va a ayudar», en vez de
 mandar a alguien a reiniciar un servicio que ya está arriba. Un pulso viejo sin
 bitácora de errores reciente sí es la otra: probablemente muerto, en un host sin
 supervisor que lo levante.
@@ -325,8 +325,8 @@ entera se fue recomendando un tag que ya existía. Ahora el cache se invalida
 también cuando la versión instalada cambia.
 
 Lo que el cache no puede arreglar, ahora lo declara. La respuesta puede seguir
-teniendo hasta un día de vieja —evitar un chequeo de red por sesión es para lo que
-existe— pero ya no se presenta como un hecho fresco: la línea trae su edad,
+teniendo hasta un día de vieja, evitar un chequeo de red por sesión es para lo que
+existe, pero ya no se presenta como un hecho fresco: la línea trae su edad,
 `[from a check 20h ago]`. Un agente al que le dicen «el tag más nuevo es X» lee un
 hecho; uno al que le dicen «según un chequeo de hace 20 horas» sabe que puede
 preguntar.
@@ -335,8 +335,8 @@ La versión instalada se guarda en una **segunda línea**, no en un tercer campo
 la primera. Un tercer campo se ve más limpio y rompe la versión anterior: su
 lector es `read -r stamp cached`, y con dos variables la segunda se queda con todo
 el resto del renglón, así que `cached` regresaba como `"0.3.0 0.3.0"`. Ese es un
-camino de rollback real —un host de campo probando un release candidate, o dos
-clones compartiendo `PAYNANI_STATE`, que es como se encontró—. `read` se detiene
+camino de rollback real (un host de campo probando un release candidate, o dos
+clones compartiendo `PAYNANI_STATE`, que es como se encontró). `read` se detiene
 en el primer salto de línea, así que un paynani viejo lee la línea 1 y nunca se
 entera de que hay una línea 2.
 
@@ -349,8 +349,8 @@ red pasajero, así que nadie lo investiga, y el chequeo de versión queda muerto
 el resto de la vida del host (#68, hallado por Ximena en la primera instalación
 sobre macOS).
 
-Ahora degrada sin el techo cuando no hay `timeout` —o usa `gtimeout`, que es el
-mismo programa cuando Homebrew instaló coreutils—. Es el intercambio correcto:
+Ahora degrada sin el techo cuando no hay `timeout` (o usa `gtimeout`, que es el
+mismo programa cuando Homebrew instaló coreutils). Es el intercambio correcto:
 `GIT_TERMINAL_PROMPT=0` es la protección que importa y esa sobrevive, y un chequeo
 que funciona sin cota superior le gana a uno que siempre falla.
 
@@ -366,7 +366,7 @@ parte de la suite.
 
 La apertura se reescribió para decir qué es paynani antes de decir cómo se
 instala, se corrigieron tres defectos de ese texto y un posesivo que cambiaba el
-sentido —el agente lee **su** correo, no el tuyo—, y las cuatro traducciones de
+sentido (el agente lee **su** correo, no el tuyo), y las cuatro traducciones de
 `i18n/` se pusieron al día con el español.
 
 ### El flujo de release candidate, documentado
@@ -375,7 +375,7 @@ sentido —el agente lee **su** correo, no el tuyo—, y las cuatro traducciones
 reportar de vuelta el host que lo instala. Existe porque CI prueba menos de lo que
 parece: la suite finge `himalaya`, así que un verde dice que el mensaje está bien
 formado y no dice nada sobre si un proveedor real lo acepta. En `agenteiamail` ese
-hueco dejó pasar dos bugs —un `From:` faltante y un rechazo `554 spam`— que solo
+hueco dejó pasar dos bugs, un `From:` faltante y un rechazo `554 spam`, que solo
 aparecieron en un host vivo.
 
 **Esta versión salió primero como `v0.4.0-rc1`, y el proceso hizo su trabajo.**
@@ -397,14 +397,14 @@ estás corriendo. Un agente hospedado por el gateway bajo prueba no puede ejecut
 ese paso: tendría que detener el proceso que lo observa. En un host de un solo
 gateway, ese paso es del operador.
 
-## 0.3.0 — 2026-09-06
+## 0.3.0: 2026-09-06
 
 **paynani entrega a OpenAI Codex, y sabe despertar una sesión que está viva.** 23
 commits desde 0.2.0.
 
 Hasta ahora el correo llegaba a un harness que ya estaba mirando. Codex no mira:
 solo lee su contexto en un evento de sesión, así que un mensaje que entraba a
-media sesión esperaba a la siguiente. Esta versión cierra las dos mitades — el
+media sesión esperaba a la siguiente. Esta versión cierra las dos mitades: el
 dispatcher encola contra la sesión viva con `codex queue`, y lo que entró con la
 sesión cerrada se repone al arrancar, ya no como contexto informativo sino como
 trabajo que hay que atender.
@@ -485,8 +485,8 @@ camino de respaldo. En un host de Codex falta registrar los hooks una vez con
   de la página, y sobre todo `guard.php` sirve `default-src 'none'` sin `img-src`,
   así que un `<img>` quedaría bloqueado. Aflojar esa política para poner una
   imagen en un formulario que recoge una contraseña habría sido el peor de los
-  intercambios. El SVG se inserta en línea —`webapp/lib/brand.php`, con lista
-  blanca de nombres—, y el marcado en línea no es un recurso que se descargue, así
+  intercambios. El SVG se inserta en línea (`webapp/lib/brand.php`, con lista
+  blanca de nombres), y el marcado en línea no es un recurso que se descargue, así
   que no necesita ninguna directiva.
 
   Insertarlo además resuelve el tema oscuro. Los archivos de `brand/` llevan sus
@@ -500,8 +500,8 @@ camino de respaldo. En un host de Codex falta registrar los hooks una vez con
 - **El listener podía quedarse ciego sin que nada lo dijera**
   ([#37](https://github.com/iaaorgmx/paynani/issues/37), en
   [#39](https://github.com/iaaorgmx/paynani/pull/39) y
-  [#41](https://github.com/iaaorgmx/paynani/pull/41)). Detrás de un NAT —WSL2, o
-  casi cualquier router doméstico— una conexión IMAP ociosa se descarta sin FIN.
+  [#41](https://github.com/iaaorgmx/paynani/pull/41)). Detrás de un NAT, WSL2, o
+  casi cualquier router doméstico, una conexión IMAP ociosa se descarta sin FIN.
   De este lado el socket se sigue viendo `ESTAB` hasta que alguien intenta
   escribir, así que el listener se quedaba bloqueado esperando un `EXISTS` que ya
   no podía llegar: proceso vivo, socket sano, cero errores en el log, y el correo
@@ -510,9 +510,9 @@ camino de respaldo. En un host de Codex falta registrar los hooks una vez con
 
   Nada sondeaba la conexión porque dos cosas se combinaban: el socket se abría
   sin `SO_KEEPALIVE`, así que el kernel nunca preguntaba al otro extremo, y
-  `IDLE_REFRESH` estaba en 25 minutos —número que no es solo cada cuánto se
+  `IDLE_REFRESH` estaba en 25 minutos (número que no es solo cada cuánto se
   reemite IDLE, es cuánto puede durar una conexión muerta sin que nadie se
-  entere—. Ahora el socket pide keepalive al conectarse, con sondas a los 60
+  entere). Ahora el socket pide keepalive al conectarse, con sondas a los 60
   segundos, y `IDLE_REFRESH` bajó a 5 minutos.
 
   El arreglo se completó en dos pasos porque el primero estaba incompleto de una
@@ -520,8 +520,8 @@ camino de respaldo. En un host de Codex falta registrar los hooks una vez con
   consultando cada nombre antes de usarlo, con el comentario correcto de que
   macOS no expone `TCP_KEEPIDLE`. El diagnóstico era bueno; la conclusión no:
   **macOS sí tiene ese temporizador, se llama `TCP_KEEPALIVE`**, y no se pedía.
-  En un Mac quedaba `SO_KEEPALIVE` encendido con el ocioso del sistema —dos
-  horas—, o sea ninguna sonda dentro de una ventana útil y toda la protección
+  En un Mac quedaba `SO_KEEPALIVE` encendido con el ocioso del sistema, dos
+  horas, o sea ninguna sonda dentro de una ventana útil y toda la protección
   recargada en el `IDLE_REFRESH`. No era catastrófico, era silencioso, que es
   justo lo que esta función existe para eliminar. `scripts/install_macos.py` son
   328 líneas: macOS es un objetivo soportado, no hipotético.
@@ -535,8 +535,8 @@ camino de respaldo. En un host de Codex falta registrar los hooks una vez con
   hay salida.
 
   Ahora acepta `--attach <ruta>`, repetible, en el orden en que se den. **Sin
-  `--attach` el mensaje no cambia en absoluto** —mismos encabezados, mismo orden,
-  una sola parte—, y eso es lo primero que asegura la suite, porque todos los
+  `--attach` el mensaje no cambia en absoluto** (mismos encabezados, mismo orden,
+  una sola parte), y eso es lo primero que asegura la suite, porque todos los
   envíos que este proyecto hace hoy son ese mensaje. Con adjuntos pasa a
   `multipart/mixed` y el cuerpo se vuelve la primera parte. El tipo sale de una
   tabla de extensiones primero y de `file --mime-type -b` para el resto, porque
@@ -547,8 +547,8 @@ camino de respaldo. En un host de Codex falta registrar los hooks una vez con
   [#42](https://github.com/iaaorgmx/paynani/pull/42)). Las reglas decían qué no
   hacer; faltaba con qué criterio resolver un caso que no estuviera en la lista.
   Los ocho criterios ya se habían decidido, pero vivían sólo en el issue: el
-  isotipo es un trazo y no una silueta —no se rellena ni se encierra, porque el
-  encierro es justo lo que la voluta está dejando atrás—, hay un solo acento, el
+  isotipo es un trazo y no una silueta (no se rellena ni se encierra, porque el
+  encierro es justo lo que la voluta está dejando atrás), hay un solo acento, el
   nombre es la otra mitad de la marca, el resguardo de `2x` es un mínimo y no un
   objetivo, y la cita no se disfraza de greca.
 
@@ -556,15 +556,15 @@ camino de respaldo. En un host de Codex falta registrar los hooks una vez con
   él el HTML del que sale, para que volver a generarlo no dependa de recordar
   cómo se hizo.
 
-## 0.2.0 — 2026-09-04
+## 0.2.0: 2026-09-04
 
 **paynani estrena marca, su página de configuración habla cinco idiomas, y el
 resolutor de rutas de PHP quedó aislado en su propio archivo.** 51 commits desde
 0.1.0.
 
 Basta `git pull`. Ninguna ruta que una unidad de systemd nombre cambió de sitio,
-no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.php`,
-`webapp/i18n/`— llegan con el propio pull.
+no hay estado que migrar, y los archivos nuevos (`brand/`, `webapp/lib/paths.php`,
+`webapp/i18n/`) llegan con el propio pull.
 
 - **El resolutor de rutas de PHP arrastraba media aplicación**
   ([#33](https://github.com/iaaorgmx/paynani/issues/33)). Preguntar en PHP dónde
@@ -575,9 +575,9 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   `scripts/envpath.sh`; la tercera implementación de la misma regla era la única
   que no se podía leer sola.
 
-  Ahora viven juntas en `webapp/lib/paths.php` —`home_dir()`, `install_root()`,
+  Ahora viven juntas en `webapp/lib/paths.php` (`home_dir()`, `install_root()`,
   `state_dir()`, `recorded_env()`, `env_path()`, más `HARNESS_ROOTS`,
-  `HARNESS_ENV_RELATIVE` y `ENV_BASENAME`— y ese archivo **no requiere nada**. No
+  `HARNESS_ENV_RELATIVE` y `ENV_BASENAME`) y ese archivo **no requiere nada**. No
   es higiene: es lo que le permite ser comparable por sí solo con las otras dos,
   que es exactamente lo que `test_paths.sh` afirma 151 veces.
 
@@ -590,8 +590,8 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
 - **`scripts/test_paths.sh` comparaba rutas contra un php muerto.** La suite cayó
   a 131 de 151 y los veinte fallos decían «php agrees with python» con la ruta
   esperada de un lado y la cadena vacía del otro. No era un desacuerdo de rutas:
-  el `require_once` de `i18n.php` no encontraba su archivo en el clon de prueba
-  —que copiaba sólo `envfile.php` y `guard.php`—, php moría, y la comparación
+  el `require_once` de `i18n.php` no encontraba su archivo en el clon de prueba,
+  que copiaba sólo `envfile.php` y `guard.php`, php moría, y la comparación
   leía ese vacío como una ruta que no coincide.
 
   Se arregló la copia y, sobre todo, el silenciado: la invocación descartaba
@@ -608,8 +608,8 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
 
   `brand/` trae catorce archivos, porque la marca se ve en un favicon de 16 px,
   en el avatar de la organización y en la cabecera del README, y cada sitio pide
-  una pieza distinta. La **versión reducida** —el mismo trazo sin el rizo
-  interior— existe porque por debajo de 32 px el rizo se cierra y queda una
+  una pieza distinta. La **versión reducida**, el mismo trazo sin el rizo
+  interior, existe porque por debajo de 32 px el rizo se cierra y queda una
   mancha. El logotipo va **en curvas**, así que ningún archivo depende de tener
   una fuente instalada; las curvas vienen de Spectral Medium, bajo SIL Open Font
   License 1.1, cuyo texto se incluye en `brand/OFL-Spectral.txt`.
@@ -619,14 +619,14 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   jade, el acento y el rojo de error estaban a dE76 65.4; con grana quedaban a
   7.7, y en pantalla el botón «Verificar y guardar» y el panel «No se pudo
   conectar» pasaban a ser el mismo rojo. Mover el error hacia el naranja lo
-  acercaba al ámbar de aviso —de dE 29.8 a entre 9.8 y 20.8 en oscuro—, así que
+  acercaba al ámbar de aviso, de dE 29.8 a entre 9.8 y 20.8 en oscuro, así que
   la salida fue sacar el acento del botón primario y ponerlo en tinta. El único
   rojo saturado de la página vuelve a ser el error; `--ok`, `--bad` y `--warn`
   quedan intactas.
 
   El `# paynani` de texto del `README.md` y de sus cuatro traducciones se cambia
-  por el logotipo, dentro de un `<h1>` y con `alt="paynani"` —no se pierde ni el
-  encabezado de primer nivel ni el nombre para quien usa lector de pantalla— y
+  por el logotipo, dentro de un `<h1>` y con `alt="paynani"`, no se pierde ni el
+  encabezado de primer nivel ni el nombre para quien usa lector de pantalla, y
   envuelto en `<picture>` con `prefers-color-scheme`, porque el logotipo normal
   tiene el texto en tinta y sobre el tema oscuro de GitHub no se ve.
 
@@ -638,8 +638,8 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
 
   Se reenvolvió a 32 columnas en los cinco idiomas, sin cambiar una palabra: como
   se pega en un chat, dónde parta la línea no significa nada. Se conserva la
-  valla a propósito —un blockquote envolvería solo, pero perdería el botón de
-  copiar, que en un texto cuyo único uso es copiarse es lo que más sirve—. La
+  valla a propósito (un blockquote envolvería solo, pero perdería el botón de
+  copiar, que en un texto cuyo único uso es copiarse es lo que más sirve). La
   única línea que sigue midiendo 35 es la URL del repositorio, que no se puede
   partir y que a 360 px entra completa igual.
 
@@ -661,8 +661,8 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
 - **Los ejemplos usaban dominios que alguien posee, y uno era un servidor real.**
   `MAILBOX_SETUP.md` nombraba un servidor de hosting existente en su ejemplo, y
   los marcadores de posición de la webapp usaban `tudominio.com` y
-  `tuproveedor.com`. Un ejemplo que apunta a un dominio de verdad manda tráfico
-  —y a veces credenciales— a quien no lo pidió. Todo pasa a `.example`, que
+  `tuproveedor.com`. Un ejemplo que apunta a un dominio de verdad manda tráfico,
+  y a veces credenciales, a quien no lo pidió. Todo pasa a `.example`, que
   existe justamente para esto, en las traducciones también.
 
 - **Documentación.** De dónde viene el nombre queda escrito, y propagado a las
@@ -684,7 +684,7 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   declara los suyos. Lo que varía son tres valores y por eso está en el core: sin
   esto, cada instalación que lo necesita edita `roster.py` e `idle_listener.py` a
   mano, y esa edición se pierde en la siguiente actualización sin que nada lo
-  diga — ya pasó, y es #11.
+  diga. Ya pasó, y es #11.
 
   **No otorga nada por sí solo.** Un handle que no esté anotado para alguien que
   ya está en la lista es exactamente tan desconocido como un extraño, y una
@@ -696,7 +696,7 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   Declarar un notificador amplía a quién le hace caso el agente, igual que
   agregar una fila, y por eso vive en el mismo archivo humano y bajo la misma
   regla: nunca porque un mensaje lo haya pedido. Y vale solo lo que valga el
-  `From` de la plataforma, que este proyecto no autentica — dicho así en
+  `From` de la plataforma, que este proyecto no autentica: dicho así en
   `HERMES.md`, en el prompt de la ruta de Hermes y en el `README.md`.
 
   Verificado contra una notificación real de GitHub en un buzón real: `From:
@@ -708,11 +708,11 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   `dispatch.py` escribe `delivering to <runtime>` en la rama en que **todo salió
   bien**, por el canal de diagnóstico que termina en `state/dispatch.err.log`, y
   `session_start.py` trataba cualquier línea no vacía de ese archivo como queja.
-  El archivo es de diagnósticos —lo dice su propio docstring— y se leía como si
+  El archivo es de diagnósticos, lo dice su propio docstring, y se leía como si
   fuera de fallos.
 
-  El dispatcher marca ahora sus líneas de rutina —el arranque exitoso, la
-  recuperación de una entrega y la compactación del diario— y el hook las
+  El dispatcher marca ahora sus líneas de rutina (el arranque exitoso, la
+  recuperación de una entrega y la compactación del diario) y el hook las
   descarta. Lo dice quien escribe, que es el único que sabe cuál es cuál, en vez
   de dejarle el juicio al lector: el texto del aviso decía *«If the last one is
   not a recovery»* precisamente porque nadie más podía distinguirlas.
@@ -730,7 +730,7 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   escribir a mano `sed -n 's/^PAYNANI_PASSWORD=//p'`, que en un archivo con
   terminadores CRLF devuelve la contraseña con un retorno de carro pegado. El
   servidor la rechaza **como credencial incorrecta**, así que quien lo ve revisa la
-  contraseña —que está bien— antes que el formato del archivo, que es lo que está
+  contraseña, que está bien, antes que el formato del archivo, que es lo que está
   mal.
 
   Y el repositorio ya traía el lector correcto: `scripts/env_secret.py`, agregado
@@ -752,8 +752,8 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   ([#13](https://github.com/iaaorgmx/paynani/issues/13)). En un host con dos
   harness la resolución es ambigua a propósito y `PAYNANI_ENV` la resuelve; el
   instalador la horneaba en el `--env` de la unidad y la tiraba. Todo lo demás
-  —`healthcheck.py`, `preflight.py`, `send.sh`, y el `python3 harness/paths.py env`
-  que `UNINSTALL.md` §2 usa para decidir **qué borrar**— resolvía entonces a un
+  (`healthcheck.py`, `preflight.py`, `send.sh`, y el `python3 harness/paths.py env`
+  que `UNINSTALL.md` §2 usa para decidir **qué borrar**) resolvía entonces a un
   `<clon>/.env` que no existe.
 
   Ahora `scripts/install.sh` lo anota en `runtime.env` y `harness/paths.py` lo lee.
@@ -767,8 +767,8 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   después de eso `PAYNANI_ENV` está puesto lo haya puesto una persona o el
   instalador, sin forma de distinguirlos mirando.
 
-  La regla la aprendieron **las tres implementaciones** —`harness/paths.py`,
-  `scripts/envpath.sh` y `webapp/lib/envfile.php`—, porque `test_paths.sh` existe
+  La regla la aprendieron **las tres implementaciones** (`harness/paths.py`,
+  `scripts/envpath.sh` y `webapp/lib/envfile.php`), porque `test_paths.sh` existe
   precisamente para que no vuelvan a separarse, y atrapó que solo la de Python la
   había aprendido.
 
@@ -777,7 +777,7 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   significar algo, once asserciones cambiaron de respuesta. Ahora los tres
   resolutores se ejercitan sobre una copia desechable del clon. Las
   comprobaciones de `.gitignore` siguen apuntando al repositorio real, porque
-  preguntan por una propiedad de este repositorio — contra la copia dejaban de
+  preguntan por una propiedad de este repositorio: contra la copia dejaban de
   correr en silencio, que es exactamente lo que el encabezado de ese archivo
   advierte.
 
@@ -804,8 +804,8 @@ no hay estado que migrar, y los archivos nuevos —`brand/`, `webapp/lib/paths.p
   defecto.
 
   De paso, dos cosas que solo aparecen en un host con instalación real:
-  `scripts/test_docs.py` escaneaba `roster.md` —la lista viva, sin rastrear, que
-  existe para tener direcciones reales— y fallaba en cualquier host con una
+  `scripts/test_docs.py` escaneaba `roster.md` (la lista viva, sin rastrear, que
+  existe para tener direcciones reales) y fallaba en cualquier host con una
   instalación funcionando; y no escaneaba `roster.md.example`, que es el único
   archivo cuyas direcciones se copian a cada instalación nueva, porque el glob
   era `*.md` y ese termina en `.example`.
@@ -828,8 +828,8 @@ que no era una máquina virgen.
 
   El roster se lee con `roster.roster_addresses`, la misma función del listener,
   para que esta herramienta no pueda reportar una lista que el listener no ve. El
-  nombre de la cuenta se escribe en `send.sh` y en `healthcheck.py` por separado
-  —uno es shell y el otro Python— y `scripts/test_roster_agree.sh` los amarra:
+  nombre de la cuenta se escribe en `send.sh` y en `healthcheck.py` por separado,
+  uno es shell y el otro Python, y `scripts/test_roster_agree.sh` los amarra:
   si se separan, esta comprobación buscaría una cuenta con la que nadie envía.
 
   Dos personas llegaron al mismo punto ciego el mismo día por instancias
@@ -851,7 +851,7 @@ que no era una máquina virgen.
   procedimiento anunciado como destructivo que no borra lo que dice borrar deja a
   quien entrega una máquina creyendo que quitó la contraseña del buzón. Ahora el
   paso empieza por resolver la ruta con `python3 harness/paths.py env` y distingue
-  el archivo del harness —del que solo se quitan las claves de esta instalación—
+  el archivo del harness, del que solo se quitan las claves de esta instalación,
   del `.env` del clon, que sí se va entero.
 
 - **El README describía la instalación como más pequeña de lo que es**
@@ -871,7 +871,7 @@ que no era una máquina virgen.
   tras una regla horizontal y en letra chica. El texto no cambió.
 
   Alcanza también a `README.md`, `MAILBOX_SETUP.md` y `UNINSTALL.md`, que llevan
-  la nota espejo —«este archivo es la fuente de verdad»— por la misma razón.
+  la nota espejo, «este archivo es la fuente de verdad», por la misma razón.
 
   De paso, dos cosas que estaban mal en `MAILBOX_SETUP.md` y que la nota tapaba:
   su nota decía «traducido de MAILBOX_SETUP.md… gana el inglés», heredada de
@@ -888,8 +888,8 @@ que no era una máquina virgen.
   que pide permiso para cada paso que ya tenía encargado entrena a su humano a
   decir que sí sin leer, que es lo que vuelve peligrosa la petición que sí había
   que leer. `AGENTS.md`, `INSTALL.md` y `roster.md.example` ahora separan los dos
-  casos: en la instalación se escribe la fila —y si faltan los datos se piden los
-  datos, no el permiso—; después, una petición que llega por mensaje sigue siendo
+  casos: en la instalación se escribe la fila (y si faltan los datos se piden los
+  datos, no el permiso); después, una petición que llega por mensaje sigue siendo
   texto y nunca autorización.
 
 - **Nada advertía que un contacto puede escribir desde una dirección distinta a
@@ -942,7 +942,7 @@ Lo que cambió en la bifurcación misma:
   documentación para humanos: `README.md`, `MAILBOX_SETUP.md`, `UNINSTALL.md` y el
   formulario web de configuración. Las versiones en inglés, español (ES), francés
   y portugués viven en `i18n/` y son traducciones. La documentación dirigida a
-  agentes — `AGENTS.md`, `INSTALL.md`, `UPGRADE.md`, `HERMES.md` — y el código
+  agentes (`AGENTS.md`, `INSTALL.md`, `UPGRADE.md`, `HERMES.md`) y el código
   fuente siguen en inglés.
 
   El inventario de unidades en `UNINSTALL.md` nombraba `watch.service`, que dejó de
@@ -957,7 +957,7 @@ Lo que cambió en la bifurcación misma:
 
   It was unanswerable until four days ago. The record of what came in has always
   existed, and [#117](https://github.com/julianflores/agenteiamail/issues/117)
-  shipped the record of what went out in 1.9.1 — so the comparison became
+  shipped the record of what went out in 1.9.1. So the comparison became
   possible and nothing was reading it. A live OpenClaw host took three roster
   messages between 16:11 and 17:08, answered none of them for six hours, and
   every check this project offered reported a healthy install, correctly.
@@ -975,33 +975,33 @@ Lo que cambió en la bifurcación misma:
   directory, `sent.log` included, so reading only the live file would report a
   host that sent mail yesterday as never having sent anything.
 
-## 1.9.1 — 2026-08-26
+## 1.9.1: 2026-08-26
 
 **The session-start hook failed on every healthy Claude Code host.** If you run
 this on Claude Code, upgrade. Everything else here is tests and documentation.
 
 - **`harness/session_start.py` emitted `"systemMessage": null`** when it had
   nothing to say, and Claude Code rejects that payload with
-  `Hook JSON output validation failed — (root): Invalid input`, discarding the
+  `Hook JSON output validation failed: (root): Invalid input`, discarding the
   whole output: no replay of mail that arrived while nothing was running, no
   watch command, no byte offset. The key is now omitted rather than sent as null
   ([#104](https://github.com/julianflores/agenteiamail/issues/104)).
 
   The failure was inverted, which is how it survived two releases. Every branch
-  that fills `systemMessage` is a branch where something is broken — listener
-  down, dispatcher down, dispatcher reporting errors — so the hook worked on
+  that fills `systemMessage` is a branch where something is broken (listener
+  down, dispatcher down, dispatcher reporting errors) so the hook worked on
   every unhealthy install and failed only on a healthy one with mail waiting,
   which is the single case it exists to serve. The first Claude Code host saw it
   work on day one because its dispatcher was still logging errors from a
   crash-loop; the next session, after that install was repaired, got nothing at
   all. **Fixing the install is what exposed it.**
 
-  Found by running the acceptance test nobody had run — #78's criterion 6, which
+  Found by running the acceptance test nobody had run: #78's criterion 6, which
   the PRD had called *"the test that distinguishes this runtime from the other
   two and the one most likely to fail"*, in bold, a week before it failed.
 
   The offset held throughout. The hook failed for a day without consuming
-  anything, so nothing was lost and the next session could still be told —
+  anything, so nothing was lost and the next session could still be told:
   `session_start.py` chooses repetition over silence deliberately, and that
   choice held against a fault nobody had anticipated.
 
@@ -1014,7 +1014,7 @@ less than it appeared to. They are one habit, not four bugs.
   ([#64](https://github.com/julianflores/agenteiamail/issues/64)). Its three
   branches were unknown, out of date, and a catch-all; ahead-of-tag fell into the
   catch-all. The long report had always described it correctly, and `--line` is
-  the form that gets read — it feeds the session-start hook and
+  the form that gets read: it feeds the session-start hook and
   `healthcheck.py`'s version field.
 - **`scripts/test_paths.sh` dropped every PHP assertion when `php` was absent**
   and still said `0 failed`
@@ -1030,7 +1030,7 @@ less than it appeared to. They are one habit, not four bugs.
   check*.
 - **Nothing recorded what was sent**
   ([#117](https://github.com/julianflores/agenteiamail/issues/117)).
-  `scripts/send.sh` now appends one line per send to `state/sent.log` —
+  `scripts/send.sh` now appends one line per send to `state/sent.log`:
   timestamp, recipient, subject, message-id, no bodies. Himalaya saves no copy
   unless asked, and sending is SMTP, which has no Sent folder at all; a copy
   there is a separate IMAP `APPEND`. So there was no record anywhere by default,
@@ -1042,7 +1042,7 @@ less than it appeared to. They are one habit, not four bugs.
 `HARNESS_ROOTS` is written down in `harness/paths.py`, `scripts/envpath.sh`,
 `webapp/lib/envfile.php` and two documentation tables. 1.8.0 updated one of them.
 `scripts/test_paths.sh` pinned the first three; `scripts/test_docs.py` now pins
-the last two, failing in both directions — an undocumented runtime and a
+the last two, failing in both directions: an undocumented runtime and a
 documented-but-unimplemented one
 ([#95](https://github.com/julianflores/agenteiamail/issues/95)).
 
@@ -1063,19 +1063,19 @@ reimplements the rule is a third copy of it.
   Claude Code cannot borrow that because appending to a spool always succeeds.
 - **`AGENTS.md` stopped a macOS install at step 1**
   ([#110](https://github.com/julianflores/agenteiamail/issues/110)) by testing
-  for systemd unconditionally — three days after 1.9.0 made macOS supported.
+  for systemd unconditionally: three days after 1.9.0 made macOS supported.
   Step 1 now branches; `UPGRADE.md` gained the launchd half of a trap it already
   documented for systemd.
 - **`DESIGN.md` described one runtime and one supervisor**
   ([#68](https://github.com/julianflores/agenteiamail/issues/68)). It now states
-  the delivery boundary for all three — what `ACCEPTED` means to each adapter and
-  what it does not prove — and why supervision inverts on macOS. The honest form
+  the delivery boundary for all three, what `ACCEPTED` means to each adapter and
+  what it does not prove, and why supervision inverts on macOS. The honest form
   of the guarantee is that **mail is never lost before the runtime takes it, and
   the moment it is taken is recorded**; everything after that belongs to the
   runtime, and [#108](https://github.com/julianflores/agenteiamail/issues/108)
   records where OpenClaw's own boundary sits.
 
-## 1.9.0 — 2026-08-25
+## 1.9.0: 2026-08-25
 
 **macOS is a supported host.** An OpenClaw agent on a Mac can now install and
 supervise this the way a Linux one does, without WSL, Ubuntu, or a
@@ -1088,15 +1088,15 @@ agent that runs on it, against [#81](https://github.com/julianflores/agenteiamai
 - **`scripts/install.sh` delegates on Darwin**, which also disposes of a problem
   rather than fighting it: Apple ships bash 3.2, and the installer uses `declare -A`
   and `mapfile -d ''` in nine places. A fresh clone on macOS did not fail somewhere
-  informative — it died at line 143 with `declare: -A: invalid option`, before any
+  informative: it died at line 143 with `declare: -A: invalid option`, before any
   install logic ran at all. Moving the macOS path into Python means the question
   does not arise, instead of nine rewrites for a shell nobody wants to target.
 - **`scripts/env_secret.py` prints one value from the env file**, so Himalaya's
   `password.cmd` reads the password at need and `config.toml` never holds it.
   It tolerates a UTF-8 BOM and CRLF, both of which have bitten this repository
   before.
-- **The generated plists carry a deliberate `PATH`** — the OpenClaw binary's
-  directory, Homebrew, then the standard system directories — and specifically do
+- **The generated plists carry a deliberate `PATH`** (the OpenClaw binary's
+  directory, Homebrew, then the standard system directories) and specifically do
   not append the installing shell's own `PATH`. The hand-written plists this
   replaced had frozen a per-run temporary directory into a service definition
   meant to outlive reboots.
@@ -1120,8 +1120,8 @@ native Linux host would be, and none exists yet.
 
 `scripts/test_paths.sh` asserted "the repo root does not assume a harness" by
 matching the resolved path against `*.openclaw*`. That fails on a clone at
-`~/.openclaw/workspace/agenteiamail` — which is the location `README.md`
-recommends — so the suite asserted that a documented install location was wrong.
+`~/.openclaw/workspace/agenteiamail`, which is the location `README.md`
+recommends, so the suite asserted that a documented install location was wrong.
 It survived because nobody who had followed that line had run the suite. The
 first host to do so was the Mac.
 
@@ -1129,7 +1129,7 @@ The assertion could not do what its name claimed either: where a clone sits and
 how `repo_root()` derives its answer are unrelated, and matching the result
 against a substring conflates them. It is replaced by one that copies `paths.py`
 to an arbitrary path holding no harness name and requires `repo_root()` to
-resolve from the file's own location — the property, rather than the spelling of
+resolve from the file's own location: the property, rather than the spelling of
 the answer. Removing it was right; removing it silently would not have been.
 
 ### Not covered
@@ -1140,7 +1140,7 @@ than by the suites saying so, which is
 [#101](https://github.com/julianflores/agenteiamail/issues/101). Both were run on
 Linux against this release.
 
-## 1.8.1 — 2026-08-25
+## 1.8.1: 2026-08-25
 
 **1.8.0 could not send mail.** Every defect below was found within an hour by the
 first Claude Code install ([#87](https://github.com/julianflores/agenteiamail/issues/87)),
@@ -1150,13 +1150,13 @@ on the first host that had never run this software before. Anyone who installed
 - **`scripts/send.sh` still parsed the pre-1.8.0 roster format**, so every address
   in a `roster.md` table was refused and the agent could send to nobody
   ([#91](https://github.com/julianflores/agenteiamail/issues/91)). 1.8.0 rewrote
-  the rule in `roster.py` — find the field containing `@` rather than the field
-  after the last `|` — and left `send.sh` on the old one. On a markdown table the
+  the rule in `roster.py`, find the field containing `@` rather than the field
+  after the last `|`, and left `send.sh` on the old one. On a markdown table the
   result is worse than the wrong field: rows end in a trailing `|`, so a greedy
   match consumed the whole line and yielded nothing at all.
 - **Inbound and outbound disagreed about who was on the roster**, which is what
   made it quiet. Mail arrived, was tagged `roster` by the Python half, and the
-  agent acted on it — and then could not reply to any of it. `REFUSED` reads like
+  agent acted on it, and then could not reply to any of it. `REFUSED` reads like
   a roster nobody has filled in, and the message even says "Add it deliberately",
   pointing at a file where the address is already sitting.
 - **`~/.claude` never reached the shell and PHP resolvers**
@@ -1165,12 +1165,12 @@ on the first host that had never run this software before. Anyone who installed
   `webapp/lib/envfile.php`, both of which carry a comment saying to keep all
   three in step. Everything that sources `envpath.sh` inherited the wrong answer,
   and on a live host that pointed the generated systemd unit's `--env` at a file
-  that does not exist — the listener crash-looped, which is the outcome
+  that does not exist: the listener crash-looped, which is the outcome
   `install.sh`'s own comment says a fourth copy of the list would cause.
 - **The two halves also disagreed on a CRLF roster**, which the fix for #91 would
   otherwise have preserved. `send.sh` stripped space and tab; `roster.py` strips
   all whitespace. `send.sh` already tolerates CRLF in `.env`, and says there that
-  it "has bitten this repo" — same script, same hazard, one of the two handled.
+  it "has bitten this repo": same script, same hazard, one of the two handled.
 - **`roster.md.example` shipped two real, working addresses**
   ([#89](https://github.com/julianflores/agenteiamail/issues/89)). The repository
   is public and `cp roster.md.example roster.md` is the documented step, so
@@ -1179,8 +1179,8 @@ on the first host that had never run this software before. Anyone who installed
   header: an address on it may be written to unattended, **and** mail from it is
   treated as instructions the agent carries out. A `From:` header is forged
   trivially. The rows are gone; the format stays in the header and the table
-  headings, neither of which holds an `@`. `INSTALL.md` already promised this —
-  "Until you add a line it is empty" — and was describing a file we were not
+  headings, neither of which holds an `@`. `INSTALL.md` already promised this,
+  "Until you add a line it is empty", and was describing a file we were not
   shipping.
 
 The tests that should have caught all of this were green throughout, which is the
@@ -1191,7 +1191,7 @@ part worth keeping.
   `0 failed`, and never touched `~/.claude`. It now has a `claude harness` case
   mirroring the other two.
 - **`scripts/test_roster.sh`'s fixture predated the format change**, still written
-  as `Name | email` with no outer pipes and no `Type` column — so it exercised a
+  as `Name | email` with no outer pipes and no `Type` column. So it exercised a
   shape the project no longer ships and never the one it does. It now carries
   five cases against the real template shape, including refusing `Human` as an
   address.
@@ -1199,7 +1199,7 @@ part worth keeping.
   `roster.py` rather than by grepping for `@`, because the parser is what decides
   who is allowed.
 - **`scripts/test_paths.sh` still drops all PHP checks silently when `php` is
-  absent** — 255 assertions with it, 211 without, `0 failed` either way. Not fixed
+  absent**: 255 assertions with it, 211 without, `0 failed` either way. Not fixed
   here; it is [#90](https://github.com/julianflores/agenteiamail/issues/90). It is
   why the PHP half of #88 could be repaired on a host that never ran it.
 
@@ -1212,7 +1212,7 @@ Documentation, from the tester's recommendations.
   has gone.
 - **`INSTALL.md` §3's harness table names Claude Code.** `AGENTS.md` has carried
   all three since 1.8.0. The paragraph directly beneath that table is the
-  procedure that would have prevented #88 — add the root to all three files
+  procedure that would have prevented #88: add the root to all three files
   together, with `test_paths.sh` asserting they agree. It was published, then not
   followed, under a table that was itself not updated, with a promise about a test
   that had no case for the new root.
@@ -1221,7 +1221,7 @@ One rule stated in several places, kept in step by hand, is the cause of #88, #9
 #91 and the table above. Each is fixed as an instance;
 [#95](https://github.com/julianflores/agenteiamail/issues/95) tracks the class.
 
-## 1.8.0 — 2026-08-23
+## 1.8.0: 2026-08-23
 
 **Claude Code is a third runtime**, and the roster is `roster.md`. Everything
 below shipped across #82, #83, #84 and #85.
@@ -1233,16 +1233,16 @@ below shipped across #82, #83, #84 and #85.
   has a `roster.txt`; resolving only the new name would empty the allowlist on
   upgrade, and an empty allowlist does not announce itself. Sending refuses
   everyone, every inbound message stops being tagged `roster`, and the agent
-  quietly stops acting on mail it was supposed to act on — which is
+  quietly stops acting on mail it was supposed to act on, which is
   indistinguishable from nobody having written. `paths.py`, `send.sh` and
   `envpath.sh` all answer the same way, and prefer `roster.md` when both exist.
 - **Markdown table rows parse**, now that the file is `.md`. A row ends in a
-  pipe, and the old parser took everything after the last one — which yielded an
+  pipe, and the old parser took everything after the last one, which yielded an
   empty string that was then discarded, silently leaving that person off the
   list. Outer pipes are stripped, separator rows are skipped, and an entry
   without an `@` is ignored rather than becoming an allowlist entry, which is
   what keeps a table's header row harmless.
-- **The roster carries a `Type` column** — `Human` or `AI Agent` — and
+- **The roster carries a `Type` column**, `Human` or `AI Agent`, and
   `roster.md.example` ships as a markdown table.
 - **The address is now found by looking for it, not by counting columns.** Every
   earlier parser took the field after the last `|`, which held for
@@ -1281,7 +1281,7 @@ side. With this, a Claude Code agent can install by following `AGENTS.md`.
   it cannot parse** rather than rewriting one it could not read.
 - **`healthcheck.py` reports the spool backlog as information, not as a verdict.**
   Unread bytes with no session open is this runtime's normal resting state. The
-  stronger check first sketched for it — "unread bytes and no watch attached" —
+  stronger check first sketched for it, "unread bytes and no watch attached",
   is not implementable honestly, so the output says what is true and names what
   it cannot see.
 - `INSTALL.md` gains a Claude Code section and `AGENTS.md` step 4 points at it.
@@ -1310,7 +1310,7 @@ side: the hook branch, the watch, and the design note.
 - `DESIGN.md` gains *"Why one runtime pulls"*, which also starts closing #68.
 
 Towards [#78](https://github.com/julianflores/agenteiamail/issues/78): Claude Code
-as a third runtime. This is the runtime core — adapter, resolution and tests.
+as a third runtime. This is the runtime core: adapter, resolution and tests.
 Installer support and the full documentation follow separately.
 
 - **Claude Code delivers by inversion.** Nothing outside a Claude Code session
@@ -1318,12 +1318,12 @@ Installer support and the full documentation follow separately.
   starts a fresh headless turn rather than appearing in the session a human is
   sitting in. So where OpenClaw and Hermes are pushed to, this runtime comes and
   gets it. The adapter appends the rendered line to a spool that two session-side
-  readers consume — the `SessionStart` hook for what arrived while nothing ran,
+  readers consume: the `SessionStart` hook for what arrived while nothing ran,
   and an armed `Monitor` for what lands next.
 - **The spool is deliberately not named `*.log`.** `rotate_logs.py` rotates every
   `*.log` in the state directory, and rotation renumbers bytes underneath two
   readers that index by offset. A rotation between a hook replay and a monitor
-  arming would resume at the wrong place — showing mail twice, or stepping over
+  arming would resume at the wrong place: showing mail twice, or stepping over
   mail that was never shown, which is indistinguishable from a quiet mailbox.
 - **One record is exactly one line.** A rendered notification can carry a line
   break, usually from a folded subject, and letting it through would make the
@@ -1335,7 +1335,7 @@ Installer support and the full documentation follow separately.
   drain the queue, and here there may be no session for hours.
 - **`~/.claude` joins `HARNESS_ROOTS`**, so credentials resolve from
   `~/.claude/workspace/.env` under the existing rule rather than a special case.
-  It is deliberately **not** a `legacy_layout()` marker — a credentials path
+  It is deliberately **not** a `legacy_layout()` marker: a credentials path
   doing double duty as a layout marker is what caused #72.
 - Optional `AGENTEIAMAIL_CLAUDE_MODE=agent` starts a headless run per event so
   mail can reach an agent with no session open. Off by default, because it
@@ -1356,7 +1356,7 @@ Closes [#77](https://github.com/julianflores/agenteiamail/issues/77).
   it by inventing a solution, which turned out better than the documented one and
   became #75. The next installer should not have to be that resourceful.
 
-## 1.7.1 — 2026-08-21
+## 1.7.1: 2026-08-21
 
 Closes [#75](https://github.com/julianflores/agenteiamail/issues/75).
 
@@ -1364,14 +1364,14 @@ Closes [#75](https://github.com/julianflores/agenteiamail/issues/75).
   upgrade.** §6 told operators to pin `OPENCLAW` and `PATH` by adding
   `Environment=` lines to the installed unit. The installer converges all four
   units from the copies in `systemd/`, so that edit is drift and `--upgrade`
-  removes it — leaving the dispatcher unable to reach `openclaw` again, every
+  removes it: leaving the dispatcher unable to reach `openclaw` again, every
   check in §7 still passing, and the only evidence in `state/watch.err.log`.
   The advice produced an install that broke later, for the exact reason the
   section tells you to stop suspecting.
 - **`~/.config/environment.d/` is the documented mechanism now**, because it
   lives outside the converged artifacts and survives. The section also says that
   the file is only read when the user manager starts, and gives
-  `systemctl --user set-environment` for applying it to the running one — a gap
+  `systemctl --user set-environment` for applying it to the running one: a gap
   that made the file look ineffective on the host where it was first used.
 - Pinning in the unit is still supported and now says how to do it correctly:
   uncomment the line in `systemd/agenteiamail-dispatch.service` in the clone,
@@ -1384,15 +1384,15 @@ Closes [#75](https://github.com/julianflores/agenteiamail/issues/75).
 Closes [#72](https://github.com/julianflores/agenteiamail/issues/72).
 
 - **A credentials file is no longer evidence of an install.** A brand-new
-  OpenClaw agent that followed the README — put your mailbox settings in your
-  harness's workspace — landed in the pre-single-root layout, with config and
+  OpenClaw agent that followed the README, put your mailbox settings in your
+  harness's workspace, landed in the pre-single-root layout, with config and
   state outside the clone, on a host where nothing had ever been installed.
   `~/.openclaw/workspace/.env` was doing double duty as both a credential
   location and the `legacy_layout()` marker, and the documentation change that
   made the harness workspace the recommended place turned "follow the
   instructions" into "get the old layout".
 - **The marker was the odd one out all along.** `legacy_layout()` counts files
-  this project has written — `install.manifest`, `runtime.env`, `idle.json`, the
+  this project has written: `install.manifest`, `runtime.env`, `idle.json`, the
   journal, the logs. The harness `.env` is written by the human or the harness.
   It was included because its presence used to correlate with an install made
   before this repository knew about other runtimes; making it the recommended
@@ -1401,7 +1401,7 @@ Closes [#72](https://github.com/julianflores/agenteiamail/issues/72).
 - **A genuine pre-1.7.0 install is still found**, by the artifacts it actually
   has: the installer writes `install.manifest` and `runtime.env`, and a listener
   that has ever run leaves `idle.json` and logs. The case that stops being
-  detected is the one that was never an install — a credentials file and nothing
+  detected is the one that was never an install: a credentials file and nothing
   else. The legacy-layout test now proves its host with a UID baseline rather
   than with credentials, which is what made the conflation visible.
 - Credential *resolution* is unchanged: the OpenClaw path stays in
@@ -1420,10 +1420,10 @@ Closes [#70](https://github.com/julianflores/agenteiamail/issues/70).
   settings in the workspace folder of its harness installation directory, which
   reads the same to a person and to an agent and stays true as runtimes are
   added. Changed in `README.md`, its inline Spanish copy, and all four
-  translations together — a prompt that differs by language is four prompts.
+  translations together: a prompt that differs by language is four prompts.
 - **The setup instructions now agree with that prompt.** They told the human to
   write credentials into the clone while the prompt sent their agent to the
-  harness workspace — two places that both happen to work, which is how a
+  harness workspace: two places that both happen to work, which is how a
   convention quietly becomes optional. `README.md` step 1, `MAILBOX_SETUP.md`,
   `INSTALL.md` and the "what it changes on the machine" list now name the
   harness's workspace `.env` first and the clone as the answer for a host with no
@@ -1434,7 +1434,7 @@ Closes [#67](https://github.com/julianflores/agenteiamail/issues/67).
 
 - **The installer reads back the `runtime.env` it wrote.** A second run on a
   converged Hermes host demanded every value the installer had already recorded
-  itself, and failed with `HERMES_NOTIFY_URL is required` — which reads as "this
+  itself, and failed with `HERMES_NOTIFY_URL is required`, which reads as "this
   host was never configured" on a host that was configured, running and
   delivering mail. Re-running the installer is ordinary: it is what an upgrade
   changing a rendered path asks for, and that is exactly when this was found,
@@ -1456,8 +1456,8 @@ thing the first Hermes Agent install had to work around by hand.
 
 - **A harness's credentials are read where the harness keeps them.** Every
   runtime keeps its agent's mail credentials in the workspace folder of its own
-  installation directory — `~/.openclaw/workspace/.env`,
-  `~/.hermes/workspace/.env` — and the resolver knew only the OpenClaw one. On a
+  installation directory (`~/.openclaw/workspace/.env`,
+  `~/.hermes/workspace/.env`) and the resolver knew only the OpenClaw one. On a
   correctly provisioned Hermes host, `AGENTS.md` step 2 answered
   `NO CREDENTIALS` for a file that was one directory up, and the install was
   finished with a symlink nobody should have needed. The rule is now written as
@@ -1472,7 +1472,7 @@ thing the first Hermes Agent install had to work around by hand.
   convention would put a second copy of a password on the disk.
 - **An OpenClaw host is unchanged.** Its path is listed as an instance of the
   same rule, but it is also what `legacy_layout()` detects, so such a host still
-  resolves into the split layout entirely — credentials *and* state — as it did
+  resolves into the split layout entirely, credentials *and* state, as it did
   before. Pinned by a test, because the failure it prevents is a live OpenClaw
   install quietly half-moving into the clone.
 - **Two harnesses on one host adopt neither.** Two agents sharing a machine
@@ -1480,26 +1480,26 @@ thing the first Hermes Agent install had to work around by hand.
   mailbox is indistinguishable from a quiet one. The answer falls back to the
   file this install owns; `AGENTEIAMAIL_ENV` is how an operator says which.
 - **A runtime's own config is still not a mailbox.** The rule matches
-  `<harness-root>/workspace/.env` exactly, so `~/.hermes/.env` — Hermes' gateway
-  token — is not adopted. That was already asserted; it now has its own case
+  `<harness-root>/workspace/.env` exactly, so `~/.hermes/.env`, Hermes' gateway
+  token, is not adopted. That was already asserted; it now has its own case
   saying why, since the two are easy to conflate.
 - `AGENTS.md` and `INSTALL.md` drop the symlink workaround they carried for one
   release and describe the behaviour instead.
 
-## 1.7.0 — 2026-08-21
+## 1.7.0: 2026-08-21
 
 Documentation, from the first Hermes Agent install (#52) and the tester's report
 @ateneabuffayhermes filed on #60. No code changes.
 
 - **Where a harness keeps its credentials is written down.** Each runtime keeps
   its agent's mail credentials in the workspace folder of its own installation
-  directory — `~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env` — and
+  directory (`~/.openclaw/workspace/.env`, `~/.hermes/workspace/.env`) and
   `AGENTS.md` step 2 said instead that a new install of either harness keeps them
   inside the clone, which is untrue for Hermes. An agent that followed it on a
   correctly provisioned host was told `NO CREDENTIALS` and sent to re-enter a
   password already on disk. Step 2 now states the rule, names
   [#59](https://github.com/julianflores/agenteiamail/issues/59) as the reason the
-  resolver can still disagree with it, and prescribes the symlink — never a copy,
+  resolver can still disagree with it, and prescribes the symlink: never a copy,
   because a second copy of a password is a second thing to leak.
 - **The Himalaya examples no longer hardcode an OpenClaw path.** All three
   `password.cmd` lines read `~/.openclaw/workspace/agenteiamail/.env`, which is
@@ -1507,7 +1507,7 @@ Documentation, from the first Hermes Agent install (#52) and the tester's report
   unmistakable placeholder and point at whatever step 2 reported.
 - **`mailbox.alias.inbox = "INBOX"` is in the v2 Himalaya example.** Without it
   the account is valid and `himalaya account check` passes while every
-  `envelope list` fails — found on v2.1.0 during the first Hermes install. The
+  `envelope list` fails: found on v2.1.0 during the first Hermes install. The
   neighbouring text now also says plainly that `account check` authenticates
   rather than reads a mailbox, so section 4.4 is the proof and this is not.
 - **`HERMES.md` says a route is not live until the gateway restarts**, that the
@@ -1518,7 +1518,7 @@ Documentation, from the first Hermes Agent install (#52) and the tester's report
   install until an operator intervened.
 
 Closes [#61](https://github.com/julianflores/agenteiamail/issues/61), found by
-@ateneabuffayhermes on the first Hermes Agent install — she hit it, diagnosed it,
+@ateneabuffayhermes on the first Hermes Agent install: she hit it, diagnosed it,
 and patched her own clone to get past it.
 
 - **`scripts/healthcheck.py` reads `runtime.env` itself.** The services are
@@ -1529,8 +1529,8 @@ and patched her own clone to get past it.
   own by reading five `HERMES_*` variables out of the environment, so on a
   Hermes install the documented verification step reported *no runtime selected*
   while the services were delivering mail. The file is now parsed as `KEY=value`
-  data — never sourced, values never printed, the exact inverse of the escaping
-  `scripts/install.sh` writes — and layered *under* the real environment, so an
+  data (never sourced, values never printed, the exact inverse of the escaping
+  `scripts/install.sh` writes) and layered *under* the real environment, so an
   explicit `AGENTEIAMAIL_RUNTIME` still wins. A missing file stays what it always
   was: an OpenClaw or manual install, not a fault.
 - **"No runtime" and "this command cannot see the runtime" now read
@@ -1540,13 +1540,13 @@ and patched her own clone to get past it.
 - **The health output says which file configured the runtime**, so the answer
   can be traced to its source instead of inferred.
 
-Closes [#57](https://github.com/julianflores/agenteiamail/issues/57) — the last of
+Closes [#57](https://github.com/julianflores/agenteiamail/issues/57): the last of
 the migration follow-ups, against acceptance criteria agreed with @apollohermesfl
 before implementation rather than discovered during review of it.
 
 - **Durability is an ordering now, and the ordering is pinned.** The previous
   version fsynced one temporary file beneath a comment claiming power-loss
-  durability. `scripts/durable.py` owns the sequence — staged data before the
+  durability. `scripts/durable.py` owns the sequence: staged data before the
   manifest names it, the manifest rename before any service stops, each
   destination before its source is unlinked, each source's parent after, and the
   install root last so a reboot cannot resurrect a deleted legacy entry or a
@@ -1565,7 +1565,7 @@ before implementation rather than discovered during review of it.
   clean up.
 - **Filenames inside the state tree are data again.** The digest that resume
   checks artifacts against was a `find | xargs -I{} sh -c` pipeline, which
-  substitutes each pathname into shell program text — a file named
+  substitutes each pathname into shell program text: a file named
   `"; touch PWNED; #` in the state tree executed a command, and the state tree
   is a directory the migration copies wholesale.
   [`scripts/tree_digest.py`](scripts/tree_digest.py) computes it without a
@@ -1575,7 +1575,7 @@ before implementation rather than discovered during review of it.
   Re-reading returned an empty set and persisted it, destroying the only record
   of what had been running before the migration started.
 - **Every migration failure-path test now asserts service state**, not only
-  files — the check that would have caught the two defects above. `DESIGN.md`
+  files: the check that would have caught the two defects above. `DESIGN.md`
   records the rule, along with its limit: `is-active` proves service state, not
   mail detection.
 
@@ -1586,7 +1586,7 @@ fixing three defects @apollohermesfl found reviewing
 
 - **The layout predicate abandoned undelivered mail.** It probed four files; a
   legacy state tree holding an `events.jsonl` and no `idle.json` resolved into
-  the clone and left the journal behind — mail that had arrived and had never
+  the clone and left the journal behind: mail that had arrived and had never
   been delivered, dropped with no error anywhere. It now inventories every file
   either legacy directory can durably own, with a one-marker-only test per
   entry. The "credentials and state cannot disagree" property is also restated
@@ -1599,7 +1599,7 @@ fixing three defects @apollohermesfl found reviewing
   before anything is committed; the sources stay intact, so a rollback is a
   delete rather than a move that can fail for the same reason the move did.
   Interruption has exactly two recoverable states and rerunning `--migrate`
-  resolves either. The services are stopped and **verified inactive** first —
+  resolves either. The services are stopped and **verified inactive** first:
   the previous `|| true` meant a failed stop was indistinguishable from a
   successful one, under a comment claiming the stop protected the move.
 - **While a migration is unfinished, nothing pretends otherwise.**
@@ -1613,9 +1613,9 @@ fixing three defects @apollohermesfl found reviewing
   `result=passed-with-unverified-control`.
 
 **One install, one directory, and that directory is the clone.** An install used
-to spread itself over three places — credentials and route secrets in
+to spread itself over three places (credentials and route secrets in
 `~/.config/agenteiamail`, queue state and logs in `~/.local/state/agenteiamail`,
-the roster in the clone — so backing it up, inspecting it or removing it meant
+the roster in the clone) so backing it up, inspecting it or removing it meant
 remembering all three. Everything it owns now lives inside the clone, which also
 answers "install it wherever you want" without a flag: you clone where you want,
 and the install is there.
@@ -1634,12 +1634,12 @@ Recommended clone locations, recommendations rather than checks:
   `~/.config/systemd/user`, because systemd will not read them anywhere else.
 - **The layout is decided by one predicate**, `legacy_layout()` in
   [`harness/paths.py`](harness/paths.py), rather than one decision per file.
-  Deciding credentials and state separately produces a split-brain install — the
+  Deciding credentials and state separately produces a split-brain install, the
   listener reading a password from one layout and writing its UID baseline into
-  the other — and that failure presents as a mailbox that has simply gone quiet.
+  the other, and that failure presents as a mailbox that has simply gone quiet.
 - **`harness/rotate_logs.py` was the only consumer that could not be
   redirected.** Pointed at a directory the units no longer write to, it recreated
-  that directory empty, matched no logs, printed nothing and exited 0 — so the
+  that directory empty, matched no logs, printed nothing and exited 0. So the
   weekly timer would have reported success indefinitely while the real logs grew
   without bound. It asks the resolver now, and
   [`scripts/test_rotate_logs.py`](scripts/test_rotate_logs.py) asserts both that
@@ -1654,7 +1654,7 @@ Recommended clone locations, recommendations rather than checks:
 ### Upgrade actions
 
 **Existing installs need no action.** An install made before this release keeps
-its split layout, entirely and indefinitely — every tool resolves it correctly,
+its split layout, entirely and indefinitely: every tool resolves it correctly,
 and an upgrade will never move it.
 
 To move one into the clone, opt in. It stops the services while it works, and
@@ -1673,7 +1673,7 @@ python3 harness/paths.py state    # expect <clone>/state
 files, which here means the mailbox password, both route secrets, `roster.txt`
 and the UID baseline, in one command. Use `git clean -df`.
 
-## 1.6.0 — 2026-08-19
+## 1.6.0: 2026-08-19
 
 Adds the supported, idempotent installer for OpenClaw and Hermes Agent runtimes,
 including runtime-aware service generation and health checks, plus documentation
