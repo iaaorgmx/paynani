@@ -177,7 +177,7 @@ es-MX solo transfieren los patrones estructurales.
 La prueba que de verdad cuenta no se ha hecho: dárselo a leer a alguien no
 técnico y ver en qué renglón se detiene. Todo lo anterior son proxies.
 
-## 0.4.0: 2026-09-07
+## 0.4.0 (2026-09-07)
 
 **`main` ya no depende de que nadie se acuerde de correr las pruebas.** 30 commits
 desde 0.3.0.
@@ -397,7 +397,7 @@ estás corriendo. Un agente hospedado por el gateway bajo prueba no puede ejecut
 ese paso: tendría que detener el proceso que lo observa. En un host de un solo
 gateway, ese paso es del operador.
 
-## 0.3.0: 2026-09-06
+## 0.3.0 (2026-09-06)
 
 **paynani entrega a OpenAI Codex, y sabe despertar una sesión que está viva.** 23
 commits desde 0.2.0.
@@ -556,7 +556,7 @@ camino de respaldo. En un host de Codex falta registrar los hooks una vez con
   él el HTML del que sale, para que volver a generarlo no dependa de recordar
   cómo se hizo.
 
-## 0.2.0: 2026-09-04
+## 0.2.0 (2026-09-04)
 
 **paynani estrena marca, su página de configuración habla cinco idiomas, y el
 resolutor de rutas de PHP quedó aislado en su propio archivo.** 51 commits desde
@@ -975,14 +975,14 @@ Lo que cambió en la bifurcación misma:
   directory, `sent.log` included, so reading only the live file would report a
   host that sent mail yesterday as never having sent anything.
 
-## 1.9.1: 2026-08-26
+## 1.9.1 (2026-08-26)
 
 **The session-start hook failed on every healthy Claude Code host.** If you run
 this on Claude Code, upgrade. Everything else here is tests and documentation.
 
 - **`harness/session_start.py` emitted `"systemMessage": null`** when it had
   nothing to say, and Claude Code rejects that payload with
-  `Hook JSON output validation failed: (root): Invalid input`, discarding the
+  `Hook JSON output validation failed — (root): Invalid input`, discarding the
   whole output: no replay of mail that arrived while nothing was running, no
   watch command, no byte offset. The key is now omitted rather than sent as null
   ([#104](https://github.com/julianflores/agenteiamail/issues/104)).
@@ -1075,7 +1075,7 @@ reimplements the rule is a third copy of it.
   runtime, and [#108](https://github.com/julianflores/agenteiamail/issues/108)
   records where OpenClaw's own boundary sits.
 
-## 1.9.0: 2026-08-25
+## 1.9.0 (2026-08-25)
 
 **macOS is a supported host.** An OpenClaw agent on a Mac can now install and
 supervise this the way a Linux one does, without WSL, Ubuntu, or a
@@ -1140,7 +1140,7 @@ than by the suites saying so, which is
 [#101](https://github.com/julianflores/agenteiamail/issues/101). Both were run on
 Linux against this release.
 
-## 1.8.1: 2026-08-25
+## 1.8.1 (2026-08-25)
 
 **1.8.0 could not send mail.** Every defect below was found within an hour by the
 first Claude Code install ([#87](https://github.com/julianflores/agenteiamail/issues/87)),
@@ -1221,7 +1221,7 @@ One rule stated in several places, kept in step by hand, is the cause of #88, #9
 #91 and the table above. Each is fixed as an instance;
 [#95](https://github.com/julianflores/agenteiamail/issues/95) tracks the class.
 
-## 1.8.0: 2026-08-23
+## 1.8.0 (2026-08-23)
 
 **Claude Code is a third runtime**, and the roster is `roster.md`. Everything
 below shipped across #82, #83, #84 and #85.
@@ -1356,7 +1356,7 @@ Closes [#77](https://github.com/julianflores/agenteiamail/issues/77).
   it by inventing a solution, which turned out better than the documented one and
   became #75. The next installer should not have to be that resourceful.
 
-## 1.7.1: 2026-08-21
+## 1.7.1 (2026-08-21)
 
 Closes [#75](https://github.com/julianflores/agenteiamail/issues/75).
 
@@ -1486,7 +1486,7 @@ thing the first Hermes Agent install had to work around by hand.
 - `AGENTS.md` and `INSTALL.md` drop the symlink workaround they carried for one
   release and describe the behaviour instead.
 
-## 1.7.0: 2026-08-21
+## 1.7.0 (2026-08-21)
 
 Documentation, from the first Hermes Agent install (#52) and the tester's report
 @ateneabuffayhermes filed on #60. No code changes.
@@ -1673,7 +1673,7 @@ python3 harness/paths.py state    # expect <clone>/state
 files, which here means the mailbox password, both route secrets, `roster.txt`
 and the UID baseline, in one command. Use `git clean -df`.
 
-## 1.6.0: 2026-08-19
+## 1.6.0 (2026-08-19)
 
 Adds the supported, idempotent installer for OpenClaw and Hermes Agent runtimes,
 including runtime-aware service generation and health checks, plus documentation
