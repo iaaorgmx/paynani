@@ -109,8 +109,7 @@ solo tiene que apuntarle ahí.
 Espera preguntas antes de que empiece. Si ya tenías el `.env` escrito,
 deberían ser pocas; si no, una de ellas va a ser el enlace del Paso 2.
 **Si te pide la contraseña a ti, dile que no**: eso no es un paso de estas
-instrucciones, y el paso siguiente es precisamente cómo evita tener que
-pedirla.
+instrucciones, y el paso siguiente explica cómo evita tener que pedirla.
 
 ### Paso 2: Dale un buzón, cuando te lo pida
 
@@ -122,7 +121,7 @@ enlace de un solo uso. No tienes que preparar nada de antemano.
 
 Ábrelo y llena los siete datos. Antes de guardar nada, la página los prueba
 contra tu servidor de correo: si algo está mal, como una contraseña o un nombre
-de servidor, te lo dice ahí mismo y no cinco pasos después.
+de servidor, te lo dice ahí mismo.
 
 > [!CAUTION]
 > La contraseña la escribes tú, directo en esa página, nunca en el chat con el
