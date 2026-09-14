@@ -59,7 +59,8 @@ Necesitas cuatro cosas:
 
 1. una cuenta de correo dedicada al agente, no tu correo personal;
 2. acceso a una terminal en la máquina donde corre tu agente;
-3. un momento para escribir tú la contraseña en un archivo, sin pegarla en un chat;
+3. un momento para escribir tú la contraseña, en el formulario que el agente te
+   va a dar o a mano en un archivo, sin pegarla nunca en un chat;
 4. tu nombre y tu dirección de correo, para la lista de contactos autorizados.
 
 Nada más. No hace falta una API de correo, un servicio intermedio ni una cuenta
@@ -67,51 +68,33 @@ nueva en ningún lado.
 
 ## Cómo configurarlo en tu agente
 
-Tres pasos. El primero lo haces tú solo, el segundo es pegar un texto, y el
-tercero son dos minutos para revisar que de verdad funciona.
+Tres pasos: pegarle un texto al agente, llenar el formulario que él mismo te va
+a dar en cuanto lo necesite, y dos minutos tuyos al final para revisar que de
+verdad funciona.
 
-### Paso 1: Dale un buzón
-
-El agente necesita su propia cuenta de correo, y los datos de conexión de esa
-cuenta escritos en un archivo llamado `.env`. **Si tu agente corre bajo un
-harness, ese archivo va en la carpeta `workspace` del propio harness**
-(`~/.hermes/workspace/.env`, `~/.openclaw/workspace/.env`,
-`~/.claude/workspace/.env`, `~/.codex/workspace/.env`), que es donde se le dice
-al agente que mire y de donde esta herramienta lo lee. Si no hay harness, el
-archivo puede vivir dentro de la carpeta del proyecto. Y si no sabes dónde quedó,
-puedes preguntárselo a la instalación con `python3 harness/paths.py env`.
-
-**[MAILBOX_SETUP.md](MAILBOX_SETUP.md) te lleva de la mano**: qué cuenta usar,
-dónde encontrar el nombre del servidor (la parte que falla siempre), y cómo queda
-el archivo.
-
-> [!CAUTION]
-> Hazlo tú, no le pidas al agente que lo haga. Hace falta una contraseña, y una
-> contraseña no debe pasar por un chat: la que pegas en una conversación se queda
-> ahí para siempre, y ningún cuidado posterior lo deshace. Si prefieres no usar la
-> terminal, `scripts/paynani onboard` abre un formulario local que escribe el
-> archivo por ti.
-
-### Paso 2: Apunta al agente a este repositorio
+### Paso 1: Apunta al agente a este repositorio
 
 Pégale esto a tu agente:
 
 ```text
-Revisa la configuración de tu
-cuenta de correo electrónico;
-está en la carpeta workspace del
-directorio de instalación de tu
-Harness.
-
-../workspace/.env
-
-Después, instala este
-repositorio para poder usarla:
+Instala este repositorio:
 https://github.com/iaaorgmx/paynani
 
 Sigue las instrucciones del
 archivo AGENTS.md del
 repositorio.
+
+Mi cuenta de correo va en la
+carpeta workspace del
+directorio de instalación de tu
+Harness:
+
+../workspace/.env
+
+Si ese archivo todavía no
+existe, no me pidas la
+contraseña: pásame el enlace
+del formulario.
 
 Vas a necesitar mi nombre y mi
 dirección de correo electrónico
@@ -123,9 +106,37 @@ Pregúntame lo que necesites.
 Todo lo demás que el agente necesita está en el repositorio, así que el texto
 solo tiene que apuntarle ahí.
 
-Espera preguntas antes de que empiece. Si el Paso 1 salió bien, deberían ser
-pocas. Si te pide la contraseña, dile que no: eso no es un paso de estas
-instrucciones.
+Espera preguntas antes de que empiece. Si ya tenías el `.env` escrito,
+deberían ser pocas; si no, una de ellas va a ser el enlace del Paso 2.
+**Si te pide la contraseña a ti, dile que no**: eso no es un paso de estas
+instrucciones, y el paso siguiente explica cómo evita tener que pedirla.
+
+### Paso 2: Dale un buzón, cuando te lo pida
+
+El agente necesita su propia cuenta de correo, y los datos de conexión de esa
+cuenta escritos en un archivo llamado `.env`. Siguiendo `AGENTS.md`, una de las
+primeras cosas que revisa es si ese archivo ya existe. La primera vez no
+existe, así que el propio agente corre `scripts/paynani onboard` y te pasa un
+enlace de un solo uso. No tienes que preparar nada de antemano.
+
+Ábrelo y llena los siete datos. Antes de guardar nada, la página los prueba
+contra tu servidor de correo: si algo está mal, como una contraseña o un nombre
+de servidor, te lo dice ahí mismo.
+
+> [!CAUTION]
+> La contraseña la escribes tú, directo en esa página, nunca en el chat con el
+> agente: lo que pegas en una conversación se queda ahí para siempre, y ningún
+> cuidado posterior lo deshace.
+
+Si algún dato no lo tienes a la mano, [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md) te
+lleva de la mano por los siete, uses el formulario o no. El que más se atora es
+el nombre del servidor.
+
+**¿Tu agente corre en una máquina a la que no llegas directo por el
+navegador, o prefieres no depender de uno?** Junto con el enlace, el agente
+te pasa el comando `ssh -L` que necesitas para llegar al formulario. También
+puedes escribir el archivo `.env` tú mismo, a mano: `MAILBOX_SETUP.md`
+documenta esa ruta con el mismo detalle.
 
 ### Paso 3: Pruébalo tú mismo
 
