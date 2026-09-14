@@ -197,8 +197,8 @@ rather than assuming:
 
 ## 7b. If you linked your harness's credentials into the clone
 
-Only relevant if your credentials live in a harness workspace —
-`~/.hermes/workspace/.env` or the OpenClaw equivalent — and you linked or copied
+Only relevant if your credentials live in a harness workspace,
+`~/.hermes/workspace/.env` or the OpenClaw equivalent, and you linked or copied
 them to `.env` inside the clone because an older version of this tool could not
 find them there.
 
@@ -225,7 +225,7 @@ longer there.
 `~/.config/himalaya/config.toml` reads the password with a command naming the
 file in full, and Himalaya's config lives outside the clone. If that command
 points at the link you just removed, sending fails with a `FileNotFoundError`
-for a path that no longer exists — while the listener, the units and the
+for a path that no longer exists, while the listener, the units and the
 healthcheck all look correct, because none of them go through Himalaya's config.
 
 ```bash
