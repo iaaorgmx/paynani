@@ -70,24 +70,17 @@ them to paste the password to you. A password in a chat is in that transcript
 permanently, and no later care takes it back out. Serve the form instead:
 
 ```bash
-scripts/setup_web.sh          # prints a link with a one-time key
+scripts/paynani onboard          # prints a link with a one-time key
 ```
 
 Send them the link. They fill in the settings, the page signs in to their mail
 server to confirm the account works, and only then writes that file itself. You
-never see the password. `setup_web.sh`
-stops on its own once the file exists, and then you continue at step 3.
+never see the password. `paynani onboard` stops on its own once the file
+exists, and then you continue at step 3.
 
-Serving the form needs no credentials and no working mailbox, only PHP. That is
-the whole reason this step comes before the connection check rather than after
-it.
-
-The script checks for PHP first and tells you the exact `apt-get` line if it is
-missing. Install it if you have `sudo`, and list that among the things you
-changed outside the repository when you report back. **If you have no `sudo` and
-no PHP, stop and say so.** Do not fall back to asking for the password in chat.
-That is the case this repository does not yet have an answer for, and inventing
-one at the cost of putting a credential in a transcript is not it.
+Serving the form needs no credentials and no working mailbox, and nothing
+beyond the Python 3 standard library — which this host already has by virtue
+of running paynani at all, so there is no dependency to check for first.
 
 **3. Prove the account works and the server offers what this needs.**
 
@@ -264,8 +257,9 @@ are stored, exported and reviewed; a credential in one is permanent.
 
 This is what step 2 is for. If they would rather not touch a terminal, do not
 negotiate about it; serve the form and let the password go from their browser
-into a `600` file without passing through you. `webapp/README.md` covers the
-remote case, where they forward the port over SSH first.
+into a `600` file without passing through you. `paynani onboard` covers the
+remote case itself: it prints the exact `ssh -L` command to forward the port
+first, if the host it is bound to is not the browser's own.
 
 ---
 

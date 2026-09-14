@@ -109,7 +109,7 @@ STRINGS = {
     'g.loopback_1': "Cette page ne répond qu'aux requêtes venant de l'ordinateur où elle tourne.",
     'g.loopback_2': "Si l'agent est sur un hôte distant, redirigez le port au lieu de ceci :",
     'g.token_1': 'Il manque à ce lien sa clé à usage unique, ou la clé a changé.',
-    'g.token_2': "Demandez à l'agent de relancer scripts/setup_web.sh et de vous envoyer le nouveau lien.",
+    'g.token_2': "Demandez à l'agent de relancer paynani onboard et de vous envoyer le nouveau lien.",
     'g.csrf': 'Ce formulaire a expiré. Rechargez la page et remplissez-le de nouveau.',
     'f.mkdir_failed': 'Impossible de créer {dir}.',
     'f.write_failed': "Impossible d'écrire dans {dir}.",

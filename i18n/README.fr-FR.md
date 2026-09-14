@@ -89,7 +89,7 @@ ressemble le fichier.
 > Faites-le vous-même, ne le demandez pas à l'agent. Il faut un mot de passe, et
 > un mot de passe ne doit pas passer par un chat : celui que vous collez dans une
 > conversation y reste pour toujours, et aucune précaution ultérieure ne le
-> défait. Si vous préférez éviter le terminal, `scripts/setup_web.sh` ouvre un
+> défait. Si vous préférez éviter le terminal, `scripts/paynani onboard` ouvre un
 > formulaire local qui écrit le fichier à votre place.
 
 ### Étape 2 : pointez l'agent vers ce dépôt

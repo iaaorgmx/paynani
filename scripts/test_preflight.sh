@@ -73,7 +73,7 @@ check "no credentials: does not prompt for a host" "no" \
 check "no credentials: names the file it looked in" "yes" \
     "$(contains "$out" "$tmp/missing")"
 check "no credentials: points at the setup form" "yes" \
-    "$(contains "$out" setup_web.sh)"
+    "$(contains "$out" "paynani onboard")"
 check "no credentials: says which step it belongs to" "yes" \
     "$(contains "$out" "AGENTS.md step 2")"
 

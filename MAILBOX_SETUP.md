@@ -9,20 +9,15 @@ debe pasar por un chat.
 Diez minutos, y la mayoría se te van en encontrar un nombre de servidor.
 
 > **Hay un formulario para esto.** Si escribir un archivo en una terminal no es lo
-> tuyo, pídele al agente que corra `scripts/setup_web.sh`. Eso no rompe la regla de
-> arriba: el agente solo levanta una página en su propia máquina y te pasa el
-> enlace. La contraseña la escribes tú en la página, así que sigue sin pasar por el
-> chat.
+> tuyo, pídele al agente que corra `scripts/paynani onboard`. Eso no rompe la
+> regla de arriba: el agente solo levanta una página en su propia máquina y te
+> pasa el enlace. La contraseña la escribes tú en la página, así que sigue sin
+> pasar por el chat.
 >
 > La página pide los mismos datos que describe este documento, los revisa contra tu
 > servidor de correo y escribe el archivo por ti, incluido el problema del nombre
 > del servidor que viene más abajo, que te lo diagnostica por su nombre en vez de
-> dejarte encontrarlo. Ve [`webapp/README.md`](webapp/README.md).
->
-> **Ese formulario necesita PHP instalado en la máquina del agente.** Si no lo
-> tiene y no lo puede instalar (lo más común: no tiene `sudo`), pídele que corra
-> `scripts/paynani onboard` en su lugar — el mismo formulario, las mismas
-> garantías, sin esa dependencia.
+> dejarte encontrarlo.
 >
 > Para cambiar un solo dato más adelante — rotar la contraseña, corregir un
 > nombre de servidor — no hace falta repetir todo esto: `paynani set CLAVE

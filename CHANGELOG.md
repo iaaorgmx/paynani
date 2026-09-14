@@ -81,6 +81,27 @@ razonamiento completo detrás de la elección de Python sobre Node.js, y las
 preguntas que quedan abiertas (retiro eventual de `webapp/`, superficie final
 del comando de cara a los subcomandos de `.env`/`roster.md` planeados).
 
+**`webapp/` y `scripts/setup_web.sh` se retiran.** Una de las preguntas
+abiertas del PRD del issue #114 queda cerrada: con `set`/`roster` (#116) y el
+arreglo de auto-cierre (#118) ya en `main`, y con la prueba conjunta entre
+Julian y el agente sobre `paynani onboard` completada sin encontrar más
+diferencias de comportamiento contra el formulario en PHP, ya no hace falta
+mantener las dos implementaciones en paralelo.
+
+Se borra `webapp/` completo (`index.php`, `lib/*.php`, `i18n/*.php`,
+`README.md`) y `scripts/setup_web.sh`, el lanzador en bash. Los dos archivos
+que `paynani onboard` sigue sirviendo en vivo — `app.css` y `lang.js` — se
+mueven a `scripts/paynani_lib/assets/` en vez de borrarse con el resto; server.py
+ya no depende de ninguna ruta bajo `webapp/`.
+
+`scripts/test_paths.sh` deja de comprobar `webapp/lib/paths.php` como tercera
+implementación de la regla de rutas: ahora son dos (Python y shell), no tres.
+Toda mención a `scripts/setup_web.sh` como ruta alterna al formulario —en
+`AGENTS.md`, `README.md`, `MAILBOX_SETUP.md`, `INSTALL.md` y sus cuatro
+traducciones— se actualiza a `scripts/paynani onboard`, y el párrafo entero
+sobre necesitar PHP y `sudo`/`apt-get` desaparece: ya no hay una ruta que
+dependa de eso.
+
 **El README dejó de ser mitad puerta humana y mitad manual del agente.** Catorce
 commits desde 0.4.0, todos de documentación: ninguna línea de código cambió.
 

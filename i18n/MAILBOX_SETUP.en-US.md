@@ -9,20 +9,14 @@ should not travel through a chat.
 Ten minutes, most of which is finding one hostname.
 
 > **There is a form for this.** If typing a file into a terminal is not something
-> you want to do, ask the agent to run `scripts/setup_web.sh`. That does not break
-> the rule above: the agent only starts a page on its own machine and hands you the
-> link. You type the password into the page yourself, so it still never travels
-> through the chat.
+> you want to do, ask the agent to run `scripts/paynani onboard`. That does not
+> break the rule above: the agent only starts a page on its own machine and hands
+> you the link. You type the password into the page yourself, so it still never
+> travels through the chat.
 >
 > The page asks for the same settings this document describes, checks them against
 > your mail server, and writes the file for you, including the hostname problem
 > below, which it diagnoses by name instead of leaving you to find it.
-> See [`webapp/README.md`](../webapp/README.md).
->
-> **That form needs PHP installed on the agent's machine.** If it does not have
-> it and cannot install it (most commonly: no `sudo`), ask it to run
-> `scripts/paynani onboard` instead — the same form, the same guarantees, without
-> that dependency.
 >
 > The rest of this page is the manual route, and remains worth reading: it explains
 > *why* each setting is what it is, which the form cannot.

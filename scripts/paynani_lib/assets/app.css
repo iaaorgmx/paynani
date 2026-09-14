@@ -47,7 +47,7 @@ main {
   padding: 2rem;
 }
 
-/* La marca va en línea (webapp/lib/brand.php), así que estas reglas ganan sobre
+/* La marca va en línea (scripts/paynani_lib/brand.py), así que estas reglas ganan sobre
    los colores horneados en el SVG y lo adaptan al tema. El archivo de brand/ se
    queda como está: esos colores son los correctos cuando se abre solo. */
 .marca {

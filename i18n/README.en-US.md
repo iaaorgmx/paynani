@@ -86,8 +86,8 @@ goes wrong), and the file itself.
 > Do this yourself rather than asking the agent to. It needs a password, and a
 > password should not travel through a chat: the one you paste into a
 > conversation sits in that transcript permanently, and no later care undoes it.
-> If you would rather not use the terminal, `scripts/setup_web.sh` opens a local
-> form that writes the file for you.
+> If you would rather not use the terminal, `scripts/paynani onboard` opens a
+> local form that writes the file for you.
 
 ### Step 2: Point the agent at this repository
 

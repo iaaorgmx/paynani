@@ -15,8 +15,8 @@ paynani_root() {
 # Every harness keeps its agent's mail credentials in the workspace folder of its
 # own installation directory. One pattern, not a list of special cases: a new
 # runtime is a new root here and nothing else. Keep in step with HARNESS_ROOTS /
-# HARNESS_ENV_RELATIVE in harness/paths.py and the same pair in
-# webapp/lib/paths.php; scripts/test_paths.sh asserts all three agree.
+# HARNESS_ENV_RELATIVE in harness/paths.py; scripts/test_paths.sh asserts the
+# two agree.
 #
 # The OpenClaw root is listed because it is an instance of the rule rather than
 # an exception to it.
@@ -28,9 +28,9 @@ paynani_config_dir() {
 }
 
 # One value out of the installer-generated runtime.env, or nothing. Kept
-# deliberately identical to recorded_env() in harness/paths.py and to
-# recorded_env() in webapp/lib/paths.php: three implementations of one rule,
-# and scripts/test_paths.sh exists because they have drifted before.
+# deliberately identical to recorded_env() in harness/paths.py: two
+# implementations of one rule, and scripts/test_paths.sh exists because they
+# have drifted before.
 paynani_recorded_env() {
     local file line value
     file="$(paynani_runtime_env)"
