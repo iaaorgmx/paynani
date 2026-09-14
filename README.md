@@ -59,9 +59,8 @@ Necesitas cuatro cosas:
 
 1. una cuenta de correo dedicada al agente, no tu correo personal;
 2. acceso a una terminal en la máquina donde corre tu agente;
-3. un momento para escribir tú la contraseña — en el formulario que el agente te
-   va a dar, o en un archivo a mano si prefieres esa ruta — sin pegarla nunca en
-   un chat;
+3. un momento para escribir tú la contraseña, en el formulario que el agente te
+   va a dar o a mano en un archivo, sin pegarla nunca en un chat;
 4. tu nombre y tu dirección de correo, para la lista de contactos autorizados.
 
 Nada más. No hace falta una API de correo, un servicio intermedio ni una cuenta
@@ -119,26 +118,26 @@ El agente necesita su propia cuenta de correo, y los datos de conexión de esa
 cuenta escritos en un archivo llamado `.env`. Siguiendo `AGENTS.md`, una de las
 primeras cosas que revisa es si ese archivo ya existe. La primera vez no
 existe, así que el propio agente corre `scripts/paynani onboard` y te pasa un
-enlace de un solo uso — no tienes que preparar nada de antemano.
+enlace de un solo uso. No tienes que preparar nada de antemano.
 
-Ábrelo, llena los siete datos, y la página los prueba contra tu servidor de
-correo antes de guardar nada: si algo está mal —una contraseña, un nombre de
-servidor— te lo dice ahí mismo, no cinco pasos después.
+Ábrelo y llena los siete datos. Antes de guardar nada, la página los prueba
+contra tu servidor de correo: si algo está mal, como una contraseña o un nombre
+de servidor, te lo dice ahí mismo y no cinco pasos después.
 
 > [!CAUTION]
 > La contraseña la escribes tú, directo en esa página, nunca en el chat con el
 > agente: lo que pegas en una conversación se queda ahí para siempre, y ningún
 > cuidado posterior lo deshace.
 
-Si algún dato no lo tienes a la mano —el nombre del servidor es el que más se
-atora— [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md) te lleva de la mano por los
-siete, uses el formulario o no.
+Si algún dato no lo tienes a la mano, [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md) te
+lleva de la mano por los siete, uses el formulario o no. El que más se atora es
+el nombre del servidor.
 
 **¿Tu agente corre en una máquina a la que no llegas directo por el
 navegador, o prefieres no depender de uno?** Junto con el enlace, el agente
-te pasa el comando `ssh -L` que necesitas para llegar al formulario; o puedes
-escribir el archivo `.env` tú mismo, a mano — `MAILBOX_SETUP.md` documenta
-esa ruta también, con el mismo detalle.
+te pasa el comando `ssh -L` que necesitas para llegar al formulario. También
+puedes escribir el archivo `.env` tú mismo, a mano: `MAILBOX_SETUP.md`
+documenta esa ruta con el mismo detalle.
 
 ### Paso 3: Pruébalo tú mismo
 

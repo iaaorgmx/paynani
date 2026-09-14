@@ -4,10 +4,10 @@
 
 Referencia para el Paso 2 del [README](README.md#cómo-configurarlo-en-tu-agente):
 qué cuenta usar y qué significa cada dato, tanto si lo llenas en el formulario
-que te va a dar el agente como si escribes el archivo tú mismo. Ese paso normalmente
-lo hace el agente por ti —te pasa un enlace y llenas ahí la contraseña, nunca en
-el chat—, así que solo hace falta leer esto de principio a fin si vas a escribir
-el archivo a mano.
+que te va a dar el agente como si escribes el archivo tú mismo. Normalmente ese
+paso lo hace el agente por ti: te pasa un enlace y ahí llenas la contraseña,
+nunca en el chat. Solo hace falta leer esto de principio a fin si vas a
+escribir el archivo a mano.
 
 Diez minutos, y la mayoría se te van en encontrar un nombre de servidor.
 
@@ -22,8 +22,8 @@ Diez minutos, y la mayoría se te van en encontrar un nombre de servidor.
 > del servidor que viene más abajo, que te lo diagnostica por su nombre en vez de
 > dejarte encontrarlo.
 >
-> Para cambiar un solo dato más adelante — rotar la contraseña, corregir un
-> nombre de servidor — no hace falta repetir todo esto: `paynani set CLAVE
+> Para cambiar un solo dato más adelante, como rotar la contraseña o corregir un
+> nombre de servidor, no hace falta repetir todo esto: `paynani set CLAVE
 > VALOR` cambia esa clave sola, y por omisión vuelve a probarla contra tu
 > servidor antes de guardarla.
 >
