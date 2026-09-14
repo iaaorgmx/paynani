@@ -78,21 +78,24 @@ verdad funciona.
 Pégale esto a tu agente:
 
 ```text
-Revisa la configuración de tu
-cuenta de correo electrónico;
-está en la carpeta workspace del
-directorio de instalación de tu
-Harness.
-
-../workspace/.env
-
-Después, instala este
-repositorio para poder usarla:
+Instala este repositorio:
 https://github.com/iaaorgmx/paynani
 
 Sigue las instrucciones del
 archivo AGENTS.md del
 repositorio.
+
+Mi cuenta de correo va en la
+carpeta workspace del
+directorio de instalación de tu
+Harness:
+
+../workspace/.env
+
+Si ese archivo todavía no
+existe, no me pidas la
+contraseña: pásame el enlace
+del formulario.
 
 Vas a necesitar mi nombre y mi
 dirección de correo electrónico
@@ -104,7 +107,8 @@ Pregúntame lo que necesites.
 Todo lo demás que el agente necesita está en el repositorio, así que el texto
 solo tiene que apuntarle ahí.
 
-Espera preguntas antes de que empiece. Si esto salió bien, deberían ser pocas.
+Espera preguntas antes de que empiece. Si ya tenías el `.env` escrito,
+deberían ser pocas; si no, una de ellas va a ser el enlace del Paso 2.
 **Si te pide la contraseña a ti, dile que no**: eso no es un paso de estas
 instrucciones, y el paso siguiente es precisamente cómo evita tener que
 pedirla.
@@ -131,10 +135,10 @@ atora— [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md) te lleva de la mano por los
 siete, uses el formulario o no.
 
 **¿Tu agente corre en una máquina a la que no llegas directo por el
-navegador, o prefieres no depender de uno?** `scripts/paynani onboard` te da
-el comando `ssh -L` que necesitas para llegar al formulario en ese caso; o
-puedes escribir el archivo `.env` tú mismo, a mano — `MAILBOX_SETUP.md`
-documenta esa ruta también, con el mismo detalle.
+navegador, o prefieres no depender de uno?** Junto con el enlace, el agente
+te pasa el comando `ssh -L` que necesitas para llegar al formulario; o puedes
+escribir el archivo `.env` tú mismo, a mano — `MAILBOX_SETUP.md` documenta
+esa ruta también, con el mismo detalle.
 
 ### Paso 3: Pruébalo tú mismo
 
