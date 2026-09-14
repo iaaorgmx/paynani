@@ -54,12 +54,11 @@ fiable tant que l'expéditeur ne correspond pas à votre liste.
 
 ## Avant de commencer
 
-Il vous faut quatre choses :
+Il vous faut trois choses :
 
 1. un compte de messagerie dédié à l'agent, pas votre courriel personnel ;
 2. l'accès à un terminal sur la machine où tourne votre agent ;
-3. un moment pour écrire vous-même le mot de passe dans un fichier, sans le coller dans un chat ;
-4. votre nom et votre adresse électronique, pour la liste de contacts autorisés.
+3. un moment pour écrire vous-même le mot de passe dans un fichier, sans le coller dans un chat.
 
 C'est tout. Pas d'API de messagerie, pas de service intermédiaire, pas de nouveau
 compte nulle part.
@@ -112,10 +111,6 @@ https://github.com/iaaorgmx/paynani
 Sigue las instrucciones del
 archivo AGENTS.md del
 repositorio.
-
-Vas a necesitar mi nombre y mi
-dirección de correo electrónico
-para el archivo roster.md.
 
 Pregúntame lo que necesites.
 ```

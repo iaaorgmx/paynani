@@ -83,6 +83,8 @@ VALID = {
     "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT": "993",
     "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST": "smtp.example.com",
     "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT": "465",
+    "ROSTER_NAME": "Test Human",
+    "ROSTER_EMAIL": "human@example.com",
 }
 
 
@@ -149,6 +151,31 @@ check(
     "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT" in validate.validate(
         with_override(AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT="²³")
     ),
+)
+check(
+    "validate: missing roster name is an error",
+    "ROSTER_NAME" in validate.validate(with_override(ROSTER_NAME="")),
+)
+check(
+    "validate: a roster name with a newline is rejected",
+    "ROSTER_NAME" in validate.validate(with_override(ROSTER_NAME="a\nb")),
+)
+check(
+    "validate: missing roster email is an error",
+    "ROSTER_EMAIL" in validate.validate(with_override(ROSTER_EMAIL="")),
+)
+check(
+    "validate: a roster email with no @ is rejected",
+    "ROSTER_EMAIL" in validate.validate(with_override(ROSTER_EMAIL="not-an-email")),
+)
+check(
+    "validate: the human's email matching the agent's own account is rejected",
+    validate.validate(with_override(ROSTER_EMAIL="agent@example.com")).get("ROSTER_EMAIL")
+    == i18n.t("v.roster_email_same_as_account"),
+)
+check(
+    "validate: the human's email matching the agent's account case-insensitively is still rejected",
+    "ROSTER_EMAIL" in validate.validate(with_override(ROSTER_EMAIL="AGENT@EXAMPLE.COM")),
 )
 
 
@@ -301,6 +328,18 @@ os.environ["PAYNANI_STATE"] = str(e2e_state)
 token = "e2e-test-token"
 guard.token_path(e2e_state).write_text(token + "\n", encoding="utf-8")
 
+# roster.py:roster() always resolves to the real repo's roster.md, with no
+# env-var override (see harness/paths.py) -- unlike PAYNANI_ENV/PAYNANI_STATE
+# above, a submit that reaches add_contact_noninteractive() has to be pointed
+# at a throwaway file instead, the same way the roster_cli section below
+# does it, or this suite would edit the real project roster.
+e2e_roster = e2e_dir / "roster.md"
+e2e_roster.write_text("| Name | Email | Type | GitHub |\n|---|---|---|---|\n", encoding="utf-8")
+real_e2e_roster_file = roster_cli.roster_file
+real_e2e_run_tests = roster_cli._run_regression_tests
+roster_cli.roster_file = lambda: e2e_roster
+roster_cli._run_regression_tests = lambda: (True, "mocked: see the roster_cli section's own entries")
+
 saved_event = threading.Event()
 httpd = HTTPServer(("127.0.0.1", 0), make_handler(e2e_state, saved_event))
 port = httpd.server_address[1]
@@ -403,13 +442,69 @@ try:
     check(
         "e2e: a successful save sets the saved event, so onboard.py can stop "
         "without waiting for the file's content to differ from what it was",
-        saved_event.is_set(),
+        # .wait(), not a bare .is_set(): the handler thread sets this one
+        # instruction after the response is already on the wire (see
+        # server.py's own comment on that ordering), so a client that just
+        # finished reading the response can otherwise race ahead of it.
+        saved_event.wait(timeout=2),
+    )
+    check(
+        "e2e: the human's own address was added to roster.md",
+        "human@example.com" in e2e_roster.read_text(encoding="utf-8"),
+    )
+    check(
+        "e2e: the saved screen confirms the roster addition",
+        i18n.t("saved.roster_added") in page,
+    )
+
+    # Re-onboarding (e.g. rotating just the password) resubmits the same
+    # human -- must not duplicate the roster row nor block the .env save.
+    saved_event.clear()
+    conn.request(
+        "POST", "/", body=urllib.parse.urlencode(submit),
+        headers={"Cookie": cookie, "Content-Type": "application/x-www-form-urlencoded"},
+    )
+    r = conn.getresponse()
+    page = r.read().decode()
+    check(
+        "e2e: resubmitting the same human again still saves the .env",
+        r.status == 200 and saved_event.wait(timeout=2),
+    )
+    check(
+        "e2e: resubmitting the same human does not duplicate the roster row",
+        e2e_roster.read_text(encoding="utf-8").count("human@example.com") == 1,
+    )
+    check(
+        "e2e: the saved screen says the address was already on the roster",
+        i18n.t("saved.roster_already") in page,
+    )
+
+    # A submit missing the human's own fields is blocked by validation, same
+    # as any other required field -- neither .env nor roster.md change.
+    e2e_env.unlink()
+    before_roster = e2e_roster.read_text(encoding="utf-8")
+    missing_roster = dict(VALID, action="setup", csrf=csrf, ROSTER_NAME="", ROSTER_EMAIL="")
+    conn.request(
+        "POST", "/", body=urllib.parse.urlencode(missing_roster),
+        headers={"Cookie": cookie, "Content-Type": "application/x-www-form-urlencoded"},
+    )
+    r = conn.getresponse()
+    page = r.read().decode()
+    check(
+        "e2e: a submit missing the human's name/email is blocked before saving",
+        r.status == 200 and not e2e_env.exists(),
+    )
+    check(
+        "e2e: a blocked submit leaves roster.md untouched",
+        e2e_roster.read_text(encoding="utf-8") == before_roster,
     )
 finally:
     httpd.shutdown()
     thread.join(timeout=5)
     os.environ.pop("PAYNANI_ENV", None)
     os.environ.pop("PAYNANI_STATE", None)
+    roster_cli.roster_file = real_e2e_roster_file
+    roster_cli._run_regression_tests = real_e2e_run_tests
     shutil.rmtree(e2e_dir, ignore_errors=True)
 
 
@@ -693,6 +788,36 @@ try:
 
     r = roster_cli.run_remove(RArgs(address="ghost@example.com", yes=True))
     check("roster_cli.run_remove: a nonexistent address is refused", r == 1)
+
+    # add_contact_noninteractive() -- the onboard web form's non-terminal
+    # path. No confirmation, no console output, a status string instead of
+    # an exit code.
+    status, detail = roster_cli.add_contact_noninteractive("Web Person", "web@example.com")
+    check("add_contact_noninteractive: a fresh address reports 'added'", status == "added")
+    check("add_contact_noninteractive: 'added' detail is the roster.md path", detail == str(roster_path))
+    check("add_contact_noninteractive: the new contact is on disk", "web@example.com" in roster_path.read_text(encoding="utf-8"))
+
+    status, detail = roster_cli.add_contact_noninteractive("Web Person Again", "web@example.com")
+    check("add_contact_noninteractive: a duplicate address reports 'duplicate'", status == "duplicate")
+    check(
+        "add_contact_noninteractive: a duplicate does not touch the file's contact count",
+        roster_path.read_text(encoding="utf-8").count("web@example.com") == 1,
+    )
+
+    status, detail = roster_cli.add_contact_noninteractive("Bad", "not-an-email")
+    check("add_contact_noninteractive: a malformed address reports 'rejected'", status == "rejected")
+
+    roster_cli._run_regression_tests = lambda: (False, "simulated failure")
+    before_noninteractive = roster_path.read_text(encoding="utf-8")
+    try:
+        status, detail = roster_cli.add_contact_noninteractive("Should Not Write", "shouldnot@example.com")
+    finally:
+        roster_cli._run_regression_tests = always_ok_stub
+    check("add_contact_noninteractive: a failing regression check reports 'test_failed'", status == "test_failed")
+    check(
+        "add_contact_noninteractive: a failing regression check leaves the file untouched",
+        roster_path.read_text(encoding="utf-8") == before_noninteractive,
+    )
 finally:
     roster_cli.roster_file = real_roster_file
     roster_cli._run_regression_tests = real_run_tests

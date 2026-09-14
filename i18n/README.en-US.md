@@ -53,12 +53,11 @@ sender matches your list.
 
 ## Before you start
 
-You need four things:
+You need three things:
 
 1. an email account dedicated to the agent, not your personal one;
 2. access to a terminal on the machine where your agent runs;
-3. a moment to write the password into a file yourself, without pasting it into a chat;
-4. your name and email address, for the list of authorized contacts.
+3. a moment to write the password into a file yourself, without pasting it into a chat.
 
 That is all. No mail API, no service in the middle, no new account anywhere.
 
@@ -108,10 +107,6 @@ https://github.com/iaaorgmx/paynani
 Follow the instructions in the
 repository's AGENTS.md file.
 
-You will need my name and my
-email address for the roster.md
-file.
-
 Ask me anything you need.
 ```
 
@@ -134,10 +129,6 @@ https://github.com/iaaorgmx/paynani
 Sigue las instrucciones del
 archivo AGENTS.md del
 repositorio.
-
-Vas a necesitar mi nombre y mi
-dirección de correo electrónico
-para el archivo roster.md.
 
 Pregúntame lo que necesites.
 ```

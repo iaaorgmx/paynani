@@ -2,6 +2,27 @@
 
 ## Sin publicar
 
+**El formulario de `paynani onboard` ya pide también tu nombre y tu correo, y
+te agrega a `roster.md` al guardar.** Issue #127: ese dato se pedía antes por
+el chat con el agente, en el texto pegado del Paso 1 del README, el mismo
+canal que esas mismas instrucciones prohíben usar para la contraseña del
+buzón.
+
+El formulario suma dos campos, Tu nombre y Tu correo electrónico, en un
+`<fieldset>` separado del de la cuenta del buzón. Al guardar, además de
+escribir el `.env`, llama a la misma función que ya usa `paynani roster add`
+(#116/#117) para agregar el renglón a `roster.md`, corriendo
+`test_roster.sh`/`test_listener.py` antes de escribir y revirtiendo si
+alguno falla, igual que UPGRADE.md exige para cualquier cambio al roster. Una
+dirección que ya estaba en el roster no rompe el guardado del `.env`: solo se
+omite la escritura del roster, y la pantalla de «guardado» lo dice.
+
+README.md y sus 4 traducciones pierden el punto 4 de «Antes de empezar» y el
+párrafo del texto pegado del Paso 1 que pedían este dato por chat.
+MAILBOX_SETUP.md documenta que la ruta manual (`.env` a mano, sin el
+formulario) sigue necesitando un `paynani roster add` explícito, porque esa
+ruta no pasa por `server.py`.
+
 **`paynani onboard` ya se detiene solo aunque el `.env` guardado no haya
 cambiado de contenido.** Issue #118, encontrado por Julian probando el
 formulario manualmente: la condición de parada comparaba una huella del
