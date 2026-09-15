@@ -55,12 +55,11 @@ que el remitente coincide con tu lista.
 
 ## Antes de empezar
 
-Necesitas cuatro cosas:
+Necesitas tres cosas:
 
 1. una cuenta de correo dedicada al agente, no tu correo personal;
 2. acceso a un terminal en la máquina donde se ejecuta tu agente;
-3. un momento para escribir tú la contraseña en un fichero, sin pegarla en un chat;
-4. tu nombre y tu dirección de correo, para la lista de contactos autorizados.
+3. un momento para escribir tú la contraseña en un fichero, sin pegarla en un chat.
 
 Nada más. No hace falta una API de correo, ni un servicio intermedio, ni una
 cuenta nueva en ningún sitio.
@@ -112,10 +111,6 @@ https://github.com/iaaorgmx/paynani
 Sigue las instrucciones del
 archivo AGENTS.md del
 repositorio.
-
-Vas a necesitar mi nombre y mi
-dirección de correo electrónico
-para el archivo roster.md.
 
 Pregúntame lo que necesites.
 ```

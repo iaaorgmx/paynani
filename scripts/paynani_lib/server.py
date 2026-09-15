@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import guard, i18n
+from . import guard, i18n, roster_cli
 from .brand import brand_svg
 from .envfile import ENV_FIELDS, read_env, render_env, write_env
 from .probe import probe_imap, probe_smtp
@@ -29,8 +29,14 @@ PORT_HINTS = {
     "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT": "465",
 }
 
+# Not part of ENV_FIELDS: these two never go into .env. They exist only to
+# reach roster.md (see add_contact_noninteractive() in roster_cli.py), which
+# is a separate file with a separate purpose from the agent's own mailbox
+# credentials.
+ROSTER_FIELDS = ["ROSTER_NAME", "ROSTER_EMAIL"]
+
 COOKIE_NAME = "paynani_psid"
-MAX_BODY_BYTES = 64 * 1024  # generous for 8 short fields; anything past it isn't this form
+MAX_BODY_BYTES = 64 * 1024  # generous for 10 short fields; anything past it isn't this form
 
 # Process-lifetime only: this server exists for one onboarding run and exits
 # once the .env changes (see onboard.py), so there is nothing to persist
@@ -238,7 +244,7 @@ def make_handler(state_dir: Path, saved_event=None):
                 return
 
             # A malformed header must not raise (int() on garbage) and a huge
-            # one must not be read in full: eight short fields never come
+            # one must not be read in full: ten short fields never come
             # close to this, so a request that does is not this form.
             try:
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -291,6 +297,15 @@ def make_handler(state_dir: Path, saved_event=None):
                     values[key] = "" if key == "AGENT_EMAIL_PASSWORD" else PORT_HINTS.get(key, "")
                 values.setdefault(key, "")
 
+            # These never come from disk — there is nothing to prefill them
+            # with beyond a previous, not-yet-saved attempt held in the
+            # session (the same redisplay-on-error behaviour ENV_FIELDS get).
+            for key in ROSTER_FIELDS:
+                posted_now = action != "" and key in post
+                if posted_now:
+                    values[key] = post[key].strip()
+                values.setdefault(key, "")
+
             effective = dict(values)
             if effective["AGENT_EMAIL_PASSWORD"] == "":
                 effective["AGENT_EMAIL_PASSWORD"] = stored_password
@@ -300,6 +315,7 @@ def make_handler(state_dir: Path, saved_event=None):
             report = None
             saved = None
             notice = None
+            roster_notice = None
 
             if action != "":
                 if action != "lang":
@@ -325,6 +341,19 @@ def make_handler(state_dir: Path, saved_event=None):
                     ok, where = write_env(render_env(effective))
                     if ok:
                         saved = where
+                        # Best-effort: the mailbox is already configured at
+                        # this point regardless of what happens below, so a
+                        # roster problem is surfaced to the human, never
+                        # turned into a failed save.
+                        status, detail = roster_cli.add_contact_noninteractive(
+                            effective["ROSTER_NAME"], effective["ROSTER_EMAIL"]
+                        )
+                        if status == "added":
+                            roster_notice = ("ok", i18n.th("saved.roster_added"))
+                        elif status == "duplicate":
+                            roster_notice = ("ok", i18n.th("saved.roster_already"))
+                        else:
+                            roster_notice = ("warn", i18n.th("saved.roster_failed", reason=detail))
                         session.pop("values", None)
                     else:
                         notice = where
@@ -338,6 +367,7 @@ def make_handler(state_dir: Path, saved_event=None):
                 values=values,
                 has_password=has_password,
                 csrf=_get_or_create_csrf(session),
+                roster_notice=roster_notice,
             )
             self._html(200, body)
 
@@ -378,11 +408,15 @@ def _steps_html(steps: list) -> str:
     return "\n".join(out)
 
 
-def _page(*, lang, saved, notice, report, errors, values, has_password, csrf) -> str:
+def _page(*, lang, saved, notice, report, errors, values, has_password, csrf, roster_notice=None) -> str:
     t, th = i18n.t, i18n.th
     logo = brand_svg("paynani-horizontal.svg")
 
     if saved is not None:
+        roster_html = ""
+        if roster_notice is not None:
+            cls, message = roster_notice
+            roster_html = f'<div class="panel {"ok" if cls == "ok" else "warn"}"><p>{message}</p></div>'
         body = f"""
 <div class="topbar">
   <h1>{th('saved.h1')}</h1>
@@ -401,6 +435,8 @@ def _page(*, lang, saved, notice, report, errors, values, has_password, csrf) ->
 <div class="panel ok">
   <p>{th('saved.where', path=saved)}</p>
 </div>
+
+{roster_html}
 
 <h2>{th('saved.next_h2')}</h2>
 <p>{th('saved.next_p1')}</p>
@@ -541,6 +577,22 @@ def _page(*, lang, saved, notice, report, errors, values, has_password, csrf) ->
     {_field_error(errors, 'AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST')}
     {_field_error(errors, 'AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT')}
     <p class="hint">{th('form.smtp_hint')}</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>{th('form.roster_legend')}</legend>
+
+    <label for="rostername">{th('form.roster_name_label')}</label>
+    <input type="text" id="rostername" name="ROSTER_NAME" required
+           value="{e(values['ROSTER_NAME'])}" placeholder="{th('form.roster_name_ph')}">
+    {_field_error(errors, 'ROSTER_NAME')}
+    <p class="hint">{th('form.roster_name_hint')}</p>
+
+    <label for="rosteremail">{th('form.roster_email_label')}</label>
+    <input type="email" id="rosteremail" name="ROSTER_EMAIL" required
+           value="{e(values['ROSTER_EMAIL'])}" placeholder="{th('form.roster_email_ph')}">
+    {_field_error(errors, 'ROSTER_EMAIL')}
+    <p class="hint">{th('form.roster_email_hint')}</p>
   </fieldset>
 
   {report_html}

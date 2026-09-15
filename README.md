@@ -55,13 +55,12 @@ hasta que el remitente coincide con tu lista.
 
 ## Antes de empezar
 
-Necesitas cuatro cosas:
+Necesitas tres cosas:
 
 1. una cuenta de correo dedicada al agente, no tu correo personal;
 2. acceso a una terminal en la máquina donde corre tu agente;
 3. un momento para escribir tú la contraseña, en el formulario que el agente te
-   va a dar o a mano en un archivo, sin pegarla nunca en un chat;
-4. tu nombre y tu dirección de correo, para la lista de contactos autorizados.
+   va a dar o a mano en un archivo, sin pegarla nunca en un chat.
 
 Nada más. No hace falta una API de correo, un servicio intermedio ni una cuenta
 nueva en ningún lado.
@@ -96,10 +95,6 @@ existe, no me pidas la
 contraseña: pásame el enlace
 del formulario.
 
-Vas a necesitar mi nombre y mi
-dirección de correo electrónico
-para el archivo roster.md.
-
 Pregúntame lo que necesites.
 ```
 
@@ -119,9 +114,11 @@ primeras cosas que revisa es si ese archivo ya existe. La primera vez no
 existe, así que el propio agente corre `scripts/paynani onboard` y te pasa un
 enlace de un solo uso. No tienes que preparar nada de antemano.
 
-Ábrelo y llena los siete datos. Antes de guardar nada, la página los prueba
-contra tu servidor de correo: si algo está mal, como una contraseña o un nombre
-de servidor, te lo dice ahí mismo.
+Ábrelo y llena los datos: los siete del buzón, más tu nombre y tu correo para
+la lista de contactos autorizados (`roster.md`), que el formulario agrega por
+ti. Antes de guardar nada, la página prueba los del buzón contra tu servidor
+de correo: si algo está mal, como una contraseña o un nombre de servidor, te
+lo dice ahí mismo.
 
 > [!CAUTION]
 > La contraseña la escribes tú, directo en esa página, nunca en el chat con el
@@ -136,7 +133,9 @@ el nombre del servidor.
 navegador, o prefieres no depender de uno?** Junto con el enlace, el agente
 te pasa el comando `ssh -L` que necesitas para llegar al formulario. También
 puedes escribir el archivo `.env` tú mismo, a mano: `MAILBOX_SETUP.md`
-documenta esa ruta con el mismo detalle.
+documenta esa ruta con el mismo detalle. Esa ruta no pasa por el formulario,
+así que agrégate tú mismo a `roster.md` con `paynani roster add "Tu Nombre"
+tu@correo.example` en cuanto termines.
 
 ### Paso 3: Pruébalo tú mismo
 

@@ -81,4 +81,21 @@ def validate(values: dict) -> dict:
         if not _ctype_digit(port) or not (1 <= int(port) <= 65535):
             errors[key] = t("v.port_range")
 
+    roster_name = (values.get("ROSTER_NAME") or "").strip()
+    if roster_name == "":
+        errors["ROSTER_NAME"] = t("v.roster_name_missing")
+    elif "\n" in roster_name or "\r" in roster_name:
+        errors["ROSTER_NAME"] = t("v.roster_name_oneline")
+
+    roster_email = (values.get("ROSTER_EMAIL") or "").strip()
+    if roster_email == "":
+        errors["ROSTER_EMAIL"] = t("v.roster_email_missing")
+    elif not _looks_like_email(roster_email):
+        errors["ROSTER_EMAIL"] = t("v.roster_email_bad")
+    elif account != "" and roster_email.strip().lower() == account.strip().lower():
+        # The mistake this catches: typing the agent's own mailbox address
+        # here instead of the human's, which would put the agent on its own
+        # roster and make its mail to itself look self-authorised.
+        errors["ROSTER_EMAIL"] = t("v.roster_email_same_as_account")
+
     return errors

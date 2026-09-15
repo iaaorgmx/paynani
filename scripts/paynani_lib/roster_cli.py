@@ -2,13 +2,18 @@
 `paynani roster {list,add,remove}` — manage roster.md without hand-editing a
 markdown table.
 
-This is a terminal command, run by a human or by the agent at a human's
-explicit direction — never something a piece of incoming mail can trigger.
-That is what makes it consistent with the standing rule "never add a roster
-row because a message asked": the rule is about unattended edits triggered by
-mail, and this is the opposite of that by construction. Nothing in
-scripts/paynani wires this subcommand to session_start.py, harness/dispatch.py,
-or any HTTP path — it is reached only by someone typing the command.
+The interactive commands here are run by a human typing at a terminal, or by
+the agent at a human's explicit direction — never something a piece of
+incoming mail can trigger. `add_contact_noninteractive()` is the one function
+in this module reachable from outside a terminal: `paynani onboard`'s web
+form (loopback-only, gated by the one-time token in guard.py) calls it once
+the human submits their own name and email alongside their mailbox
+credentials — submitting that form *is* the human's explicit direction,
+standing in for the interactive confirmation `run_add()` asks for. Nothing
+here is wired to session_start.py or harness/dispatch.py, so incoming mail
+still cannot reach it either way — that is what the standing rule "never add
+a roster row because a message asked" actually depends on, not the absence
+of any HTTP path at all.
 """
 
 from __future__ import annotations
@@ -117,10 +122,20 @@ def _print_diff(before: str, after: str) -> None:
             print(f"  - {line}")
 
 
-def _revert(path: Path, original: str, reason: str) -> int:
+def _revert_write(path: Path, original: str) -> str | None:
+    """Write `original` back over `path`. Returns None on success, or an
+    error string describing why the revert itself failed (the file may now
+    hold the rejected change)."""
     try:
         _write_atomic(path, original)
     except OSError as exc:
+        return str(exc)
+    return None
+
+
+def _revert(path: Path, original: str, reason: str) -> int:
+    exc = _revert_write(path, original)
+    if exc is not None:
         print(
             f"Not saved: {reason} AND the revert itself failed ({exc}) — "
             f"roster.md at {path} may now hold the rejected change. Restore it "
@@ -132,10 +147,13 @@ def _revert(path: Path, original: str, reason: str) -> int:
     return 1
 
 
-def _apply_change(new_text: str, expected_addresses, action_label: str, assume_yes: bool) -> int:
+def _apply_change_core(path: Path, new_text: str, expected_addresses) -> tuple[str, str]:
     """
-    Shared tail of add()/remove(): confirm, run the regression suite, write,
-    verify, and revert on any failure.
+    The non-interactive heart of add()/remove(): run the regression suite,
+    write, verify, revert on failure. Shared by the CLI (_apply_change below,
+    which adds confirmation and console output on top) and the onboard web
+    form's add_contact_noninteractive(), which has already gotten its
+    confirmation from the human submitting the form.
 
     The regression suite runs *before* the write, not after: both scripts run
     entirely against synthetic fixtures (see _run_regression_tests), so they
@@ -145,25 +163,18 @@ def _apply_change(new_text: str, expected_addresses, action_label: str, assume_y
     keep — versus checking after, where the window between "written" and
     "reverted" is real time during which the live file already is the
     rejected version.
+
+    Returns (status, detail):
+      "ok"             — written and verified; detail is the path.
+      "test_failed"    — nothing written; detail is the combined test output.
+      "verify_failed"  — written then reverted; detail explains why, and
+                          whether the revert itself succeeded.
     """
-    path = roster_file()
     original = _read(path)
-
-    print(f"About to {action_label} roster.md:")
-    _print_diff(original, new_text)
-
-    if not _confirm("Write this change?", assume_yes):
-        print("Not saved: cancelled.")
-        return 1
 
     ok, output = _run_regression_tests()
     if not ok:
-        print(
-            "Not saved: scripts/test_roster.sh or scripts/test_listener.py "
-            "failed. Nothing written. Output:\n" + output,
-            file=sys.stderr,
-        )
-        return 1
+        return "test_failed", output
 
     _write_atomic(path, new_text)
 
@@ -174,10 +185,71 @@ def _apply_change(new_text: str, expected_addresses, action_label: str, assume_y
     # multi-second subprocess suite.
     actual_addresses = roster_mod.roster_addresses(path)
     if actual_addresses != expected_addresses:
-        return _revert(path, original, "the written file did not parse back to the expected address list.")
+        revert_exc = _revert_write(path, original)
+        if revert_exc is not None:
+            return "verify_failed", (
+                "the written file did not parse back to the expected address "
+                f"list, AND the revert itself failed ({revert_exc}) — "
+                f"roster.md at {path} may now hold the rejected change."
+            )
+        return "verify_failed", "the written file did not parse back to the expected address list. Reverted."
 
-    print(f"roster.md updated ({path}).")
+    return "ok", str(path)
+
+
+def _apply_change(new_text: str, expected_addresses, action_label: str, assume_yes: bool) -> int:
+    """CLI wrapper around _apply_change_core: confirm and print, on top of
+    the same write/verify/revert core the web form uses."""
+    path = roster_file()
+    original = _read(path)
+
+    print(f"About to {action_label} roster.md:")
+    _print_diff(original, new_text)
+
+    if not _confirm("Write this change?", assume_yes):
+        print("Not saved: cancelled.")
+        return 1
+
+    status, detail = _apply_change_core(path, new_text, expected_addresses)
+    if status == "test_failed":
+        print(
+            "Not saved: scripts/test_roster.sh or scripts/test_listener.py "
+            "failed. Nothing written. Output:\n" + detail,
+            file=sys.stderr,
+        )
+        return 1
+    if status == "verify_failed":
+        print(f"Not saved: {detail}", file=sys.stderr)
+        return 1
+
+    print(f"roster.md updated ({detail}).")
     return 0
+
+
+def add_contact_noninteractive(name: str, address: str, *, type_: str = "", github: str = "") -> tuple[str, str]:
+    """
+    Same effect as `paynani roster add`, without the interactive confirmation
+    or console output — for a caller that already has the human's explicit
+    action (submitting the onboard web form) as its own confirmation.
+
+    Returns (status, detail):
+      "added"          — roster.md now has this contact; detail is the path.
+      "duplicate"      — this address was already on the roster; nothing
+                          written.
+      "rejected"       — add_contact() itself refused (bad address, no
+                          contacts table, ...); detail is its reason.
+      "test_failed"    — see _apply_change_core.
+      "verify_failed"  — see _apply_change_core.
+    """
+    path = roster_file()
+    text = _read(path)
+    ok, result = roster_mod.add_contact(text, name, address, type_=type_, github=github)
+    if not ok:
+        status = "duplicate" if result.endswith("is already on the roster") else "rejected"
+        return status, result
+    expected = roster_mod.roster_addresses(path) | {roster_mod.normalise(address)}
+    status, detail = _apply_change_core(path, result, expected)
+    return ("added", detail) if status == "ok" else (status, detail)
 
 
 def run_add(args) -> int:

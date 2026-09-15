@@ -160,6 +160,15 @@ whose mail you may act on rather than merely report. `scripts/send.sh` refuses
 every address until it is populated, which is the correct default and is also
 indistinguishable from a working install nobody can send from.
 
+**Check first whether it already has their row.** `scripts/paynani onboard`'s
+form (step 2) asks for your human's own name and email alongside the mailbox
+credentials, and tries to add that row to `roster.md` itself when they save.
+On a brand-new install that write fails, because `roster.md` does not exist
+yet at that point, and the saved screen tells them so; on a host that already
+had a populated `roster.md` (re-running `onboard` to rotate a password, say),
+it may already be there. Read the file before running the next command, which
+overwrites it:
+
 ```bash
 cp roster.md.example roster.md
 ```
