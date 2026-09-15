@@ -2,6 +2,19 @@
 
 ## Sin publicar
 
+**El texto que se le pega al agente en el Paso 1 del README es más corto.** Le
+pide seguir `AGENTS.md` y mostrarte el enlace del formulario cuando necesite la
+cuenta de correo. Dejó de decir dónde va el `.env` y de prohibir que te pida la
+contraseña, porque las dos instrucciones ya están en el paso 2 de `AGENTS.md`.
+Sigue partido en líneas de 27 columnas o menos, sin contar la URL, para que
+quepa en un teléfono.
+
+**El Paso 2 del README deja de prometer que el formulario siempre te agrega a
+`roster.md`.** En una instalación nueva esa lista no existe cuando se llena el
+formulario (#130), así que la página avisa que no pudo agregarte. El README
+ahora explica ese aviso y dice que el agente te agrega cuando crea la lista, en
+el paso 7 de `AGENTS.md`.
+
 **El formulario de `paynani onboard` ya pide también tu nombre y tu correo, y
 te agrega a `roster.md` al guardar.** Issue #127: ese dato se pedía antes por
 el chat con el agente, en el texto pegado del Paso 1 del README, el mismo
