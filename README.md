@@ -49,15 +49,15 @@ Necesitas tres cosas:
 Nada más. No hace falta una API de correo, un servicio intermedio ni una cuenta
 nueva en ningún lado.
 
-## Cómo configurarlo en tu agente
+## Instalación
 
 Tres pasos: pegarle un texto al agente, llenar el formulario que él mismo te va
 a dar en cuanto lo necesite, y dos minutos tuyos al final para revisar que de
 verdad funciona.
 
-### Paso 1: Instalación
+### Paso 1: Prompt de instalación
 
-Pégale esto a tu agente:
+Envia el siguiente prompt a tu agente:
 
 ```text
 Instala este repositorio:
@@ -73,16 +73,13 @@ enlace del formulario para
 configurarla.
 ```
 
-
-
-
-### Paso 2: Dale un buzón, cuando te lo pida
+### Paso 2: Configuración de cuenta de correo
 
 Tu agente te mostrará un enlace para entrar a una aplicación web en la que podrás
 configurar la cuenta de correo. 
 
-Opcionalmente puedes configurar manualmente la cuenta de correo creado el `.env` 
-como lo indica [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md).
+Opcionalmente puedes configurarla manualmente creado el `.env` como lo indica
+[`MAILBOX_SETUP.md`](MAILBOX_SETUP.md).
 
 Al guardar, el formulario también se crea el archivo `roster.md` con tu nombre y
 correo el cual sera usado como el primer contacto autorizado.
@@ -102,13 +99,14 @@ envíale un correo electrónico a tu agente, solicitándole que te responda.
 
 **Ejempolo de correo**
 
+```text
 Hola {nombre de tu agente},
 
 Esta es la prueba #1 de paynani, responde a este correo enviándome el pronóstico
 del clima para la Ciudad de México para los siguientes 3 días.
+```
 
-
-**Prueba 2: Enviale un correo desde una cuenta que no esta en roaster.md .**
+**Prueba 2: Enviale un correo desde una cuenta que no esta en roster.md .**
 
 Cuando paynani recibe un correo electronico desde una cuenta de correo que no esta
 incluida en el archivo ../paynani/roaster.md leera el correo pero no actuara sobre el.
@@ -116,8 +114,6 @@ incluida en el archivo ../paynani/roaster.md leera el correo pero no actuara sob
 La lista de contactos contenida en roster.md es toda la razón por la que es
 seguro dejar que un agente que lee correo también pueda responderlo y actuar ,
 así que vale la pena verla funcionar una vez con tus propios ojos.
-
-Si lo manda, detente y avísale a quien lo instaló. Algo está mal.
 
 ## ¿Para quién es Paynani?
 
