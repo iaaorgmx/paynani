@@ -110,13 +110,11 @@ la lista de contactos autorizados (`roster.md`). Antes de guardar nada, la
 página prueba los del buzón contra tu servidor de correo: si algo está mal,
 como una contraseña o un nombre de servidor, te lo dice ahí mismo.
 
-En una instalación nueva, al guardar, la página te avisa que no pudo agregarte
-a `roster.md`, porque esa lista todavía no existe en este paso. No hace falta
-que corras el `paynani roster add` que te sugiere: el agente crea la lista al
-final de la instalación y te agrega ahí, o te pide tu nombre y tu correo si no
-los tiene. Si vuelves a abrir el formulario en una instalación que ya tiene la
-lista, por ejemplo para cambiar la contraseña, el formulario sí te agrega al
-guardar.
+Al guardar, el formulario también te agrega a `roster.md` como contacto
+autorizado. En una instalación nueva esa lista todavía no existe, así que la
+crea en ese momento con tu fila. Si ya existe, por ejemplo cuando vuelves a
+abrir el formulario para cambiar la contraseña, agrega tu fila solo si no
+estabas.
 
 > [!CAUTION]
 > La contraseña la escribes tú, directo en esa página, nunca en el chat con el
@@ -132,8 +130,8 @@ navegador, o prefieres no depender de uno?** Junto con el enlace, el agente
 te pasa el comando `ssh -L` que necesitas para llegar al formulario. También
 puedes escribir el archivo `.env` tú mismo, a mano: `MAILBOX_SETUP.md`
 documenta esa ruta con el mismo detalle. Esa ruta no pasa por el formulario,
-así que agrégate tú mismo a `roster.md` con `paynani roster add "Tu Nombre"
-tu@correo.example` en cuanto termines.
+así que `roster.md` no se crea al guardar: el agente lo crea durante la
+instalación y te agrega, o te pide tu nombre y tu correo si no los tiene.
 
 ### Paso 3: Pruébalo tú mismo
 

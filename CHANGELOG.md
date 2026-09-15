@@ -2,6 +2,31 @@
 
 ## Sin publicar
 
+**El formulario de `paynani onboard` crea `roster.md` si todavía no existe.**
+Issue #134. En una instalación nueva el formulario corre en el paso 2 de
+`AGENTS.md`, antes de que existiera `roster.md`, así que agregar a la persona
+fallaba siempre con `roster.md has no contacts table`. Ahora, al guardar, crea
+el archivo a partir de `roster.md.example` con la fila de quien llenó el
+formulario, con `Type` = `Human`. Un `roster.md` que ya existe nunca se
+reemplaza por la plantilla. Si la verificación posterior a la escritura falla,
+el archivo creado se borra en vez de quedar vacío. En un roster antiguo sin
+columna `Type`, la fila se agrega sin esa celda.
+
+La prueba de punta a punta del formulario creaba `roster.md` antes de enviar,
+así que nunca probó una instalación nueva. Ya no lo crea, y hay casos nuevos
+para el archivo ausente: creado desde la plantilla, sin archivo si fallan las
+pruebas previas o la verificación, y sin tocar un archivo existente sin tabla.
+
+`AGENTS.md` (paso 7) e `INSTALL.md` copian la plantilla solo si `roster.md` no
+existe (`[ -f roster.md ] || cp ...`), y `test_docs.py` falla si vuelve a
+aparecer una copia sin esa protección. El paso 2 de `AGENTS.md`, el Paso 2 de
+`README.md`, `MAILBOX_SETUP.md` y el mensaje `saved.roster_failed` en es-MX
+describen el comportamiento nuevo. Los otros cuatro idiomas de ese mensaje y
+las traducciones de los documentos van en un cambio aparte.
+
+En macOS, crear el archivo depende de #129: antes de escribir, el formulario
+corre `test_listener.py`, que hoy falla en esa plataforma.
+
 **El texto que se le pega al agente en el Paso 1 del README es más corto.** Le
 pide seguir `AGENTS.md` y mostrarte el enlace del formulario cuando necesite la
 cuenta de correo. Dejó de decir dónde va el `.env` y de prohibir que te pida la

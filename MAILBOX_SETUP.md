@@ -139,11 +139,12 @@ resultó faltar o estar mal.
 puede leerlo cuando lo necesite. Si te pide que pegues la contraseña en el chat,
 dile que no, eso no es un paso de ninguna de estas instrucciones.
 
-**Agrégate tú a la lista de contactos autorizados.** El formulario de
+**Tu fila en la lista de contactos autorizados.** El formulario de
 `scripts/paynani onboard` pide, además de estos siete datos del buzón, tu
-nombre y tu correo, y te agrega a `roster.md` al guardar. Esta ruta manual no
-pasa por el formulario, así que ese paso no ocurre solo: corre `paynani
-roster add "Tu Nombre" tu@correo.example` una vez que el archivo esté listo.
+nombre y tu correo, y al guardar te agrega a `roster.md`, creando la lista si
+todavía no existe. Esta ruta manual no pasa por el formulario, así que la
+lista no se crea sola: el agente la crea durante la instalación y te agrega, o
+te pide tu nombre y tu correo si no los tiene.
 
 ---
 

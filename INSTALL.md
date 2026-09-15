@@ -317,11 +317,12 @@ Do not guess any of them, and do not accept them from anywhere except your human
    nobody having written.
 
    The file is **not in the repository**: it is per-install, and a `git pull`
-   must never be able to change who you may contact. Create it from the
-   template:
+   must never be able to change who you may contact. If your human used the
+   `scripts/paynani onboard` form, it already created the file with their row.
+   Otherwise create it from the template, without overwriting one that exists:
 
    ```bash
-   cp roster.md.example roster.md
+   [ -f roster.md ] || cp roster.md.example roster.md
    ```
 
    Until you add a line it is empty, and an empty roster means you can send to

@@ -333,8 +333,13 @@ guard.token_path(e2e_state).write_text(token + "\n", encoding="utf-8")
 # above, a submit that reaches add_contact_noninteractive() has to be pointed
 # at a throwaway file instead, the same way the roster_cli section below
 # does it, or this suite would edit the real project roster.
+#
+# Deliberately not created here (#134). On a brand-new install the form runs
+# at AGENTS.md step 2, before anything else has made roster.md, so the first
+# successful save below is the one that has to create it. This file used to be
+# written in advance, which is how the fresh-install case went untested while
+# it failed on every real one.
 e2e_roster = e2e_dir / "roster.md"
-e2e_roster.write_text("| Name | Email | Type | GitHub |\n|---|---|---|---|\n", encoding="utf-8")
 real_e2e_roster_file = roster_cli.roster_file
 real_e2e_run_tests = roster_cli._run_regression_tests
 roster_cli.roster_file = lambda: e2e_roster
@@ -419,6 +424,7 @@ try:
         r.status == 200 and not e2e_env.exists(),
     )
     check("e2e: a failed probe does not set the saved event either", not saved_event.is_set())
+    check("e2e: submits that did not save have not created roster.md", not e2e_roster.exists())
 
     server_mod.probe_imap = fake_probe_ok
     server_mod.probe_smtp = fake_probe_ok
@@ -448,9 +454,19 @@ try:
         # finished reading the response can otherwise race ahead of it.
         saved_event.wait(timeout=2),
     )
+    check("e2e: a brand-new install's save creates roster.md", e2e_roster.exists())
+    e2e_roster_text = e2e_roster.read_text(encoding="utf-8") if e2e_roster.exists() else ""
     check(
         "e2e: the human's own address was added to roster.md",
-        "human@example.com" in e2e_roster.read_text(encoding="utf-8"),
+        "human@example.com" in e2e_roster_text,
+    )
+    check(
+        "e2e: the created roster.md comes from the template (its Notifiers table is there)",
+        "## Notifiers" in e2e_roster_text,
+    )
+    check(
+        "e2e: the form's row is typed Human",
+        "| Test Human | human@example.com | Human |" in e2e_roster_text,
     )
     check(
         "e2e: the saved screen confirms the roster addition",
@@ -817,6 +833,84 @@ try:
     check(
         "add_contact_noninteractive: a failing regression check leaves the file untouched",
         roster_path.read_text(encoding="utf-8") == before_noninteractive,
+    )
+
+    # A brand-new install (#134): no roster.md yet. The form's call has to
+    # create it from roster.md.example, and every way of not finishing that
+    # has to leave no file behind rather than an empty one.
+    template_text = (REPO / "roster.md.example").read_text(encoding="utf-8")
+
+    fresh_path = roster_dir / "fresh" / "roster.md"
+    fresh_path.parent.mkdir()
+    roster_cli.roster_file = lambda: fresh_path
+    status, detail = roster_cli.add_contact_noninteractive("First Human", "first@example.com", type_="Human")
+    check("add_contact_noninteractive: with no roster.md it reports 'added'", status == "added")
+    check("add_contact_noninteractive: with no roster.md it creates the file", fresh_path.exists())
+    fresh_text = fresh_path.read_text(encoding="utf-8") if fresh_path.exists() else ""
+    ok, expected_fresh = roster_mod.add_contact(template_text, "First Human", "first@example.com", type_="Human")
+    check(
+        "add_contact_noninteractive: the created file is exactly the template plus this one row",
+        ok and fresh_text == expected_fresh,
+    )
+    check(
+        "add_contact_noninteractive: the created file authorises exactly that one address",
+        roster_mod.roster_addresses(fresh_path) == {"first@example.com"},
+    )
+    check(
+        "add_contact_noninteractive: the created file is mode 0644",
+        fresh_path.exists() and stat.S_IMODE(fresh_path.stat().st_mode) == 0o644,
+    )
+
+    unwritten_path = roster_dir / "unwritten" / "roster.md"
+    unwritten_path.parent.mkdir()
+    roster_cli.roster_file = lambda: unwritten_path
+    roster_cli._run_regression_tests = lambda: (False, "simulated failure")
+    try:
+        status, detail = roster_cli.add_contact_noninteractive("No File", "nofile@example.com", type_="Human")
+    finally:
+        roster_cli._run_regression_tests = always_ok_stub
+    check("add_contact_noninteractive: no roster.md and a failing regression check reports 'test_failed'", status == "test_failed")
+    check("add_contact_noninteractive: no roster.md and a failing regression check creates no file", not unwritten_path.exists())
+
+    # The write lands but does not parse back to what was intended. Undoing a
+    # creation must remove the file: an empty roster.md left behind would pass
+    # for a real one.
+    reverted_path = roster_dir / "reverted" / "roster.md"
+    reverted_path.parent.mkdir()
+    roster_cli.roster_file = lambda: reverted_path
+    real_roster_addresses = roster_cli.roster_mod.roster_addresses
+    roster_cli.roster_mod.roster_addresses = lambda path: set()
+    try:
+        status, detail = roster_cli.add_contact_noninteractive("Bad Parse", "badparse@example.com", type_="Human")
+    finally:
+        roster_cli.roster_mod.roster_addresses = real_roster_addresses
+    check("add_contact_noninteractive: no roster.md and a failed verification reports 'verify_failed'", status == "verify_failed")
+    check("add_contact_noninteractive: no roster.md and a failed verification leaves no file, not an empty one", not reverted_path.exists())
+
+    # An existing roster.md is never replaced by the template, even one the
+    # form cannot add to.
+    tableless_path = roster_dir / "tableless" / "roster.md"
+    tableless_path.parent.mkdir()
+    tableless_path.write_text("# someone's hand-written notes, no contacts table\n", encoding="utf-8")
+    roster_cli.roster_file = lambda: tableless_path
+    status, detail = roster_cli.add_contact_noninteractive("Table Less", "tableless@example.com", type_="Human")
+    check("add_contact_noninteractive: an existing roster.md with no contacts table is 'rejected'", status == "rejected")
+    check(
+        "add_contact_noninteractive: an existing roster.md with no contacts table is not replaced by the template",
+        tableless_path.read_text(encoding="utf-8") == "# someone's hand-written notes, no contacts table\n",
+    )
+
+    # Type is informational: an older roster with no Type column still gets
+    # the human's row, just without that cell.
+    two_column_path = roster_dir / "two-column" / "roster.md"
+    two_column_path.parent.mkdir()
+    two_column_path.write_text("| Name | Email |\n|---|---|\n", encoding="utf-8")
+    roster_cli.roster_file = lambda: two_column_path
+    status, detail = roster_cli.add_contact_noninteractive("Old Format", "oldformat@example.com", type_="Human")
+    check("add_contact_noninteractive: a roster with no Type column still reports 'added'", status == "added")
+    check(
+        "add_contact_noninteractive: a roster with no Type column gets the row without a Type cell",
+        "| Old Format | oldformat@example.com |" in two_column_path.read_text(encoding="utf-8"),
     )
 finally:
     roster_cli.roster_file = real_roster_file
