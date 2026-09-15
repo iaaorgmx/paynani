@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+**El README se reorganiza para leerse de corrido.** La instalación va primero
+y «¿Para quién es Paynani?» después. Los tres pasos y las pruebas quedan más
+cortos. La Prueba 1 pide que el agente conteste con el asunto tal como lo ve,
+un asunto con acentos, para notar si lee mal los encabezados. La Prueba 2
+manda un correo desde una dirección que no está en `roster.md`. Se quitó la
+prueba de pedirle al agente que le escriba a una dirección fuera de la lista.
+`MAILBOX_SETUP.md` apunta al encabezado nuevo, `#instalación`.
+
 **El formulario de `paynani onboard` crea `roster.md` si todavía no existe.**
 Issue #134. En una instalación nueva el formulario corre en el paso 2 de
 `AGENTS.md`, antes de que existiera `roster.md`, así que agregar a la persona

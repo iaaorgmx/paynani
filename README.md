@@ -37,22 +37,6 @@ Hecho con amor por humanos y agentes de IA, desde México para el mundo.
 
 ---
 
-## Para quién es
-
-Para quien quiere darle a su agente una dirección de correo de verdad sin mezclar
-ahí su buzón personal, sus contraseñas ni sus decisiones de confianza.
-
-Te sirve si quieres que tu agente:
-
-- reciba tareas por correo, de ti o de tu equipo;
-- te avise cuando llegue algo que vale la pena mirar;
-- conteste desde su propia cuenta, no desde la tuya;
-- se niegue a obedecer, o a escribirle, a quien no esté en tu lista.
-
-No sirve para delegarle criterio a cualquier mensaje que llegue. El correo lo
-manda cualquiera, así que Paynani trata todo lo que entra como no confiable
-hasta que el remitente coincide con tu lista.
-
 ## Antes de empezar
 
 Necesitas tres cosas:
@@ -65,15 +49,15 @@ Necesitas tres cosas:
 Nada más. No hace falta una API de correo, un servicio intermedio ni una cuenta
 nueva en ningún lado.
 
-## Cómo configurarlo en tu agente
+## Instalación
 
-Tres pasos: pegarle un texto al agente, llenar el formulario que él mismo te va
-a dar en cuanto lo necesite, y dos minutos tuyos al final para revisar que de
-verdad funciona.
+Tres pasos: enviarle un prompt al agente, llenar el formulario que él mismo te
+va a dar en cuanto lo necesite, y dos minutos tuyos al final para revisar que
+de verdad funciona.
 
-### Paso 1: Apunta al agente a este repositorio
+### Paso 1: Prompt de instalación
 
-Pégale esto a tu agente:
+Envía el siguiente prompt a tu agente:
 
 ```text
 Instala este repositorio:
@@ -89,82 +73,78 @@ enlace del formulario para
 configurarla.
 ```
 
-Todo lo demás que el agente necesita está en el repositorio, así que el texto
-solo tiene que apuntarle ahí.
+### Paso 2: Configuración de cuenta de correo
 
-Espera preguntas antes de que empiece. Si ya tenías el `.env` escrito,
-deberían ser pocas; si no, una de ellas va a ser el enlace del Paso 2.
-**Si te pide la contraseña a ti, dile que no**: eso no es un paso de estas
-instrucciones, y el paso siguiente explica cómo evita tener que pedirla.
+Tu agente te mostrará un enlace al formulario para configurar la cuenta de
+correo.
 
-### Paso 2: Dale un buzón, cuando te lo pida
+Si tu agente corre en una máquina a la que no llegas directo desde el
+navegador, junto con el enlace te pasa el comando `ssh -L` para llegar al
+formulario.
 
-El agente necesita su propia cuenta de correo, y los datos de conexión de esa
-cuenta escritos en un archivo llamado `.env`. Siguiendo `AGENTS.md`, una de las
-primeras cosas que revisa es si ese archivo ya existe. La primera vez no
-existe, así que el propio agente corre `scripts/paynani onboard` y te pasa un
-enlace de un solo uso. No tienes que preparar nada de antemano.
+Si prefieres, puedes configurarla a mano creando el archivo `.env` como lo
+indica [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md).
 
-Ábrelo y llena los datos: los siete del buzón, más tu nombre y tu correo para
-la lista de contactos autorizados (`roster.md`). Antes de guardar nada, la
-página prueba los del buzón contra tu servidor de correo: si algo está mal,
-como una contraseña o un nombre de servidor, te lo dice ahí mismo.
-
-Al guardar, el formulario también te agrega a `roster.md` como contacto
-autorizado. En una instalación nueva esa lista todavía no existe, así que la
-crea en ese momento con tu fila. Si ya existe, por ejemplo cuando vuelves a
-abrir el formulario para cambiar la contraseña, agrega tu fila solo si no
-estabas.
+Al guardar, el formulario también crea `roster.md` con tu nombre y tu correo
+como primer contacto autorizado. Si escribes el `.env` a mano, el agente crea
+`roster.md` durante la instalación.
 
 > [!CAUTION]
-> La contraseña la escribes tú, directo en esa página, nunca en el chat con el
-> agente: lo que pegas en una conversación se queda ahí para siempre, y ningún
-> cuidado posterior lo deshace.
+> Escribe la contraseña tú, directo en el formulario. Nunca la pegues en el
+> chat con el agente: lo que pegas en una conversación se queda ahí para
+> siempre.
 
-Si algún dato no lo tienes a la mano, [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md) te
-lleva de la mano por los siete, uses el formulario o no. El que más se atora es
-el nombre del servidor.
+### Paso 3: Pruebas
 
-**¿Tu agente corre en una máquina a la que no llegas directo por el
-navegador, o prefieres no depender de uno?** Junto con el enlace, el agente
-te pasa el comando `ssh -L` que necesitas para llegar al formulario. También
-puedes escribir el archivo `.env` tú mismo, a mano: `MAILBOX_SETUP.md`
-documenta esa ruta con el mismo detalle. Esa ruta no pasa por el formulario,
-así que `roster.md` no se crea al guardar: el agente lo crea durante la
-instalación y te agrega, o te pide tu nombre y tu correo si no los tiene.
+El agente corre su propia lista de verificación, pero te recomendamos hacer
+también estas pruebas.
 
-### Paso 3: Pruébalo tú mismo
+**Prueba 1: Envíale un correo a tu agente desde tu cuenta.**
 
-El agente corre su propia lista de verificación y te va a decir que pasó. Dos
-minutos de pruebas tuyas valen más, porque estarías probando lo que de verdad te
-importa: que se dé cuenta, y que se quede dentro de sus límites.
+Desde tu cuenta de correo, la misma que colocaste en la configuración previa,
+envíale un correo electrónico a tu agente, solicitándole que te responda.
 
-**Prueba 1: mándale un correo, y ponle un acento en el asunto.**
+**Ejemplo de correo**
 
-Desde tu propia dirección, con un asunto como `Prueba de correo: ñ, á, ¿qué tal?`
-Luego pregúntale al agente qué acaba de llegar.
+```text
+Asunto: Prueba #1 de paynani: ñ, á, ¿qué tal?
 
-En un par de segundos debería decírtelo, y **el asunto tiene que verse legible**.
-Si en vez de eso ves `=?utf-8?q?...`, hay algo roto en la forma en que lee los
-encabezados, y eso importa mucho más de lo que parece: si trabajas en español,
-son prácticamente todos los mensajes que vas a recibir.
+Hola {nombre de tu agente},
 
-El acento es todo el punto de esta prueba. Un asunto en inglés sin acentos pasa
-igual, funcione o no.
+Responde a este correo con el asunto
+tal como lo ves.
+```
 
-**Prueba 2: pídele que le escriba a un desconocido.**
+La respuesta tiene que traer el asunto legible. Si ves `=?utf-8?q?...`, algo
+está roto en la forma en que lee los encabezados.
 
-Primero pídele que te mande algo a ti, y confirma que llega. Después pídele que
-le mande un mensaje a una dirección que **no** esté en su lista de autorizados.
+**Prueba 2: Envíale un correo desde una cuenta que no está en `roster.md`.**
 
-Se tiene que negar. No pedir permiso, no consultarte primero: negarse, y decirte
-que esa dirección no está en la lista. Esa lista es toda la razón por la que es
-seguro dejar que un agente que lee correo no confiable también pueda enviarlo,
+Cuando paynani recibe un correo desde una dirección que no está en `roster.md`,
+el agente te avisa que llegó, pero no actúa sobre él. Deberías recibir ese
+aviso y ninguna respuesta en la otra cuenta.
+
+La lista de contactos contenida en `roster.md` es toda la razón por la que es
+seguro dejar que un agente que lee correo también pueda responderlo y actuar,
 así que vale la pena verla funcionar una vez con tus propios ojos.
 
-Si lo manda, detente y avísale a quien lo instaló. Algo está mal.
+## ¿Para quién es Paynani?
 
-## Qué va a poder hacer tu agente
+Para quien quiere darle a su agente una dirección de correo de verdad sin mezclar
+ahí su buzón personal, sus contraseñas ni sus decisiones de confianza.
+
+Te sirve si quieres que tu agente:
+
+- reciba tareas por correo, de ti o de tu equipo;
+- te avise cuando llegue algo que vale la pena mirar;
+- conteste desde su propia cuenta, no desde la tuya;
+- se niegue a obedecer, o a escribirle, a quien no esté en tu lista.
+
+No sirve para delegarle criterio a cualquier mensaje que llegue. El correo lo
+manda cualquiera, así que Paynani trata todo lo que entra como no confiable
+hasta que el remitente coincide con tu lista.
+
+## ¿Qué va a poder hacer tu agente?
 
 - **Enterarse de correo nuevo en cosa de un segundo**, sin andar revisando y sin
   que se lo pidas.
@@ -179,7 +159,7 @@ Si lo manda, detente y avísale a quien lo instaló. Algo está mal.
 - **No perder lo que llegó** si la máquina se reinicia a media tarea. Cada
   mensaje detectado se anota en disco antes de entregarse.
 
-## Qué cambia en la computadora
+## ¿Qué cambia en la computadora?
 
 Vale la pena saberlo antes de aceptar. El agente tiene instrucciones de reportarte
 todo esto cuando termine, y puedes exigirle la lista:
