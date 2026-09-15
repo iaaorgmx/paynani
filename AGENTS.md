@@ -78,6 +78,14 @@ server to confirm the account works, and only then writes that file itself. You
 never see the password. `paynani onboard` stops on its own once the file
 exists, and then you continue at step 3.
 
+The same form also asks for your human's own name and email, and tries to add
+that row to `roster.md` when they save. **On a brand-new install this add
+fails**, because `roster.md` does not exist yet at this point — it is created
+in step 7, below. The saved screen tells them so and suggests running
+`paynani roster add` themselves; that is expected here and not a bug to chase.
+Do nothing about it now. Step 7 is where you create the list and add the row,
+whether or not they already saw that message.
+
 Serving the form needs no credentials and no working mailbox, and nothing
 beyond the Python 3 standard library, which this host already has by virtue
 of running paynani at all, so there is no dependency to check for first.
