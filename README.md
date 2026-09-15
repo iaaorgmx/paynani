@@ -51,13 +51,13 @@ nueva en ningún lado.
 
 ## Instalación
 
-Tres pasos: pegarle un texto al agente, llenar el formulario que él mismo te va
-a dar en cuanto lo necesite, y dos minutos tuyos al final para revisar que de
-verdad funciona.
+Tres pasos: enviarle un prompt al agente, llenar el formulario que él mismo te
+va a dar en cuanto lo necesite, y dos minutos tuyos al final para revisar que
+de verdad funciona.
 
 ### Paso 1: Prompt de instalación
 
-Envia el siguiente prompt a tu agente:
+Envía el siguiente prompt a tu agente:
 
 ```text
 Instala este repositorio:
@@ -75,44 +75,57 @@ configurarla.
 
 ### Paso 2: Configuración de cuenta de correo
 
-Tu agente te mostrará un enlace para entrar a una aplicación web en la que podrás
-configurar la cuenta de correo. 
+Tu agente te mostrará un enlace al formulario para configurar la cuenta de
+correo.
 
-Opcionalmente puedes configurarla manualmente creado el `.env` como lo indica
-[`MAILBOX_SETUP.md`](MAILBOX_SETUP.md).
+Si tu agente corre en una máquina a la que no llegas directo desde el
+navegador, junto con el enlace te pasa el comando `ssh -L` para llegar al
+formulario.
 
-Al guardar, el formulario también se crea el archivo `roster.md` con tu nombre y
-correo el cual sera usado como el primer contacto autorizado.
+Si prefieres, puedes configurarla a mano creando el archivo `.env` como lo
+indica [`MAILBOX_SETUP.md`](MAILBOX_SETUP.md).
+
+Al guardar, el formulario también crea `roster.md` con tu nombre y tu correo
+como primer contacto autorizado. Si escribes el `.env` a mano, el agente crea
+`roster.md` durante la instalación.
 
 > [!CAUTION]
-> Te recomendamos que la contraseña la escribas tú, directo en la aplicación web,  
-> nunca en el chat con el agente.
+> Escribe la contraseña tú, directo en el formulario. Nunca la pegues en el
+> chat con el agente: lo que pegas en una conversación se queda ahí para
+> siempre.
 
 ### Paso 3: Pruebas
 
-El agente corre su propia lista de verificación, pero te recomendamos hacer las siguientes pruebas.. 
+El agente corre su propia lista de verificación, pero te recomendamos hacer
+también estas pruebas.
 
-**Prueba 1: Enviale un correo a tu agente desde tu cuenta.**
+**Prueba 1: Envíale un correo a tu agente desde tu cuenta.**
 
-Desde tu cuenta de correo, la misma que colocaste en la configuración previa, 
+Desde tu cuenta de correo, la misma que colocaste en la configuración previa,
 envíale un correo electrónico a tu agente, solicitándole que te responda.
 
-**Ejempolo de correo**
+**Ejemplo de correo**
 
 ```text
+Asunto: Prueba #1 de paynani: ñ, á, ¿qué tal?
+
 Hola {nombre de tu agente},
 
-Esta es la prueba #1 de paynani, responde a este correo enviándome el pronóstico
-del clima para la Ciudad de México para los siguientes 3 días.
+Responde a este correo con el asunto
+tal como lo ves.
 ```
 
-**Prueba 2: Enviale un correo desde una cuenta que no esta en roster.md .**
+La respuesta tiene que traer el asunto legible. Si ves `=?utf-8?q?...`, algo
+está roto en la forma en que lee los encabezados.
 
-Cuando paynani recibe un correo electronico desde una cuenta de correo que no esta
-incluida en el archivo ../paynani/roaster.md leera el correo pero no actuara sobre el.
+**Prueba 2: Envíale un correo desde una cuenta que no está en `roster.md`.**
 
-La lista de contactos contenida en roster.md es toda la razón por la que es
-seguro dejar que un agente que lee correo también pueda responderlo y actuar ,
+Cuando paynani recibe un correo desde una dirección que no está en `roster.md`,
+el agente te avisa que llegó, pero no actúa sobre él. Deberías recibir ese
+aviso y ninguna respuesta en la otra cuenta.
+
+La lista de contactos contenida en `roster.md` es toda la razón por la que es
+seguro dejar que un agente que lee correo también pueda responderlo y actuar,
 así que vale la pena verla funcionar una vez con tus propios ojos.
 
 ## ¿Para quién es Paynani?

@@ -2,7 +2,7 @@
 
 **Español (MX)** · [English (US)](i18n/MAILBOX_SETUP.en-US.md) · [Español (ES)](i18n/MAILBOX_SETUP.es-ES.md) · [Français (FR)](i18n/MAILBOX_SETUP.fr-FR.md) · [Português (BR)](i18n/MAILBOX_SETUP.pt-BR.md)
 
-Referencia para el Paso 2 del [README](README.md#cómo-configurarlo-en-tu-agente):
+Referencia para el Paso 2 del [README](README.md#instalación):
 qué cuenta usar y qué significa cada dato, tanto si lo llenas en el formulario
 que te va a dar el agente como si escribes el archivo tú mismo. Normalmente ese
 paso lo hace el agente por ti: te pasa un enlace y ahí llenas la contraseña,
@@ -131,7 +131,7 @@ en el historial de tu shell, y ese historial es un archivo que vive meses.
 ## Y luego
 
 Si escribiste el archivo a mano antes de meter al agente, regresa al
-[README](README.md#cómo-configurarlo-en-tu-agente) y pega el texto del Paso 1.
+[README](README.md#instalación) y envíale al agente el prompt del Paso 1.
 De ahí en adelante lo lleva el agente, y te va a preguntar si algo de esto
 resultó faltar o estar mal.
 
