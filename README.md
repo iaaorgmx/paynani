@@ -83,19 +83,9 @@ Sigue las instrucciones del
 archivo AGENTS.md del
 repositorio.
 
-Mi cuenta de correo va en la
-carpeta workspace del
-directorio de instalación de tu
-Harness:
-
-../workspace/.env
-
-Si ese archivo todavía no
-existe, no me pidas la
-contraseña: pásame el enlace
-del formulario.
-
-Pregúntame lo que necesites.
+Cuando necesites la cuenta de
+correo, muéstrame el enlace del
+formulario para configurarla.
 ```
 
 Todo lo demás que el agente necesita está en el repositorio, así que el texto
@@ -115,10 +105,17 @@ existe, así que el propio agente corre `scripts/paynani onboard` y te pasa un
 enlace de un solo uso. No tienes que preparar nada de antemano.
 
 Ábrelo y llena los datos: los siete del buzón, más tu nombre y tu correo para
-la lista de contactos autorizados (`roster.md`), que el formulario agrega por
-ti. Antes de guardar nada, la página prueba los del buzón contra tu servidor
-de correo: si algo está mal, como una contraseña o un nombre de servidor, te
-lo dice ahí mismo.
+la lista de contactos autorizados (`roster.md`). Antes de guardar nada, la
+página prueba los del buzón contra tu servidor de correo: si algo está mal,
+como una contraseña o un nombre de servidor, te lo dice ahí mismo.
+
+En una instalación nueva, al guardar, la página te avisa que no pudo agregarte
+a `roster.md`, porque esa lista todavía no existe en este paso. No hace falta
+que corras el `paynani roster add` que te sugiere: el agente crea la lista al
+final de la instalación y te agrega ahí, o te pide tu nombre y tu correo si no
+los tiene. Si vuelves a abrir el formulario en una instalación que ya tiene la
+lista, por ejemplo para cambiar la contraseña, el formulario sí te agrega al
+guardar.
 
 > [!CAUTION]
 > La contraseña la escribes tú, directo en esa página, nunca en el chat con el
