@@ -18,7 +18,7 @@ STRINGS = {
     'saved.forgot': 'This page has already forgotten the password. Opening it again will not show it.',
     'saved.roster_added': 'You have also been added to the authorized contact list (<code>roster.md</code>).',
     'saved.roster_already': 'Your email was already on the authorized contact list (<code>roster.md</code>); nothing was touched.',
-    'saved.roster_failed': "The agent's account was saved, but you could not be added to <code>roster.md</code>: {reason} Add yourself by hand with <code>paynani roster add</code>.",
+    'saved.roster_failed': "The agent's account was saved, but you could not be added to <code>roster.md</code> yet: {reason} If this is a new install, that is expected — the agent adds this row itself when it creates <code>roster.md</code> (see <code>AGENTS.md</code>, step 7). Otherwise, add yourself by hand with <code>paynani roster add</code>.",
     'help.summary': 'Where do I find these?',
     'help.cpanel_h3': 'If your mail came with your web hosting (cPanel)',
     'help.cpanel_p': 'This is the most common case, and the details are already written down there for you.',
