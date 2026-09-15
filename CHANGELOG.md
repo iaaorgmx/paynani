@@ -6,7 +6,8 @@
 pide seguir `AGENTS.md` y mostrarte el enlace del formulario cuando necesite la
 cuenta de correo. Dejó de decir dónde va el `.env` y de prohibir que te pida la
 contraseña, porque las dos instrucciones ya están en el paso 2 de `AGENTS.md`.
-Sigue partido a 32 columnas para que quepa en un teléfono.
+Sigue partido en líneas de 27 columnas o menos, sin contar la URL, para que
+quepa en un teléfono.
 
 **El Paso 2 del README deja de prometer que el formulario siempre te agrega a
 `roster.md`.** En una instalación nueva esa lista no existe cuando se llena el

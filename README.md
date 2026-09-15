@@ -83,9 +83,10 @@ Sigue las instrucciones del
 archivo AGENTS.md del
 repositorio.
 
-Cuando necesites la cuenta de
-correo, muéstrame el enlace del
-formulario para configurarla.
+Cuando necesites la cuenta
+de correo, muéstrame el
+enlace del formulario para
+configurarla.
 ```
 
 Todo lo demás que el agente necesita está en el repositorio, así que el texto
