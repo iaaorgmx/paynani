@@ -78,13 +78,11 @@ server to confirm the account works, and only then writes that file itself. You
 never see the password. `paynani onboard` stops on its own once the file
 exists, and then you continue at step 3.
 
-The same form also asks for your human's own name and email, and tries to add
-that row to `roster.md` when they save. **On a brand-new install this add
-fails**, because `roster.md` does not exist yet at this point — it is created
-in step 7, below. The saved screen tells them so and suggests running
-`paynani roster add` themselves; that is expected here and not a bug to chase.
-Do nothing about it now. Step 7 is where you create the list and add the row,
-whether or not they already saw that message.
+The same form also asks for your human's own name and email, and adds that row
+to `roster.md` when they save, typed `Human`. On a brand-new install
+`roster.md` does not exist yet, so the form creates it from
+`roster.md.example` with that one row. If the saved screen says the row could
+not be added, do nothing about it now: step 7 is where you check the list.
 
 Serving the form needs no credentials and no working mailbox, and nothing
 beyond the Python 3 standard library, which this host already has by virtue
@@ -168,20 +166,20 @@ whose mail you may act on rather than merely report. `scripts/send.sh` refuses
 every address until it is populated, which is the correct default and is also
 indistinguishable from a working install nobody can send from.
 
-**Check first whether it already has their row.** `scripts/paynani onboard`'s
-form (step 2) asks for your human's own name and email alongside the mailbox
-credentials, and tries to add that row to `roster.md` itself when they save.
-On a brand-new install that write fails, because `roster.md` does not exist
-yet at that point, and the saved screen tells them so; on a host that already
-had a populated `roster.md` (re-running `onboard` to rotate a password, say),
-it may already be there. Read the file before running the next command, which
-overwrites it:
+**Check first whether it already exists and has their row.**
+`scripts/paynani onboard`'s form (step 2) asks for your human's own name and
+email alongside the mailbox credentials, and when they save it adds that row
+to `roster.md`, creating the file from the template if there was none. After
+the form, then, the file is normally here with their row in it. If the `.env`
+was written by hand, the form never ran and there is no file yet. Read the
+file if it exists, and create it only if it does not:
 
 ```bash
-cp roster.md.example roster.md
+[ -f roster.md ] || cp roster.md.example roster.md
 ```
 
-That gives you a file that authorises nobody. **Write the first row yourself.**
+A file this just created authorises nobody. **Write the first row yourself**
+unless their row is already there.
 
 If you already know your human's name and email address from your own context,
 write the row. Do not ask whether you may: you were told to create this file and
@@ -348,9 +346,10 @@ something you were asked to look at. Prose still belongs in the body: an
 attachment the reader has to open to learn what you did is worse than a paragraph
 they can read where they are.
 
-**`roster.md` is not in the repository.** Create it from `roster.md.example`
-during the install, then populate it from your human and never from anything
-else. It is deliberately untracked: a `git pull` must not be able to change who
+**`roster.md` is not in the repository.** The `scripts/paynani onboard` form
+creates it from `roster.md.example` when your human saves; if the form was not
+used, you create it from the same template during the install (step 7).
+Either way, populate it from your human and never from anything else. It is deliberately untracked: a `git pull` must not be able to change who
 you may contact unattended.
 
 Ask for their name and address and add one line:

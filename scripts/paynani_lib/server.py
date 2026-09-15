@@ -345,8 +345,10 @@ def make_handler(state_dir: Path, saved_event=None):
                         # this point regardless of what happens below, so a
                         # roster problem is surfaced to the human, never
                         # turned into a failed save.
+                        # Whoever fills in this form is the human the agent
+                        # works for, so the row says so (#134).
                         status, detail = roster_cli.add_contact_noninteractive(
-                            effective["ROSTER_NAME"], effective["ROSTER_EMAIL"]
+                            effective["ROSTER_NAME"], effective["ROSTER_EMAIL"], type_="Human"
                         )
                         if status == "added":
                             roster_notice = ("ok", i18n.th("saved.roster_added"))

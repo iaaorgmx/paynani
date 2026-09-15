@@ -18,7 +18,7 @@ STRINGS = {
     'saved.forgot': 'Esta página ya olvidó la contraseña. Volver a abrirla no la muestra otra vez.',
     'saved.roster_added': 'También quedaste agregado a la lista de contactos autorizados (<code>roster.md</code>).',
     'saved.roster_already': 'Tu correo ya estaba en la lista de contactos autorizados (<code>roster.md</code>); no se tocó.',
-    'saved.roster_failed': 'La cuenta del agente quedó guardada, pero todavía no se pudo agregarte a <code>roster.md</code>: {reason} Si es una instalación nueva, es lo esperado: el agente agrega esta fila él mismo al crear <code>roster.md</code> (ver <code>AGENTS.md</code>, paso 7). Si no, agrégate a mano con <code>paynani roster add</code>.',
+    'saved.roster_failed': 'La cuenta del agente quedó guardada, pero no se pudo agregarte a <code>roster.md</code>: {reason} Avísale al agente: él revisa <code>roster.md</code> en el paso 7 de <code>AGENTS.md</code>.',
     'help.summary': '¿Dónde encuentro estos datos?',
     'help.cpanel_h3': 'Si tu correo vino con tu hosting web (cPanel)',
     'help.cpanel_p': 'Es el caso más común, y los datos ya están escritos ahí para ti.',

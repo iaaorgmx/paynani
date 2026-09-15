@@ -199,5 +199,19 @@ check(
     required_env_files - manual_files,
 )
 
+# The onboard form creates roster.md at step 2 with the human's row (#134). An
+# install step that copies the template unconditionally would overwrite that
+# row with a roster that authorises nobody, so every documented copy has to
+# leave an existing file alone.
+unguarded_roster_copies = [
+    f"{document}: {line.strip()}"
+    for document in ("AGENTS.md", "INSTALL.md")
+    for line in (ROOT / document).read_text().splitlines()
+    if re.search(r"\bcp\s+roster\.md\.example\s+roster\.md\b", line)
+    and not re.search(r"\[\s+-f\s+roster\.md\s+\]\s*\|\|", line)
+]
+check("no documented step copies roster.md.example over an existing roster.md", [],
+      unguarded_roster_copies)
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

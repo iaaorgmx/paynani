@@ -29,6 +29,9 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 from paths import roster as roster_file  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
+# What a missing roster.md starts from when the onboard form creates it (#134).
+_TEMPLATE = _REPO_ROOT / "roster.md.example"
+
 
 def _read(path: Path) -> str:
     try:
@@ -56,6 +59,13 @@ def _write_atomic(path: Path, text: str) -> None:
         tmp.unlink(missing_ok=True)
         raise
     os.chmod(path, mode)
+
+
+def _has_column(text: str, column: str) -> bool:
+    """Whether the contacts table in `text` has a header named `column`
+    (case-insensitive). No contacts table means no."""
+    header_idx, header_fields, _ = roster_mod._contacts_table_bounds(text)
+    return header_idx is not None and column in [h.strip().lower() for h in header_fields]
 
 
 def _confirm(prompt: str, assume_yes: bool) -> bool:
@@ -133,6 +143,16 @@ def _revert_write(path: Path, original: str) -> str | None:
     return None
 
 
+def _remove_created(path: Path) -> str | None:
+    """Undo a write that created `path`, by removing it. Returns None on
+    success, or an error string describing why the removal failed."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        return str(exc)
+    return None
+
+
 def _revert(path: Path, original: str, reason: str) -> int:
     exc = _revert_write(path, original)
     if exc is not None:
@@ -171,6 +191,11 @@ def _apply_change_core(path: Path, new_text: str, expected_addresses) -> tuple[s
                           whether the revert itself succeeded.
     """
     original = _read(path)
+    # A file this call creates has no original to put back. Writing "" over it
+    # would leave an empty roster.md behind, which send.sh, healthcheck.py and
+    # the step-7 check in AGENTS.md would all take for a real one (#134), so
+    # undoing a creation means removing the file.
+    existed = path.exists()
 
     ok, output = _run_regression_tests()
     if not ok:
@@ -185,7 +210,7 @@ def _apply_change_core(path: Path, new_text: str, expected_addresses) -> tuple[s
     # multi-second subprocess suite.
     actual_addresses = roster_mod.roster_addresses(path)
     if actual_addresses != expected_addresses:
-        revert_exc = _revert_write(path, original)
+        revert_exc = _revert_write(path, original) if existed else _remove_created(path)
         if revert_exc is not None:
             return "verify_failed", (
                 "the written file did not parse back to the expected address "
@@ -232,6 +257,17 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
     or console output — for a caller that already has the human's explicit
     action (submitting the onboard web form) as its own confirmation.
 
+    It differs from `paynani roster add` in two ways, both because the form
+    runs at AGENTS.md step 2, before anything else has touched roster.md
+    (#134):
+
+    - A missing roster.md is created from roster.md.example, holding this one
+      row. An existing roster.md is never replaced by the template, not even
+      one with no contacts table; that is still "rejected".
+    - `type_` is informational (see roster.md.example), so on an older roster
+      whose table has no Type column it is left out rather than refusing the
+      row the human just asked for.
+
     Returns (status, detail):
       "added"          — roster.md now has this contact; detail is the path.
       "duplicate"      — this address was already on the roster; nothing
@@ -242,7 +278,9 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
       "verify_failed"  — see _apply_change_core.
     """
     path = roster_file()
-    text = _read(path)
+    text = _read(_TEMPLATE if not path.exists() else path)
+    if type_ and not _has_column(text, "type"):
+        type_ = ""
     ok, result = roster_mod.add_contact(text, name, address, type_=type_, github=github)
     if not ok:
         status = "duplicate" if result.endswith("is already on the roster") else "rejected"
