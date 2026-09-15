@@ -1,6 +1,46 @@
 # Changelog
 
-## Sin publicar
+## 0.5.0 (2026-09-15)
+
+**Configurar paynani ya no pide PHP ni pasa datos por el chat.** 70 commits
+desde 0.4.0.
+
+- `scripts/paynani onboard`, en Python puro, reemplaza al formulario en PHP.
+  `webapp/` y `scripts/setup_web.sh` se retiraron. El formulario pide también
+  tu nombre y tu correo, y crea `roster.md` con tu fila si todavía no existe.
+- Dos comandos nuevos: `paynani set`, para cambiar una clave del `.env`, y
+  `paynani roster`, para administrar la lista de contactos autorizados.
+- El README se reescribió para quien no es técnico y se reorganizó con la
+  instalación primero.
+- La suite corre también en macOS en CI, y el vigilante de correo de las
+  sesiones de Claude Code ya no se queda callado en macOS ni cuando la sesión
+  está suspendida.
+
+### Si actualizas desde 0.4.0
+
+Ninguna unidad de systemd, LaunchAgent, hook ni instalador cambió desde 0.4.0.
+Basta `git pull` y seguir `UPGRADE.md`, con dos excepciones:
+
+- **Si usabas `scripts/setup_web.sh` o `webapp/`:** ya no existen. Usa
+  `scripts/paynani onboard`.
+- **En Claude Code, reinicia las sesiones abiertas después del `git pull`.** Una
+  sesión que siga corriendo con el vigilante anterior conserva su lock, y el
+  vigilante nuevo se niega a armar hasta que esa sesión termine.
+
+### Pendientes conocidos
+
+- **Traducciones.** `i18n/README.*` e `i18n/MAILBOX_SETUP.*` (en-US, es-ES,
+  fr-FR y pt-BR) todavía describen el flujo anterior a #131 a #137. Van en #123.
+  Mientras tanto, la versión es-MX es la fuente de verdad.
+- **`saved.roster_failed` en esos cuatro idiomas** todavía dice que no poder
+  agregarte a `roster.md` en una instalación nueva es lo esperado. Desde esta
+  versión ya no lo es.
+- **macOS.** `suite-macos` falla en `test_listener.py` y `test_roster.sh`
+  (#129). Hasta que se arregle, en una Mac el formulario no puede crear
+  `roster.md`, porque corre `test_listener.py` antes de escribir, y el agente
+  lo crea en el paso 7 de `AGENTS.md`.
+- **`paynani roster add` desde la terminal** todavía no crea `roster.md` cuando
+  no existe (#135).
 
 **El README se reorganiza para leerse de corrido.** La instalación va primero
 y «¿Para quién es Paynani?» después. Los tres pasos y las pruebas quedan más
@@ -168,6 +208,37 @@ Toda mención a `scripts/setup_web.sh` como ruta alterna al formulario (en
 traducciones) se actualiza a `scripts/paynani onboard`, y el párrafo entero
 sobre necesitar PHP y `sudo`/`apt-get` desaparece: ya no hay una ruta que
 dependa de eso.
+
+**El vigilante de correo de las sesiones de Claude Code deja de afirmar que otra
+sesión está vigilando cuando no es cierto.** #109 y #111, que cierran #105, #62
+y #110. `harness/session_watch.sh` fallaba en dos direcciones. En macOS no hay
+`flock`, así que toda sesión salía sin armar diciendo que otra ya vigilaba. En
+Linux, un vigilante cuya sesión estaba suspendida seguía avanzando el cursor, y
+ese correo se daba por visto sin que nadie lo hubiera visto.
+
+Ahora el lock es un `mkdir` que guarda el pid del vigilante y el de su sesión.
+La sesión se busca recorriendo los ancestros, porque el proceso padre es un
+envoltorio del harness que sigue sano aunque la sesión esté suspendida. Un
+dueño muerto o suspendido se releva, deteniendo antes a su vigilante huérfano,
+y el cursor deja de avanzar en cuanto la sesión ya no puede mostrar nada. Donde
+existe `flock`, el lock de la versión anterior se sigue respetando durante una
+actualización.
+
+**Las pruebas dejan de asumir Linux.** #106 y #107, destapados por el job de
+macOS. `test_preflight.sh` no compilaba con bash 3.2, `test_paths.sh` comparaba
+rutas temporales sin resolver que en macOS `/var` es `/private/var`,
+`test_hermes_install.py` esperaba códigos de salida de Linux, y
+`test_install.sh` usaba `stat -c %a`, que el `stat` de BSD no entiende. Ninguno
+tocaba código de producto. #108 agrega `scripts/test_install_macos.py`, que
+prueba la instalación con `launchd` en un sandbox con `launchctl`, `himalaya` y
+`openclaw` falsos.
+
+**La suite corre también en macOS, en CI.** #104. Un job `suite-macos` corre
+las mismas suites en `macos-latest` y compara el conjunto de las que se saltan
+contra el esperado, `test_install.sh`, para que una suite que empiece a
+saltarse no pase por verde. El job solo reporta y no bloquea un merge; el
+criterio para volverlo requerido quedó escrito en #129. El job de Linux se
+renombra `suite-linux`.
 
 **El README dejó de ser mitad puerta humana y mitad manual del agente.** Catorce
 commits desde 0.4.0, todos de documentación: ninguna línea de código cambió.
