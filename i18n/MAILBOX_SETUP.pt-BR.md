@@ -2,9 +2,12 @@
 
 [Español (MX)](../MAILBOX_SETUP.md) · [English (US)](MAILBOX_SETUP.en-US.md) · [Español (ES)](MAILBOX_SETUP.es-ES.md) · [Français (FR)](MAILBOX_SETUP.fr-FR.md) · **Português (BR)**
 
-Passo 1 do [README](README.pt-BR.md#como-configurar-no-seu-agente). Isto é você
-quem faz, antes de envolver o agente, porque é preciso uma senha e senha não deve
-passar por um chat.
+Referência para o Passo 2 do [README](README.pt-BR.md#instalação): que conta
+usar e o que significa cada dado, seja preenchendo no formulário que o agente
+vai te passar, seja escrevendo o arquivo você mesmo. Normalmente é o agente quem
+faz esse passo por você: ele te passa um link e ali você preenche a senha, nunca
+no chat. Só é preciso ler isto do começo ao fim se você for escrever o arquivo à
+mão.
 
 Dez minutos, e a maior parte vai em achar um nome de servidor.
 
@@ -18,6 +21,11 @@ Dez minutos, e a maior parte vai em achar um nome de servidor.
 > servidor de e-mail e escreve o arquivo para você, inclusive o problema do nome do
 > servidor que aparece mais abaixo, que ela diagnostica pelo nome em vez de deixar
 > você descobrir.
+>
+> Para mudar um único dado mais tarde, como trocar a senha ou corrigir um nome
+> de servidor, não é preciso repetir tudo isto: `paynani set CHAVE VALOR` muda
+> só essa chave e, por padrão, testa de novo contra o seu servidor antes de
+> salvar.
 >
 > O resto desta página é o caminho manual, e continua valendo a leitura: explica
 > *por que* cada ajuste é o que é, e isso o formulário não consegue fazer.
@@ -121,14 +129,22 @@ no histórico do shell, e esse histórico é um arquivo que fica lá por meses.
 
 ## Depois disso
 
-Volte ao [README](README.pt-BR.md#como-configurar-no-seu-agente) e cole o texto do
-Passo 2. Dali em diante quem conduz é o agente, e ele vai perguntar se algo aqui
-acabou faltando ou saindo errado.
+Se você escreveu o arquivo à mão antes de envolver o agente, volte ao
+[README](README.pt-BR.md#instalação) e envie ao agente o prompt do Passo 1. Dali
+em diante quem conduz é o agente, e ele vai perguntar se algo aqui acabou
+faltando ou saindo errado.
 
 **Uma coisa que ele nunca deveria pedir: a senha.** Ele tem o caminho do arquivo e
 pode ler na hora que precisar. Se ele pedir para você colar a senha no chat,
 recuse, isso não é passo de nenhuma destas instruções.
 
+**A sua linha na lista de contatos autorizados.** O formulário do
+`scripts/paynani onboard` pede, além destes sete dados da caixa, o seu nome e o
+seu e-mail, e ao salvar adiciona você ao `roster.md`, criando a lista se ela
+ainda não existir. Este caminho manual não passa pelo formulário, então a lista
+não é criada sozinha: o agente cria a lista durante a instalação e adiciona
+você, ou pede o seu nome e o seu e-mail se não os tiver.
+
 ---
 
-<sub>Traduzido de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) no commit `a7b1040`, que é a fonte da verdade. Se algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e nos avise, porque significa que esta tradução ficou para trás.</sub>
+<sub>Traduzido de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) no commit `990f4c0`, que é a fonte da verdade. Se algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e nos avise, porque significa que esta tradução ficou para trás.</sub>
