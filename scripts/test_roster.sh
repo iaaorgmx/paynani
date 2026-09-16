@@ -441,10 +441,20 @@ assert "an .svg is not typed text/html"    '! grep -q "^Content-Type: text/html"
 
 # file(1) still decides everything the extension table does not name.
 printf 'sin extension conocida\n' >"$attach_dir/dato.bin"
+expected_unknown_type=$(file --mime-type -b "$attach_dir/dato.bin" 2>/dev/null || true)
+case "$expected_unknown_type" in
+    ''|*[!!-~]*) expected_unknown_type=application/octet-stream ;;
+esac
 : >"$CAPTURE"
 send_ok --attach "$attach_dir/dato.bin" "jjulianfe@gmail.com" "bin" "$body"
 assert "an unknown extension falls back to file(1)" \
-    'grep -c "^Content-Type: text/plain" "$CAPTURE" | grep -qx 2'
+    'python3 -c "
+import email, email.policy, sys
+m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
+parts = [p for p in m.walk() if p.get_content_disposition() == \"attachment\"]
+assert len(parts) == 1, parts
+assert parts[0].get_content_type() == sys.argv[2], (parts[0].get_content_type(), sys.argv[2])
+" "$CAPTURE" "$expected_unknown_type"'
 
 : >"$CAPTURE"
 send_ok --attach "$attach_dir/datos.csv" --attach "$attach_dir/otro.txt" \
@@ -469,6 +479,19 @@ import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
 assert names == [\"reporte señales.csv\"], names
+" "$CAPTURE"'
+
+# Exercise another two-byte character and a three-byte character so the test
+# guards byte-wise UTF-8 encoding rather than only the exact bytes for ñ.
+cp "$attach_dir/datos.csv" "$attach_dir/informe café €.csv"
+: >"$CAPTURE"
+send_ok --attach "$attach_dir/informe café €.csv" "jjulianfe@gmail.com" "más acentos" "$body"
+assert "a second UTF-8 filename round-trips" \
+    'python3 -c "
+import email, email.policy, sys
+m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
+names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
+assert names == [\"informe café €.csv\"], names
 " "$CAPTURE"'
 
 # A path that cannot be read must stop the whole send, not produce a message with
