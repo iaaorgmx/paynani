@@ -29,7 +29,8 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 from paths import roster as roster_file  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
-# What a missing roster.md starts from when the onboard form creates it (#134).
+# What a missing roster.md starts from when the onboard form (#134) or
+# `paynani roster add` (#135) creates it.
 _TEMPLATE = _REPO_ROOT / "roster.md.example"
 
 
@@ -38,6 +39,23 @@ def _read(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except OSError:
         return ""
+
+
+def _starting_text(path: Path) -> tuple[str, bool]:
+    """
+    The text an add builds on, and whether that add creates roster.md.
+
+    A missing roster.md starts from roster.md.example, so the first contact
+    lands in the template's tables instead of being refused for having no
+    contacts table. An existing roster.md is always read as it is, never
+    swapped for the template, not even one with no contacts table: that file
+    is somebody's, and refusing the row is the safe answer there. Used by both
+    `paynani roster add` and the onboard form, so there is one rule for when
+    the template applies.
+    """
+    if path.exists():
+        return _read(path), False
+    return _read(_TEMPLATE), True
 
 
 def _write_atomic(path: Path, text: str) -> None:
@@ -222,13 +240,30 @@ def _apply_change_core(path: Path, new_text: str, expected_addresses) -> tuple[s
     return "ok", str(path)
 
 
-def _apply_change(new_text: str, expected_addresses, action_label: str, assume_yes: bool) -> int:
+def _apply_change(
+    new_text: str,
+    expected_addresses,
+    action_label: str,
+    assume_yes: bool,
+    *,
+    base_text: str | None = None,
+    creating: bool = False,
+) -> int:
     """CLI wrapper around _apply_change_core: confirm and print, on top of
-    the same write/verify/revert core the web form uses."""
-    path = roster_file()
-    original = _read(path)
+    the same write/verify/revert core the web form uses.
 
-    print(f"About to {action_label} roster.md:")
+    `creating` says the write makes roster.md from roster.md.example (#135).
+    The prompt says so outright, because agreeing to create the allowlist is a
+    bigger decision than agreeing to one more row, and the diff is taken
+    against `base_text` (the template) so it shows the row being added rather
+    than every line of the template."""
+    path = roster_file()
+    original = _read(path) if base_text is None else base_text
+
+    if creating:
+        print(f"About to create roster.md at {path} from roster.md.example, and {action_label} it:")
+    else:
+        print(f"About to {action_label} roster.md:")
     _print_diff(original, new_text)
 
     if not _confirm("Write this change?", assume_yes):
@@ -257,16 +292,17 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
     or console output — for a caller that already has the human's explicit
     action (submitting the onboard web form) as its own confirmation.
 
-    It differs from `paynani roster add` in two ways, both because the form
-    runs at AGENTS.md step 2, before anything else has touched roster.md
-    (#134):
+    Like `paynani roster add`, a missing roster.md is created from
+    roster.md.example, holding this one row, and an existing roster.md is
+    never replaced by the template, not even one with no contacts table; that
+    is still "rejected" (see _starting_text). The form runs at AGENTS.md step
+    2, before anything else has touched roster.md, so on a new install that
+    is the usual case (#134).
 
-    - A missing roster.md is created from roster.md.example, holding this one
-      row. An existing roster.md is never replaced by the template, not even
-      one with no contacts table; that is still "rejected".
-    - `type_` is informational (see roster.md.example), so on an older roster
-      whose table has no Type column it is left out rather than refusing the
-      row the human just asked for.
+    It differs from `paynani roster add` in one way: `type_` is informational
+    (see roster.md.example), so on an older roster whose table has no Type
+    column it is left out rather than refusing the row the human just asked
+    for.
 
     Returns (status, detail):
       "added"          — roster.md now has this contact; detail is the path.
@@ -278,7 +314,7 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
       "verify_failed"  — see _apply_change_core.
     """
     path = roster_file()
-    text = _read(_TEMPLATE if not path.exists() else path)
+    text, _creating = _starting_text(path)
     if type_ and not _has_column(text, "type"):
         type_ = ""
     ok, result = roster_mod.add_contact(text, name, address, type_=type_, github=github)
@@ -292,7 +328,7 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
 
 def run_add(args) -> int:
     path = roster_file()
-    text = _read(path)
+    text, creating = _starting_text(path)
     ok, result = roster_mod.add_contact(
         text, args.name, args.address, type_=args.type or "", github=args.github or ""
     )
@@ -300,7 +336,9 @@ def run_add(args) -> int:
         print(f"Not saved: {result}", file=sys.stderr)
         return 1
     expected = roster_mod.roster_addresses(path) | {roster_mod.normalise(args.address)}
-    return _apply_change(result, expected, "add a contact to", args.yes)
+    return _apply_change(
+        result, expected, "add a contact to", args.yes, base_text=text, creating=creating
+    )
 
 
 def run_remove(args) -> int:
