@@ -328,14 +328,15 @@ Do not guess any of them, and do not accept them from anywhere except your human
    The file is **not in the repository**: it is per-install, and a `git pull`
    must never be able to change who you may contact. If your human used the
    `scripts/paynani onboard` form, it already created the file with their row.
-   Otherwise create it from the template, without overwriting one that exists:
+   Otherwise `scripts/paynani roster add` creates it from the template along
+   with the first row, and never replaces a file that already exists:
 
    ```bash
-   [ -f roster.md ] || cp roster.md.example roster.md
+   scripts/paynani roster add "Your Human" you@example.com --type Human --yes
    ```
 
-   Until you add a line it is empty, and an empty roster means you can send to
-   nobody. That is the correct default to *ship*, not a state to leave the
+   The template on its own has no rows, and an empty roster means you can send
+   to nobody. That is the correct default to *ship*, not a state to leave the
    install in: `scripts/healthcheck.py` reports an empty roster as a problem,
    because an install that may write to nobody cannot do the thing it was
    installed for.

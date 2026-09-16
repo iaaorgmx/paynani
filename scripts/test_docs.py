@@ -111,7 +111,7 @@ def roster_row_addresses(document):
     Addresses appearing in a roster-shaped table row, anywhere in a document.
 
     #89 removed two real, working addresses from roster.md.example, because the
-    repository is public and `cp roster.md.example roster.md` is a documented
+    repository is public and `cp roster.md.example roster.md` was a documented
     step -- so following the instructions handed two real people standing
     unattended authority on a stranger's install.
 
@@ -212,6 +212,13 @@ unguarded_roster_copies = [
 ]
 check("no documented step copies roster.md.example over an existing roster.md", [],
       unguarded_roster_copies)
+
+# A hand-written .env means no form and no roster.md (#135). `paynani roster
+# add` creates the file with the first row; a bare template copy authorises
+# nobody, so both install documents point at the command.
+check("AGENTS.md and INSTALL.md create a missing roster.md with paynani roster add", [],
+      [document for document in ("AGENTS.md", "INSTALL.md")
+       if "scripts/paynani roster add" not in (ROOT / document).read_text()])
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

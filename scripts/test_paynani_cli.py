@@ -912,6 +912,105 @@ try:
         "add_contact_noninteractive: a roster with no Type column gets the row without a Type cell",
         "| Old Format | oldformat@example.com |" in two_column_path.read_text(encoding="utf-8"),
     )
+
+    # `paynani roster add` on a host whose .env was written by hand (#135): the
+    # form never ran, so there is no roster.md. The command creates it from
+    # the same template, through the same _starting_text() the form uses.
+    import contextlib
+    import io
+
+    cli_fresh_path = roster_dir / "cli-fresh" / "roster.md"
+    cli_fresh_path.parent.mkdir()
+    roster_cli.roster_file = lambda: cli_fresh_path
+    r = roster_cli.run_add(RArgs(name="Manual Human", address="manual@example.com", type="Human", yes=True))
+    check("roster_cli.run_add: with no roster.md and --yes it succeeds", r == 0)
+    cli_fresh_text = cli_fresh_path.read_text(encoding="utf-8") if cli_fresh_path.exists() else ""
+    ok, expected_cli_fresh = roster_mod.add_contact(template_text, "Manual Human", "manual@example.com", type_="Human")
+    check(
+        "roster_cli.run_add: with no roster.md it creates exactly the template plus this one row",
+        ok and cli_fresh_text == expected_cli_fresh,
+    )
+    check("roster_cli.run_add: the created file keeps the Notifiers table", "## Notifiers" in cli_fresh_text)
+    check(
+        "roster_cli.run_add: the created file authorises exactly that one address",
+        roster_mod.roster_addresses(cli_fresh_path) == {"manual@example.com"},
+    )
+    check(
+        "roster_cli.run_add: the created file is mode 0644",
+        cli_fresh_path.exists() and stat.S_IMODE(cli_fresh_path.stat().st_mode) == 0o644,
+    )
+
+    # Without --yes, the prompt has to say the file is being created, and show
+    # the row rather than the whole template as added lines.
+    cli_prompt_path = roster_dir / "cli-prompt" / "roster.md"
+    cli_prompt_path.parent.mkdir()
+    roster_cli.roster_file = lambda: cli_prompt_path
+    prompts = []
+    builtins.input = lambda prompt="": prompts.append(prompt) or "n"
+    shown = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(shown):
+            r = roster_cli.run_add(RArgs(name="Prompt Human", address="prompt@example.com", type="Human"))
+    finally:
+        builtins.input = real_input
+    shown_text = shown.getvalue()
+    check("roster_cli.run_add: with no roster.md the confirmation says it will create the file", "create roster.md" in shown_text)
+    check("roster_cli.run_add: with no roster.md the confirmation names the template", "roster.md.example" in shown_text)
+    added_lines = [line for line in shown_text.splitlines() if line.startswith("  + ")]
+    check(
+        "roster_cli.run_add: with no roster.md the confirmation shows only the new row as added",
+        len(added_lines) == 1 and "prompt@example.com" in added_lines[0],
+    )
+    check("roster_cli.run_add: declining the creation returns nonzero", r == 1)
+    check("roster_cli.run_add: declining the creation leaves no file", not cli_prompt_path.exists())
+
+    # An existing roster.md is not "being created": its prompt stays the
+    # ordinary one.
+    roster_cli.roster_file = lambda: roster_path
+    shown = io.StringIO()
+    builtins.input = lambda prompt="": "n"
+    try:
+        with contextlib.redirect_stdout(shown):
+            roster_cli.run_add(RArgs(name="Existing Prompt", address="existingprompt@example.com"))
+    finally:
+        builtins.input = real_input
+    check("roster_cli.run_add: an existing roster.md does not claim to create the file", "create roster.md" not in shown.getvalue())
+
+    cli_unwritten_path = roster_dir / "cli-unwritten" / "roster.md"
+    cli_unwritten_path.parent.mkdir()
+    roster_cli.roster_file = lambda: cli_unwritten_path
+    roster_cli._run_regression_tests = lambda: (False, "simulated failure")
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            r = roster_cli.run_add(RArgs(name="No File", address="nofile@example.com", yes=True))
+    finally:
+        roster_cli._run_regression_tests = always_ok_stub
+    check("roster_cli.run_add: no roster.md and a failing regression check returns nonzero", r == 1)
+    check("roster_cli.run_add: no roster.md and a failing regression check creates no file", not cli_unwritten_path.exists())
+
+    cli_reverted_path = roster_dir / "cli-reverted" / "roster.md"
+    cli_reverted_path.parent.mkdir()
+    roster_cli.roster_file = lambda: cli_reverted_path
+    roster_cli.roster_mod.roster_addresses = lambda path: set()
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            r = roster_cli.run_add(RArgs(name="Bad Parse", address="badparse@example.com", yes=True))
+    finally:
+        roster_cli.roster_mod.roster_addresses = real_roster_addresses
+    check("roster_cli.run_add: no roster.md and a failed verification returns nonzero", r == 1)
+    check("roster_cli.run_add: no roster.md and a failed verification leaves no file, not an empty one", not cli_reverted_path.exists())
+
+    cli_tableless_path = roster_dir / "cli-tableless" / "roster.md"
+    cli_tableless_path.parent.mkdir()
+    cli_tableless_path.write_text("# someone's hand-written notes, no contacts table\n", encoding="utf-8")
+    roster_cli.roster_file = lambda: cli_tableless_path
+    with contextlib.redirect_stderr(io.StringIO()):
+        r = roster_cli.run_add(RArgs(name="Table Less", address="tableless@example.com", yes=True))
+    check("roster_cli.run_add: an existing roster.md with no contacts table is refused", r == 1)
+    check(
+        "roster_cli.run_add: an existing roster.md with no contacts table is not replaced by the template",
+        cli_tableless_path.read_text(encoding="utf-8") == "# someone's hand-written notes, no contacts table\n",
+    )
 finally:
     roster_cli.roster_file = real_roster_file
     roster_cli._run_regression_tests = real_run_tests

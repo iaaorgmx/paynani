@@ -481,11 +481,13 @@ assert "a missing attachment sends nothing" '[ ! -s "$CAPTURE" ]'
 # --- The shipped template authorises nobody -----------------------------------
 #
 # roster.md.example used to carry two real, working addresses as data rows, so
-# `cp roster.md.example roster.md` -- the step INSTALL.md gives -- handed two
-# real people standing unattended authority on any install that followed it,
-# without the operator having decided anything. INSTALL.md says of that copy:
-# "Until you add a line it is empty, and an empty roster means you can send to
-# nobody." This asserts that sentence is true of the file actually shipped.
+# `cp roster.md.example roster.md` -- the step INSTALL.md gave then -- handed
+# two real people standing unattended authority on any install that followed
+# it, without the operator having decided anything. The template is still what
+# a new roster.md starts from (the onboard form and `paynani roster add`, #135),
+# and INSTALL.md says of it: "The template on its own has no rows, and an empty
+# roster means you can send to nobody." This asserts that sentence is true of
+# the file actually shipped.
 #
 # Checked through roster.py rather than by grepping for "@": the parser is what
 # decides who is authorised, so it is the only thing whose answer counts.

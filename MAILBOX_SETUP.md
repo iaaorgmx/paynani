@@ -144,7 +144,9 @@ dile que no, eso no es un paso de ninguna de estas instrucciones.
 nombre y tu correo, y al guardar te agrega a `roster.md`, creando la lista si
 todavía no existe. Esta ruta manual no pasa por el formulario, así que la
 lista no se crea sola: el agente la crea durante la instalación y te agrega, o
-te pide tu nombre y tu correo si no los tiene.
+te pide tu nombre y tu correo si no los tiene. Si prefieres hacerlo tú, corre
+`scripts/paynani roster add "Tu Nombre" tu@correo.example`: crea `roster.md` a
+partir de la plantilla si todavía no existe y te agrega como primer contacto.
 
 ---
 
