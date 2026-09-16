@@ -65,7 +65,7 @@ echo "$pass passed, $fail failed"
 
 if [ "$fail" -ne 0 ]; then
 	echo
-	echo "Re-run a failure on its own to see why it failed:"
+	echo "Output and diagnostics for each failure are above. Re-run one on its own with:"
 	for t in "${failed[@]}"; do
 		echo "  $t"
 	done

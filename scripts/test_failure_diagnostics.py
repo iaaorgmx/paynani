@@ -16,6 +16,7 @@ def main():
         "diagnostic: bash=",
         "diagnostic: file=",
         "diagnostic: tcp_symbols=",
+        "diagnostic: tcp_resolved=",
         "diagnostic: mime_expected=text/plain",
         "diagnostic: mime_observed=application/octet-stream",
     )
@@ -26,6 +27,10 @@ def main():
     tcp = next(line for line in lines if line.startswith("diagnostic: tcp_symbols="))
     for name in ("TCP_KEEPIDLE", "TCP_KEEPALIVE", "TCP_KEEPINTVL", "TCP_KEEPCNT"):
         assert "{}=".format(name) in tcp, tcp
+
+    resolved = next(line for line in lines if line.startswith("diagnostic: tcp_resolved="))
+    for name in ("TCP_KEEPIDLE", "TCP_KEEPALIVE"):
+        assert "{}=".format(name) in resolved, resolved
 
     print("test diagnostics passed")
     return 0

@@ -108,7 +108,6 @@ check() {
         printf '  PASS  %-8s %s\n' "$want" "$desc"; pass=$((pass+1))
     else
         printf '  FAIL  wanted %s got %s — %s\n' "$want" "$got" "$desc"; fail=$((fail+1))
-        failure_diagnostics
     fi
 }
 
@@ -165,7 +164,6 @@ assert() {
         printf '  PASS  %-8s %s\n' "message" "$desc"; pass=$((pass+1))
     else
         printf '  FAIL  %-8s %s\n' "message" "$desc"; fail=$((fail+1))
-        failure_diagnostics
     fi
 }
 
@@ -554,6 +552,8 @@ if [ -e "$live_sent_log" ]; then
     live_sent_after=$(wc -c < "$live_sent_log")
 fi
 assert "the live sent.log did not grow" '[ "$live_sent_after" -eq "$live_sent_before" ]'
+
+[ "$fail" -eq 0 ] || failure_diagnostics
 
 echo
 echo "$pass passed, $fail failed"

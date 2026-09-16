@@ -12,6 +12,8 @@ import socket
 import subprocess
 import sys
 
+from idle_listener import resolve_keepalive_option
+
 
 TCP_NAMES = (
     "TCP_KEEPIDLE",
@@ -42,15 +44,20 @@ def _first_line(command):
 def diagnostic_lines(mime_observed=None, mime_expected=None):
     """Return stable one-line diagnostics suitable for CI failure output."""
     symbols = []
+    resolved = []
     for name in TCP_NAMES:
         value = getattr(socket, name, None)
         symbols.append("{}={}".format(name, value if value is not None else "missing"))
+    for name in ("TCP_KEEPIDLE", "TCP_KEEPALIVE"):
+        value = resolve_keepalive_option(name)
+        resolved.append("{}={}".format(name, value if value is not None else "missing"))
 
     return [
         "diagnostic: python={}".format(sys.version.replace("\n", " ")),
         "diagnostic: bash={}".format(_first_line(["bash", "--version"])),
         "diagnostic: file={}".format(_first_line(["file", "--version"])),
         "diagnostic: tcp_symbols={}".format(", ".join(symbols)),
+        "diagnostic: tcp_resolved={}".format(", ".join(resolved)),
         "diagnostic: mime_expected={}".format(mime_expected or "not observed"),
         "diagnostic: mime_observed={}".format(mime_observed or "not observed"),
     ]
