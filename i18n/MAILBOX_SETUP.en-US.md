@@ -143,8 +143,12 @@ form asks, on top of these seven mailbox settings, for your name and email
 address, and when you save it adds you to `roster.md`, creating the list if it
 does not exist yet. This manual route does not go through the form, so the list
 is not created on its own: the agent creates it during installation and adds
-you, or asks for your name and email address if it does not have them.
+you, or asks for your name and email address if it does not have them. If you
+would rather do it yourself, run
+`scripts/paynani roster add "Your Name" you@email.example`: it creates
+`roster.md` from the template if it does not exist yet and adds you as the first
+contact.
 
 ---
 
-<sub>Translated from [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) at commit `990f4c0`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins**, and say so, because it means this translation has fallen behind.</sub>
+<sub>Translated from [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) at commit `9adbce6`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins**, and say so, because it means this translation has fallen behind.</sub>

@@ -87,7 +87,8 @@ indica [`MAILBOX_SETUP.es-ES.md`](MAILBOX_SETUP.es-ES.md).
 
 Al guardar, el formulario también crea `roster.md` con tu nombre y tu correo
 como primer contacto autorizado. Si escribes el `.env` a mano, el agente crea
-`roster.md` durante la instalación.
+`roster.md` durante la instalación, o puedes crearlo tú con
+`scripts/paynani roster add "Tu Nombre" tu@correo.example`.
 
 > [!CAUTION]
 > Escribe tú la contraseña, directamente en el formulario. Nunca la pegues en el

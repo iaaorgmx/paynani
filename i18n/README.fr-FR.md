@@ -107,7 +107,8 @@ Si vous préférez, vous pouvez le configurer à la main en créant le fichier
 
 À l'enregistrement, le formulaire crée aussi `roster.md` avec votre nom et votre
 adresse comme premier contact autorisé. Si vous écrivez le `.env` à la main,
-l'agent crée `roster.md` pendant l'installation.
+l'agent crée `roster.md` pendant l'installation, ou vous pouvez le créer
+vous-même avec `scripts/paynani roster add "Votre Nom" vous@courriel.example`.
 
 > [!CAUTION]
 > Saisissez le mot de passe vous-même, directement dans le formulaire. Ne le
