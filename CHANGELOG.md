@@ -3,7 +3,7 @@
 ## 0.6.0 (2026-09-16)
 
 **La instalación a mano ya no deja pasos sueltos, y la suite pasa en macOS.**
-16 commits desde 0.5.0.
+17 commits desde 0.5.0.
 
 - `paynani roster add` crea `roster.md` desde la plantilla si todavía no
   existe, y `AGENTS.md`, `INSTALL.md` y `send.sh` usan ese comando en lugar de
@@ -38,10 +38,8 @@ keepalive de verdad.
 ### Pendientes conocidos
 
 - **`suite-macos` todavía no es un check requerido.** Pasa a requerido con 10
-  corridas seguidas en verde en `main`, sin re-runs, y al menos 14 días después
-  de que se cierre #129, lo que ocurra más tarde.
-- **#129 sigue abierto por MAC-009:** mejores diagnósticos cuando una prueba
-  portable falla. No cambia el comportamiento del producto.
+  corridas seguidas en verde en `main`, sin re-runs, y no antes del 2026-09-30
+  (14 días desde que se cerró #129), lo que ocurra más tarde.
 - **`UPGRADE.md` §6 solo trae los comandos de Linux** para reiniciar los
   servicios.
 
@@ -66,7 +64,8 @@ ahora sugiere el comando. `test_docs.py` falla si `AGENTS.md` o `INSTALL.md`
 dejan de indicarlo. `README.md` (Paso 2) y `MAILBOX_SETUP.md` vuelven a
 mencionar el comando para la ruta manual.
 
-**La suite pasa en macOS.** Issues #133, #112 y #113, PR #144 de Ximena.
+**La suite pasa en macOS.** Issues #133, #112, #113 y #129, PRs #144 y #148 de
+Ximena.
 
 - `test_listener.py` esperaba que `SO_KEEPALIVE` valiera 1; BSD devuelve el bit,
   8. Ahora basta con que no sea 0.
@@ -82,6 +81,11 @@ mencionar el comando para la ruta manual.
 - La prueba del tipo de archivo desconocido compara la parte adjunta contra lo
   que responde el `file(1)` de cada host, y hay un caso más de nombre UTF-8 con
   caracteres de dos y tres bytes.
+- Cuando una prueba falla, `test_listener.py` y `test_roster.sh` imprimen un
+  bloque de diagnóstico: versiones de Python, Bash y `file(1)`, las constantes
+  TCP que expone Python y las que resuelve el escucha, y el tipo MIME esperado y
+  observado. `test_all.sh` ya no oculta la salida de una suite que falla, y le
+  agrega ese bloque si la suite no lo trae (PR #148, cierra #129).
 
 **Las pruebas con correo real dejan de bloquear el fin de la instalación.**
 Issue #146, a partir del reporte de campo de Marcus Claw-Tob en OpenClaw: con la
