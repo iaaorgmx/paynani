@@ -25,12 +25,24 @@ failed=()
 
 run() {
 	local name=$1
+	local output
 	shift
-	if "$@" >/dev/null 2>&1; then
+	if output=$("$@" 2>&1); then
 		printf 'ok   %s\n' "$name"
 		pass=$((pass + 1))
 	else
 		printf 'FAIL %s\n' "$name"
+		# Individual tests print platform diagnostics on failure. Keep successful
+		# suites quiet, but retain the evidence CI needs to explain a failure.
+		if [ -n "$output" ]; then
+			printf '%s\n' "$output" | sed 's/^/     /'
+		fi
+		# A test with context-specific observations prints its own block. Older
+		# tests do not, so add the portable baseline here instead of leaving a CI
+		# failure with only a traceback and no platform identity.
+		if ! printf '%s\n' "$output" | grep -q '^diagnostic: python='; then
+			python3 scripts/failure_diagnostics.py 2>&1 | sed 's/^/     /'
+		fi
 		fail=$((fail + 1))
 		failed+=("$name")
 	fi
