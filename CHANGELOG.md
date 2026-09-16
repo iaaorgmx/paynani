@@ -1,5 +1,104 @@
 # Changelog
 
+## 0.6.0 (2026-09-16)
+
+**La instalación a mano ya no deja pasos sueltos, y la suite pasa en macOS.**
+14 commits desde 0.5.0.
+
+- `paynani roster add` crea `roster.md` desde la plantilla si todavía no
+  existe, y `AGENTS.md`, `INSTALL.md` y `send.sh` usan ese comando en lugar de
+  copiar la plantilla.
+- La suite pasa por primera vez en `main` en Linux y en macOS. Dos de los
+  arreglos son del producto: en macOS, `send.sh` codificaba mal el nombre de un
+  adjunto con acentos, y el escucha dejaba el keepalive en dos horas con el
+  Python de Apple.
+- `AGENTS.md` e `INSTALL.md` siguen el flujo del formulario: el agente no pide
+  por chat lo que el formulario ya pregunta, y manda el comando `ssh -L` junto
+  con el enlace.
+- Las traducciones de `README.md`, `MAILBOX_SETUP.md` y `saved.roster_failed`
+  quedan al día en los cuatro idiomas.
+
+### Si actualizas desde 0.5.0
+
+Ninguna unidad de systemd, LaunchAgent, hook ni instalador cambió desde 0.5.0.
+Basta `git pull` y seguir `UPGRADE.md`, **incluido el reinicio del escucha**:
+`scripts/idle_listener.py` cambió, y el proceso que ya corre sigue con el código
+anterior hasta que arranca otra vez. En Linux es la sección 6 de `UPGRADE.md`.
+En macOS, esa sección todavía no trae el comando; es:
+
+```bash
+launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"
+```
+
+En Linux el cambio del escucha no altera nada; en macOS es el que aplica el
+keepalive de verdad.
+
+### Pendientes conocidos
+
+- **`suite-macos` todavía no es un check requerido.** Pasa a requerido con 10
+  corridas seguidas en verde en `main`, sin re-runs, y al menos 14 días después
+  de que se cierre #129, lo que ocurra más tarde.
+- **#129 sigue abierto por MAC-009:** mejores diagnósticos cuando una prueba
+  portable falla. No cambia el comportamiento del producto.
+- **`UPGRADE.md` §6 solo trae los comandos de Linux** para reiniciar los
+  servicios.
+
+**`paynani roster add` crea `roster.md` si todavía no existe.** Issue #135.
+Quien escribía el `.env` a mano nunca pasaba por el formulario, así que no
+tenía `roster.md`, y el comando lo rechazaba con `roster.md has no contacts
+table` hasta que alguien copiara la plantilla. Ahora parte de
+`roster.md.example` y agrega la fila. Decide cuándo usar la plantilla con la
+misma función que el formulario (`_starting_text()`), así que un `roster.md` que
+ya existe nunca se reemplaza, aunque no tenga tabla de contactos. Las pruebas
+previas, la verificación posterior y el borrado del archivo creado si esa
+verificación falla son los mismos del formulario. Sin `--yes`, la confirmación
+dice que va a crear el archivo a partir de la plantilla y muestra solo la fila
+nueva.
+
+El paso 7 de `AGENTS.md` y el punto 7 de `INSTALL.md` §2 dejan de copiar la
+plantilla para luego escribir la fila, y corren
+`scripts/paynani roster add "Your Human" you@example.com --type Human --yes`.
+`send.sh`, al no encontrar `roster.md`, sugería
+`cp roster.md.example roster.md`, que deja una lista sin nadie autorizado;
+ahora sugiere el comando. `test_docs.py` falla si `AGENTS.md` o `INSTALL.md`
+dejan de indicarlo. `README.md` (Paso 2) y `MAILBOX_SETUP.md` vuelven a
+mencionar el comando para la ruta manual.
+
+**La suite pasa en macOS.** Issues #133, #112 y #113, PR #144 de Ximena.
+
+- `test_listener.py` esperaba que `SO_KEEPALIVE` valiera 1; BSD devuelve el bit,
+  8. Ahora basta con que no sea 0.
+- El Python de Apple no expone `TCP_KEEPALIVE`, aunque Darwin lo define como
+  `0x10` y el kernel lo acepta. Sin él, el keepalive quedaba activo con el
+  temporizador del sistema, dos horas, y una conexión muerta tardaba eso en
+  notarse. El escucha y la prueba usan ahora el mismo resolvedor, que en Darwin
+  cae a `0x10`.
+- `send.sh` codificaba el nombre de un adjunto con acentos con basura
+  (`%FFFFFFFFFFFFC3`) en el bash 3.2 de macOS, que extiende el signo de los
+  bytes altos. Ahora enmascara cada byte, y `LC_ALL=C` queda solo dentro de
+  `percent_encode()` en lugar de seguir puesto el resto del script.
+- La prueba del tipo de archivo desconocido compara la parte adjunta contra lo
+  que responde el `file(1)` de cada host, y hay un caso más de nombre UTF-8 con
+  caracteres de dos y tres bytes.
+
+**`AGENTS.md` e `INSTALL.md` siguen el flujo del formulario.** PR #140. «Ask, do
+not guess» e `INSTALL.md` §2 le pedían al agente preguntar por chat todos los
+datos del buzón. Ahora el formulario es la vía normal para la cuenta, los
+servidores, la contraseña y la fila de la persona en `roster.md`. Por chat solo
+se pregunta lo que el formulario no cubre, y la ruta del `.env` a mano queda
+para quien la elija. El paso 2 de `AGENTS.md` pide mandar la línea `ssh -L`
+junto con el enlace, revisando antes el nombre del host, y ya no dice que
+`onboard` la imprime solo en el caso remoto: la imprime siempre.
+
+**Las traducciones quedan al día.** PRs #139, #142 y #143. `i18n/README.*` e
+`i18n/MAILBOX_SETUP.*` (en-US, es-ES, fr-FR y pt-BR) pasan al README
+reorganizado en 0.5.0: «Instalación» con sus tres pasos, «¿Para quién es Paynani?» después,
+y los enlaces de `MAILBOX_SETUP` al ancla de «Instalación» de cada idioma. El
+prompt de instalación se traduce también al francés y al portugués, con el
+original en español en un bloque plegable, como en inglés. `saved.roster_failed`
+en esos cuatro idiomas deja de decir que no poder agregarte a `roster.md` es lo
+esperado en una instalación nueva.
+
 ## 0.5.0 (2026-09-15)
 
 **Configurar paynani ya no pide PHP ni pasa datos por el chat.** 70 commits
