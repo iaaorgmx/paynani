@@ -17,9 +17,22 @@
 
 set -uo pipefail
 
-SEND="$(cd "$(dirname "$0")" && pwd)/send.sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SEND="$SCRIPT_DIR/send.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+
+diagnostics_printed=0
+diagnostic_mime_expected=""
+diagnostic_mime_observed=""
+
+failure_diagnostics() {
+    [ "$diagnostics_printed" -eq 0 ] || return 0
+    diagnostics_printed=1
+    python3 "$SCRIPT_DIR/failure_diagnostics.py" \
+        --mime-expected "${diagnostic_mime_expected:-not observed}" \
+        --mime-observed "${diagnostic_mime_observed:-not observed}" >&2
+}
 
 # Before the test redirects send.sh's state, remember the log a live send would
 # use. The assertion at the end proves the suite did not write there.
@@ -445,8 +458,15 @@ expected_unknown_type=$(file --mime-type -b "$attach_dir/dato.bin" 2>/dev/null |
 case "$expected_unknown_type" in
     ''|*[!!-~]*) expected_unknown_type=application/octet-stream ;;
 esac
+diagnostic_mime_expected=$expected_unknown_type
 : >"$CAPTURE"
 send_ok --attach "$attach_dir/dato.bin" "jjulianfe@gmail.com" "bin" "$body"
+diagnostic_mime_observed=$(python3 -c '
+import email, email.policy, sys
+m = email.message_from_binary_file(open(sys.argv[1], "rb"), policy=email.policy.default)
+parts = [p for p in m.walk() if p.get_content_disposition() == "attachment"]
+print(parts[0].get_content_type() if len(parts) == 1 else "unparseable")
+' "$CAPTURE" 2>/dev/null || printf 'unparseable')
 assert "an unknown extension falls back to file(1)" \
     'python3 -c "
 import email, email.policy, sys
@@ -532,6 +552,8 @@ if [ -e "$live_sent_log" ]; then
     live_sent_after=$(wc -c < "$live_sent_log")
 fi
 assert "the live sent.log did not grow" '[ "$live_sent_after" -eq "$live_sent_before" ]'
+
+[ "$fail" -eq 0 ] || failure_diagnostics
 
 echo
 echo "$pass passed, $fail failed"

@@ -18,6 +18,7 @@ from idle_listener import (KEEPALIVE_OPTIONS, decode_hdr, describe, keepalive,
                            resolve_keepalive_option, save_state)
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
+from failure_diagnostics import print_diagnostics
 
 
 def message(from_header, **extra):
@@ -30,6 +31,7 @@ def message(from_header, **extra):
 
 def check(condition, label):
     if not condition:
+        print_diagnostics()
         raise AssertionError(label)
 
 
