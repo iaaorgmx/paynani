@@ -124,7 +124,7 @@ cc=$(printf '%s' "$cc" | tr -d '\r\n')
 
 if [ ! -f "$ROSTER" ]; then
     echo "no roster at $ROSTER — refusing to send" >&2
-    echo "Create it from the template:  cp roster.md.example roster.md" >&2
+    echo "Create it with the first contact:  scripts/paynani roster add \"Name\" address@example.com" >&2
     exit 2
 fi
 

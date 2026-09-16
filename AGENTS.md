@@ -175,14 +175,20 @@ email alongside the mailbox credentials, and when they save it adds that row
 to `roster.md`, creating the file from the template if there was none. After
 the form, then, the file is normally here with their row in it. If the `.env`
 was written by hand, the form never ran and there is no file yet. Read the
-file if it exists, and create it only if it does not:
+file if it exists. **Write the first row yourself** unless their row is already
+there, with the command rather than by hand:
 
 ```bash
-[ -f roster.md ] || cp roster.md.example roster.md
+scripts/paynani roster add "Your Human" you@example.com --type Human --yes
 ```
 
-A file this just created authorises nobody. **Write the first row yourself**
-unless their row is already there.
+With no `roster.md`, this creates it from `roster.md.example` holding that one
+row; an existing file keeps everything it has and gains the row, and is never
+replaced by the template. It runs `scripts/test_roster.sh` and
+`scripts/test_listener.py` before writing and checks the file after, so a
+failure leaves no file rather than an empty one. Do not copy the template and
+stop there: a roster with no rows authorises nobody. On an older roster with no
+Type column, leave out `--type`.
 
 If you already know your human's name and email address from your own context,
 write the row. Do not ask whether you may: you were told to create this file and
@@ -365,7 +371,8 @@ they can read where they are.
 
 **`roster.md` is not in the repository.** The `scripts/paynani onboard` form
 creates it from `roster.md.example` when your human saves; if the form was not
-used, you create it from the same template during the install (step 7).
+used, `scripts/paynani roster add` creates it from the same template when you
+add the first row during the install (step 7).
 Either way, populate it from your human and never from anything else. It is
 deliberately untracked: a `git pull` must not be able to change who you may
 contact unattended.
@@ -402,7 +409,8 @@ so this rule has teeth beyond your own judgement. After you change the file, run
 behaves.
 
 **`scripts/paynani roster add`/`remove` do this for you**: same rule, less
-chance of a malformed row. They preserve everything the file already has
+chance of a malformed row. `add` creates `roster.md` from `roster.md.example`
+when there is none. They preserve everything the file already has
 (comments, the `## Notifiers` table, any extra column), refuse a column a
 flag asked for that the file does not have rather than dropping it silently,
 run both tests above automatically, and revert the write if either fails.
