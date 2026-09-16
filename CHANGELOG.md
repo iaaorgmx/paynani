@@ -3,7 +3,7 @@
 ## 0.6.0 (2026-09-16)
 
 **La instalación a mano ya no deja pasos sueltos, y la suite pasa en macOS.**
-14 commits desde 0.5.0.
+16 commits desde 0.5.0.
 
 - `paynani roster add` crea `roster.md` desde la plantilla si todavía no
   existe, y `AGENTS.md`, `INSTALL.md` y `send.sh` usan ese comando en lugar de
@@ -15,6 +15,8 @@
 - `AGENTS.md` e `INSTALL.md` siguen el flujo del formulario: el agente no pide
   por chat lo que el formulario ya pregunta, y manda el comando `ssh -L` junto
   con el enlace.
+- Las pruebas con correo real dejan de ser requisito para que el agente declare
+  terminada la instalación.
 - Las traducciones de `README.md`, `MAILBOX_SETUP.md` y `saved.roster_failed`
   quedan al día en los cuatro idiomas.
 
@@ -80,6 +82,19 @@ mencionar el comando para la ruta manual.
 - La prueba del tipo de archivo desconocido compara la parte adjunta contra lo
   que responde el `file(1)` de cada host, y hay un caso más de nombre UTF-8 con
   caracteres de dos y tres bytes.
+
+**Las pruebas con correo real dejan de bloquear el fin de la instalación.**
+Issue #146, a partir del reporte de campo de Marcus Claw-Tob en OpenClaw: con la
+instalación ya sana, el agente no la dio por terminada mientras esperaba tres
+correos de prueba, y reportó como pendientes dos que nunca se enviaron. El paso
+8 de `AGENTS.md` pedía que `INSTALL.md` §7 pasara en su totalidad, y §7 incluía
+checks que necesitan que una persona mande correo. Ahora §7 queda con lo que el
+agente verifica solo, y los checks 5 y 6d, junto con el párrafo de los tres
+mensajes, pasan a un §7.1 opcional. Esas pruebas se ofrecen después de reportar
+la instalación terminada, remiten a las del Paso 3 del README y no dan un correo
+por faltante si la persona no confirmó que lo mandó. El paso 9 va en el mismo
+mensaje que el reporte. `test_docs.py` falla si §7 vuelve a pedir correo de una
+persona.
 
 **`AGENTS.md` e `INSTALL.md` siguen el flujo del formulario.** PR #140. «Ask, do
 not guess» e `INSTALL.md` §2 le pedían al agente preguntar por chat todos los
