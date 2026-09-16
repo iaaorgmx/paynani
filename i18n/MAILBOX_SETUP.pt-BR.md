@@ -143,8 +143,11 @@ recuse, isso não é passo de nenhuma destas instruções.
 seu e-mail, e ao salvar adiciona você ao `roster.md`, criando a lista se ela
 ainda não existir. Este caminho manual não passa pelo formulário, então a lista
 não é criada sozinha: o agente cria a lista durante a instalação e adiciona
-você, ou pede o seu nome e o seu e-mail se não os tiver.
+você, ou pede o seu nome e o seu e-mail se não os tiver. Se preferir fazer você
+mesmo, rode `scripts/paynani roster add "Seu Nome" voce@email.example`: ele cria
+o `roster.md` a partir do modelo se ainda não existir e adiciona você como
+primeiro contato.
 
 ---
 
-<sub>Traduzido de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) no commit `990f4c0`, que é a fonte da verdade. Se algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e nos avise, porque significa que esta tradução ficou para trás.</sub>
+<sub>Traduzido de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) no commit `9adbce6`, que é a fonte da verdade. Se algo aqui contradisser o original em espanhol (MX), **o espanhol prevalece**, e nos avise, porque significa que esta tradução ficou para trás.</sub>

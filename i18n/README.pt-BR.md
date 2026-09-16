@@ -103,7 +103,8 @@ Se preferir, você pode configurá-la à mão criando o arquivo `.env` como indi
 
 Ao salvar, o formulário também cria o `roster.md` com o seu nome e o seu e-mail
 como primeiro contato autorizado. Se você escrever o `.env` à mão, o agente cria
-o `roster.md` durante a instalação.
+o `roster.md` durante a instalação, ou você mesmo pode criá-lo com
+`scripts/paynani roster add "Seu Nome" voce@email.example`.
 
 > [!CAUTION]
 > Digite a senha você mesmo, direto no formulário. Nunca cole a senha no chat

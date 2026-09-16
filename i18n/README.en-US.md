@@ -100,7 +100,8 @@ If you prefer, you can set it up by hand by creating the `.env` file as
 
 When you save, the form also creates `roster.md` with your name and email
 address as the first authorized contact. If you write the `.env` by hand, the
-agent creates `roster.md` during installation.
+agent creates `roster.md` during installation, or you can create it yourself
+with `scripts/paynani roster add "Your Name" you@email.example`.
 
 > [!CAUTION]
 > Type the password yourself, directly into the form. Never paste it into the
