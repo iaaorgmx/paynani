@@ -1010,7 +1010,9 @@ other check in §7 passes, and no notification is ever delivered.
 
 ## 7. Verification
 
-Do not report success until every line passes.
+Do not report the install complete until every check in this section passes.
+None of them needs a person to send mail; the ones that do are in §7.1, and they
+are optional.
 
 ```bash
 # 0. Which version you just installed, and whether it is the current one.
@@ -1042,9 +1044,6 @@ grep -i "openclaw not found" state/watch.err.log 2>/dev/null \
   || journalctl --user -u paynani-dispatch.service 2>/dev/null | grep -i "openclaw not found" \
   || echo "watcher: openclaw resolved"
 
-# 5. End to end: have someone external send you mail
-tail -f state/mail.log       # a line within ~2s
-
 # 6. Sending behaves: who it will write to, and what Himalaya is handed.
 #    Includes substring/prefix attacks on the allowlist and the From: header
 #    Himalaya v2 requires.
@@ -1058,11 +1057,6 @@ echo hi > /tmp/b.txt; ./scripts/send.sh nobody@nowhere.invalid "test" /tmp/b.txt
 
 # 6c. send.sh can find its credentials (sends nothing)
 scripts/send.sh --check jjulianfe@gmail.com "check" /tmp/b.txt | head -6
-
-# 6d. Your own mail is tagged. Send yourself one, then:
-grep ", roster]" state/mail.log | tail -1
-# No output means the agent will not act on your mail. Check that the address in
-# roster.md matches the From address your mail actually arrives with.
 
 # 6e. The whole suite -- every Python and shell test, one summary.
 #     This is the entry point; do NOT use `python3 -m unittest discover`.
@@ -1091,11 +1085,34 @@ all, so its checks are skipped in silence. Both halves are the loader reporting
 on a suite it did not run. `test_all.sh` executes each file and reads its exit
 status, which is the only thing that reflects what actually passed.
 
-**Worth asking your external sender for more than one message.** A plain one, one
-with accented characters in the subject, and one shaped like a GitHub notification
-(`[owner/repo] Title (Issue #9)`). Those exercise header decoding and the subject
-parser, which is where the bugs found on 2026-08-09 were hiding, both of them
-invisible to a single ASCII test.
+### 7.1 Optional: real mail, after the install is complete
+
+These need a person to send mail, so they are never a condition for reporting
+the install complete. Report it complete first (with the list from `AGENTS.md`
+step 9), then offer them. Do not wait for them.
+
+- **Offer the tests in [the README's Step 3](README.md#paso-3-pruebas), not a
+  list of your own.** They are what your human was told to expect.
+- **Do not report a test message as missing unless the person confirmed they
+  sent it.** "Sent" can mean one message, not every one you suggested.
+
+```bash
+# 5. End to end: once someone external sends you mail
+tail -f state/mail.log       # a line within ~2s
+
+# 6d. Your human's own mail is tagged. Once they send one:
+grep ", roster]" state/mail.log | tail -1
+# No output means the agent will not act on their mail. Check that the address
+# in roster.md matches the From address their mail actually arrives with.
+```
+
+**More than one message covers more, if your human wants to go further.** A
+plain one, one with accented characters in the subject, and one shaped like a
+GitHub notification (`[owner/repo] Title (Issue #9)`). Those exercise header
+decoding and the subject parser, which is where the bugs found on 2026-08-09
+were hiding, both of them invisible to a single ASCII test. The suite in §7
+already decodes an encoded accented subject from a fixture; real mail is extra
+coverage, not a requirement.
 
 ---
 
