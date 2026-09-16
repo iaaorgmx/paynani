@@ -58,6 +58,23 @@ funciona de verdade.
 Envie o seguinte prompt ao seu agente:
 
 ```text
+Instale este repositório:
+https://github.com/iaaorgmx/paynani
+
+Siga as instruções do
+arquivo AGENTS.md do
+repositório.
+
+Quando precisar da conta
+de e-mail, me mostre o
+link do formulário para
+configurá-la.
+```
+
+<details>
+<summary>En español</summary>
+
+```text
 Instala este repositorio:
 https://github.com/iaaorgmx/paynani
 
@@ -70,6 +87,8 @@ de correo, muéstrame el
 enlace del formulario para
 configurarla.
 ```
+
+</details>
 
 ### Passo 2: configuração da conta de e-mail
 

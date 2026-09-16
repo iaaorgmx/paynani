@@ -60,6 +60,24 @@ fin pour vérifier que cela marche vraiment.
 Envoyez le prompt suivant à votre agent :
 
 ```text
+Installe ce dépôt :
+https://github.com/iaaorgmx/paynani
+
+Suis les instructions du
+fichier AGENTS.md du
+dépôt.
+
+Quand tu auras besoin du
+compte de messagerie,
+montre-moi le lien du
+formulaire pour le
+configurer.
+```
+
+<details>
+<summary>En español</summary>
+
+```text
 Instala este repositorio:
 https://github.com/iaaorgmx/paynani
 
@@ -72,6 +90,8 @@ de correo, muéstrame el
 enlace del formulario para
 configurarla.
 ```
+
+</details>
 
 ### Étape 2 : configuration du compte de messagerie
 
