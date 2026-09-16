@@ -73,10 +73,13 @@ permanently, and no later care takes it back out. Serve the form instead:
 scripts/paynani onboard          # prints a link with a one-time key
 ```
 
-Send them the link. They fill in the settings, the page signs in to their mail
-server to confirm the account works, and only then writes that file itself. You
-never see the password. `paynani onboard` stops on its own once the file
-exists, and then you continue at step 3.
+Send them the link. If they are not sitting at this machine, send the `ssh -L`
+line it prints along with it, and check that line's host name first: it is this
+machine's own idea of itself, which is not always the name your human reaches it
+by. They fill in the settings, the page signs in to their mail server to confirm
+the account works, and only then writes that file itself. You never see the
+password. `paynani onboard` stops on its own once the file exists, and then you
+continue at step 3.
 
 The same form also asks for your human's own name and email, and adds that row
 to `roster.md` when they save, typed `Human`. On a brand-new install
@@ -206,8 +209,9 @@ row on your own.
 Matching is on `From` alone, so a contact whose mail goes out from a different
 account than the one you write to needs a row for each address. Miss the sending
 one and their mail arrives, gets logged, and is never tagged `roster`, which is
-indistinguishable from them never having written. See *"Standing rules, once it is running"* below for the
-format and for why adding a row is only ever a human decision.
+indistinguishable from them never having written. See *"Standing rules, once it
+is running"* below for the format and for why adding a row is only ever a human
+decision.
 
 **8. Do not report success until the verification checklist in `INSTALL.md` §7
 passes in full**, including the restart test. *"resuming from uid N"* rather than
@@ -217,9 +221,9 @@ reboot. Everything else can pass while that one fails.
 **9. Tell your human what you changed outside the repository.** Which services you
 created (systemd units under `~/.config/systemd/user`, or LaunchAgents under
 `~/Library/LaunchAgents` on macOS) where the credentials live, which keys you
-added, and what you added to your own standing instructions. Everything that matters here lives outside the
-repo, and without that list they have an installed thing and no idea what it
-touched.
+added, and what you added to your own standing instructions. Everything that
+matters here lives outside the repo, and without that list they have an
+installed thing and no idea what it touched.
 
 ---
 
@@ -255,26 +259,39 @@ Report what you removed, the same way you reported what you added.
 
 ## Ask, do not guess
 
-`INSTALL.md` §2 lists what you need. Ask for all of it in one message rather than
-one round trip per field.
+**The form in step 2 is how the mailbox settings reach you.** It asks for the
+account, the display name, both servers and their ports, the password, and your
+human's own name and address. Do not ask for any of those in chat first. The
+install prompt in the README asks you for the form link when you need the
+account, and a list of questions ahead of that link answers a request your human
+did not make.
+
+What the form does not cover is yours to ask, and `INSTALL.md` §2 lists it:
+which mailbox to watch if not `INBOX`, who else belongs in `roster.md`,
+whether a coordination platform should be declared, and which addresses each
+contact's mail comes from. Ask for all of it in one message rather than one
+round trip per field.
 
 Two things in particular are worth asking about rather than inferring:
 
 **The mail server hostname.** Do not construct one by prefixing `mail.` or `imap.`
-to the mail domain. That name often resolves and is often *not* on the server's TLS
+to the mail domain, not for a hand-written `.env` and not to suggest one for the
+form. That name often resolves and is often *not* on the server's TLS
 certificate, and a certificate failure arrives as a network error, so the listener
 retries forever with `connection lost` in the log and nothing indicating the real
-cause.
+cause. The form checks the name against the server before it saves; a
+hand-written file gets no such check until step 3.
 
-**The password.** Create the credentials file first, at mode `600`, then ask your
-human to write into it. Never ask for it in chat and never print it. Transcripts
-are stored, exported and reviewed; a credential in one is permanent.
+**The password.** Never ask for it in chat and never print it. Transcripts are
+stored, exported and reviewed; a credential in one is permanent. The form keeps
+it out of the chat on its own. If your human chose to write the `.env` by hand
+instead, create the file first, at mode `600`, then ask them to write into it.
 
-This is what step 2 is for. If they would rather not touch a terminal, do not
+If they started by hand and would rather not touch a terminal after all, do not
 negotiate about it; serve the form and let the password go from their browser
-into a `600` file without passing through you. `paynani onboard` covers the
-remote case itself: it prints the exact `ssh -L` command to forward the port
-first, if the host it is bound to is not the browser's own.
+into a `600` file without passing through you. `paynani onboard` prints the
+`ssh -L` command to forward its port every time it starts; send it along
+whenever your human is not at this machine, as step 2 says.
 
 ---
 
@@ -349,8 +366,9 @@ they can read where they are.
 **`roster.md` is not in the repository.** The `scripts/paynani onboard` form
 creates it from `roster.md.example` when your human saves; if the form was not
 used, you create it from the same template during the install (step 7).
-Either way, populate it from your human and never from anything else. It is deliberately untracked: a `git pull` must not be able to change who
-you may contact unattended.
+Either way, populate it from your human and never from anything else. It is
+deliberately untracked: a `git pull` must not be able to change who you may
+contact unattended.
 
 Ask for their name and address and add one line:
 
