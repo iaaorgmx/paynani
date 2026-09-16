@@ -35,7 +35,112 @@ Made with love by humans and AI agents, from Mexico to the world.
 
 ---
 
-## Who it is for
+## Before you start
+
+You need three things:
+
+1. an email account dedicated to the agent, not your personal one;
+2. access to a terminal on the machine where your agent runs;
+3. a moment to type the password yourself, into the form the agent will give you
+   or by hand into a file, without ever pasting it into a chat.
+
+That is all. No mail API, no service in the middle, no new account anywhere.
+
+## Installation
+
+Three steps: send your agent a prompt, fill in the form it will give you as soon
+as it needs it, and two minutes of your own at the end to check that it really
+works.
+
+### Step 1: Installation prompt
+
+Send your agent the following prompt:
+
+```text
+Install this repository:
+https://github.com/iaaorgmx/paynani
+
+Follow the instructions in
+the repository's AGENTS.md
+file.
+
+When you need the email
+account, show me the link
+to the form to set it up.
+```
+
+<details>
+<summary>En español</summary>
+
+```text
+Instala este repositorio:
+https://github.com/iaaorgmx/paynani
+
+Sigue las instrucciones del
+archivo AGENTS.md del
+repositorio.
+
+Cuando necesites la cuenta
+de correo, muéstrame el
+enlace del formulario para
+configurarla.
+```
+
+</details>
+
+### Step 2: Email account setup
+
+Your agent will show you a link to the form for setting up the email account.
+
+If your agent runs on a machine you can't reach directly from your browser, it
+gives you the `ssh -L` command to reach the form along with the link.
+
+If you prefer, you can set it up by hand by creating the `.env` file as
+[`MAILBOX_SETUP.en-US.md`](MAILBOX_SETUP.en-US.md) describes.
+
+When you save, the form also creates `roster.md` with your name and email
+address as the first authorized contact. If you write the `.env` by hand, the
+agent creates `roster.md` during installation.
+
+> [!CAUTION]
+> Type the password yourself, directly into the form. Never paste it into the
+> chat with the agent: whatever you paste into a conversation stays there
+> forever.
+
+### Step 3: Tests
+
+The agent runs its own checklist, but we recommend you also run these tests.
+
+**Test 1: Email your agent from your own account.**
+
+From your email account, the same one you entered during setup, send your agent
+an email asking it to reply to you.
+
+**Sample email**
+
+```text
+Subject: paynani test #1: ñ, á, ¿qué tal?
+
+Hi {your agent's name},
+
+Reply to this email with the subject
+exactly as you see it.
+```
+
+The reply has to show the subject readably. If you see `=?utf-8?q?...`,
+something is broken in the way it reads headers.
+
+**Test 2: Email your agent from an account that is not in `roster.md`.**
+
+When paynani receives an email from an address that is not in `roster.md`, the
+agent tells you it arrived, but does not act on it. You should get that notice,
+and no reply should reach the other account.
+
+The contact list in `roster.md` is the entire reason it is safe to let an agent
+that reads email also reply to it and act on it, so it is worth watching it work
+once with your own eyes.
+
+## Who is Paynani for?
 
 For anyone who wants to give their agent a real email address without mixing
 their personal mailbox, their passwords or their trust decisions into it.
@@ -51,128 +156,7 @@ It is not for handing your judgement to whatever message shows up. Anyone can
 send email, so Paynani treats everything that arrives as untrusted until the
 sender matches your list.
 
-## Before you start
-
-You need three things:
-
-1. an email account dedicated to the agent, not your personal one;
-2. access to a terminal on the machine where your agent runs;
-3. a moment to write the password into a file yourself, without pasting it into a chat.
-
-That is all. No mail API, no service in the middle, no new account anywhere.
-
-## Setting this up on your agent
-
-Three steps. The first is yours alone, the second is one paste, the third is two
-minutes of checking that it really works.
-
-### Step 1: Give it a mailbox
-
-The agent needs an email account of its own and the connection details for it,
-written into a file called `.env`. **If your agent runs under a harness, that
-file belongs in the harness's own `workspace` folder**
-(`~/.hermes/workspace/.env`, `~/.openclaw/workspace/.env`,
-`~/.claude/workspace/.env`, `~/.codex/workspace/.env`), which is where the agent
-is told to look and where this tool reads it from. With no harness, the file can
-live inside the project folder. And if you are not sure where it ended up, you
-can ask the installation with `python3 harness/paths.py env`.
-
-**[MAILBOX_SETUP.en-US.md](MAILBOX_SETUP.en-US.md) walks through it**: which
-account to use, where to find the server hostname (the one part that reliably
-goes wrong), and the file itself.
-
-> [!CAUTION]
-> Do this yourself rather than asking the agent to. It needs a password, and a
-> password should not travel through a chat: the one you paste into a
-> conversation sits in that transcript permanently, and no later care undoes it.
-> If you would rather not use the terminal, `scripts/paynani onboard` opens a
-> local form that writes the file for you.
-
-### Step 2: Point the agent at this repository
-
-Paste this to your agent:
-
-```text
-Check your email account
-settings; they are in the
-workspace folder of your Harness
-installation directory.
-
-../workspace/.env
-
-Then install this repository so
-you can use it:
-https://github.com/iaaorgmx/paynani
-
-Follow the instructions in the
-repository's AGENTS.md file.
-
-Ask me anything you need.
-```
-
-<details>
-<summary>En español</summary>
-
-```text
-Revisa la configuración de tu
-cuenta de correo electrónico;
-está en la carpeta workspace del
-directorio de instalación de tu
-Harness.
-
-../workspace/.env
-
-Después, instala este
-repositorio para poder usarla:
-https://github.com/iaaorgmx/paynani
-
-Sigue las instrucciones del
-archivo AGENTS.md del
-repositorio.
-
-Pregúntame lo que necesites.
-```
-
-</details>
-
-Everything else the agent needs is in the repository, so the prompt only has to
-point at it.
-
-Expect questions before it starts. If Step 1 went well there should be few. If it
-asks for the password, refuse: that is not a step in any of these instructions.
-
-### Step 3: Test it yourself
-
-The agent runs its own checklist and will tell you it passed. Two minutes of your
-own testing is worth more, because you are testing the thing you actually care
-about: does it notice, and does it stay inside its limits.
-
-**Test 1: send it an email, and put an accent in the subject.**
-
-From your own address, with a subject like `Prueba de correo: ñ, á, ¿qué tal?`
-Then ask the agent what just arrived.
-
-Within a couple of seconds it should tell you, and **the subject should come back
-readable**. If you see `=?utf-8?q?...` instead, something is broken in the way it
-reads headers, and that matters far more than it looks: if you work in Spanish,
-that is nearly every message you will ever receive.
-
-The accent is the whole point of this test. A plain English subject passes
-whether or not it works.
-
-**Test 2: ask it to email a stranger.**
-
-First ask it to send you something, and confirm it arrives. Then ask it to send a
-message to an address that is **not** on its approved list.
-
-It should refuse. Not ask permission, not check with you first; refuse, and tell
-you the address is not on the list. That allowlist is the entire reason it is
-safe to let an agent that reads untrusted email also send it, so it is worth
-watching it work once with your own eyes.
-
-If it sends, stop and tell whoever set it up. Something is wrong.
-
-## What your agent will be able to do
+## What will your agent be able to do?
 
 - **Notice new mail within about a second**, without polling and without being
   asked.
@@ -187,7 +171,7 @@ If it sends, stop and tell whoever set it up. Something is wrong.
 - **Not lose what arrived** if the machine restarts mid-task. Every message it
   detects is written to disk before it is handed over.
 
-## What changes on your computer
+## What changes on your computer?
 
 Worth knowing before you accept. The agent is instructed to report all of this
 when it finishes, and you can hold it to the list:

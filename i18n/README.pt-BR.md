@@ -35,7 +35,96 @@ Feito com amor por humanos e agentes de IA, do México para o mundo.
 
 ---
 
-## Para quem é
+## Antes de começar
+
+Você precisa de três coisas:
+
+1. uma conta de e-mail dedicada ao agente, não o seu e-mail pessoal;
+2. acesso a um terminal na máquina onde o seu agente roda;
+3. um momento para você mesmo digitar a senha, no formulário que o agente vai te
+   passar ou à mão num arquivo, sem nunca colar num chat.
+
+Só isso. Não é preciso uma API de e-mail, nem um serviço no meio, nem conta nova
+em lugar nenhum.
+
+## Instalação
+
+Três passos: enviar um prompt ao agente, preencher o formulário que ele mesmo
+vai te passar assim que precisar, e dois minutos seus no final para conferir que
+funciona de verdade.
+
+### Passo 1: prompt de instalação
+
+Envie o seguinte prompt ao seu agente:
+
+```text
+Instala este repositorio:
+https://github.com/iaaorgmx/paynani
+
+Sigue las instrucciones del
+archivo AGENTS.md del
+repositorio.
+
+Cuando necesites la cuenta
+de correo, muéstrame el
+enlace del formulario para
+configurarla.
+```
+
+### Passo 2: configuração da conta de e-mail
+
+O seu agente vai mostrar um link para o formulário de configuração da conta de
+e-mail.
+
+Se o seu agente roda numa máquina que você não alcança direto pelo navegador,
+junto com o link ele te passa o comando `ssh -L` para chegar ao formulário.
+
+Se preferir, você pode configurá-la à mão criando o arquivo `.env` como indica o
+[`MAILBOX_SETUP.pt-BR.md`](MAILBOX_SETUP.pt-BR.md).
+
+Ao salvar, o formulário também cria o `roster.md` com o seu nome e o seu e-mail
+como primeiro contato autorizado. Se você escrever o `.env` à mão, o agente cria
+o `roster.md` durante a instalação.
+
+> [!CAUTION]
+> Digite a senha você mesmo, direto no formulário. Nunca cole a senha no chat
+> com o agente: o que você cola numa conversa fica ali para sempre.
+
+### Passo 3: testes
+
+O agente roda a própria lista de verificação, mas recomendamos que você também
+faça estes testes.
+
+**Teste 1: mande um e-mail para o seu agente a partir da sua conta.**
+
+Da sua conta de e-mail, a mesma que você informou na configuração, mande um
+e-mail para o seu agente pedindo que ele responda.
+
+**Exemplo de e-mail**
+
+```text
+Assunto: Teste #1 do paynani: ñ, á, ¿qué tal?
+
+Olá, {nome do seu agente},
+
+Responda a este e-mail com o assunto
+do jeito que você o vê.
+```
+
+A resposta tem que trazer o assunto legível. Se você vir `=?utf-8?q?...`, tem
+algo quebrado no jeito como ele lê os cabeçalhos.
+
+**Teste 2: mande um e-mail para ele de uma conta que não está no `roster.md`.**
+
+Quando o paynani recebe um e-mail de um endereço que não está no `roster.md`, o
+agente avisa que chegou, mas não age sobre ele. Você deve receber esse aviso e
+nenhuma resposta na outra conta.
+
+A lista de contatos do `roster.md` é toda a razão pela qual é seguro deixar um
+agente que lê e-mail também responder e agir, então vale a pena vê-la funcionar
+uma vez com os próprios olhos.
+
+## Para quem é o Paynani?
 
 Para quem quer dar ao seu agente um endereço de e-mail de verdade sem misturar
 ali a caixa pessoal, as senhas ou as decisões de confiança.
@@ -51,107 +140,7 @@ Não serve para delegar o seu critério a qualquer mensagem que chegue. E-mail
 qualquer um manda, então o Paynani trata tudo o que entra como não confiável até
 que o remetente bata com a sua lista.
 
-## Antes de começar
-
-Você precisa de três coisas:
-
-1. uma conta de e-mail dedicada ao agente, não o seu e-mail pessoal;
-2. acesso a um terminal na máquina onde o seu agente roda;
-3. um momento para escrever você mesmo a senha num arquivo, sem colar num chat.
-
-Só isso. Não é preciso uma API de e-mail, nem um serviço no meio, nem conta nova
-em lugar nenhum.
-
-## Como configurar no seu agente
-
-Três passos. O primeiro você faz sozinho, o segundo é colar um texto, e o
-terceiro são dois minutos para conferir que funciona de verdade.
-
-### Passo 1: dê a ele uma caixa de e-mail
-
-O agente precisa da própria conta de e-mail, e dos dados de conexão dessa conta
-escritos num arquivo chamado `.env`. **Se o seu agente roda sob um harness, esse
-arquivo vai na pasta `workspace` do próprio harness**
-(`~/.hermes/workspace/.env`, `~/.openclaw/workspace/.env`,
-`~/.claude/workspace/.env`, `~/.codex/workspace/.env`), que é onde se diz ao
-agente para olhar e de onde esta ferramenta o lê. Sem harness, o arquivo pode
-morar dentro da pasta do projeto. E se você não souber onde ele foi parar, dá
-para perguntar à instalação com `python3 harness/paths.py env`.
-
-**O [MAILBOX_SETUP.pt-BR.md](MAILBOX_SETUP.pt-BR.md) explica passo a passo**: que
-conta usar, onde encontrar o nome do servidor (a parte que sempre falha) e como
-fica o arquivo.
-
-> [!CAUTION]
-> Faça você, não peça ao agente. É preciso uma senha, e senha não deve passar por
-> um chat: a que você cola numa conversa fica ali para sempre, e nenhum cuidado
-> posterior desfaz isso. Se preferir não usar o terminal,
-> `scripts/paynani onboard` abre um formulário local que escreve o arquivo por
-> você.
-
-### Passo 2: aponte o agente para este repositório
-
-Cole isto no seu agente:
-
-```text
-Revisa la configuración de tu
-cuenta de correo electrónico;
-está en la carpeta workspace del
-directorio de instalación de tu
-Harness.
-
-../workspace/.env
-
-Después, instala este
-repositorio para poder usarla:
-https://github.com/iaaorgmx/paynani
-
-Sigue las instrucciones del
-archivo AGENTS.md del
-repositorio.
-
-Pregúntame lo que necesites.
-```
-
-Todo o resto de que o agente precisa está no repositório, então o texto só
-precisa apontar para lá.
-
-Espere perguntas antes de ele começar. Se o Passo 1 deu certo, devem ser poucas.
-Se ele pedir a senha, diga não: isso não é um passo destas instruções.
-
-### Passo 3: teste você mesmo
-
-O agente roda a própria lista de verificação e vai dizer que passou. Dois minutos
-de testes seus valem mais, porque você estaria testando o que de fato importa:
-que ele perceba, e que fique dentro dos limites dele.
-
-**Teste 1: mande um e-mail para ele, com acento no assunto.**
-
-Do seu próprio endereço, com um assunto como
-`Prueba de correo: ñ, á, ¿qué tal?` Depois pergunte ao agente o que acabou de
-chegar.
-
-Em uns dois segundos ele deve dizer, e **o assunto tem que aparecer legível**. Se
-no lugar disso você vir `=?utf-8?q?...`, tem algo quebrado no jeito como ele lê
-os cabeçalhos, e isso importa muito mais do que parece: se você trabalha em
-português ou espanhol, é praticamente toda mensagem que vai receber.
-
-O acento é todo o sentido deste teste. Um assunto em inglês sem acento passa,
-funcionando ou não.
-
-**Teste 2: peça que ele escreva para um desconhecido.**
-
-Primeiro peça que ele mande algo para você, e confirme que chega. Depois peça que
-mande uma mensagem para um endereço que **não** esteja na lista de autorizados.
-
-Ele tem que se recusar. Não pedir permissão, não consultar você antes: recusar, e
-dizer que aquele endereço não está na lista. Essa lista é toda a razão pela qual é
-seguro deixar um agente que lê e-mail não confiável também poder enviar, então
-vale a pena vê-la funcionar uma vez com os próprios olhos.
-
-Se ele mandar, pare e avise quem instalou. Algo está errado.
-
-## O que o seu agente vai conseguir fazer
+## O que o seu agente vai conseguir fazer?
 
 - **Saber de e-mail novo em cerca de um segundo**, sem ficar checando e sem você
   pedir.
@@ -166,7 +155,7 @@ Se ele mandar, pare e avise quem instalou. Algo está errado.
 - **Não perder o que chegou** se a máquina reiniciar no meio de uma tarefa. Cada
   mensagem detectada é anotada em disco antes de ser entregue.
 
-## O que isso muda no computador
+## O que isso muda no computador?
 
 Vale saber antes de aceitar. O agente tem instruções de relatar tudo isso quando
 terminar, e você pode cobrar a lista:

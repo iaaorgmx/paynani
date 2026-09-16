@@ -2,9 +2,13 @@
 
 [Español (MX)](../MAILBOX_SETUP.md) · [English (US)](MAILBOX_SETUP.en-US.md) · [Español (ES)](MAILBOX_SETUP.es-ES.md) · **Français (FR)** · [Português (BR)](MAILBOX_SETUP.pt-BR.md)
 
-Étape 1 du [README](README.fr-FR.md#mise-en-place-sur-votre-agent). Vous faites
-ceci vous-même, avant d'impliquer l'agent, parce qu'il faut un mot de passe et
-qu'un mot de passe ne doit pas transiter par une conversation.
+Référence pour l'étape 2 du [README](README.fr-FR.md#installation) : quel compte
+utiliser et ce que signifie chaque réglage, que vous le remplissiez dans le
+formulaire que l'agent vous donnera ou que vous écriviez le fichier vous-même.
+En général, l'agent s'occupe de cette étape pour vous : il vous donne un lien et
+c'est là que vous saisissez le mot de passe, jamais dans la conversation. Vous
+n'avez besoin de lire ceci du début à la fin que si vous allez écrire le fichier
+à la main.
 
 Dix minutes, dont l'essentiel passe à trouver un nom de serveur.
 
@@ -18,6 +22,11 @@ Dix minutes, dont l'essentiel passe à trouver un nom de serveur.
 > votre serveur de messagerie et écrit le fichier à votre place, y compris pour le
 > problème de nom d'hôte exposé plus bas, qu'elle diagnostique nommément au lieu de
 > vous laisser le découvrir.
+>
+> Pour changer un seul réglage plus tard, comme renouveler le mot de passe ou
+> corriger un nom de serveur, inutile de tout refaire : `paynani set CLÉ VALEUR`
+> modifie cette seule clé et, par défaut, la teste de nouveau auprès de votre
+> serveur avant de l'enregistrer.
 >
 > Le reste de cette page est la voie manuelle, et reste utile à lire : elle explique
 > *pourquoi* chaque réglage est ce qu'il est, ce que le formulaire ne peut pas
@@ -127,15 +136,24 @@ vit des mois.
 
 ## Ensuite
 
-Retournez au [README](README.fr-FR.md#mise-en-place-sur-votre-agent) et collez le
-texte de l'étape 2. L'agent prend le relais à partir de là, et il vous posera la
-question si quelque chose ici se révèle manquant ou faux.
+Si vous avez écrit le fichier à la main avant de faire intervenir l'agent,
+retournez au [README](README.fr-FR.md#installation) et envoyez à l'agent le
+prompt de l'étape 1. L'agent prend le relais à partir de là, et il vous posera
+la question si quelque chose ici se révèle manquant ou faux.
 
 **Une chose qu'il ne devrait jamais demander : le mot de passe.** Il a le chemin du
 fichier et peut le lire au moment voulu. S'il vous demande de coller le mot de
 passe dans la conversation, refusez, cela ne fait partie d'aucune de ces
 instructions.
 
+**Votre ligne dans la liste des contacts autorisés.** Le formulaire de
+`scripts/paynani onboard` demande, en plus de ces sept réglages de la boîte,
+votre nom et votre adresse, et à l'enregistrement il vous ajoute à `roster.md`,
+en créant la liste si elle n'existe pas encore. Cette voie manuelle ne passe pas
+par le formulaire, donc la liste ne se crée pas toute seule : l'agent la crée
+pendant l'installation et vous y ajoute, ou vous demande votre nom et votre
+adresse s'il ne les a pas.
+
 ---
 
-<sub>Traduit de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) au commit `a7b1040`, qui fait référence. En cas de divergence avec l'original en espagnol (MX), **c'est l'espagnol qui fait foi**, et signalez-le nous, car cela veut dire que cette traduction a pris du retard.</sub>
+<sub>Traduit de [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) au commit `990f4c0`, qui fait référence. En cas de divergence avec l'original en espagnol (MX), **c'est l'espagnol qui fait foi**, et signalez-le nous, car cela veut dire que cette traduction a pris du retard.</sub>

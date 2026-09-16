@@ -2,9 +2,12 @@
 
 [Español (MX)](../MAILBOX_SETUP.md) · **English (US)** · [Español (ES)](MAILBOX_SETUP.es-ES.md) · [Français (FR)](MAILBOX_SETUP.fr-FR.md) · [Português (BR)](MAILBOX_SETUP.pt-BR.md)
 
-Step 1 of [the README](README.en-US.md#setting-this-up-on-your-agent). You do this
-yourself, before involving the agent, because it needs a password and a password
-should not travel through a chat.
+Reference for Step 2 of [the README](README.en-US.md#installation): which
+account to use and what each setting means, whether you fill it in on the form
+the agent will give you or write the file yourself. Usually the agent handles
+that step for you: it gives you a link and you enter the password there, never
+in the chat. You only need to read this from start to finish if you are going to
+write the file by hand.
 
 Ten minutes, most of which is finding one hostname.
 
@@ -17,6 +20,11 @@ Ten minutes, most of which is finding one hostname.
 > The page asks for the same settings this document describes, checks them against
 > your mail server, and writes the file for you, including the hostname problem
 > below, which it diagnoses by name instead of leaving you to find it.
+>
+> To change a single setting later, such as rotating the password or fixing a
+> hostname, you don't need to repeat all of this: `paynani set KEY VALUE`
+> changes that one key, and by default tests it against your server again before
+> saving it.
 >
 > The rest of this page is the manual route, and remains worth reading: it explains
 > *why* each setting is what it is, which the form cannot.
@@ -121,14 +129,22 @@ shell history, and shell history is a file that lives for months.
 
 ## Then
 
-Go back to [the README](README.en-US.md#setting-this-up-on-your-agent) and paste the
-prompt in Step 2. The agent takes it from there, and it will ask you if anything
-here turns out to be missing or wrong.
+If you wrote the file by hand before bringing the agent in, go back to [the
+README](README.en-US.md#installation) and send the agent the prompt from Step 1.
+The agent takes it from there, and it will ask you if anything here turns out to
+be missing or wrong.
 
 **One thing it should never ask for: the password.** It has the file path and can
 read it at runtime. If it asks you to paste the password into the chat, say no,
 that is not a step in any of these instructions.
 
+**Your row in the list of authorized contacts.** The `scripts/paynani onboard`
+form asks, on top of these seven mailbox settings, for your name and email
+address, and when you save it adds you to `roster.md`, creating the list if it
+does not exist yet. This manual route does not go through the form, so the list
+is not created on its own: the agent creates it during installation and adds
+you, or asks for your name and email address if it does not have them.
+
 ---
 
-<sub>Translated from [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) at commit `a7b1040`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins**, and say so, because it means this translation has fallen behind.</sub>
+<sub>Translated from [`MAILBOX_SETUP.md`](../MAILBOX_SETUP.md) at commit `990f4c0`, which is the source of truth. Where this contradicts the Spanish (MX) original, **the Spanish wins**, and say so, because it means this translation has fallen behind.</sub>

@@ -36,7 +36,100 @@ Fait avec amour par des humains et des agents IA, du Mexique vers le monde.
 
 ---
 
-## À qui cela s'adresse
+## Avant de commencer
+
+Il vous faut trois choses :
+
+1. un compte de messagerie dédié à l'agent, pas votre courriel personnel ;
+2. l'accès à un terminal sur la machine où tourne votre agent ;
+3. un moment pour saisir vous-même le mot de passe, dans le formulaire que
+   l'agent vous donnera ou à la main dans un fichier, sans jamais le coller dans
+   un chat.
+
+C'est tout. Pas d'API de messagerie, pas de service intermédiaire, pas de
+nouveau compte nulle part.
+
+## Installation
+
+Trois étapes : envoyer un prompt à l'agent, remplir le formulaire qu'il vous
+donnera lui-même dès qu'il en aura besoin, et deux minutes de votre temps à la
+fin pour vérifier que cela marche vraiment.
+
+### Étape 1 : prompt d'installation
+
+Envoyez le prompt suivant à votre agent :
+
+```text
+Instala este repositorio:
+https://github.com/iaaorgmx/paynani
+
+Sigue las instrucciones del
+archivo AGENTS.md del
+repositorio.
+
+Cuando necesites la cuenta
+de correo, muéstrame el
+enlace del formulario para
+configurarla.
+```
+
+### Étape 2 : configuration du compte de messagerie
+
+Votre agent vous montrera un lien vers le formulaire de configuration du compte
+de messagerie.
+
+Si votre agent tourne sur une machine que vous ne pouvez pas joindre directement
+depuis le navigateur, il vous donne, avec le lien, la commande `ssh -L` pour
+accéder au formulaire.
+
+Si vous préférez, vous pouvez le configurer à la main en créant le fichier
+`.env` comme l'indique [`MAILBOX_SETUP.fr-FR.md`](MAILBOX_SETUP.fr-FR.md).
+
+À l'enregistrement, le formulaire crée aussi `roster.md` avec votre nom et votre
+adresse comme premier contact autorisé. Si vous écrivez le `.env` à la main,
+l'agent crée `roster.md` pendant l'installation.
+
+> [!CAUTION]
+> Saisissez le mot de passe vous-même, directement dans le formulaire. Ne le
+> collez jamais dans le chat avec l'agent : ce que vous collez dans une
+> conversation y reste pour toujours.
+
+### Étape 3 : tests
+
+L'agent déroule sa propre liste de vérification, mais nous vous recommandons de
+faire aussi ces tests.
+
+**Test 1 : envoyez un courriel à votre agent depuis votre compte.**
+
+Depuis votre compte de messagerie, celui que vous avez indiqué lors de la
+configuration, envoyez un courriel à votre agent en lui demandant de vous
+répondre.
+
+**Exemple de courriel**
+
+```text
+Objet : test n° 1 de paynani : ñ, á, ¿qué tal?
+
+Bonjour {nom de votre agent},
+
+Répondez à ce courriel avec l'objet
+tel que vous le voyez.
+```
+
+La réponse doit afficher l'objet de façon lisible. Si vous voyez
+`=?utf-8?q?...`, quelque chose est cassé dans sa façon de lire les en-têtes.
+
+**Test 2 : envoyez-lui un courriel depuis un compte absent de `roster.md`.**
+
+Quand paynani reçoit un courriel d'une adresse absente de `roster.md`, l'agent
+vous prévient qu'il est arrivé, mais n'agit pas dessus. Vous devriez recevoir
+cet avertissement, et aucune réponse sur l'autre compte.
+
+La liste de contacts de `roster.md` est toute la raison pour laquelle il est sûr
+de laisser un agent qui lit du courrier y répondre et agir, donc cela vaut la
+peine de la voir fonctionner une fois de vos propres yeux.
+
+## À qui s'adresse Paynani ?
 
 À qui veut donner à son agent une vraie adresse électronique sans y mêler sa
 boîte personnelle, ses mots de passe ou ses décisions de confiance.
@@ -52,114 +145,7 @@ Ce n'est pas fait pour déléguer votre jugement au premier message venu. N'impo
 qui peut envoyer un courriel, donc Paynani traite tout ce qui entre comme non
 fiable tant que l'expéditeur ne correspond pas à votre liste.
 
-## Avant de commencer
-
-Il vous faut trois choses :
-
-1. un compte de messagerie dédié à l'agent, pas votre courriel personnel ;
-2. l'accès à un terminal sur la machine où tourne votre agent ;
-3. un moment pour écrire vous-même le mot de passe dans un fichier, sans le coller dans un chat.
-
-C'est tout. Pas d'API de messagerie, pas de service intermédiaire, pas de nouveau
-compte nulle part.
-
-## Mise en place sur votre agent
-
-Trois étapes. La première est à vous seul, la deuxième consiste à coller un
-texte, et la troisième prend deux minutes pour vérifier que cela marche
-vraiment.
-
-### Étape 1 : donnez-lui une boîte aux lettres
-
-L'agent a besoin de son propre compte de messagerie, et des paramètres de
-connexion de ce compte écrits dans un fichier appelé `.env`. **Si votre agent
-tourne sous un harness, ce fichier va dans le dossier `workspace` du harness
-lui-même** (`~/.hermes/workspace/.env`, `~/.openclaw/workspace/.env`,
-`~/.claude/workspace/.env`, `~/.codex/workspace/.env`), c'est-à-dire là où l'on
-dit à l'agent de regarder et d'où cet outil le lit. Sans harness, le fichier peut
-vivre dans le dossier du projet. Et si vous ne savez plus où il a atterri, vous
-pouvez le demander à l'installation avec `python3 harness/paths.py env`.
-
-**[MAILBOX_SETUP.fr-FR.md](MAILBOX_SETUP.fr-FR.md) vous guide** : quel compte
-utiliser, où trouver le nom du serveur (la partie qui échoue toujours) et à quoi
-ressemble le fichier.
-
-> [!CAUTION]
-> Faites-le vous-même, ne le demandez pas à l'agent. Il faut un mot de passe, et
-> un mot de passe ne doit pas passer par un chat : celui que vous collez dans une
-> conversation y reste pour toujours, et aucune précaution ultérieure ne le
-> défait. Si vous préférez éviter le terminal, `scripts/paynani onboard` ouvre un
-> formulaire local qui écrit le fichier à votre place.
-
-### Étape 2 : pointez l'agent vers ce dépôt
-
-Collez ceci à votre agent :
-
-```text
-Revisa la configuración de tu
-cuenta de correo electrónico;
-está en la carpeta workspace del
-directorio de instalación de tu
-Harness.
-
-../workspace/.env
-
-Después, instala este
-repositorio para poder usarla:
-https://github.com/iaaorgmx/paynani
-
-Sigue las instrucciones del
-archivo AGENTS.md del
-repositorio.
-
-Pregúntame lo que necesites.
-```
-
-Tout le reste de ce dont l'agent a besoin se trouve dans le dépôt, donc le texte
-n'a qu'à l'y renvoyer.
-
-Attendez-vous à des questions avant qu'il commence. Si l'étape 1 s'est bien
-passée, elles devraient être peu nombreuses. S'il vous demande le mot de passe,
-dites non : ce n'est une étape d'aucune de ces instructions.
-
-### Étape 3 : testez vous-même
-
-L'agent déroule sa propre liste de vérification et vous dira qu'elle est passée.
-Deux minutes de vos propres tests valent davantage, parce que vous testeriez ce
-qui vous importe vraiment : qu'il s'en aperçoive, et qu'il reste dans ses
-limites.
-
-**Test 1 : envoyez-lui un courriel, avec un accent dans l'objet.**
-
-Depuis votre propre adresse, avec un objet comme
-`Prueba de correo: ñ, á, ¿qué tal?` Puis demandez à l'agent ce qui vient
-d'arriver.
-
-En deux secondes il devrait vous le dire, et **l'objet doit s'afficher
-lisiblement**. Si vous voyez `=?utf-8?q?...` à la place, quelque chose est cassé
-dans sa façon de lire les en-têtes, et cela compte bien plus qu'il n'y paraît :
-si vous travaillez en espagnol ou en français, c'est presque chaque message que
-vous recevrez.
-
-L'accent est tout l'intérêt de ce test. Un objet en anglais sans accent passe,
-que cela fonctionne ou non.
-
-**Test 2 : demandez-lui d'écrire à un inconnu.**
-
-Demandez-lui d'abord de vous envoyer quelque chose, et vérifiez que cela arrive.
-Puis demandez-lui d'envoyer un message à une adresse qui **ne figure pas** sur sa
-liste d'autorisés.
-
-Il doit refuser. Pas demander la permission, pas vous consulter d'abord :
-refuser, et vous dire que cette adresse n'est pas sur la liste. Cette liste est
-toute la raison pour laquelle il est sûr de laisser un agent qui lit du courrier
-non fiable pouvoir aussi en envoyer, donc cela vaut la peine de la voir
-fonctionner une fois de vos propres yeux.
-
-S'il l'envoie, arrêtez-vous et prévenez la personne qui l'a installé. Quelque
-chose ne va pas.
-
-## Ce que votre agent pourra faire
+## Que pourra faire votre agent ?
 
 - **Être au courant d'un nouveau courriel en une seconde environ**, sans
   interroger la boîte et sans que vous le lui demandiez.
@@ -175,7 +161,7 @@ chose ne va pas.
 - **Ne pas perdre ce qui est arrivé** si la machine redémarre en pleine tâche.
   Chaque message détecté est noté sur disque avant d'être remis.
 
-## Ce que cela change sur la machine
+## Qu'est-ce que cela change sur la machine ?
 
 Cela vaut la peine de le savoir avant d'accepter. L'agent a pour instruction de
 vous rapporter tout ceci quand il aura fini, et vous pouvez lui réclamer la
