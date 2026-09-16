@@ -18,7 +18,7 @@ STRINGS = {
     'saved.forgot': "Cette page a déjà oublié le mot de passe. La rouvrir ne l'affichera pas de nouveau.",
     'saved.roster_added': "Vous avez aussi été ajouté à la liste des contacts autorisés (<code>roster.md</code>).",
     'saved.roster_already': "Votre adresse figurait déjà dans la liste des contacts autorisés (<code>roster.md</code>) ; rien n'a été modifié.",
-    'saved.roster_failed': "Le compte de l'agent a été enregistré, mais vous n'avez pas encore pu être ajouté à <code>roster.md</code> : {reason} S'il s'agit d'une nouvelle installation, c'est normal : l'agent ajoutera lui-même cette ligne à la création de <code>roster.md</code> (voir <code>AGENTS.md</code>, étape 7). Sinon, ajoutez-vous à la main avec <code>paynani roster add</code>.",
+    'saved.roster_failed': "Le compte de l'agent a été enregistré, mais vous n'avez pas pu être ajouté à <code>roster.md</code> : {reason} Prévenez l'agent : il vérifie <code>roster.md</code> à l'étape 7 de <code>AGENTS.md</code>.",
     'help.summary': 'Où est-ce que je trouve ces informations ?',
     'help.cpanel_h3': 'Si votre messagerie est venue avec votre hébergement web (cPanel)',
     'help.cpanel_p': "C'est le cas le plus courant, et les informations y sont déjà écrites pour vous.",
