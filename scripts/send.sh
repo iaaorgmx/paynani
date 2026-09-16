@@ -265,15 +265,23 @@ fi
 # =?UTF-8?B?...?= text itself. Spanish filenames are the common case here, not
 # the edge case.
 percent_encode() {
-    LC_ALL=C
-    _paynani_s=$1
-    _paynani_out=""
-    _paynani_i=0
+    # Byte-wise slicing is required for RFC 2231, but keep the C locale local
+    # to this function so it cannot alter later header or body processing.
+    local LC_ALL=C
+    local _paynani_s=$1
+    local _paynani_out=""
+    local _paynani_i=0
+    local _paynani_c _paynani_ord
     while [ "$_paynani_i" -lt "${#_paynani_s}" ]; do
         _paynani_c=${_paynani_s:$_paynani_i:1}
         case "$_paynani_c" in
             [A-Za-z0-9._~-]) _paynani_out="$_paynani_out$_paynani_c" ;;
-            *) _paynani_out="$_paynani_out$(printf '%%%02X' "'$_paynani_c")" ;;
+            *)
+                # Bash 3.2 on macOS sign-extends bytes >= 0x80. Masking to one
+                # byte turns C3/B1 into %C3%B1 instead of %FFFFFFFF... values.
+                _paynani_ord=$(printf '%d' "'$_paynani_c")
+                _paynani_out="$_paynani_out$(printf '%%%02X' "$(( _paynani_ord & 0xFF ))")"
+                ;;
         esac
         _paynani_i=$(( _paynani_i + 1 ))
     done

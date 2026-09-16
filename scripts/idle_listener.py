@@ -292,6 +292,21 @@ KEEPALIVE_OPTIONS = (
 )
 
 
+def resolve_keepalive_option(name):
+    """Return the platform's numeric socket option for a keepalive name.
+
+    Apple's Python 3.9 does not expose TCP_KEEPALIVE even though Darwin's
+    tcp.h defines it as 0x10 and the kernel accepts it.  Without this fallback
+    SO_KEEPALIVE is enabled but its idle timer stays at the two-hour system
+    default, which defeats the early dead-connection detection this function
+    exists to provide.
+    """
+    option = getattr(socket, name, None)
+    if option is None and sys.platform == "darwin" and name == "TCP_KEEPALIVE":
+        return 0x10
+    return option
+
+
 def keepalive(sock):
     """Make a dead connection announce itself.
 
@@ -312,7 +327,7 @@ def keepalive(sock):
     # correctness -- see KEEPALIVE_OPTIONS for why both idle-timer names are
     # listed rather than only Linux's.
     for name, value in KEEPALIVE_OPTIONS:
-        option = getattr(socket, name, None)
+        option = resolve_keepalive_option(name)
         if option is None:
             continue
         try:

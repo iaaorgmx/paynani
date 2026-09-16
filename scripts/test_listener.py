@@ -14,7 +14,8 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from idle_listener import KEEPALIVE_OPTIONS, describe, decode_hdr, keepalive, save_state
+from idle_listener import (KEEPALIVE_OPTIONS, decode_hdr, describe, keepalive,
+                           resolve_keepalive_option, save_state)
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 
@@ -219,9 +220,12 @@ def main():
     check("TCP_KEEPALIVE" in names, "the macOS idle-timer name is asked for too")
     check(len(names) == len(set(names)), f"no option is set twice: {names}")
 
-    # Whichever platform this is, one of the two idle names must resolve. If
-    # neither does, keepalive() runs, logs nothing, and protects nothing.
-    idle_names = [n for n in ("TCP_KEEPIDLE", "TCP_KEEPALIVE") if hasattr(socket, n)]
+    # Whichever platform this is, one of the two idle names must resolve. Use
+    # the product's resolver rather than hasattr(socket, ...): Apple Python 3.9
+    # omits TCP_KEEPALIVE even though Darwin exposes it as numeric option 0x10.
+    # If neither resolves, keepalive() runs, logs nothing, and protects nothing.
+    idle_names = [n for n in ("TCP_KEEPIDLE", "TCP_KEEPALIVE")
+                  if resolve_keepalive_option(n) is not None]
     check(idle_names, "this platform exposes an idle timer under one of the two names")
 
     # And it has to reach the socket. Asserting on the table alone would pass on
@@ -229,10 +233,12 @@ def main():
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         keepalive(probe)
-        check(probe.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE) == 1,
+        # BSD returns the SO_KEEPALIVE flag bit (8), while Linux normalises it
+        # to 1. Both are true; zero is the only disabled value.
+        check(probe.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE) != 0,
               "SO_KEEPALIVE is on after keepalive()")
         for name, value in KEEPALIVE_OPTIONS:
-            option = getattr(socket, name, None)
+            option = resolve_keepalive_option(name)
             if option is None:
                 continue
             got = probe.getsockopt(socket.IPPROTO_TCP, option)
