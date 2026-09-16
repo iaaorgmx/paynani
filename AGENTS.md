@@ -219,17 +219,24 @@ indistinguishable from them never having written. See *"Standing rules, once it
 is running"* below for the format and for why adding a row is only ever a human
 decision.
 
-**8. Do not report success until the verification checklist in `INSTALL.md` §7
-passes in full**, including the restart test. *"resuming from uid N"* rather than
-*"baseline uid N"* is the line that proves this will not silently lose mail after a
-reboot. Everything else can pass while that one fails.
+**8. Do not report the install complete until every required check in
+`INSTALL.md` §7 passes**, including the restart test. *"resuming from uid N"*
+rather than *"baseline uid N"* is the line that proves this will not silently
+lose mail after a reboot. Everything else can pass while that one fails.
+
+The real-mail tests in `INSTALL.md` §7.1 are optional and come after. None of
+the required checks needs a person to send mail, so report the install complete
+as soon as they pass, then offer those tests, and never hold the report for
+them.
 
 **9. Tell your human what you changed outside the repository.** Which services you
 created (systemd units under `~/.config/systemd/user`, or LaunchAgents under
 `~/Library/LaunchAgents` on macOS) where the credentials live, which keys you
 added, and what you added to your own standing instructions. Everything that
 matters here lives outside the repo, and without that list they have an
-installed thing and no idea what it touched.
+installed thing and no idea what it touched. Put it in the same message that
+reports the install complete, before you offer the optional tests in
+`INSTALL.md` §7.1.
 
 ---
 

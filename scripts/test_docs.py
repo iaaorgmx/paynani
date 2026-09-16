@@ -216,6 +216,23 @@ check("no documented step copies roster.md.example over an existing roster.md", 
 # A hand-written .env means no form and no roster.md (#135). `paynani roster
 # add` creates the file with the first row; a bare template copy authorises
 # nobody, so both install documents point at the command.
+# A tester held an install that was already healthy open while waiting for
+# test mail a person had to send (#146). The required checklist must be
+# something the agent can finish alone; mail sent by a person lives in §7.1.
+install_text = (ROOT / "INSTALL.md").read_text()
+required_section = install_text.split("## 7. Verification", 1)[1].split("### 7.1", 1)[0]
+check("INSTALL.md §7: no required check needs a person to send mail", [],
+      [phrase for phrase in ("have someone external send you mail", "Send yourself one",
+                             "Worth asking your external sender")
+       if phrase in required_section])
+check("INSTALL.md: the real-mail tests have an optional §7.1", True,
+      "### 7.1 Optional: real mail, after the install is complete" in install_text)
+agents_text = (ROOT / "AGENTS.md").read_text()
+check("AGENTS.md step 8: the checklist no longer has to pass in full", False,
+      "passes in full" in agents_text)
+check("AGENTS.md step 8: §7.1 never holds the completion report", True,
+      "never hold the report for" in agents_text)
+
 check("AGENTS.md and INSTALL.md create a missing roster.md with paynani roster add", [],
       [document for document in ("AGENTS.md", "INSTALL.md")
        if "scripts/paynani roster add" not in (ROOT / document).read_text()])
