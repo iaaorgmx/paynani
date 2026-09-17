@@ -1,6 +1,9 @@
 # Changelog
 
-## Sin publicar
+## 0.7.0 (2026-09-17)
+
+**Paynani corre en OpenCode, el quinto harness.** 17 commits desde 0.6.0
+(PRs #150, #153, #154, #156, #159, #161, #162 y #163).
 
 - **Soporte para OpenCode** (#152). `scripts/install.sh --runtime opencode` y
   `PAYNANI_RUNTIME=opencode`. El dispatcher escribe cada evento en
@@ -24,13 +27,25 @@
   derriba todo el árbol de procesos (#151), y el timeout que quedaba imprime un
   diagnóstico completo si vuelve a pasar (#155).
 - Los README en los cinco idiomas mencionan lo que cambia con OpenCode: el aviso
-  de «listo», el archivo del plugin y los tres estados del chequeo de salud.
+  de «listo», el archivo del plugin y los tres estados del chequeo de salud, y
+  enlazan el repositorio de cada harness (#163).
 
 ### Si actualizas desde 0.6.0
 
 `git pull` y seguir `UPGRADE.md`. Nada cambia en OpenClaw, Hermes, Claude Code
-ni Codex. En OpenCode, **reinicia OpenCode** después del pull: el plugin se
-carga al arrancar, y el proceso abierto sigue con el código anterior.
+ni Codex: los archivos compartidos que tocaron estos cambios (`dispatch.py`,
+`paths.py`, `envpath.sh`, `install.sh`, `install_manifest.py`) solo agregan
+`opencode` a la lista de harnesses conocidos. En OpenCode, **reinicia OpenCode**
+después del pull: el plugin se carga al arrancar, y el proceso abierto sigue con
+el código anterior. Esta es la primera versión en la que `UPGRADE.md` §6 trae
+los comandos de macOS.
+
+### Pendientes conocidos
+
+- **`suite-macos` todavía no es un check requerido.** Pasa a requerido con 10
+  corridas seguidas en verde en `main`, sin re-runs, y no antes del 2026-09-30.
+  La cuenta se reinició el 2026-09-17 con una corrida que necesitó re-run
+  (#151); al preparar esta versión va en 5.
 
 ## 0.6.0 (2026-09-16)
 
