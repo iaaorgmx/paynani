@@ -313,7 +313,15 @@ exec 8<"$FIFO"
 # descriptors it had inherited. Under a CI step that captures output with
 # `$(...)`, that is the capture's own pipe, and the step hangs until the runner
 # is taken away rather than failing.
-trap 'rm -f "$FIFO"; rm -rf "$LOCK_DIR"; kill "$tail_pid" "$ticker_pid" 2>/dev/null' EXIT
+cleanup() {
+	rm -f "$FIFO"
+	rm -rf "$LOCK_DIR"
+	kill "$tail_pid" "$ticker_pid" 2>/dev/null || true
+	sleep 0.1
+	kill -KILL "$tail_pid" "$ticker_pid" 2>/dev/null || true
+	wait "$tail_pid" "$ticker_pid" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 while IFS= read -r -u 8 line; do
 	# Cheap enough to ask on every line: `kill -0` is a builtin at ~25us, so a
