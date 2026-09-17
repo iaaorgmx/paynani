@@ -26,6 +26,13 @@ REQUIRED_STATIC_FIELDS = (
     "session_discovery",
 )
 
+REQUIRED_SCENARIO_FIELDS = (
+    "event_accepted",
+    "delivered_to_target_session",
+    "operator_visible_state",
+    "documentation_label",
+)
+
 CAPABILITIES = {
     "openclaw": {
         "display_name": "OpenClaw",
@@ -33,7 +40,7 @@ CAPABILITIES = {
             "delivery_modes": ("now",),
             "durable_handoff": "unsupported",
             "requires_open_session": "yes",
-            "starts_agent_run": "no",
+            "starts_agent_run": "unknown",
             "presentation_observable": "unknown",
             "headless_mode": "unsupported",
             "credentials_location": "harness_workspace_env",
@@ -58,7 +65,7 @@ CAPABILITIES = {
             "durable_handoff": "supported",
             "requires_open_session": "no",
             "starts_agent_run": "yes",
-            "presentation_observable": "yes",
+            "presentation_observable": "unknown",
             "headless_mode": "supported",
             "credentials_location": "route_env_and_secret_files",
             "session_discovery": "health_route",
@@ -93,8 +100,9 @@ CAPABILITIES = {
             "session_watch_state",
         ),
         "notes": (
-            "Delivery is a durable spool append. SessionStart and Monitor "
-            "read it later; agent mode is opt-in."
+            "Delivery is a durable spool append. SessionStart replays it later; "
+            "with session_watch.sh armed, Monitor can present it live seconds "
+            "after the append. Agent mode is opt-in."
         ),
     },
     "codex": {
@@ -126,7 +134,7 @@ CAPABILITIES = {
             "delivery_modes": ("replay",),
             "durable_handoff": "supported",
             "requires_open_session": "no",
-            "starts_agent_run": "no",
+            "starts_agent_run": "yes",
             "presentation_observable": "yes",
             "headless_mode": "unsupported",
             "credentials_location": "harness_workspace_env",
@@ -139,6 +147,14 @@ CAPABILITIES = {
             "session_destination_available",
             "spool_unread_bytes",
         ),
+        "scenarios": {
+            "open_tui_without_target_session": {
+                "event_accepted": "yes",
+                "delivered_to_target_session": "no",
+                "operator_visible_state": "warning",
+                "documentation_label": "OpenCode TUI open without destination session",
+            },
+        },
         "notes": (
             "The dispatcher only spools. The OpenCode plugin presents pending "
             "events when an idle session exists; open TUI without a destination "
@@ -189,6 +205,17 @@ def _validate_adapter(name, spec):
             errors.append(f"{name}: static.{field} must be one of {SUPPORT_STATE}")
     if not spec.get("dynamic_observations"):
         errors.append(f"{name}: missing dynamic_observations")
+    for scenario, fields in (spec.get("scenarios") or {}).items():
+        for field in REQUIRED_SCENARIO_FIELDS:
+            if field not in fields:
+                errors.append(f"{name}: scenario {scenario} missing {field}")
+        for field in ("event_accepted", "delivered_to_target_session"):
+            if fields.get(field) not in TRI_STATE:
+                errors.append(f"{name}: scenario {scenario} {field} must be one of {TRI_STATE}")
+        if fields.get("operator_visible_state") not in ("ok", "warning", "blocked", "unknown"):
+            errors.append(
+                f"{name}: scenario {scenario} operator_visible_state must be ok/warning/blocked/unknown"
+            )
     level = derived_level(static)
     if level not in LEVELS:
         errors.append(f"{name}: derived level {level!r} is invalid")

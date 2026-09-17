@@ -41,18 +41,28 @@ for name, spec in data["adapters"].items():
 
 check("OpenClaw is live but not autonomous", "live",
       data["adapters"]["openclaw"]["derived_level"])
+check("OpenClaw does not claim agent runs never start", "unknown",
+      data["adapters"]["openclaw"]["static"]["starts_agent_run"])
 check("OpenClaw does not claim presentation is observable", "unknown",
       data["adapters"]["openclaw"]["static"]["presentation_observable"])
-check("Hermes is autonomous", "autonomous",
-      data["adapters"]["hermes"]["derived_level"])
+check("Hermes does not equate accepted roster delivery with presentation", "unknown",
+      data["adapters"]["hermes"]["static"]["presentation_observable"])
 check("Claude Code is replay-only unless an opt-in mode starts runs", "replay-only",
       data["adapters"]["claudecode"]["derived_level"])
-check("OpenCode exposes a session-destination observation", True,
-      "session_destination_available" in data["adapters"]["opencode"]["dynamic_observations"])
+check("OpenCode starts an agent run when its plugin delivers to an idle session", "yes",
+      data["adapters"]["opencode"]["static"]["starts_agent_run"])
+check("OpenCode derives autonomous from plugin delivery", "autonomous",
+      data["adapters"]["opencode"]["derived_level"])
+check("OpenCode exposes the open TUI without target-session scenario", True,
+      "open_tui_without_target_session" in data["adapters"]["opencode"]["scenarios"])
+check("OpenCode scenario says accepted is not target-session delivery", "no",
+      data["adapters"]["opencode"]["scenarios"]["open_tui_without_target_session"][
+          "delivered_to_target_session"
+      ])
 
 table = capabilities.markdown_table()
-check("Markdown matrix includes OpenCode's no-session case source field", True,
-      "OpenCode" in table and "replay-only" in table)
+check("Markdown matrix reflects OpenCode's derived level", True,
+      "OpenCode (`opencode`)" in table and "autonomous" in table)
 
 print()
 print(f"{passed} passed, {failed} failed")

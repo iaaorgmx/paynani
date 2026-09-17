@@ -301,9 +301,9 @@ the Markdown block.
 |---|---|---|---|---|---|---|---|
 | Claude Code (`claudecode`) | replay | supported | no | opt_in | unknown | supported | replay-only |
 | OpenAI Codex (`codex`) | replay, now | supported | no | opt_in | unknown | supported | live |
-| Hermes Agent (`hermes`) | now, durable | supported | no | yes | yes | supported | autonomous |
-| OpenClaw (`openclaw`) | now | unsupported | yes | no | unknown | unsupported | live |
-| OpenCode (`opencode`) | replay | supported | no | no | yes | unsupported | replay-only |
+| Hermes Agent (`hermes`) | now, durable | supported | no | yes | unknown | supported | autonomous |
+| OpenClaw (`openclaw`) | now | unsupported | yes | unknown | unknown | unsupported | live |
+| OpenCode (`opencode`) | replay | supported | no | yes | yes | unsupported | autonomous |
 <!-- capabilities-matrix:end -->
 
 ### Looking past the boundary without pretending to see across it
