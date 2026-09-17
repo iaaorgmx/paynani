@@ -28,6 +28,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import event as ev
 import healthcheck as hc
 
+_real_instructions_facts = hc.instructions_facts
+
 # Fixture replaces hc.runtime_facts wholesale, so the real one is kept here
 # while it still exists — one test below is about what it actually does.
 REAL_RUNTIME_FACTS = hc.runtime_facts
@@ -54,6 +56,12 @@ class Fixture:
         self.reachable = reachable
         self.runtime = runtime
         self.spool_facts = None
+        # The standing rule is read from the real ~/.openclaw/workspace by
+        # default, which is whoever runs the suite. Stubbed to "in place" so the
+        # healthy fixture is healthy on every host; the tests below override it.
+        self.instructions = {"path": str(self.dir / "AGENTS.md"), "state": "present"}
+        hc.instructions_facts = lambda selected: (
+            self.instructions if selected == "openclaw" else None)
 
         hc.STATE_DIR = self.dir
         hc.LISTENER_STATE = self.dir / "idle.json"
@@ -185,6 +193,7 @@ class Fixture:
             "git": hc.git_facts(),
         }
         facts["spool"] = self.spool_facts
+        facts["instructions"] = hc.instructions_facts(self.runtime)
         facts["reply"] = hc.reply_facts(facts["queue"]["cursor"])
         problems, warnings = hc.assess(facts)
         return facts, problems, warnings
@@ -798,6 +807,63 @@ with tempfile.TemporaryDirectory() as tmp:
           hc.opencode_plugin_facts(state)["open_pids"])
     check("no presence folder means nothing is open", [],
           hc.opencode_open_pids(state / "missing"))
+
+# --- the standing rule in OpenClaw's own AGENTS.md (#186) ---------------------
+#
+# Every other row can be green while no roster mail is ever answered, if the
+# agent was never told what the tag means. That state is a warning with the fix
+# in it, not a problem: delivery is working, which is what makes it worth saying.
+
+f = Fixture()
+_, problems, warnings = f.run()
+check("the rule in place raises no warning", [], [w for w in warnings if "standing rule" in w])
+_, text = f.exit_code()
+check("the rule in place is reported as such", True,
+      "instructions standing rule in place in" in text)
+
+f = Fixture()
+f.instructions = {"path": str(f.dir / "AGENTS.md"), "state": "absent"}
+_, problems, warnings = f.run()
+check("a missing rule is a warning", True,
+      any("standing rule is not in" in w for w in warnings))
+check("the warning names the command that fixes it", True,
+      any("openclaw_rules.py --install" in w for w in warnings))
+check("but delivery is not called broken over it", [], problems)
+code, text = f.exit_code()
+check("and the install still exits 0", 0, code)
+check("the row says ABSENT", True, "instructions standing rule ABSENT in" in text)
+check("and how to fix it", True, "run: python3 scripts/openclaw_rules.py --install" in text)
+
+f = Fixture()
+f.instructions = {"path": str(f.dir / "AGENTS.md"), "state": "outdated"}
+_, problems, warnings = f.run()
+check("an old wording is a warning too", True,
+      any("standing rule is out of date in" in w for w in warnings))
+
+f = Fixture()
+f.instructions = {"path": None, "state": "unknown"}
+_, problems, warnings = f.run()
+check("an unreadable check says so rather than guessing", True,
+      any("could not be checked" in w for w in warnings))
+
+f = Fixture(runtime="hermes")
+_, problems, warnings = f.run()
+check("other runtimes carry the instruction in the prompt and get no row", [],
+      [w for w in warnings if "standing rule" in w])
+_, text = f.exit_code()
+check("and print nothing about it", False, "instructions " in text)
+
+check("the real facts function is silent off OpenClaw", None,
+      _real_instructions_facts("codex"))
+with tempfile.TemporaryDirectory() as tmp:
+    import openclaw_rules
+    target = Path(tmp) / "AGENTS.md"
+    with mock.patch.object(openclaw_rules, "default_target", lambda: target):
+        check("the real facts function reads the rule as absent from an empty workspace",
+              {"path": str(target), "state": "absent"}, _real_instructions_facts("openclaw"))
+        target.write_text("# mine\n\n" + openclaw_rules.block(), encoding="utf-8")
+        check("and as present once written",
+              "present", _real_instructions_facts("openclaw")["state"])
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
