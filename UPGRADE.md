@@ -19,12 +19,13 @@ scripts/install.sh --runtime hermes --profile PROFILE --upgrade
 ```
 
 The mutating run revalidates manifest provenance, converges changed owned files,
-verifies runtime-specific probes, reloads systemd, and restarts required units when
-the owned runtime boundary changed. It preserves credentials, roster, journal,
-cursor, logs, and generated Hermes secrets across a runtime migration. Exit `10`
-means successful changes; `0` means already converged. For Hermes, configure the
-operator-managed routes and full URL environment described in `INSTALL.md` and
-`HERMES.md` first; `--profile` and `--deliver`/`--chat-id` do not edit Hermes.
+verifies runtime-specific probes, reloads systemd, and restarts required units
+when the owned runtime boundary changed. It preserves credentials, roster,
+journal, cursor, logs, and generated Hermes secrets across a runtime migration.
+Exit `10` means successful changes; `0` means already converged. For Hermes,
+configure the operator-managed routes and full URL environment described in
+`INSTALL.md` and `HERMES.md` first; `--profile` and `--deliver`/`--chat-id` do
+not edit Hermes.
 
 The manual sequence below remains the recovery path for an install without an
 ownership manifest.
@@ -54,7 +55,8 @@ becoming an allowlist entry, which is what keeps a table's header row harmless.
 ## 1. Find out where you are
 
 ```bash
-cd "$(git -C . rev-parse --show-toplevel 2>/dev/null || echo ~/.openclaw/workspace/paynani)"
+cd "$(git -C . rev-parse --show-toplevel 2>/dev/null \
+    || echo ~/.openclaw/workspace/paynani)"
 scripts/version.sh
 ```
 
@@ -83,8 +85,8 @@ git status --short
 local changes, `git pull --ff-only` will refuse, and that refusal is correct: on
 this tool the file most likely to be edited in place is
 `harness/session_start.py`, whose marked block is Claude Code's payload format.
-Reapply your adaptation onto the new version rather than keeping your copy of the
-old file.
+Reapply your adaptation onto the new version rather than keeping your copy of
+the old file.
 
 **Only Claude Code installs have any reason to have edited it.** On OpenClaw and
 Hermes nothing invokes that script, so a local change to it there is almost
@@ -133,9 +135,11 @@ systemd-analyze verify ~/.config/systemd/user/paynani-*.{service,timer}
 
 ### On macOS, the same trap with different files
 
-A macOS install is supervised by two LaunchAgents in `~/Library/LaunchAgents`,
-rendered by `scripts/install_macos.py`. They are copies for the same reason the
-systemd units are, and a `git pull` does not touch them either.
+A macOS install is supervised by three LaunchAgents in
+`~/Library/LaunchAgents` (`com.paynani.idle`, `com.paynani.dispatch` and
+`com.paynani.logrotate`), rendered by `scripts/install_macos.py`. They are
+copies for the same reason the systemd units are, and a `git pull` does not
+touch them either.
 
 The difference is that you do not re-copy them by hand. Re-run the installer and
 let it converge:
@@ -174,6 +178,32 @@ systemctl --user restart paynani-idle.service
 systemctl --user restart paynani-dispatch.service
 ```
 
+On macOS, the same two steps use `launchctl`. Load and enable all three agents,
+bootstrapping only one that is not loaded already, since `bootstrap` fails on a
+loaded agent:
+
+```bash
+for label in com.paynani.idle com.paynani.dispatch com.paynani.logrotate; do
+    launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1 \
+        || launchctl bootstrap "gui/$(id -u)" \
+            ~/Library/LaunchAgents/$label.plist
+    launchctl enable "gui/$(id -u)/$label"
+done
+```
+
+Then restart the listener and the dispatcher. `-k` stops the running process
+before starting it again; `com.paynani.logrotate` runs on a calendar and has
+nothing to restart:
+
+```bash
+launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"
+launchctl kickstart -k "gui/$(id -u)/com.paynani.dispatch"
+```
+
+If you re-ran `scripts/install.sh` in §5, it already booted out and
+bootstrapped all three agents, so this restart is redundant there, and
+harmless.
+
 A restart can take up to 30 seconds; the listener is blocked on the IMAP socket
 and notices the stop signal when that wait ends.
 
@@ -189,11 +219,11 @@ rather than assuming:
 - **Log and state files** under `state/` in the clone are untouched, including
   `dispatch.offset`, the event journal and the last-seen UID, which is why an
   upgrade does not replay your mailbox.
-- **A pull cannot reach any of them.** They are ignored, and `scripts/install.sh`
-  refuses to write if any of them is tracked or unignored. What a pull cannot
-  protect you from is `git clean -xdf`, which deletes ignored files: on a live
-  install that is the mailbox password, both route secrets, the roster and the
-  UID baseline. Use `git clean -df`.
+- **A pull cannot reach any of them.** They are ignored, and
+  `scripts/install.sh` refuses to write if any of them is tracked or unignored.
+  What a pull cannot protect you from is `git clean -xdf`, which deletes
+  ignored files: on a live install that is the mailbox password, both route
+  secrets, the roster and the UID baseline. Use `git clean -df`.
 
 ## 7b. If you linked your harness's credentials into the clone
 
@@ -246,7 +276,12 @@ scripts/version.sh
 systemctl --user is-active paynani-idle.service
 systemctl --user is-active paynani-dispatch.service
 
-# The one that proves state survived: "resuming from uid N", not "baseline uid N"
+# On macOS instead: expect "state = running" for both
+launchctl print "gui/$(id -u)/com.paynani.idle" | grep 'state ='
+launchctl print "gui/$(id -u)/com.paynani.dispatch" | grep 'state ='
+
+# The one that proves state survived: "resuming from uid N", not
+# "baseline uid N"
 tail -2 state/idle.err.log
 
 # The watcher can still reach openclaw: silence is the pass
@@ -261,9 +296,12 @@ python3 scripts/test_listener.py
 a restart, the state file is not being written and the next reboot will
 silently swallow every message that arrived while the machine was off.
 
-Then send yourself one message and confirm it arrives in the session. Every
-check above can pass on an install that delivers nothing, which is a real
-failure this tool has had, so the end-to-end test is not optional politeness.
+**Report the upgrade complete once every check above passes.** A real message
+arriving in the session is still the only end-to-end proof, since every check
+above can pass on an install that delivers nothing, a real failure this tool
+has had. It needs a person to send mail, though, so it comes after the report,
+as in `INSTALL.md` §7.1: offer it, do not wait for it, and do not report a
+message as missing unless the person confirmed they sent it.
 
 ## 9. Tell your human what you did
 
