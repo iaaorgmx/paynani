@@ -7,6 +7,9 @@ paynani CLI.
     paynani roster list
     paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--yes]
     paynani roster remove ADDRESS [--yes]
+    paynani paths [--json]
+    paynani doctor [--json]
+    paynani support-bundle --output DIR
 
 `onboard` starts the mailbox onboarding flow: a local, loopback-only web
 server prints a one-time link, a human fills in the seven mailbox settings,
@@ -28,7 +31,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from paynani_lib import i18n, onboard, roster_cli, set_cli  # noqa: E402
+from paynani_lib import diagnostics, i18n, onboard, roster_cli, set_cli  # noqa: E402
 
 DEFAULT_PORT = 8765
 
@@ -74,6 +77,15 @@ def main(argv: list[str] | None = None) -> int:
     roster_remove.add_argument("address")
     roster_remove.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
 
+    paths_parser = subparsers.add_parser("paths", help="Print resolved paynani paths.")
+    paths_parser.add_argument("--json", action="store_true", help="machine-readable output")
+
+    doctor_parser = subparsers.add_parser("doctor", help="Diagnose this install with ok/warning/blocked/unknown statuses.")
+    doctor_parser.add_argument("--json", action="store_true", help="machine-readable output")
+
+    bundle_parser = subparsers.add_parser("support-bundle", help="Write a redacted support bundle.")
+    bundle_parser.add_argument("--output", required=True, help="Directory to create or update with redacted diagnostics.")
+
     args = parser.parse_args(argv)
 
     # `set` and `roster` are terminal commands whose own strings are English,
@@ -96,6 +108,14 @@ def main(argv: list[str] | None = None) -> int:
             return roster_cli.run_add(args)
         if args.roster_command == "remove":
             return roster_cli.run_remove(args)
+    if args.command == "paths":
+        return diagnostics.print_paths(args.json)
+    if args.command == "doctor":
+        return diagnostics.print_doctor(args.json)
+    if args.command == "support-bundle":
+        out = diagnostics.support_bundle(args.output)
+        print(f"wrote redacted support bundle to {out}")
+        return 0
 
     parser.print_help()
     return 64
