@@ -18,6 +18,7 @@ of any HTTP path at all.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -120,7 +121,71 @@ def _run_regression_tests() -> tuple[bool, str]:
     return ok, "\n".join(output)
 
 
+def _write_bytes_atomic(path: Path, data: bytes) -> None:
+    try:
+        mode = path.stat().st_mode & 0o777
+    except OSError:
+        mode = 0o644
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+    os.chmod(path, mode)
+
+
+def _apply_roster_text(path: Path, new_text: str, expected_addresses) -> tuple[str, str]:
+    """Run tests, make a backup, atomically write, verify, and restore bytes on failure."""
+    existed = path.exists()
+    original_bytes = path.read_bytes() if existed else b""
+    ok, output = _run_regression_tests()
+    if not ok:
+        return "test_failed", output
+    if existed:
+        backup = path.with_suffix(path.suffix + ".bak")
+        backup.write_bytes(original_bytes)
+    _write_atomic(path, new_text)
+    actual_addresses = roster_mod.roster_addresses(path)
+    if actual_addresses != expected_addresses:
+        try:
+            if existed:
+                _write_bytes_atomic(path, original_bytes)
+            else:
+                path.unlink(missing_ok=True)
+        except OSError as exc:
+            return "verify_failed", f"verification failed and byte-for-byte restore failed: {exc}"
+        return "verify_failed", "verification failed; original roster.md restored byte for byte"
+    return "ok", str(path)
+
+
+def _logical_diff(before: str, after: str, notes: list[str]) -> None:
+    if notes:
+        print("Plan:")
+        for note in notes:
+            print(f"  - {note}")
+    print("Diff:")
+    _print_diff(before, after)
+
+
+def _contacts_from_json(path: Path) -> list[dict]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        data = data.get("contacts", data.get("rows"))
+    if not isinstance(data, list):
+        raise ValueError("JSON must be a top-level array or an object with a contacts array")
+    if not all(isinstance(item, dict) for item in data):
+        raise ValueError("each JSON contact must be an object")
+    return data
+
+
 def run_list(args) -> int:
+    text = _read(roster_file())
+    if roster_mod.needs_migration(text):
+        print("Warning: roster.md has a legacy schema. Run: paynani roster migrate --apply", file=sys.stderr)
     entries = roster_mod.roster_entries(roster_file())
     if not entries:
         print("No contacts on the roster.")
@@ -324,6 +389,65 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
     expected = roster_mod.roster_addresses(path) | {roster_mod.normalise(address)}
     status, detail = _apply_change_core(path, result, expected)
     return ("added", detail) if status == "ok" else (status, detail)
+
+
+def run_migrate(args) -> int:
+    path = roster_file()
+    text = _read(path)
+    changed, new_text, notes = roster_mod.migrate_text(text)
+    if not changed:
+        print("No migration needed.")
+        return 0
+    if args.plan:
+        _logical_diff(text, new_text, notes)
+        return 0
+    expected = roster_mod.roster_addresses(path)
+    print(f"About to migrate roster.md at {path}:")
+    _logical_diff(text, new_text, notes)
+    status, detail = _apply_roster_text(path, new_text, expected)
+    if status == "test_failed":
+        print("Not saved: regression tests failed. Nothing written. Output:\n" + detail, file=sys.stderr)
+        return 1
+    if status == "verify_failed":
+        print(f"Not saved: {detail}", file=sys.stderr)
+        return 1
+    print(f"roster.md migrated ({detail}).")
+    return 0
+
+
+def run_apply(args) -> int:
+    path = roster_file()
+    text, creating = _starting_text(path)
+    try:
+        contacts = _contacts_from_json(Path(args.file))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"Not saved: {exc}", file=sys.stderr)
+        return 1
+    ok, new_text, notes = roster_mod.batch_add_contacts(text, contacts, migrate=True)
+    if not ok:
+        print("Not saved: " + "; ".join(notes), file=sys.stderr)
+        return 1
+    if new_text == text:
+        print("No changes.")
+        return 0
+    expected = roster_mod._addresses_from_text(new_text)
+    _logical_diff(text, new_text, notes)
+    if args.dry_run:
+        print("Dry run: nothing written.")
+        return 0
+    if not _confirm("Write this change?", args.yes):
+        print("Not saved: cancelled.")
+        return 1
+    status, detail = _apply_roster_text(path, new_text, expected)
+    if status == "test_failed":
+        print("Not saved: regression tests failed. Nothing written. Output:\n" + detail, file=sys.stderr)
+        return 1
+    if status == "verify_failed":
+        print(f"Not saved: {detail}", file=sys.stderr)
+        return 1
+    created = "created and " if creating else ""
+    print(f"roster.md {created}updated ({detail}).")
+    return 0
 
 
 def run_add(args) -> int:

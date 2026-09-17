@@ -27,6 +27,36 @@ DEFAULT_ROSTER = pathlib.Path(__file__).resolve().parents[1] / "roster.md"
 # senders may speak for somebody on the list above — see notifiers().
 NOTIFIER_HEADINGS = ("notifier", "notificador")
 
+# Versioned roster schema aliases. Canonical names are what write paths require;
+# aliases are read-only compatibility so older rosters keep working until an
+# explicit migration rewrites their header.
+SCHEMA_ALIAS_VERSION = 1
+COLUMN_ALIASES = {"username": "github"}
+CANONICAL_COLUMNS = {"name", "email", "address", "type", "github"}
+
+
+def canonical_column(name: str) -> str:
+    folded = (name or "").strip().lower()
+    return COLUMN_ALIASES.get(folded, folded)
+
+
+def legacy_columns(text: str) -> list[tuple[str, str]]:
+    _, header_fields, _ = _contacts_table_bounds(text)
+    if not header_fields:
+        return []
+    out = []
+    for field in header_fields:
+        folded = field.strip().lower()
+        canonical = canonical_column(field)
+        if folded != canonical:
+            out.append((field.strip(), canonical))
+    return out
+
+
+def needs_migration(text: str) -> bool:
+    return bool(legacy_columns(text))
+
+
 
 def normalise(address: str) -> str:
     """Strip every space and casefold — mirrors `tr -d [:blank:]` in send.sh."""
@@ -145,7 +175,7 @@ def roster_entries(path: pathlib.Path) -> list[dict]:
     headers: list[str] = []
     for fields, is_header, _ in _rows(_read(path), "contacts"):
         if is_header:
-            headers = [f.strip().lower() for f in fields]
+            headers = [canonical_column(f) for f in fields]
             continue
         index = next((i for i, f in enumerate(fields) if "@" in normalise(f)), None)
         if index is None:
@@ -225,14 +255,18 @@ def add_contact(text: str, name: str, address: str, *, type_: str = "", github: 
         return False, "roster.md has no contacts table (no header row found)"
 
     lower_headers = [h.strip().lower() for h in header_fields]
+    canonical_headers = [canonical_column(h) for h in header_fields]
     if github and "github" not in lower_headers:
+        if "github" in canonical_headers:
+            return False, "roster.md uses a legacy GitHub column; run: paynani roster migrate --apply"
         return False, "roster.md's contacts table has no GitHub column; add one by hand first"
-    if type_ and "type" not in lower_headers:
+    if type_ and "type" not in canonical_headers:
         return False, "roster.md's contacts table has no Type column; add one by hand first"
 
     provided = {"name": name, "address": address, "type": type_, "github": github}
     cells = []
-    for column in lower_headers:
+    for raw_column in header_fields:
+        column = canonical_column(raw_column)
         key = _KNOWN_COLUMNS.get(column)
         cells.append(provided.get(key, "") if key else "")
     new_row = "| " + " | ".join(cells) + " |"
@@ -269,6 +303,83 @@ def remove_contact(text: str, address: str) -> tuple[bool, str]:
     del lines[target_idx]
     trailing = "\n" if text.endswith(("\n", "\r\n")) else ""
     return True, "\n".join(lines) + trailing
+
+
+def migrate_text(text: str) -> tuple[bool, str, list[str]]:
+    """Rewrite legacy contact header columns to their canonical names.
+
+    Only the header row changes; data rows, comments and surrounding text stay
+    untouched. Returns (changed, new_text, notes).
+    """
+    lines = text.splitlines()
+    trailing = "\n" if text.endswith(("\n", "\r\n")) else ""
+    for fields, is_header, idx in _rows(text, "contacts"):
+        if not is_header:
+            continue
+        changed = False
+        new_fields = []
+        notes = []
+        for field in fields:
+            canonical = canonical_column(field)
+            if canonical != field.strip().lower():
+                pretty = "GitHub" if canonical == "github" else canonical
+                new_fields.append(pretty)
+                notes.append(f"{field.strip()} -> {pretty}")
+                changed = True
+            else:
+                new_fields.append(field.strip())
+        if not changed:
+            return False, text, []
+        lines[idx] = "| " + " | ".join(new_fields) + " |"
+        return True, "\n".join(lines) + trailing, notes
+    return False, text, []
+
+
+def validate_github_login(login: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", login or ""))
+
+
+def validate_type(type_: str) -> bool:
+    return not type_ or type_ in {"Human", "AI Agent"}
+
+
+def batch_add_contacts(text: str, contacts: list[dict], *, migrate: bool = True) -> tuple[bool, str, list[str]]:
+    """Validate and add every contact, returning a new roster only if all pass."""
+    normalised_rows = []
+    seen = set(_addresses_from_text(text))
+    batch_seen = set()
+    for i, item in enumerate(contacts, 1):
+        name = str(item.get("name", "")).strip()
+        address = str(item.get("address", item.get("email", ""))).strip()
+        type_ = str(item.get("type", "")).strip()
+        github = str(item.get("github", "")).strip()
+        norm = normalise(address)
+        if not name:
+            return False, text, [f"row {i}: name is required"]
+        if not norm or "@" not in norm:
+            return False, text, [f"row {i}: {address!r} is not an email address"]
+        if norm in seen or norm in batch_seen:
+            return False, text, [f"row {i}: {address} is duplicate"]
+        if not validate_type(type_):
+            return False, text, [f"row {i}: type must be Human or AI Agent"]
+        if github and not validate_github_login(github):
+            return False, text, [f"row {i}: invalid GitHub login {github!r}"]
+        normalised_rows.append((i, name, address, type_, github))
+        batch_seen.add(norm)
+
+    working = text
+    notes: list[str] = []
+    if migrate:
+        changed, working, migration_notes = migrate_text(working)
+        if changed:
+            notes.extend(["migrate " + note for note in migration_notes])
+    for i, name, address, type_, github in normalised_rows:
+        ok, result = add_contact(working, name, address, type_=type_, github=github)
+        if not ok:
+            return False, text, [f"row {i}: {result}"]
+        working = result
+        notes.append(f"add {address}")
+    return True, working, notes
 
 
 def notifiers(path: pathlib.Path) -> list[dict]:
@@ -308,7 +419,7 @@ def notifiers(path: pathlib.Path) -> list[dict]:
         if not column:
             continue
         out.append({"address": address, "header": header,
-                    "column": column.strip().lower()})
+                    "column": canonical_column(column)})
     return out
 
 
