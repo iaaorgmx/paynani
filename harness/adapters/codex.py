@@ -17,6 +17,7 @@ import os
 import json
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import event as ev
@@ -26,6 +27,7 @@ NAME = "codex"
 SPOOL_RELATIVE = "codex.spool"
 OFFSET_RELATIVE = "codex.offset"
 SESSION_RELATIVE = "codex.session"
+STATUS_RELATIVE = "codex.delivery.json"
 TIMEOUT = 120
 
 CANDIDATES = (
@@ -57,6 +59,51 @@ def offset_path():
 
 def session_path():
     return _state_dir() / SESSION_RELATIVE
+
+
+def status_path():
+    return _state_dir() / STATUS_RELATIVE
+
+
+def _note_status(kind, event_id, detail=""):
+    """Keep independent last-known Codex delivery facts for `paynani status`."""
+    path = status_path()
+    try:
+        current = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        current = {}
+    current[kind] = {
+        "event_id": str(event_id or ""),
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "detail": detail,
+    }
+    try:
+        _write_text_atomic(path, json.dumps(current, indent=2, sort_keys=True))
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def queue_contract():
+    """Report whether the installed CLI still exposes the optional queue API."""
+    binary = find_binary()
+    if not binary:
+        return {"state": "unsupported", "detail": "Codex binary not found"}
+    try:
+        run = subprocess.run(
+            [binary, "queue", "--help"], capture_output=True, text=True, timeout=10
+        )
+    except subprocess.TimeoutExpired:
+        return {"state": "broken", "detail": "codex queue --help timed out"}
+    except OSError as exc:
+        return {"state": "broken", "detail": f"codex queue --help failed: {exc}"}
+    output = (run.stdout or "") + "\n" + (run.stderr or "")
+    if run.returncode == 0 and "--thread" in output and "--message" in output:
+        return {"state": "supported", "detail": "--thread and --message are available"}
+    return {
+        "state": "unsupported",
+        "detail": "installed Codex CLI does not expose the tested queue contract",
+    }
 
 
 def find_binary():
@@ -182,7 +229,7 @@ def _event_id(envelope):
 def _classify_queue_result(run):
     stderr = run.stderr or ""
     if run.returncode == 0:
-        return accepted()
+        return accepted(lifecycle="presented")
     if run.returncode == 2:
         return config("codex queue usage failed")
     if run.returncode == 1 and "No active session found" in stderr:
@@ -235,7 +282,7 @@ def _start_agent_run(envelope):
     if run.returncode != 0:
         detail = (run.stderr or run.stdout or "no output").strip().splitlines()
         return config(f"codex exec exit {run.returncode}: {detail[0] if detail else 'no output'}")
-    return accepted()
+    return accepted(lifecycle="handled")
 
 
 def deliver(envelope):
@@ -260,6 +307,7 @@ def deliver(envelope):
                 _acknowledge_spool_if_contiguous(start, through)
             except (OSError, ValueError):
                 pass
+            _note_status("last_queue", _event_id(envelope), "queued to registered session")
         return queued
 
     if (os.environ.get("PAYNANI_CODEX_MODE") or "").strip().lower() == "agent":
@@ -269,7 +317,10 @@ def deliver(envelope):
                 _acknowledge_spool_if_contiguous(start, through)
             except (OSError, ValueError):
                 pass
+            _note_status("last_agent_run", _event_id(envelope), "headless run completed")
         else:
+            _note_status("last_spool", _event_id(envelope), f"agent run failed: {result.detail}")
             return accepted(f"spooled; agent run failed: {result.detail}")
 
-    return accepted()
+    _note_status("last_spool", _event_id(envelope), "waiting for session-start replay")
+    return accepted("spooled for session-start replay")

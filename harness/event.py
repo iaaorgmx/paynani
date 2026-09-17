@@ -130,7 +130,8 @@ def codex_events_fallback_prompt(notifications):
 
 
 def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_address,
-               subject, sent_at, roster_match, notification_text, observed_at=None):
+               subject, sent_at, roster_match, notification_text, observed_at=None,
+               message_id="", provider_id=""):
     """
     One arrived message, as structure rather than prose.
 
@@ -139,7 +140,7 @@ def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_addres
     Himalaya, afterwards. An envelope that carried the body would put untrusted
     content into every transport that touches it.
     """
-    return {
+    record = {
         "schema_version": SCHEMA_VERSION,
         "event_type": MAIL_RECEIVED,
         "event_id": event_id(mailbox, uidvalidity, uid),
@@ -168,6 +169,12 @@ def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_addres
         # for display, not for routing.
         "notification_text": notification_text,
     }
+    if message_id:
+        record["message_id"] = str(message_id).strip()
+    if provider_id:
+        record["provider_id"] = str(provider_id).strip()
+    record["inspection_command"] = f"scripts/paynani event show {record['event_id']}"
+    return record
 
 
 def listener_error(*, account, message, observed_at=None):

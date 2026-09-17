@@ -1,5 +1,19 @@
 # Changelog
 
+## Sin publicar
+
+- Ledger append-only por evento con estados observados, despachados,
+  presentados, atendidos, respondidos, cerrados o suprimidos. Conserva el
+  sobre seguro y las identidades de proveedor, nunca el cuerpo.
+- `scripts/paynani event show/list/mark`, `scripts/paynani status` y
+  `scripts/paynani roster explain` hacen observable el recorrido, verifican el
+  UID exacto antes de recuperar correo y explican las decisiones del roster.
+- Los duplicados del mismo `event_id`, `Message-ID` o identificador estable del
+  proveedor se suprimen de forma explícita y apuntan al evento canónico.
+- El estado de Codex distingue sesión registrada, último `codex queue`, caída
+  al spool y replay; una CLI sin el contrato opcional de `codex queue` se
+  reporta como `unsupported`, no como una instalación rota.
+
 ## 0.7.0 (2026-09-17)
 
 **Paynani corre en OpenCode, el quinto harness.** 17 commits desde 0.6.0

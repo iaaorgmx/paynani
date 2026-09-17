@@ -746,6 +746,18 @@ because they are the parts somebody working from memory would miss.
 
 ---
 
+## Event lifecycle ledger
+
+`state/lifecycle.jsonl` is the append-only audit trail keyed by canonical
+`event_id`. It records `observed`, `dispatched`, `presented`, `handled`,
+`replied`, `closed`, and explicit duplicate suppression. The observed row keeps
+the safe envelope and provider identities so journal compaction does not erase
+inspectability; it never keeps a mail body. Runtime adapters report the deepest
+state they can actually observe, so a spool handoff remains `dispatched` while
+a successful live Codex queue or acknowledged replay is `presented`.
+
+---
+
 ## What this repository is, and what it is not
 
 This repo is the artifact. It was built from a 1,181-line replication guide that

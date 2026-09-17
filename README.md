@@ -98,6 +98,18 @@ como primer contacto autorizado. Si escribes el `.env` a mano, el agente crea
 `roster.md` durante la instalación, o puedes crearlo tú con
 `scripts/paynani roster add "Tu Nombre" tu@correo.example`.
 
+Para inspeccionar el recorrido de un mensaje sin buscar a mano en archivos de
+estado, usa `scripts/paynani status` y
+`scripts/paynani event show imap:INBOX:UIDVALIDITY:UID`. El segundo muestra el
+sobre seguro; `--body` recupera el cuerpo sólo después de verificar de nuevo la
+cuenta, el buzón, UIDVALIDITY, UID y roster. Para diagnosticar una regla sin
+leer correo real:
+
+```bash
+scripts/paynani roster explain --from notifications@github.com \
+  --header X-GitHub-Sender=usuario
+```
+
 > [!CAUTION]
 > Escribe la contraseña tú, directo en el formulario. Nunca la pegues en el
 > chat con el agente: lo que pegas en una conversación se queda ahí para

@@ -33,6 +33,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import event as ev   # noqa: E402
+import ledger   # noqa: E402
 from adapters import ACCEPTED, CONFIG, RETRY   # noqa: E402
 from paths import state_dir   # noqa: E402
 
@@ -45,6 +46,7 @@ LOCK = STATE_DIR / "dispatch.lock"
 # it, which is the dispatcher's to own because it is the thing that decided the
 # cursor could move.
 STATUS = STATE_DIR / "delivery.json"
+LEDGER = STATE_DIR / "lifecycle.jsonl"
 # Compact once the journal is worth compacting, and only from here: the
 # dispatcher is the only process that knows what it has delivered.
 JOURNAL_MAX = int(os.environ.get("DISPATCH_JOURNAL_MAX", 4 * 1024 * 1024))
@@ -265,7 +267,7 @@ def select_runtime(requested):
     )
 
 
-def deliver_with_retries(adapter, record, stop, status_path=None):
+def deliver_with_retries(adapter, record, stop, status_path=None, ledger_path=None):
     """
     Keep trying one record until it is accepted or we are asked to stop.
 
@@ -285,6 +287,14 @@ def deliver_with_retries(adapter, record, stop, status_path=None):
             if status_path:
                 note_delivery(status_path, "last_accepted", record.get("event_id"),
                               adapter.NAME, result.detail)
+            if ledger_path:
+                ledger.transition(
+                    ledger_path, record.get("event_id"),
+                    result.lifecycle or "dispatched", runtime=adapter.NAME,
+                    detail=result.detail,
+                    message_id=record.get("message_id", ""),
+                    provider_id=record.get("provider_id", ""),
+                )
             return True
 
         if status_path:
@@ -325,7 +335,8 @@ def _sleep(seconds, stop):
         time.sleep(min(0.25, max(0.0, end - time.monotonic())))
 
 
-def run_once(adapter, journal, cursor_path, stop=lambda: False, status_path=None):
+def run_once(adapter, journal, cursor_path, stop=lambda: False, status_path=None,
+             ledger_path=None):
     """
     Drain everything currently in the journal. Returns how many were accepted.
 
@@ -336,6 +347,7 @@ def run_once(adapter, journal, cursor_path, stop=lambda: False, status_path=None
     """
     delivered = 0
     cursor = ev.read_cursor(cursor_path)
+    ledger_path = Path(ledger_path or ledger.path_for(journal))
     for record, end in ev.read_from(journal, cursor):
         if stop():
             break
@@ -351,7 +363,26 @@ def run_once(adapter, journal, cursor_path, stop=lambda: False, status_path=None
                 f"line and the dispatcher will carry on from it.")
             break
 
-        if not deliver_with_retries(adapter, record, stop, status_path):
+        try:
+            ledger.observed(ledger_path, record)
+            duplicate = ledger.duplicate_of(ledger_path, record)
+        except (OSError, ValueError) as exc:
+            log(f"could not update lifecycle ledger for {record.get('event_id')}: {exc}")
+            break
+        if duplicate:
+            ledger.transition(
+                ledger_path, record.get("event_id"), "suppressed",
+                runtime=adapter.NAME, related_event_id=duplicate,
+                detail="duplicate canonical event" if duplicate == record.get("event_id")
+                else "duplicate provider event",
+                message_id=record.get("message_id", ""),
+                provider_id=record.get("provider_id", ""),
+            )
+            note(f"suppressed duplicate {record.get('event_id')} related to {duplicate}")
+            ev.write_cursor(cursor_path, end)
+            delivered += 1
+            continue
+        if not deliver_with_retries(adapter, record, stop, status_path, ledger_path):
             break
         ev.write_cursor(cursor_path, end)
         delivered += 1
@@ -385,6 +416,8 @@ def main(argv=None):
     parser.add_argument("--cursor", default=str(CURSOR))
     parser.add_argument("--status", default=str(STATUS),
                         help="where to record what the runtime last said")
+    parser.add_argument("--ledger", default=str(LEDGER),
+                        help="append-only event lifecycle ledger")
     parser.add_argument("--once", action="store_true",
                         help="drain what is there and exit, rather than following")
     args = parser.parse_args(argv)
@@ -417,11 +450,11 @@ def main(argv=None):
     signal.signal(signal.SIGINT, handle)
 
     if args.once:
-        run_once(adapter, args.journal, args.cursor, stop, args.status)
+        run_once(adapter, args.journal, args.cursor, stop, args.status, args.ledger)
         return 0
 
     while not stop():
-        run_once(adapter, args.journal, args.cursor, stop, args.status)
+        run_once(adapter, args.journal, args.cursor, stop, args.status, args.ledger)
         maybe_compact(args.journal, args.cursor)
         _sleep(POLL, stop)
     return 0

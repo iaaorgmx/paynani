@@ -27,6 +27,7 @@ from roster import (DEFAULT_ROSTER, notifier_headers, notifiers,
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "harness"))
 import event as ev
+import ledger
 from paths import env_file, state_dir
 
 DEFAULT_ENV   = None   # resolved by harness/paths.py, see main()
@@ -77,8 +78,16 @@ def record(journal_path, envelope):
     permission error, with a line in mail.log as the only trace. Writing the
     operator line is not queueing.
     """
+    if envelope.get("event_type") == ev.MAIL_RECEIVED:
+        command = envelope.get("inspection_command")
+        if command and command not in envelope.get("notification_text", ""):
+            envelope = dict(envelope)
+            envelope["notification_text"] = (
+                envelope.get("notification_text", "") + f" [{command}]"
+            )
     try:
         ev.append(journal_path, envelope)
+        ledger.observed(ledger.path_for(journal_path), envelope)
     except (OSError, ValueError) as exc:
         log(f"could not write the event journal at {journal_path}: {exc}")
         log("This message is NOT queued for delivery, so its UID is deliberately "
@@ -198,7 +207,7 @@ def describe(sender, subject, date, trusted=False):
     return parts(sender, subject, date, trusted)["notification_text"]
 
 
-def parts(sender, subject, date, trusted=False):
+def parts(sender, subject, date, trusted=False, message_id="", provider_id=""):
     """
     One message, rendered and structured at the same time.
 
@@ -239,7 +248,16 @@ def parts(sender, subject, date, trusted=False):
         "subject": subject or "",
         "sent_at": sent_iso,
         "roster_match": bool(trusted),
+        "message_id": (message_id or "").strip(),
+        "provider_id": (provider_id or "").strip(),
     }
+
+
+def provider_identifier(message_id):
+    """A stable provider-side identity when the Message-ID exposes one."""
+    value = (message_id or "").strip()
+    match = re.fullmatch(r"<([^<>]+)@github\.com>", value, re.IGNORECASE)
+    return f"github:{match.group(1).lower()}" if match else ""
 
 
 # Two key schemas are accepted, so a host that already keeps credentials for its
@@ -437,18 +455,20 @@ def fetch_since(conn, last_uid, listed):
     uids = sorted(u for u in (int(x) for x in data[0].split()) if u > last_uid)
     out = []
     for uid in uids:
-        fields_wanted = " ".join(["FROM", "SUBJECT", "DATE"]
+        fields_wanted = " ".join(["FROM", "SUBJECT", "DATE", "MESSAGE-ID"]
                                  + [h.upper() for h in notifier_headers(listed.notifiers)])
         typ, payload = conn.uid("fetch", str(uid),
                                 f"(BODY.PEEK[HEADER.FIELDS ({fields_wanted})])")
         if typ != "OK" or not payload or not isinstance(payload[0], tuple):
             continue
         msg = email.message_from_bytes(payload[0][1])
+        message_id = decode_hdr(msg.get("Message-ID"))
         out.append((uid, parts(decode_hdr(msg.get("From")),
                                decode_hdr(msg.get("Subject")),
                                msg.get("Date", ""),
                                sender_is_listed(msg, listed.allowed,
-                                                listed.entries, listed.notifiers))))
+                                                listed.entries, listed.notifiers),
+                               message_id, provider_identifier(message_id))))
     return out
 
 

@@ -31,22 +31,23 @@ CONFIG = "config"
 class Result:
     """What an adapter reports back, and why."""
 
-    __slots__ = ("status", "detail")
+    __slots__ = ("status", "detail", "lifecycle")
 
-    def __init__(self, status, detail=""):
+    def __init__(self, status, detail="", lifecycle=""):
         self.status = status
         self.detail = detail
+        self.lifecycle = lifecycle
 
     @property
     def ok(self):
         return self.status == ACCEPTED
 
     def __repr__(self):
-        return f"Result({self.status!r}, {self.detail!r})"
+        return f"Result({self.status!r}, {self.detail!r}, lifecycle={self.lifecycle!r})"
 
 
-def accepted(detail=""):
-    return Result(ACCEPTED, detail)
+def accepted(detail="", lifecycle="dispatched"):
+    return Result(ACCEPTED, detail, lifecycle)
 
 
 def retry(detail=""):
