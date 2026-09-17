@@ -200,7 +200,7 @@ def parse(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Install paynani on macOS with launchd."
     )
-    parser.add_argument("--runtime", required=True, choices=("openclaw", "hermes", "codex"))
+    parser.add_argument("--runtime", required=True, choices=("openclaw", "hermes", "codex", "opencode"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--upgrade", action="store_true")
     parser.add_argument("--uninstall", action="store_true")
@@ -212,7 +212,7 @@ def parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--roster-secret-file")
     args = parser.parse_args(argv)
     if args.runtime == "hermes":
-        die("macOS install currently supports --runtime openclaw and codex only", EX_USAGE)
+        die("macOS install currently supports --runtime openclaw, codex and opencode only", EX_USAGE)
     modes = sum(bool(x) for x in (args.upgrade, args.uninstall))
     if modes > 1:
         die("--upgrade and --uninstall are mutually exclusive", EX_USAGE)
@@ -317,6 +317,10 @@ def install(args: argparse.Namespace) -> int:
             detail = (result.stderr or result.stdout or "").strip()
             die(f"OpenClaw probe failed: {detail}")
         print(f"openclaw_probe=accepted executable={runtime_bin}")
+    elif args.runtime == "opencode":
+        print(f"opencode_spool_probe=accepted spool={state_dir() / 'opencode.spool'}")
+        print("opencode_spool_probe=plugin-reads-in-process scope=writability-only")
+        print(f"opencode_plugin_next_step=python3 {ROOT / 'scripts' / 'opencode_plugin.py'} --install")
     else:
         print(f"codex_spool_probe=accepted spool={state_dir() / 'codex.spool'}")
         print("codex_spool_probe=queue-or-replay scope=writability-only")

@@ -17,7 +17,7 @@ Never fails the session: any unexpected error degrades to a quiet no-op, because
 broken hook must not be able to block startup.
 """
 
-import json, os, pathlib, platform, select, subprocess, sys
+import json, os, pathlib, platform, select, shutil, subprocess, sys, time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import event as ev
@@ -47,6 +47,18 @@ SESSION_OFFSET = STATE_DIR / "session.offset"
 CODEX_SPOOL = STATE_DIR / "codex.spool"
 CODEX_OFFSET = STATE_DIR / "codex.offset"
 CODEX_SESSION = STATE_DIR / "codex.session"
+# OpenCode keeps a spool too, but nothing in OpenCode runs this file as a hook.
+# The paynani plugin inside the OpenCode process (harness/opencode/paynani.js)
+# calls the --opencode-* modes below instead: it asks what is pending, hands the
+# instruction to its own session, and acknowledges only once OpenCode took it.
+# The lock makes that plugin a single consumer when two OpenCode processes are
+# open, for the same reason session_watch.sh takes one.
+OPENCODE_SPOOL = STATE_DIR / "opencode.spool"
+OPENCODE_OFFSET = STATE_DIR / "opencode.offset"
+OPENCODE_LOCK = STATE_DIR / "opencode.watch.lock.d"
+# A lock directory whose owner file has not been written yet belongs to a
+# plugin that is in the middle of claiming it, not to a dead one.
+OPENCODE_LOCK_GRACE = 10
 SESSION_WATCH = REPO / "harness/session_watch.sh"
 RUNTIME_ENV = REPO / "runtime.env"
 
@@ -225,6 +237,8 @@ def selected_runtime():
 def spool_paths(runtime):
     if runtime == "codex":
         return CODEX_SPOOL, CODEX_OFFSET
+    if runtime == "opencode":
+        return OPENCODE_SPOOL, OPENCODE_OFFSET
     return SPOOL, SESSION_OFFSET
 
 
@@ -451,7 +465,170 @@ def system_message_parts(listener_state, dispatcher_state, faults, runtime,
     return messages
 
 
+def opencode_pending(with_status=False):
+    """
+    What the OpenCode plugin should hand to its session, without acknowledging.
+
+    `through` is the byte offset the plugin passes back to --opencode-ack once
+    OpenCode accepted the prompt. The prompt carries event ids and the fixed
+    instruction Codex uses, never a mail body. `system` is only computed when
+    asked, because the plugin polls this and the service checks shell out.
+    """
+    lines, capped, through = read_spool_backlog(OPENCODE_SPOOL, OPENCODE_OFFSET)
+    prompt = "\n".join(codex_replay_instructions(lines)) if lines else ""
+    system = ""
+    if with_status:
+        system = ". ".join(system_message_parts(
+            unit_state(SERVICE), unit_state(DISPATCH_SERVICE), dispatcher_faults(),
+            "opencode", [], []))
+    return {"through": through, "count": len(lines), "capped": capped,
+            "prompt": prompt, "system": system}
+
+
+def opencode_ack(value):
+    """
+    Move opencode.offset forward to `value`, and never backward or past the end.
+
+    A value behind the recorded offset is an older plugin call finishing late;
+    honouring it would replay mail that was already handed over. A value past the
+    end of the spool cannot have come from --opencode-pending on this spool.
+    """
+    try:
+        through = int(value)
+    except (TypeError, ValueError):
+        return None
+    try:
+        size = OPENCODE_SPOOL.stat().st_size
+    except OSError:
+        size = 0
+    if through < 0 or through > size:
+        return None
+    try:
+        current = int(OPENCODE_OFFSET.read_text(encoding="utf-8").strip() or 0)
+    except (OSError, ValueError):
+        current = 0
+    if current > size:
+        current = 0
+    if through > current:
+        write_text_atomic(OPENCODE_OFFSET, str(through))
+        current = through
+    return current
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _opencode_lock_owner():
+    try:
+        text = (OPENCODE_LOCK / "owner").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() == "pid":
+            try:
+                return int(value.strip())
+            except ValueError:
+                return None
+    return None
+
+
+def _opencode_take_lock(pid):
+    try:
+        OPENCODE_LOCK.mkdir(parents=True)
+    except FileExistsError:
+        return False
+    write_text_atomic(OPENCODE_LOCK / "owner", f"pid={pid}\n")
+    return True
+
+
+def opencode_claim(pid):
+    """
+    Whether the plugin in process `pid` is the one OpenCode consumer.
+
+    Two consumers of one spool advancing one offset is how events get repeated
+    and the record of what was handed over gets corrupted. The first plugin to
+    create the lock directory wins; a later one takes over only when the owner
+    process is gone. The takeover renames the stale directory away first, so two
+    plugins noticing the same dead owner still leave exactly one winner.
+    """
+    pid = int(pid)
+    if pid <= 0:
+        raise ValueError("pid must be positive")
+    if _opencode_take_lock(pid):
+        return True, pid
+    owner = _opencode_lock_owner()
+    if owner == pid:
+        return True, pid
+    if owner is not None and _pid_alive(owner):
+        return False, owner
+    if owner is None:
+        try:
+            age = time.time() - OPENCODE_LOCK.stat().st_mtime
+        except OSError:
+            age = OPENCODE_LOCK_GRACE
+        if age < OPENCODE_LOCK_GRACE:
+            return False, None
+    stale = OPENCODE_LOCK.with_name(f"{OPENCODE_LOCK.name}.stale.{pid}")
+    try:
+        os.rename(OPENCODE_LOCK, stale)
+    except OSError:
+        return False, _opencode_lock_owner()
+    shutil.rmtree(stale, ignore_errors=True)
+    if _opencode_take_lock(pid):
+        return True, pid
+    return False, _opencode_lock_owner()
+
+
+def opencode_release(pid):
+    """Remove the lock, but only the one this process holds."""
+    if _opencode_lock_owner() == int(pid):
+        shutil.rmtree(OPENCODE_LOCK, ignore_errors=True)
+        return True
+    return False
+
+
+def opencode_command(args):
+    """
+    The --opencode-* modes. Each prints one JSON object or nothing.
+
+    Nothing printed means "do not act": the plugin neither delivers nor
+    acknowledges without a parsed answer, so a failure here repeats mail at
+    worst and never skips it.
+    """
+    mode = args[0]
+    if mode == "--opencode-pending":
+        print(json.dumps(opencode_pending("--status" in args[1:]), ensure_ascii=False),
+              flush=True)
+        return 0
+    if mode == "--opencode-ack" and len(args) == 2:
+        offset = opencode_ack(args[1])
+        if offset is None:
+            return 2
+        print(json.dumps({"offset": offset}), flush=True)
+        return 0
+    if mode == "--opencode-claim" and len(args) == 2:
+        owner, holder = opencode_claim(args[1])
+        print(json.dumps({"owner": owner, "holder": holder}), flush=True)
+        return 0
+    if mode == "--opencode-release" and len(args) == 2:
+        print(json.dumps({"released": opencode_release(args[1])}), flush=True)
+        return 0
+    return 2
+
+
 def main():
+    if sys.argv[1:2] and sys.argv[1].startswith("--opencode-"):
+        return opencode_command(sys.argv[1:])
     runtime = selected_runtime()
     if "--session-end" in sys.argv[1:]:
         forget_codex_session()
@@ -567,7 +744,7 @@ def main():
                   "expect the dispatcher to deliver it as well rather than "
                   "treating this as the only copy:")
         parts.append(header + "\n" + "\n".join(lines))
-    elif runtime not in ("claudecode", "codex"):
+    elif runtime not in ("claudecode", "codex", "opencode"):
         parts.append("No unseen mail since the last session acknowledged the log.")
 
     local = local_code_line()

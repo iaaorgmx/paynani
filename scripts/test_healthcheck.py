@@ -18,6 +18,8 @@ import sys
 import tempfile
 import time
 from contextlib import redirect_stdout
+from pathlib import Path
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "harness"))
@@ -736,6 +738,38 @@ check("the Codex report states live queue plus replay", True,
       "codex queue" in text and "SessionStart replay" in text)
 check("the Codex report says picked up does not mean answered", True,
       "not that the agent read the mail body or answered it" in text)
+
+# OpenCode is read by a plugin inside the OpenCode process. Unread bytes while
+# OpenCode is closed are the normal waiting state, and the report has to say
+# whether the plugin is registered, since that is the step people skip.
+f = (Fixture(runtime="opencode").queue(1, age_seconds=6 * HOUR)
+     .drain().spool(bytes_unread=120, bytes_total=120, name="opencode.spool",
+                    session_arming="opencode-plugin"))
+f.spool_facts.update({"plugin_registered": False,
+                      "plugin_path": "/home/a/.config/opencode/plugins/paynani.js",
+                      "consumer_pid": None})
+facts, _, warnings = f.run()
+check("mail still sitting unread in the OpenCode spool is not unanswered", [], warnings)
+code, text = f.exit_code()
+check("the OpenCode report names a missing plugin and the fix", True,
+      "OpenCode plugin NOT registered" in text
+      and "scripts/opencode_plugin.py --install" in text)
+check("the OpenCode report says a closed OpenCode is normal", True,
+      "no OpenCode process is delivering" in text)
+
+with tempfile.TemporaryDirectory() as tmp:
+    state = Path(tmp)
+    lock = state / "opencode.watch.lock.d"
+    lock.mkdir()
+    (lock / "owner").write_text(f"pid={os.getpid()}\n", encoding="utf-8")
+    with mock.patch.dict(os.environ, {"OPENCODE_CONFIG_DIR": str(state / "oc")}):
+        plugin = hc.opencode_plugin_facts(state)
+    check("a live lock owner is reported as the consumer", os.getpid(), plugin["consumer_pid"])
+    check("an absent plugin file is reported as not registered", False,
+          plugin["plugin_registered"])
+    (lock / "owner").write_text("pid=999999999\n", encoding="utf-8")
+    check("a dead lock owner is not a consumer", None,
+          hc.opencode_plugin_facts(state)["consumer_pid"])
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

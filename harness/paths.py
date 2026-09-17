@@ -14,6 +14,7 @@ because nothing in this file checks them:
     Hermes Agent   ~/.hermes/workspace/paynani
     Claude Code    ~/.claude/workspace/paynani
     OpenAI Codex   ~/.codex/workspace/paynani
+    OpenCode       ~/.opencode/workspace/paynani
 
 The rule is deliberately boring, and it is the whole rule:
 
@@ -23,7 +24,7 @@ The rule is deliberately boring, and it is the whole rule:
 2. A harness keeps its agent's mail credentials in the workspace folder of its
    own installation directory — `~/.openclaw/workspace/.env`,
    `~/.hermes/workspace/.env`, `~/.claude/workspace/.env`,
-   `~/.codex/workspace/.env` — and this reads that file where it lies. Only the
+   `~/.codex/workspace/.env`, `~/.opencode/workspace/.env` — and this reads that file where it lies. Only the
    credentials; state, `runtime.env`, the manifest and `hermes/` still hang off
    the clone. The harness owns that file, this project does not, and a password
    copied to a second location is a second thing to leak.
@@ -46,7 +47,7 @@ from pathlib import Path
 # scripts/test_paths.sh pins that one.
 #
 # The OpenClaw entry is an instance of the rule, not an exception to it.
-HARNESS_ROOTS = ("~/.openclaw", "~/.hermes", "~/.claude", "~/.codex")
+HARNESS_ROOTS = ("~/.openclaw", "~/.hermes", "~/.claude", "~/.codex", "~/.opencode")
 HARNESS_ENV_RELATIVE = "workspace/.env"
 
 def _under(relative, home=None):

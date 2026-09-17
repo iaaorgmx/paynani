@@ -38,6 +38,7 @@ Usage:
   scripts/install.sh --runtime hermes [--deliver TARGET --chat-id ID | --profile PROFILE]
   scripts/install.sh --runtime claudecode [--upgrade|--uninstall] [--dry-run]
   scripts/install.sh --runtime codex [--upgrade|--uninstall] [--dry-run]
+  scripts/install.sh --runtime opencode [--upgrade|--uninstall] [--dry-run]
                      [--upgrade|--uninstall] [--non-interactive]
                      [--notify-secret-file PATH --roster-secret-file PATH]
                      [--dry-run]
@@ -48,7 +49,7 @@ Modes:
   --uninstall        Remove only artifacts owned by this installer
 
 Options:
-  --runtime RUNTIME          Required: openclaw, hermes, claudecode, or codex
+  --runtime RUNTIME          Required: openclaw, hermes, claudecode, codex, or opencode
   --deliver TARGET          Guidance label for an operator-managed Hermes target
   --chat-id ID               Guidance label for that target's chat ID
   --profile PROFILE          Guidance label for an existing operator-managed profile
@@ -288,7 +289,7 @@ discover_prerequisites() {
     if [[ "$mode" == uninstall ]]; then
         runtime_cli="not-required-for-uninstall"
     else
-        if [[ "$runtime" == claudecode || "$runtime" == codex ]]; then
+        if [[ "$runtime" == claudecode || "$runtime" == codex || "$runtime" == opencode ]]; then
             # No runtime CLI is required. Delivery is a file append, and the
             # runtime binary is only used by optional session-side setup -- so
             # demanding it here would refuse a host that this runtime works
@@ -494,7 +495,7 @@ load_ownership_manifest() {
             exit "$EX_CONFIG"
         fi
         previous_runtime=""
-        for candidate in openclaw hermes claudecode codex; do
+        for candidate in openclaw hermes claudecode codex opencode; do
             [[ "$candidate" != "$runtime" ]] || continue
             mapfile -d '' -t arguments < <(manifest_arguments "$candidate")
             if output=$(python3 "$ROOT/scripts/install_manifest.py" read "${arguments[@]}" 2>&1); then
@@ -559,6 +560,11 @@ render_artifact() {
         fi
         if [[ "$runtime" == codex ]]; then
             printf 'PAYNANI_RUNTIME=codex\n'
+            printf '%s' "$recorded_env_line"
+            return
+        fi
+        if [[ "$runtime" == opencode ]]; then
+            printf 'PAYNANI_RUNTIME=opencode\n'
             printf '%s' "$recorded_env_line"
             return
         fi
@@ -1180,6 +1186,32 @@ probe_codex_spool() {
     printf 'codex_spool_probe=queue-or-replay scope=writability-only\n'
 }
 
+probe_opencode_spool() {
+    # OpenCode is read from inside its own process by the paynani plugin, so no
+    # OpenCode needs to be open, or even installed, for the durable half to be
+    # ready. The plugin is registered separately with
+    # scripts/opencode_plugin.py --install, and nothing here can see whether it
+    # is loaded.
+    local state spool probe
+    state=$(python3 -c 'import sys; sys.path.insert(0, "'"$ROOT"'/harness"); import paths; print(paths.state_dir())') || \
+        die_config 'could not resolve the state directory for the OpenCode spool'
+    spool="$state/opencode.spool"
+    mkdir -p -- "$state" 2>/dev/null || \
+        die_config "state directory $state cannot be created"
+    probe="$state/.opencode-spool-probe.$$"
+    if ! : >"$probe" 2>/dev/null; then
+        rm -f -- "$probe" 2>/dev/null || true
+        die_config "state directory $state is not writable, so no event could ever be delivered"
+    fi
+    rm -f -- "$probe" 2>/dev/null || true
+    if [[ -e "$spool" && ! -w "$spool" ]]; then
+        die_config "$spool exists but is not writable"
+    fi
+    printf 'opencode_spool_probe=accepted spool=%s\n' "$spool"
+    printf 'opencode_spool_probe=plugin-reads-in-process scope=writability-only\n'
+    printf 'opencode_plugin_next_step=%s\n' "python3 $ROOT/scripts/opencode_plugin.py --install"
+}
+
 print_final_verification_report() {
     local unit label secret_path secret_mode
     printf 'verification_report_begin\n'
@@ -1218,6 +1250,12 @@ print_final_verification_report() {
         printf 'verification_secret=not-applicable runtime=codex\n'
         printf 'verification_smoke=codex-spool result=writable\n'
         printf 'verification_note=codex-delivery scope=spool-writable-only session-arming=queue-or-replay\n'
+    elif [[ "$runtime" == opencode ]]; then
+        printf 'verification_secret=not-applicable runtime=opencode\n'
+        printf 'verification_smoke=opencode-spool result=writable\n'
+        # The plugin runs inside OpenCode. From here it is unobservable whether
+        # it is registered in the OpenCode that will actually be opened.
+        printf 'verification_note=opencode-delivery scope=spool-writable-only plugin=unobservable\n'
     else
         printf 'verification_secret=not-applicable runtime=openclaw\n'
         printf 'verification_smoke=openclaw-service-environment result=accepted\n'
@@ -1345,7 +1383,7 @@ done
 
 [[ -n "$runtime" ]] || die_usage '--runtime is required'
 case "$runtime" in
-    openclaw|hermes|claudecode|codex) ;;
+    openclaw|hermes|claudecode|codex|opencode) ;;
     *) die_usage "unsupported runtime: $runtime" ;;
 esac
 
@@ -1449,6 +1487,11 @@ fi
 if [[ "$mode" == uninstall ]]; then
     changes_made=0
     uninstall_owned_filesystem
+    if [[ "$runtime" == opencode ]]; then
+        # The plugin file lives in OpenCode's configuration, not in the ownership
+        # manifest, so it is named here rather than removed silently.
+        printf 'install: the OpenCode plugin is not removed by this step; run: python3 %s/scripts/opencode_plugin.py --uninstall\n' "$ROOT"
+    fi
     if ((changes_made)); then
         printf 'install: owned services deactivated when reachable and recorded artifacts removed; credentials and state preserved.\n'
         exit "$EX_CHANGED"
@@ -1480,6 +1523,8 @@ elif [[ "$runtime" == claudecode ]]; then
     probe_claudecode_spool
 elif [[ "$runtime" == codex ]]; then
     probe_codex_spool
+elif [[ "$runtime" == opencode ]]; then
+    probe_opencode_spool
 else
     probe_hermes_routes
 fi
