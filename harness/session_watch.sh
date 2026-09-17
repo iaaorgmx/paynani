@@ -290,7 +290,7 @@ fi
 	if [ -n "${PAYNANI_TEST_TAIL_DELAY:-}" ]; then
 		sleep "$PAYNANI_TEST_TAIL_DELAY"
 	fi
-	tail -c "+$((start + 1))" -F "$SPOOL" 2>/dev/null >"$FIFO"
+	exec tail -c "+$((start + 1))" -F "$SPOOL" 2>/dev/null >"$FIFO"
 ) &
 tail_pid=$!
 # Both writers are short lines, well under PIPE_BUF, so a tick cannot land in
