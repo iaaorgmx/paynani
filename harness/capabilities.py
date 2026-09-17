@@ -16,6 +16,7 @@ DELIVERY_MODES = ("now", "durable", "replay")
 LEVELS = ("replay-only", "live", "autonomous", "unknown")
 CREDENTIAL_LOCATIONS = ("harness_workspace_env", "route_env_and_secret_files")
 SESSION_DISCOVERY = ("cli_gateway", "health_route", "session_start_hook", "opencode_plugin")
+DOCUMENTATION_FIELDS = ("how_it_arrives", "guarantee", "do_not_promise")
 
 REQUIRED_STATIC_FIELDS = (
     "delivery_modes",
@@ -59,6 +60,11 @@ CAPABILITIES = {
             "openclaw system event --mode now accepts a live notification; "
             "it does not start an agent run or prove the session acted on it."
         ),
+        "documentation": {
+            "how_it_arrives": "Paynani calls openclaw system event --mode now.",
+            "guarantee": "The runtime accepted a live notification attempt.",
+            "do_not_promise": "Do not promise the agent run started, read it, or replied.",
+        },
     },
     "hermes": {
         "display_name": "Hermes Agent",
@@ -83,6 +89,11 @@ CAPABILITIES = {
             "Hermes routes authenticate the envelope; a 202 roster response "
             "means accepted by Hermes, not completed by the agent."
         ),
+        "documentation": {
+            "how_it_arrives": "Paynani posts the envelope to authenticated Hermes HTTP routes.",
+            "guarantee": "Hermes accepted or delivered the route request it reported.",
+            "do_not_promise": "Do not treat a 202 roster acceptance as completed agent work.",
+        },
     },
     "claudecode": {
         "display_name": "Claude Code",
@@ -106,6 +117,11 @@ CAPABILITIES = {
             "with session_watch.sh armed, Monitor can present it live seconds "
             "after the append. Agent mode is opt-in."
         ),
+        "documentation": {
+            "how_it_arrives": "Paynani appends one line to state/session.spool.",
+            "guarantee": "The event is durably waiting for SessionStart or an armed Monitor.",
+            "do_not_promise": "Do not promise a Claude Code session was open or read the spool.",
+        },
     },
     "codex": {
         "display_name": "OpenAI Codex",
@@ -129,6 +145,11 @@ CAPABILITIES = {
             "Every event is spooled first. codex queue can wake a registered "
             "live session; headless exec is opt-in."
         ),
+        "documentation": {
+            "how_it_arrives": "Paynani appends to state/codex.spool, then may call codex queue.",
+            "guarantee": "The event is durably spooled; a registered live session may be queued.",
+            "do_not_promise": "Do not promise Codex completed the mail work or that queue is public API.",
+        },
     },
     "opencode": {
         "display_name": "OpenCode",
@@ -162,6 +183,11 @@ CAPABILITIES = {
             "events when an idle session exists; open TUI without a destination "
             "is an explicit state."
         ),
+        "documentation": {
+            "how_it_arrives": "Paynani appends to state/opencode.spool; the OpenCode plugin presents it.",
+            "guarantee": "The event is durable, and the plugin can start an idle target session.",
+            "do_not_promise": "Do not promise delivery when the TUI is open without a target session.",
+        },
     },
 }
 
@@ -226,6 +252,13 @@ def _validate_adapter(name, spec):
             errors.append(
                 f"{name}: scenario {scenario} operator_visible_state must be ok/warning/blocked/unknown"
             )
+    documentation = spec.get("documentation")
+    if not isinstance(documentation, dict):
+        errors.append(f"{name}: missing documentation")
+    else:
+        for field in DOCUMENTATION_FIELDS:
+            if not str(documentation.get(field, "")).strip():
+                errors.append(f"{name}: documentation.{field} must not be empty")
     level = derived_level(static)
     if level not in LEVELS:
         errors.append(f"{name}: derived level {level!r} is invalid")
@@ -277,16 +310,74 @@ def markdown_table():
     return "\n".join([header] + rows)
 
 
+def harness_sections():
+    data = as_dict()["adapters"]
+    sections = []
+    for name in sorted(data):
+        spec = data[name]
+        docs = spec["documentation"]
+        section = [
+            f"## {spec['display_name']} (`{name}`)",
+            "",
+            "### How It Arrives",
+            "",
+            docs["how_it_arrives"],
+            "",
+            "### Guarantee",
+            "",
+            docs["guarantee"],
+            "",
+            "### What Not To Promise",
+            "",
+            docs["do_not_promise"],
+        ]
+        scenarios = spec.get("scenarios") or {}
+        if scenarios:
+            section.extend([
+                "",
+                "### Scenarios",
+                "",
+                "| Scenario | Event accepted | Delivered to target session | Operator state | Label |",
+                "|---|---|---|---|---|",
+            ])
+            for scenario, fields in sorted(scenarios.items()):
+                section.append(
+                    "| `{scenario}` | {accepted} | {delivered} | {state} | {label} |".format(
+                        scenario=scenario,
+                        accepted=fields["event_accepted"],
+                        delivered=fields["delivered_to_target_session"],
+                        state=fields["operator_visible_state"],
+                        label=fields["documentation_label"],
+                    )
+                )
+        sections.append("\n".join(section))
+    return "\n\n".join(sections)
+
+
+def markdown_page():
+    return "\n\n".join([
+        "# Runtime Capabilities",
+        "This page is generated from `harness/capabilities.py`; edit the data there.",
+        "## Summary Matrix",
+        markdown_table(),
+        harness_sections(),
+    ])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Print JSON capabilities.")
     parser.add_argument("--markdown", action="store_true", help="Print the Markdown matrix.")
+    parser.add_argument("--page", action="store_true", help="Print the full Markdown page.")
     args = parser.parse_args(argv)
     errors = validate()
     if errors:
         for error in errors:
             print(error)
         return 1
+    if args.page:
+        print(markdown_page())
+        return 0
     if args.markdown:
         print(markdown_table())
         return 0
