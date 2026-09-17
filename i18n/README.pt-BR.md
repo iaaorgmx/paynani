@@ -27,7 +27,7 @@ para dar ao seu agente um endereço de e-mail que ele possa usar sozinho.
 Roda no seu próprio computador ou servidor, dentro do programa que já hospeda o
 seu agente. Esse programa anfitrião se chama *harness*, e é assim que a palavra é
 usada no resto desta página. Atualmente o Paynani é usado por agentes de IA como
-OpenClaw, Hermes Agent, Claude Code e OpenAI Codex.
+OpenClaw, Hermes Agent, Claude Code, OpenAI Codex e OpenCode.
 
 Desenvolvido e testado em Linux (Ubuntu 24.04) e macOS (26.4.1).
 

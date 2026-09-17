@@ -118,7 +118,7 @@ pgrep -af idle_listener.py                           # no debe salir nada
 están en el clon.** Cuando el host tiene un harness, la contraseña del buzón vive
 en el `.env` del workspace de ese harness (`~/.openclaw/workspace/.env`,
 `~/.hermes/workspace/.env`, `~/.claude/workspace/.env`,
-`~/.codex/workspace/.env`) y `<clon>/.env` ni
+`~/.codex/workspace/.env`, `~/.opencode/workspace/.env`) y `<clon>/.env` ni
 siquiera existe. Un `rm -f .env` desde el clon no borraría nada en ese caso, y te
 dejaría creyendo que borraste la contraseña.
 
@@ -209,6 +209,13 @@ la vuelve a poner durante la instalación, contra el roster que sí va a existir
 entonces.
 
 ## 6. Quita el repositorio
+
+**En OpenCode, quita primero el plugin.** El archivo que carga OpenCode apunta a
+este clon, y sin el clon cada arranque de OpenCode fallaría al cargarlo:
+
+```bash
+python3 "$REPO/scripts/opencode_plugin.py" --uninstall
+```
 
 ```bash
 rm -rf "$REPO"   # el clon desde el que instalaste

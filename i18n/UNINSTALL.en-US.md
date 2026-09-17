@@ -115,7 +115,7 @@ pgrep -af idle_listener.py                           # expect nothing
 clone.** When the host has a harness, the mailbox password lives in that
 harness's workspace `.env` (`~/.openclaw/workspace/.env`,
 `~/.hermes/workspace/.env`, `~/.claude/workspace/.env`,
-`~/.codex/workspace/.env`) and `<clone>/.env` does
+`~/.codex/workspace/.env`, `~/.opencode/workspace/.env`) and `<clone>/.env` does
 not exist at all. An `rm -f .env` from the clone would delete nothing in that
 case, and leave you believing you had removed the password.
 
@@ -205,6 +205,13 @@ will apply this rule there.
 exist then.
 
 ## 6. Remove the repository
+
+**On OpenCode, remove the plugin first.** The file OpenCode loads points into
+this clone, and without the clone every OpenCode start would fail to load it:
+
+```bash
+python3 "$REPO/scripts/opencode_plugin.py" --uninstall
+```
 
 ```bash
 rm -rf "$REPO"   # the clone you installed from

@@ -52,6 +52,7 @@ file per harness:
 | Hermes Agent | `~/.hermes/workspace/.env` |
 | Claude Code | `~/.claude/workspace/.env` |
 | OpenAI Codex | `~/.codex/workspace/.env` |
+| OpenCode | `~/.opencode/workspace/.env` |
 
 A clone that was set up with its own `.env` inside it keeps that instead; the
 command above answers with whichever this host has, and it reads the harness's
@@ -133,6 +134,13 @@ For an OpenAI Codex runtime, register the session-start hook after installing,
 first. Codex support is session-start replay in this version: mail that lands
 mid-session waits in `state/codex.spool` until startup, resume, clear, or compact
 runs the hook.
+
+For an OpenCode runtime, register the plugin after installing,
+`scripts/opencode_plugin.py --install`, and read `INSTALL.md` §6 *"OpenCode"*
+first. The plugin runs inside OpenCode: once you have written in a session and
+that session is idle, it hands you the pending events from
+`state/opencode.spool`. With OpenCode closed, mail waits there, and that is
+normal. Restart OpenCode after registering, because plugins load at startup.
 
 On **macOS**, `scripts/install.sh` delegates to `scripts/install_macos.py`, which
 renders and converges two LaunchAgents in `~/Library/LaunchAgents` instead of

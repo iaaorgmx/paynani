@@ -29,7 +29,7 @@ usar automáticamente.
 Corre en tu propia computadora o servidor, dentro del programa que ya hospeda a
 tu agente. A ese programa anfitrión se le llama *harness*, y así se usa la
 palabra en el resto de esta página. Actualmente Paynani es utilizado por agentes
-de IA como OpenClaw, Hermes Agent, Claude Code y OpenAI Codex.
+de IA como OpenClaw, Hermes Agent, Claude Code, OpenAI Codex y OpenCode.
 
 Desarrollado y probado usando Linux (Ubuntu 24.04) y macOS (26.4.1).
 
