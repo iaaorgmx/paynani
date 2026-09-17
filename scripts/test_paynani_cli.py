@@ -577,6 +577,22 @@ check(
 ok, legacy_added = roster_mod.add_contact(LEGACY_ROSTER, "New", "new@example.com")
 check("roster.add_contact: works on the plain two-column legacy format too", ok is True and "new@example.com" in legacy_added)
 
+USERNAME_ROSTER = (
+    "| Name | Email | Type | Username |\n"
+    "|---|---|---|---|\n"
+    "| Old Person | old@example.com | Human | oldhandle |\n"
+)
+ok, reason = roster_mod.add_contact(USERNAME_ROSTER, "New", "new@example.com")
+check(
+    "roster.add_contact: legacy Username schema is refused even without --github",
+    ok is False and "migrate --apply" in reason,
+)
+ok, reason = roster_mod.remove_contact(USERNAME_ROSTER, "old@example.com")
+check(
+    "roster.remove_contact: legacy Username schema is refused before writing",
+    ok is False and "migrate --apply" in reason,
+)
+
 ok, removed = roster_mod.remove_contact(SHIPPED_ROSTER, "jjulianfe@gmail.com")
 check("roster.remove_contact: reports success", ok is True)
 check("roster.remove_contact: the address is gone", "jjulianfe@gmail.com" not in removed)
@@ -804,6 +820,48 @@ try:
 
     r = roster_cli.run_remove(RArgs(address="ghost@example.com", yes=True))
     check("roster_cli.run_remove: a nonexistent address is refused", r == 1)
+
+    username_path = roster_dir / "username-roster.md"
+    username_path.write_text(USERNAME_ROSTER, encoding="utf-8")
+    roster_cli.roster_file = lambda: username_path
+    before_username = username_path.read_text(encoding="utf-8")
+    r = roster_cli.run_add(RArgs(name="Legacy Add", address="legacyadd@example.com", yes=True))
+    check("roster_cli.run_add: legacy Username schema is refused before writing", r == 1)
+    check(
+        "roster_cli.run_add: legacy Username refusal leaves roster.md untouched",
+        username_path.read_text(encoding="utf-8") == before_username,
+    )
+    r = roster_cli.run_remove(RArgs(address="old@example.com", yes=True))
+    check("roster_cli.run_remove: legacy Username schema is refused before writing", r == 1)
+    check(
+        "roster_cli.run_remove: legacy Username refusal leaves roster.md untouched",
+        username_path.read_text(encoding="utf-8") == before_username,
+    )
+    roster_cli.roster_file = lambda: roster_path
+
+    rollback_path = roster_dir / "rollback-roster.md"
+    rollback_path.write_text(SHIPPED_ROSTER, encoding="utf-8")
+    original_rollback = rollback_path.read_bytes()
+    real_write_atomic = roster_cli._write_atomic
+
+    def write_then_fail(path, text):
+        real_write_atomic(path, text)
+        raise OSError("simulated post-replace chmod failure")
+
+    roster_cli._write_atomic = write_then_fail
+    try:
+        status, detail = roster_cli._apply_roster_text(
+            rollback_path,
+            SHIPPED_ROSTER.replace("Julian Flores", "Julian Changed"),
+            roster_mod._addresses_from_text(SHIPPED_ROSTER),
+        )
+    finally:
+        roster_cli._write_atomic = real_write_atomic
+    check("roster_cli._apply_roster_text: post-replace failure is reported", status == "verify_failed")
+    check(
+        "roster_cli._apply_roster_text: post-replace failure restores original bytes",
+        rollback_path.read_bytes() == original_rollback,
+    )
 
     # add_contact_noninteractive() -- the onboard web form's non-terminal
     # path. No confirmation, no console output, a status string instead of
