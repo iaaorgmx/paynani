@@ -158,8 +158,8 @@ def _observation_check(name: str, facts: dict) -> dict:
         return _check(name, "unknown", OBSERVATION_LABELS[name], spool)
 
     if name == "spool_unread_bytes":
-        if isinstance(spool, dict) and spool.get("unread_bytes") is not None:
-            status = "warning" if spool.get("unread_bytes", 0) else "ok"
+        if isinstance(spool, dict) and spool.get("bytes_unread") is not None:
+            status = "warning" if spool.get("bytes_unread", 0) else "ok"
             return _check(name, status, OBSERVATION_LABELS[name], spool)
         return _check(name, "unknown", OBSERVATION_LABELS[name], spool)
 
@@ -324,7 +324,13 @@ def _read_redacted(path: Path, redact, max_bytes=20000) -> str | None:
 
 def support_bundle(output: str | Path) -> Path:
     out = Path(output)
-    out.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        if not out.is_dir():
+            raise FileExistsError(f"support bundle output path exists and is not a directory: {out}")
+        if any(out.iterdir()):
+            raise FileExistsError(f"support bundle output directory is not empty: {out}")
+    else:
+        out.mkdir(parents=True)
     redact = _redactor()
     data = {"doctor": doctor_data(), "paths": paths_data()}
     (out / "summary.json").write_text(redact(json.dumps(data, indent=2, sort_keys=True)), encoding="utf-8")

@@ -17,6 +17,48 @@ from paynani_lib import diagnostics as d
 passed = failed = 0
 
 
+
+
+def _validate_type(schema_type, value):
+    if schema_type == "object":
+        return isinstance(value, dict)
+    if schema_type == "array":
+        return isinstance(value, list)
+    if schema_type == "string":
+        return isinstance(value, str)
+    if schema_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if schema_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if schema_type == "boolean":
+        return isinstance(value, bool)
+    if schema_type == "null":
+        return value is None
+    return True
+
+
+def schema_errors(schema, value, path="$"):
+    errors = []
+    if "const" in schema and value != schema["const"]:
+        errors.append(f"{path}: expected const {schema['const']!r}")
+    if "enum" in schema and value not in schema["enum"]:
+        errors.append(f"{path}: expected one of {schema['enum']!r}")
+    if "type" in schema and not _validate_type(schema["type"], value):
+        errors.append(f"{path}: expected {schema['type']}")
+        return errors
+    if isinstance(value, dict):
+        for key in schema.get("required", []):
+            if key not in value:
+                errors.append(f"{path}: missing required {key}")
+        props = schema.get("properties", {})
+        for key, subschema in props.items():
+            if key in value:
+                errors.extend(schema_errors(subschema, value[key], f"{path}.{key}"))
+    if isinstance(value, list) and "items" in schema:
+        for i, item in enumerate(value):
+            errors.extend(schema_errors(schema["items"], item, f"{path}[{i}]"))
+    return errors
+
 def check(desc, condition):
     global passed, failed
     if condition:
@@ -55,12 +97,23 @@ def doctor_with(facts):
         return d.doctor_data()
 
 
+schema = json.loads((ROOT / "examples" / "doctor.schema.json").read_text(encoding="utf-8"))
+
 data = doctor_with(base_facts())
 check("doctor reports unknown when declared observations have no harness signal", data["status"] == "unknown")
-check("doctor JSON shape has the published required keys", {"schema_version", "status", "generated_at", "checks", "paths"}.issubset(data))
+check("doctor JSON output validates against published schema", not schema_errors(schema, data))
+invalid = dict(data)
+invalid.pop("checks")
+check("doctor schema test rejects missing required output", bool(schema_errors(schema, invalid)))
 check("every doctor check has a four-state status", all(c["status"] in d.STATUSES for c in data["checks"]))
 check("doctor includes runtime capability observations", any(c["name"] == "gateway_reachable" for c in data["checks"]))
 check("doctor reports missing observation signals as unknown", any(c["name"] == "session_destination_available" and c["status"] == "unknown" for c in data["checks"]))
+spool_facts = base_facts()
+spool_facts["runtime"]["selected"] = "claudecode"
+spool_facts["spool"] = {"bytes_unread": 9, "bytes_total": 9, "writable": True}
+spool_data = doctor_with(spool_facts)
+check("doctor reads published spool bytes_unread signal", any(c["name"] == "spool_unread_bytes" and c["status"] == "warning" for c in spool_data["checks"]))
+check("doctor reads measured spool writable signal", any(c["name"] == "spool_writable" and c["status"] == "ok" for c in spool_data["checks"]))
 
 blocked = doctor_with(base_facts(listener="failed"))
 listener = next(c for c in blocked["checks"] if c["name"] == "listener")
@@ -95,6 +148,15 @@ try:
     check("support-bundle omits every credential value", all(value not in combined for value in ["human@example.com", "hunter2-secret-token-value", "ghp_ab...wxyz", "metisclaudetobvalueover24chars", "https://example.test/some/really/long/path", "visible-value"]))
     check("support-bundle redacts email addresses in logs", "human@example.com" not in combined and "email-1@redacted.local" in combined)
     check("support-bundle redacts long token-looking strings in logs", "ghp_ab...wxyz" not in combined)
+    contaminated = bundle_dir / "contaminated-out"
+    contaminated.mkdir()
+    (contaminated / "credentials.env.txt").write_text("SECRET=leftover\n", encoding="utf-8")
+    try:
+        d.support_bundle(contaminated)
+        rejected_contaminated = False
+    except FileExistsError:
+        rejected_contaminated = True
+    check("support-bundle rejects non-empty output directories", rejected_contaminated)
 finally:
     shutil.rmtree(bundle_dir, ignore_errors=True)
 
