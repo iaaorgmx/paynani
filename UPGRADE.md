@@ -75,6 +75,24 @@ not just the newest. Entries with an **Upgrade actions** section need a step
 beyond the pull, and doing the pull first and the reading afterwards is how a
 working install becomes a broken one.
 
+Then ask the clone what the pull will change underneath the running processes:
+
+```bash
+git fetch --tags origin
+scripts/version.sh --plan          # installed tag -> newest tag
+```
+
+It prints one line per changed file with a verb: `restart` (a service reads it
+at start), `reinstall-and-restart` (a copy lives outside the clone, so the
+installer has to run again), `restart-runtime` (the harness itself loads it),
+`next-session` (the next session picks it up), `none`, or `unknown`. It ends
+with the commands to run, in order, for this host's runtime and OS. `unknown`
+means the table behind the plan does not know that file; fall back to this
+document for it. "could not compute" means one of the two tags is not in the
+clone yet, and the `git fetch` above is the fix. In neither case does the plan
+say "nothing to restart". The full report (`scripts/version.sh` with no flag)
+prints the same plan whenever a newer release exists.
+
 ## 3. Check you have nothing uncommitted
 
 ```bash
@@ -167,7 +185,9 @@ it was in fact objecting.
 ## 6. Restart, and only then believe the new version is running
 
 The listener is a long-lived process. Until it restarts, you have pulled new
-code and are still running the old.
+code and are still running the old. Section 2's `scripts/version.sh --plan`
+already named which services this particular upgrade touches; the commands
+below restart both, which is always safe and sometimes more than needed.
 
 ```bash
 systemctl --user daemon-reload

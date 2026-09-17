@@ -53,6 +53,11 @@ clone="$tmp/clone"
 mkdir -p "$clone/scripts"
 cp "$VERSION_SH" "$clone/scripts/version.sh"
 cp "$(dirname "$VERSION_SH")/envpath.sh" "$clone/scripts/envpath.sh"
+# The behind report appends the restart plan, which needs the planner and the
+# one harness module it imports. Copied like the rest: this is a clone.
+cp "$(dirname "$VERSION_SH")/upgrade_plan.py" "$clone/scripts/upgrade_plan.py"
+mkdir -p "$clone/harness"
+cp "$(dirname "$VERSION_SH")/../harness/paths.py" "$clone/harness/paths.py"
 git init -q "$clone"
 git -C "$clone" remote add origin "$remote"
 
@@ -95,6 +100,24 @@ assert "1.10.0 reports latest 1.10.0"    'grep -q "latest:    1.10.0" <<<"$out"'
 run 1.9.0
 assert "1.9.0 is behind 1.10.0"          '[ "$rc" -eq 2 ]'
 assert "behind names the newer version"  'grep -q "1.10.0 has been released" <<<"$out"'
+# The plan rides on the behind report (#167). This clone has the remote's tags
+# only on the remote, so the honest plan is "cannot compute, fetch": never a
+# silent "nothing to restart" built on a diff that does not exist.
+assert "behind carries an upgrade plan"  'grep -q "^upgrade plan: v1.9.0 -> v1.10.0" <<<"$out"'
+assert "plan without local tags says so" 'grep -q "could not compute: v1.9.0 is not in this clone" <<<"$out"'
+assert "and tells the operator to fetch" 'grep -q "git fetch --tags" <<<"$out"'
+assert "and never says nothing to restart" '! grep -q "no service needs a restart" <<<"$out"'
+# With the tags fetched the plan computes. The seed history is empty commits, so
+# the diff is empty and the plan must say that in those words.
+git -C "$clone" fetch -q origin --tags
+run 1.9.0
+assert "plan with tags computes"         'grep -q "no files differ between these two refs" <<<"$out"'
+run 1.9.0 --plan v1.10.0
+assert "--plan REF exits 0 when computed" '[ "$rc" -eq 0 ]'
+assert "--plan REF prints the header"    'grep -q "^upgrade plan: v1.9.0 -> v1.10.0" <<<"$out"'
+run 1.10.0 --plan
+assert "--plan with nothing newer exits 2" '[ "$rc" -eq 2 ]'
+assert "--plan with nothing newer says so" 'grep -q "no local tag newer than v1.10.0" <<<"$out"'
 
 run 2.0.0
 assert "2.0.0 is ahead of every tag"     '[ "$rc" -eq 0 ]'

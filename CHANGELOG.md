@@ -1,5 +1,22 @@
 # Changelog
 
+## Sin publicar
+
+- `scripts/version.sh --plan [REF]` y `scripts/upgrade_plan.py`: qué hay que
+  reiniciar entre dos versiones, calculado a partir del `git diff` entre los
+  tags y de una tabla que dice qué proceso o copia carga cada archivo (#167).
+  Cada archivo cambiado recibe un verbo: `restart`, `reinstall-and-restart`,
+  `restart-runtime`, `next-session`, `none` o `unknown`, y el plan termina con
+  los comandos en orden para el runtime y el sistema de este host. Si falta un
+  tag en el clon, el plan dice que no puede calcularse y pide `git fetch
+  --tags`; nunca convierte un diff ausente en «nada que reiniciar». El reporte
+  completo de `version.sh` imprime el plan cuando hay una versión más nueva.
+  `UPGRADE.md` §2 lo incorpora.
+
+### Si actualizas
+
+Nada que reiniciar: `version.sh` y `upgrade_plan.py` se leen en cada llamada.
+
 ## 0.7.0 (2026-09-17)
 
 **Paynani corre en OpenCode, el quinto harness.** 17 commits desde 0.6.0
