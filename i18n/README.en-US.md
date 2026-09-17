@@ -95,6 +95,10 @@ Your agent will show you a link to the form for setting up the email account.
 If your agent runs on a machine you can't reach directly from your browser, it
 gives you the `ssh -L` command to reach the form along with the link.
 
+If your agent runs in OpenCode, or in another harness that does not tell it
+when you save the form, it will ask you to write «listo» after saving. Write it
+so the installation carries on.
+
 If you prefer, you can set it up by hand by creating the `.env` file as
 [`MAILBOX_SETUP.en-US.md`](MAILBOX_SETUP.en-US.md) describes.
 
@@ -187,6 +191,8 @@ when it finishes, and you can hold it to the list:
 - **Log and state files** inside the project folder.
 - **Permission for those services to stay alive after you log out.**
 - **A permanent rule added to the agent's own instructions.**
+- **On OpenCode, one more file:** the plugin that hands mail to your session,
+  at `~/.config/opencode/plugins/paynani.js`.
 
 All of it is reversible; [`UNINSTALL.md`](../UNINSTALL.md) removes every item on
 that list, in an order that does not leave you working from memory.
@@ -267,6 +273,11 @@ agent and the list of authorized contacts. What you want to see is that the
 services are alive, that nothing is stuck, and that the configuration is being
 read from the right place. If something fails, the report tells you which piece,
 not just that there is no mail.
+
+On OpenCode, the report also says which of three states it is in: delivering
+mail to your session, open but waiting for you to write something in a session,
+or closed. With OpenCode closed, mail waits without being lost, and that is
+normal.
 
 The long options and the failure modes are in [`INSTALL.md`](../INSTALL.md).
 

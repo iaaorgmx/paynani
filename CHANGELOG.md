@@ -8,15 +8,29 @@
   (`harness/opencode/paynani.js`) le pasa los pendientes a la sesión en la que
   trabajas cuando queda inactiva, y solo entonces avanza `opencode.offset`. El
   plugin se registra con `scripts/opencode_plugin.py --install`. Las
-  credenciales van en `~/.opencode/workspace/.env`. `scripts/healthcheck.py`
-  dice si el plugin está registrado y qué proceso de OpenCode está entregando.
+  credenciales van en `~/.opencode/workspace/.env`.
+- **Probado en campo** en OpenCode 1.18.31 sobre Ubuntu 24.04 en WSL (#157). El
+  turno empieza solo entre 2 y 7 segundos después de que llega el correo, espera
+  si la sesión está ocupada, libera el lock al cerrar OpenCode y no se activa en
+  `opencode run`.
+- `scripts/healthcheck.py` distingue tres estados de OpenCode: entregando,
+  abierto pero sin una sesión en la que escribir todavía, y cerrado (#160).
+- `AGENTS.md` paso 2 ya no promete que el agente sigue solo cuando se guarda el
+  formulario. En OpenCode, y en cualquier harness que no avisa, el agente le
+  pide al humano que escriba «listo» (#158).
+- `UPGRADE.md` trae los comandos de macOS para reiniciar y verificar los
+  servicios, y la prueba con correo real pasa a ser opcional (#149).
+- Dos pruebas del watcher que fallaban a veces en macOS: la limpieza ahora
+  derriba todo el árbol de procesos (#151), y el timeout que quedaba imprime un
+  diagnóstico completo si vuelve a pasar (#155).
+- Los README en los cinco idiomas mencionan lo que cambia con OpenCode: el aviso
+  de «listo», el archivo del plugin y los tres estados del chequeo de salud.
 
-### Pendientes conocidos
+### Si actualizas desde 0.6.0
 
-- **OpenCode no se ha probado contra un OpenCode real.** Todo sale de la
-  documentación y del código fuente de OpenCode `v1.18.31`. La primera
-  instalación en un host con OpenCode tiene que confirmar lo que lista
-  `INSTALL.md` §6 *"OpenCode"*.
+`git pull` y seguir `UPGRADE.md`. Nada cambia en OpenClaw, Hermes, Claude Code
+ni Codex. En OpenCode, **reinicia OpenCode** después del pull: el plugin se
+carga al arrancar, y el proceso abierto sigue con el código anterior.
 
 ## 0.6.0 (2026-09-16)
 

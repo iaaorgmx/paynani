@@ -102,6 +102,10 @@ Si votre agent tourne sur une machine que vous ne pouvez pas joindre directement
 depuis le navigateur, il vous donne, avec le lien, la commande `ssh -L` pour
 accéder au formulaire.
 
+Si votre agent tourne dans OpenCode, ou dans un autre harness qui ne le
+prévient pas quand vous enregistrez le formulaire, il vous demandera d'écrire
+« listo » après l'enregistrement. Écrivez-le pour que l'installation continue.
+
 Si vous préférez, vous pouvez le configurer à la main en créant le fichier
 `.env` comme l'indique [`MAILBOX_SETUP.fr-FR.md`](MAILBOX_SETUP.fr-FR.md).
 
@@ -200,6 +204,8 @@ liste :
 - **L'autorisation pour ces services de rester vivants après votre
   déconnexion.**
 - **Une règle permanente ajoutée aux instructions de l'agent lui-même.**
+- **Sous OpenCode, un fichier de plus :** le plugin qui transmet le courrier à
+  votre session, dans `~/.config/opencode/plugins/paynani.js`.
 
 Tout cela est réversible ; [`UNINSTALL.md`](../UNINSTALL.md) retire chaque point
 de cette liste, dans un ordre qui ne vous laisse pas travailler de mémoire.
@@ -284,6 +290,11 @@ agent et la liste des autorisés. Ce que vous voulez voir, c'est que les service
 sont vivants, que rien n'est bloqué et que la configuration est lue au bon
 endroit. Si quelque chose échoue, le rapport vous dit quelle pièce, pas seulement
 qu'il n'y a pas de courrier.
+
+Sous OpenCode, le rapport indique aussi lequel des trois états s'applique : il
+livre le courrier à votre session, il est ouvert mais attend que vous écriviez
+quelque chose dans une session, ou il est fermé. OpenCode fermé, le courrier
+attend sans se perdre, et c'est normal.
 
 Les options longues et les modes de défaillance sont dans
 [`INSTALL.md`](../INSTALL.md).
