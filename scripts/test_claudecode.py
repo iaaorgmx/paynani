@@ -877,12 +877,13 @@ echo "OK $chain"
         import subprocess as sp, time
         spool = self.state / "session.spool"
         spool.write_text("", encoding="utf-8")
+        out = self.state / "watch.out"
+        handle = open(out, "w", encoding="utf-8")
+        self.addCleanup(handle.close)
         proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
-                        stdout=sp.PIPE, stderr=sp.PIPE, text=True,
+                        stdout=handle, stderr=sp.STDOUT, text=True,
                         start_new_session=True)
-        self.addCleanup(lambda: (self._take_down_the_tree(proc),
-                                 proc.stdout.close(),
-                                 proc.stderr.close()))
+        self.addCleanup(lambda: self._take_down_the_tree(proc))
         self.assertTrue(self._wait_for_arming(proc), "the watcher did not arm")
 
         # Longer than STATE_EVERY, so the read times out at least twice with
@@ -895,7 +896,11 @@ echo "OK $chain"
             handle.write("hola\n")
         offset = self.state / "session.offset"
         self._wait_for(lambda: offset.read_text().strip() == "5",
-                       "a line that arrived after the quiet interval")
+                       "a line that arrived after the quiet interval",
+                       diagnose=lambda: self._what_the_watcher_saw(out)
+                       + f"\n--- watcher exit code --- {proc.poll()}"
+                       + f"\n--- spool bytes --- {spool.stat().st_size}"
+                       + f"\n--- offset --- {offset.read_text().strip()!r}")
 
     def _ancestors_function(self):
         return self._shell_function("ancestors")
