@@ -543,8 +543,27 @@ def opencode_ack(value):
     if current > size:
         current = 0
     if through > current:
+        event_ids = []
+        try:
+            with open(OPENCODE_SPOOL, "rb") as handle:
+                handle.seek(current)
+                acknowledged = handle.read(through - current)
+            for raw in acknowledged.splitlines():
+                event_id, _ = _codex_spool_record(raw.decode("utf-8", "replace"))
+                if event_id:
+                    event_ids.append(event_id)
+        except OSError:
+            event_ids = []
         write_text_atomic(OPENCODE_OFFSET, str(through))
         current = through
+        for event_id in event_ids:
+            try:
+                ledger.transition(
+                    LIFECYCLE, event_id, "presented", runtime="opencode",
+                    detail="opencode plugin acknowledged prompt",
+                )
+            except (OSError, ValueError):
+                pass
     return current
 
 

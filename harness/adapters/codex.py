@@ -229,7 +229,11 @@ def _event_id(envelope):
 def _classify_queue_result(run):
     stderr = run.stderr or ""
     if run.returncode == 0:
-        return accepted(lifecycle="presented")
+        # A successful queue call proves that Codex accepted the prompt for a
+        # registered thread, not that the session rendered it.  Codex declares
+        # presentation_observable=unknown in the capability contract, so the
+        # strongest justified transition here is dispatched.
+        return accepted(lifecycle="dispatched")
     if run.returncode == 2:
         return config("codex queue usage failed")
     if run.returncode == 1 and "No active session found" in stderr:
