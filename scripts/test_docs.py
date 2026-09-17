@@ -8,6 +8,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "harness"))
+import capabilities  # noqa: E402
 import paths as harness_paths  # noqa: E402
 
 passed = failed = 0
@@ -261,6 +262,17 @@ check("UPGRADE.md has no em dashes", False, "—" in upgrade_text)
 check("UPGRADE.md lines stay within 80 columns", [],
       [number for number, line in enumerate(upgrade_text.splitlines(), 1)
        if len(line) > 80])
+
+design_text = (ROOT / "DESIGN.md").read_text()
+start_marker = "<!-- capabilities-matrix:start -->"
+end_marker = "<!-- capabilities-matrix:end -->"
+check("DESIGN.md carries generated capabilities matrix markers", True,
+      start_marker in design_text and end_marker in design_text)
+if start_marker in design_text and end_marker in design_text:
+    generated = capabilities.markdown_table().strip()
+    block = design_text.split(start_marker, 1)[1].split(end_marker, 1)[0].strip()
+    check("DESIGN.md capabilities matrix comes from harness/capabilities.py",
+          generated, block)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
