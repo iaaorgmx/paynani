@@ -56,9 +56,11 @@ def doctor_with(facts):
 
 
 data = doctor_with(base_facts())
-check("doctor reports ok when all core checks pass", data["status"] == "ok")
+check("doctor reports unknown when declared observations have no harness signal", data["status"] == "unknown")
 check("doctor JSON shape has the published required keys", {"schema_version", "status", "generated_at", "checks", "paths"}.issubset(data))
 check("every doctor check has a four-state status", all(c["status"] in d.STATUSES for c in data["checks"]))
+check("doctor includes runtime capability observations", any(c["name"] == "gateway_reachable" for c in data["checks"]))
+check("doctor reports missing observation signals as unknown", any(c["name"] == "session_destination_available" and c["status"] == "unknown" for c in data["checks"]))
 
 blocked = doctor_with(base_facts(listener="failed"))
 listener = next(c for c in blocked["checks"] if c["name"] == "listener")
@@ -76,7 +78,7 @@ bundle_dir = pathlib.Path(tempfile.mkdtemp(prefix="paynani-bundle-test-"))
 fake_env = bundle_dir / "secret.env"
 fake_state = bundle_dir / "state"
 fake_state.mkdir()
-fake_env.write_text("AGENT_EMAIL_ACCOUNT=human@example.com\nAGENT_EMAIL_PASSWORD=hunter2-secret-token-value\nAPI_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz\n", encoding="utf-8")
+fake_env.write_text("AGENT_EMAIL_ACCOUNT=human@example.com\nAGENT_EMAIL_PASSWORD=hunter2-secret-token-value\nAPI_TOKEN=ghp_ab...wxyz\nLONG_SERVICE_NAME=metisclaudetobvalueover24chars\nHOST_URL=https://example.test/some/really/long/path\nPLAIN_SETTING=visible-value\n", encoding="utf-8")
 (fake_state / "idle.err.log").write_text("wrote to human@example.com with ghp_abcdefghijklmnopqrstuvwxyz\n", encoding="utf-8")
 try:
     with mock.patch.object(d, "env_file", return_value=fake_env), \
@@ -85,9 +87,14 @@ try:
          mock.patch.object(d, "doctor_data", return_value=data):
         out = d.support_bundle(bundle_dir / "out")
     combined = "\n".join(p.read_text(encoding="utf-8") for p in out.iterdir() if p.is_file())
-    check("support-bundle redacts email addresses", "human@example.com" not in combined and "email-1@redacted.local" in combined)
-    check("support-bundle redacts secret-valued env keys", "hunter2-secret-token-value" not in combined and "AGENT_EMAIL_PASSWORD=<redacted>" in combined)
-    check("support-bundle redacts long token-looking strings", "ghp_abcdefghijklmnopqrstuvwxyz" not in combined)
+    names = {p.name for p in out.iterdir()}
+    check("support-bundle writes credential keys, not credential values", "credentials.keys.txt" in names and "credentials.env.txt" not in names)
+    keys = (out / "credentials.keys.txt").read_text(encoding="utf-8")
+    expected_keys = {"AGENT_EMAIL_ACCOUNT", "AGENT_EMAIL_PASSWORD", "API_TOKEN", "LONG_SERVICE_NAME", "HOST_URL", "PLAIN_SETTING"}
+    check("support-bundle preserves every credential key name", all(f"{key}=present" in keys for key in expected_keys))
+    check("support-bundle omits every credential value", all(value not in combined for value in ["human@example.com", "hunter2-secret-token-value", "ghp_ab...wxyz", "metisclaudetobvalueover24chars", "https://example.test/some/really/long/path", "visible-value"]))
+    check("support-bundle redacts email addresses in logs", "human@example.com" not in combined and "email-1@redacted.local" in combined)
+    check("support-bundle redacts long token-looking strings in logs", "ghp_ab...wxyz" not in combined)
 finally:
     shutil.rmtree(bundle_dir, ignore_errors=True)
 
