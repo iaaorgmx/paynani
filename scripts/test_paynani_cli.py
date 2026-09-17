@@ -17,7 +17,9 @@ write anything, and that the guard rails around all of it hold.
 
 from __future__ import annotations
 
+import contextlib
 import http.client
+import io
 import os
 import shutil
 import stat
@@ -805,6 +807,57 @@ try:
     r = roster_cli.run_remove(RArgs(address="ghost@example.com", yes=True))
     check("roster_cli.run_remove: a nonexistent address is refused", r == 1)
 
+    # Every ordinary write path must refuse a legacy schema, even when add
+    # omits --github. Only `roster migrate` and batch apply may cross this
+    # boundary, so the file cannot continue drifting in an old format.
+    legacy_path = roster_dir / "legacy" / "roster.md"
+    legacy_path.parent.mkdir()
+    legacy_text = (
+        "# preserve this comment\n"
+        "| Name | Email | Type | Username |\n"
+        "|---|---|---|---|\n"
+        "| Ximena | ximena@example.org | Human | ximenasalazartob |\n"
+    )
+    legacy_path.write_text(legacy_text, encoding="utf-8")
+    roster_cli.roster_file = lambda: legacy_path
+    with contextlib.redirect_stderr(io.StringIO()):
+        r = roster_cli.run_add(RArgs(name="No GitHub", address="nogithub@example.org", type="AI Agent", yes=True))
+    check("roster_cli.run_add: legacy schema rejects add without --github", r == 1)
+    check("roster_cli.run_add: rejected legacy add leaves bytes untouched", legacy_path.read_text(encoding="utf-8") == legacy_text)
+    with contextlib.redirect_stderr(io.StringIO()):
+        r = roster_cli.run_remove(RArgs(address="ximena@example.org", yes=True))
+    check("roster_cli.run_remove: legacy schema requires migration", r == 1)
+    check("roster_cli.run_remove: rejected legacy remove leaves bytes untouched", legacy_path.read_text(encoding="utf-8") == legacy_text)
+    status, detail = roster_cli.add_contact_noninteractive("Web Legacy", "weblegacy@example.org")
+    check("add_contact_noninteractive: legacy schema reports rejected", status == "rejected")
+    check("add_contact_noninteractive: rejected legacy write leaves bytes untouched", legacy_path.read_text(encoding="utf-8") == legacy_text)
+
+    # A failure after os.replace must still restore the exact original bytes.
+    # This models chmod or another post-replace failure inside _write_atomic.
+    rollback_path = roster_dir / "post-replace" / "roster.md"
+    rollback_path.parent.mkdir()
+    rollback_original = b"# original bytes\r\n| Name | Email | Type | GitHub |\r\n|---|---|---|---|\r\n"
+    rollback_path.write_bytes(rollback_original)
+    real_write_atomic = roster_cli._write_atomic
+
+    def write_then_raise(path, text):
+        real_write_atomic(path, text)
+        raise OSError("simulated post-replace failure")
+
+    roster_cli._write_atomic = write_then_raise
+    try:
+        status, detail = roster_cli._apply_roster_text(
+            rollback_path,
+            "| Name | Email | Type | GitHub |\n|---|---|---|---|\n| New | new@example.org | AI Agent | new |\n",
+            {"new@example.org"},
+        )
+    finally:
+        roster_cli._write_atomic = real_write_atomic
+    check("_apply_roster_text: post-replace failure reports verify_failed", status == "verify_failed")
+    check("_apply_roster_text: post-replace failure restores original bytes", rollback_path.read_bytes() == rollback_original)
+
+    roster_cli.roster_file = lambda: roster_path
+
     # add_contact_noninteractive() -- the onboard web form's non-terminal
     # path. No confirmation, no console output, a status string instead of
     # an exit code.
@@ -916,9 +969,6 @@ try:
     # `paynani roster add` on a host whose .env was written by hand (#135): the
     # form never ran, so there is no roster.md. The command creates it from
     # the same template, through the same _starting_text() the form uses.
-    import contextlib
-    import io
-
     cli_fresh_path = roster_dir / "cli-fresh" / "roster.md"
     cli_fresh_path.parent.mkdir()
     roster_cli.roster_file = lambda: cli_fresh_path
