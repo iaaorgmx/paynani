@@ -375,8 +375,10 @@ class Watcher(unittest.TestCase):
         import subprocess as sp
         (self.state / "session.spool").write_text("", encoding="utf-8")
         first = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
-                         stdout=sp.PIPE, stderr=sp.PIPE, text=True)
-        self.addCleanup(lambda: (first.kill(), first.stdout.close(), first.stderr.close()))
+                         stdout=sp.PIPE, stderr=sp.PIPE, text=True,
+                         start_new_session=True)
+        self.addCleanup(lambda: (self._take_down_the_tree(first),
+                                 first.stdout.close(), first.stderr.close()))
         # The lock is the directory, not the file. The file was the flock
         # target and it is only created where `flock` exists, so waiting on it
         # made this test hang on any host without it -- macOS, where the thing
@@ -401,8 +403,10 @@ class Watcher(unittest.TestCase):
         import subprocess as sp, time
         (self.state / "session.spool").write_text("a\nb\n", encoding="utf-8")
         proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "4"],
-                        stdout=sp.PIPE, stderr=sp.PIPE, text=True)
-        self.addCleanup(lambda: (proc.kill(), proc.stdout.close(), proc.stderr.close()))
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True,
+                        start_new_session=True)
+        self.addCleanup(lambda: (self._take_down_the_tree(proc),
+                                 proc.stdout.close(), proc.stderr.close()))
         deadline = time.time() + 5
         offset = self.state / "session.offset"
         while not offset.exists():
@@ -593,8 +597,9 @@ class Watcher(unittest.TestCase):
         (self.state / "session.spool").write_text("", encoding="utf-8")
         proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
                         stdout=sp.PIPE, stderr=sp.PIPE, text=True,
-                        env=self._path_without_flock())
-        self.addCleanup(lambda: (proc.kill(), proc.stdout.close(), proc.stderr.close()))
+                        env=self._path_without_flock(), start_new_session=True)
+        self.addCleanup(lambda: (self._take_down_the_tree(proc),
+                                 proc.stdout.close(), proc.stderr.close()))
         self.assertTrue(self._wait_for_arming(proc),
                         "the watcher did not arm on a host without flock")
 
@@ -610,8 +615,10 @@ class Watcher(unittest.TestCase):
         env = self._path_without_flock()
         (self.state / "session.spool").write_text("", encoding="utf-8")
         first = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
-                         stdout=sp.PIPE, stderr=sp.PIPE, text=True, env=env)
-        self.addCleanup(lambda: (first.kill(), first.stdout.close(), first.stderr.close()))
+                         stdout=sp.PIPE, stderr=sp.PIPE, text=True, env=env,
+                         start_new_session=True)
+        self.addCleanup(lambda: (self._take_down_the_tree(first),
+                                 first.stdout.close(), first.stderr.close()))
         self.assertTrue(self._wait_for_arming(first))
 
         second = sp.run(["bash", str(self.WATCH), str(self.state), "0"],
@@ -657,8 +664,10 @@ class Watcher(unittest.TestCase):
             f"watcher={holder.pid}\nsession={holder.pid}\n", encoding="utf-8")
 
         proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
-                        stdout=sp.PIPE, stderr=sp.PIPE, text=True)
-        self.addCleanup(lambda: (proc.kill(), proc.stdout.close(), proc.stderr.close()))
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True,
+                        start_new_session=True)
+        self.addCleanup(lambda: (self._take_down_the_tree(proc),
+                                 proc.stdout.close(), proc.stderr.close()))
         self.assertTrue(self._wait_for_arming(proc),
                         "the watcher deferred to a suspended session instead of taking over")
 
@@ -820,8 +829,10 @@ echo "OK $chain"
         import subprocess as sp, time
         (self.state / "session.spool").write_text("", encoding="utf-8")
         proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
-                        stdout=sp.PIPE, stderr=sp.PIPE, text=True)
-        self.addCleanup(lambda: (proc.kill(), proc.stdout.close(),
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True,
+                        start_new_session=True)
+        self.addCleanup(lambda: (self._take_down_the_tree(proc),
+                                 proc.stdout.close(),
                                  proc.stderr.close()))
         self.assertTrue(self._wait_for_arming(proc), "the watcher did not arm")
 
@@ -867,8 +878,10 @@ echo "OK $chain"
         spool = self.state / "session.spool"
         spool.write_text("", encoding="utf-8")
         proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
-                        stdout=sp.PIPE, stderr=sp.PIPE, text=True)
-        self.addCleanup(lambda: (proc.kill(), proc.stdout.close(),
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True,
+                        start_new_session=True)
+        self.addCleanup(lambda: (self._take_down_the_tree(proc),
+                                 proc.stdout.close(),
                                  proc.stderr.close()))
         self.assertTrue(self._wait_for_arming(proc), "the watcher did not arm")
 
