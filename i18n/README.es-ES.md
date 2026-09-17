@@ -82,6 +82,10 @@ Si tu agente se ejecuta en una máquina a la que no llegas directamente desde el
 navegador, junto con el enlace te dará el comando `ssh -L` para llegar al
 formulario.
 
+Si tu agente se ejecuta en OpenCode, o en otro harness que no le avisa cuando
+guardas el formulario, te pedirá que le escribas «listo» después de guardar.
+Escríbeselo para que siga con la instalación.
+
 Si lo prefieres, puedes configurarla a mano creando el fichero `.env` como
 indica [`MAILBOX_SETUP.es-ES.md`](MAILBOX_SETUP.es-ES.md).
 
@@ -176,6 +180,8 @@ informarte de todo esto cuando termine, y puedes exigirle la lista:
 - **Ficheros de registro y estado** dentro de la carpeta del proyecto.
 - **Permiso para que esos servicios sigan vivos cuando cierras sesión.**
 - **Una regla permanente añadida a las instrucciones del propio agente.**
+- **En OpenCode, un fichero más:** el plugin que le pasa el correo a tu sesión,
+  en `~/.config/opencode/plugins/paynani.js`.
 
 Todo esto es reversible; [`UNINSTALL.md`](../UNINSTALL.md) quita cada punto de esa
 lista, en un orden que no te deja trabajando de memoria.
@@ -256,6 +262,10 @@ Revisa los servicios, las credenciales, la cola de mensajes, la entrega a tu
 agente y la lista de autorizados. Lo que quieres ver es que los servicios están
 vivos, que no hay nada atascado y que la configuración se está leyendo del sitio
 correcto. Si algo falla, el informe te dice qué pieza, no solo que no hay correo.
+
+En OpenCode, el informe también dice en cuál de tres estados está: entregando
+el correo a tu sesión, abierto pero esperando a que escribas algo en una sesión,
+o cerrado. Con OpenCode cerrado el correo espera sin perderse, y eso es normal.
 
 Las opciones largas y los modos de fallo están en [`INSTALL.md`](../INSTALL.md).
 
