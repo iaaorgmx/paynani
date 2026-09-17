@@ -237,5 +237,26 @@ check("AGENTS.md and INSTALL.md create a missing roster.md with paynani roster a
       [document for document in ("AGENTS.md", "INSTALL.md")
        if "scripts/paynani roster add" not in (ROOT / document).read_text()])
 
+# macOS upgrades need the same explicit supervisor steps as Linux. The release
+# that first changed the listener after adding LaunchAgents exposed that the
+# upgrade guide named the wrong inventory and had no restart command (#149).
+upgrade_text = (ROOT / "UPGRADE.md").read_text()
+check("UPGRADE.md names three LaunchAgents", False,
+      "two LaunchAgents" in upgrade_text)
+for label in ("com.paynani.idle", "com.paynani.dispatch",
+              "com.paynani.logrotate"):
+    check(f"UPGRADE.md names {label}", True, label in upgrade_text)
+for label in ("com.paynani.idle", "com.paynani.dispatch"):
+    command = f'launchctl kickstart -k "gui/$(id -u)/{label}"'
+    check(f"UPGRADE.md restarts {label}", True, command in upgrade_text)
+check("UPGRADE.md no longer requires real mail", False,
+      "not optional politeness" in upgrade_text)
+check("UPGRADE.md points optional real mail to INSTALL.md §7.1", True,
+      "`INSTALL.md` §7.1" in upgrade_text)
+check("UPGRADE.md has no em dashes", False, "—" in upgrade_text)
+check("UPGRADE.md lines stay within 80 columns", [],
+      [number for number, line in enumerate(upgrade_text.splitlines(), 1)
+       if len(line) > 80])
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
