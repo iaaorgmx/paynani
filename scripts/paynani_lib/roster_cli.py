@@ -415,6 +415,9 @@ def run_migrate(args) -> int:
     expected = roster_mod.roster_addresses(path)
     print(f"About to migrate roster.md at {path}:")
     _logical_diff(text, new_text, notes)
+    if not _confirm("Write this change?", args.yes):
+        print("Not saved: cancelled.")
+        return 1
     status, detail = _apply_roster_text(path, new_text, expected)
     if status == "test_failed":
         print("Not saved: regression tests failed. Nothing written. Output:\n" + detail, file=sys.stderr)
@@ -422,7 +425,8 @@ def run_migrate(args) -> int:
     if status == "verify_failed":
         print(f"Not saved: {detail}", file=sys.stderr)
         return 1
-    print(f"roster.md migrated ({detail}).")
+    backup = path.with_suffix(path.suffix + ".bak")
+    print(f"roster.md migrated ({detail}); backup at {backup}.")
     return 0
 
 

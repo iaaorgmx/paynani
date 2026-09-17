@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import http.client
 import io
+import json
 import os
 import shutil
 import stat
@@ -831,6 +832,85 @@ try:
     status, detail = roster_cli.add_contact_noninteractive("Web Legacy", "weblegacy@example.org")
     check("add_contact_noninteractive: legacy schema reports rejected", status == "rejected")
     check("add_contact_noninteractive: rejected legacy write leaves bytes untouched", legacy_path.read_text(encoding="utf-8") == legacy_text)
+
+    # migrate --apply is a writer like add/remove/apply, so it must confirm
+    # unless --yes is explicit.
+    builtins.input = lambda prompt="": "n"
+    try:
+        r = roster_cli.run_migrate(RArgs(apply=True, plan=False))
+    finally:
+        builtins.input = real_input
+    check("roster_cli.run_migrate: declining confirmation returns nonzero", r == 1)
+    check(
+        "roster_cli.run_migrate: declining confirmation preserves legacy bytes",
+        legacy_path.read_text(encoding="utf-8") == legacy_text,
+    )
+
+    # A nine-row batch is one transaction. One invalid fifth row rejects the
+    # whole batch; dry-run prints the migration/add plan without writing; the
+    # corrected batch migrates and adds every row in one operation.
+    contacts = [
+        {
+            "name": f"Agent {i}",
+            "email": f"agent{i}@example.org",
+            "type": "AI Agent",
+            "github": f"agent{i}",
+        }
+        for i in range(1, 10)
+    ]
+    batch_file = legacy_path.parent / "contacts.json"
+    invalid_contacts = [dict(item) for item in contacts]
+    invalid_contacts[4]["email"] = "sin-arroba"
+    batch_file.write_text(json.dumps(invalid_contacts), encoding="utf-8")
+    before_batch = legacy_path.read_bytes()
+    with contextlib.redirect_stderr(io.StringIO()):
+        r = roster_cli.run_apply(
+            RArgs(file=str(batch_file), dry_run=False, yes=True)
+        )
+    check("roster_cli.run_apply: invalid row in nine rejects the batch", r == 1)
+    check(
+        "roster_cli.run_apply: invalid nine-row batch preserves exact bytes",
+        legacy_path.read_bytes() == before_batch,
+    )
+
+    batch_file.write_text(json.dumps(contacts), encoding="utf-8")
+    dry_output = io.StringIO()
+    with contextlib.redirect_stdout(dry_output):
+        r = roster_cli.run_apply(
+            RArgs(file=str(batch_file), dry_run=True, yes=False)
+        )
+    check("roster_cli.run_apply: nine-row dry-run succeeds", r == 0)
+    check(
+        "roster_cli.run_apply: dry-run prints migration and add plan",
+        "migrate Username -> GitHub" in dry_output.getvalue()
+        and "add agent9@example.org" in dry_output.getvalue(),
+    )
+    check(
+        "roster_cli.run_apply: dry-run preserves exact bytes",
+        legacy_path.read_bytes() == before_batch,
+    )
+
+    r = roster_cli.run_apply(
+        RArgs(file=str(batch_file), dry_run=False, yes=True)
+    )
+    applied_text = legacy_path.read_text(encoding="utf-8")
+    check("roster_cli.run_apply: corrected nine-row batch succeeds", r == 0)
+    check(
+        "roster_cli.run_apply: corrected batch migrates the header",
+        "| Name | Email | Type | GitHub |" in applied_text,
+    )
+    check(
+        "roster_cli.run_apply: corrected batch adds all nine rows",
+        all(item["email"] in applied_text for item in contacts),
+    )
+    check(
+        "roster_cli.run_apply: corrected batch preserves comments",
+        "# preserve this comment" in applied_text,
+    )
+    check(
+        "roster_cli.run_apply: corrected batch leaves the original backup",
+        legacy_path.with_suffix(".md.bak").read_bytes() == before_batch,
+    )
 
     # A failure after os.replace must still restore the exact original bytes.
     # This models chmod or another post-replace failure inside _write_atomic.

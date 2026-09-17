@@ -1,5 +1,16 @@
 # Changelog
 
+## Sin publicar
+
+- `paynani roster migrate --plan` muestra la migracion de la columna heredada
+  `Username` a `GitHub` sin escribir.
+- `paynani roster migrate --apply [--yes]` aplica la migracion de forma
+  atomica, conserva un respaldo `roster.md.bak` y restaura los bytes originales
+  ante cualquier fallo.
+- `paynani roster apply --file CONTACTS.json [--dry-run] [--yes]` valida y
+  agrega un lote completo en una sola escritura. Si una fila es invalida, no
+  cambia el roster. El campo `type` del lote acepta `Human` o `AI Agent`.
+
 ## 0.7.0 (2026-09-17)
 
 **Paynani corre en OpenCode, el quinto harness.** 17 commits desde 0.6.0

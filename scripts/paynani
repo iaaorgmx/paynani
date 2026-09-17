@@ -5,7 +5,7 @@ paynani CLI.
     paynani onboard [--port PORT]
     paynani set KEY [VALUE] [--skip-check]
     paynani roster list
-    paynani roster migrate --plan|--apply
+    paynani roster migrate --plan|--apply [--yes]
     paynani roster apply --file CONTACTS.json [--dry-run] [--yes]
     paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--yes]
     paynani roster remove ADDRESS [--yes]
@@ -69,6 +69,9 @@ def main(argv: list[str] | None = None) -> int:
     migrate_mode = roster_migrate.add_mutually_exclusive_group(required=True)
     migrate_mode.add_argument("--plan", action="store_true", help="Show what would change.")
     migrate_mode.add_argument("--apply", action="store_true", help="Write the migration after tests pass.")
+    roster_migrate.add_argument(
+        "--yes", action="store_true", help="Write without an interactive confirmation."
+    )
 
     roster_apply = roster_sub.add_parser("apply", help="Apply a JSON batch of contacts atomically.")
     roster_apply.add_argument("--file", required=True, help="JSON file with a contacts array, or a top-level array.")
