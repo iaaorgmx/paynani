@@ -991,9 +991,18 @@ the answer. `PAYNANI_OPENCODE_DISABLE=1` turns it off everywhere, and
 PATH.
 
 `scripts/healthcheck.py` reports the unread bytes in `state/opencode.spool`,
-whether the plugin file is registered, and which OpenCode process holds the
-lock. Unread bytes with no OpenCode open are the normal waiting state, not a
-fault.
+whether the plugin file is registered, and one of three states:
+
+- `delivering from OpenCode process N`: that process holds the lock and hands
+  mail to its session.
+- `OpenCode is open (process N) but not delivering yet`: the plugin is loaded,
+  but nobody has written in a session since OpenCode started. Write anything
+  in the session, and delivery starts once it is idle.
+- `no OpenCode process is open`: mail waits in the spool until OpenCode is
+  opened. That is the normal waiting state, not a fault.
+
+Each loaded plugin records its pid in `state/opencode.processes/` and removes
+it when OpenCode closes. The health check drops a record whose process is gone.
 
 **Measured against the documentation and source of OpenCode `v1.18.31`, not yet
 against a running OpenCode.** The first install on an OpenCode host has to

@@ -262,6 +262,27 @@ class SessionStartModes(unittest.TestCase):
         self.assertEqual(payload, {"released": True})
         self.assertFalse(self.lock.exists())
 
+    def test_hello_and_bye_record_and_forget_presence(self):
+        processes = self.state / "opencode.processes"
+        with mock.patch.object(self.ss, "OPENCODE_PROCESSES", processes):
+            code, payload = self.run_mode("--opencode-hello", "4242")
+            self.assertEqual((code, payload), (0, {"registered": True}))
+            self.assertEqual((processes / "4242").read_text(encoding="utf-8"), "pid=4242\n")
+            code, payload = self.run_mode("--opencode-bye", "4242")
+            self.assertEqual((code, payload), (0, {"removed": True}))
+            self.assertFalse((processes / "4242").exists())
+            code, payload = self.run_mode("--opencode-bye", "4242")
+            self.assertEqual((code, payload), (0, {"removed": False}))
+
+    def test_hello_and_bye_refuse_a_bad_pid(self):
+        processes = self.state / "opencode.processes"
+        with mock.patch.object(self.ss, "OPENCODE_PROCESSES", processes):
+            for mode in ("--opencode-hello", "--opencode-bye"):
+                for value in ("0", "-1", "abc"):
+                    code, payload = self.run_mode(mode, value)
+                    self.assertEqual((code, payload), (2, None), (mode, value))
+            self.assertFalse(processes.exists())
+
     def test_unknown_mode_prints_nothing(self):
         code, payload = self.run_mode("--opencode-bogus")
         self.assertEqual((code, payload), (2, None))

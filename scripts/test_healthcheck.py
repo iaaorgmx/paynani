@@ -755,7 +755,21 @@ check("the OpenCode report names a missing plugin and the fix", True,
       "OpenCode plugin NOT registered" in text
       and "scripts/opencode_plugin.py --install" in text)
 check("the OpenCode report says a closed OpenCode is normal", True,
-      "no OpenCode process is delivering" in text)
+      "no OpenCode process is open" in text)
+
+# #160: OpenCode open with nobody writing in it yet must not read as closed.
+f.spool_facts.update({"plugin_registered": True, "open_pids": [4242]})
+code, text = f.exit_code()
+check("an open OpenCode without a session says so, and what to do", True,
+      "OpenCode is open (process 4242) but not delivering yet" in text
+      and "write in a session" in text)
+check("an open OpenCode is not reported as closed", False,
+      "no OpenCode process is open" in text)
+f.spool_facts.update({"consumer_pid": 4242})
+code, text = f.exit_code()
+check("a delivering OpenCode says delivering, not merely open", True,
+      "delivering from OpenCode process 4242" in text
+      and "not delivering yet" not in text)
 
 with tempfile.TemporaryDirectory() as tmp:
     state = Path(tmp)
@@ -770,6 +784,20 @@ with tempfile.TemporaryDirectory() as tmp:
     (lock / "owner").write_text("pid=999999999\n", encoding="utf-8")
     check("a dead lock owner is not a consumer", None,
           hc.opencode_plugin_facts(state)["consumer_pid"])
+
+    processes = state / "opencode.processes"
+    processes.mkdir()
+    (processes / str(os.getpid())).write_text(f"pid={os.getpid()}\n", encoding="utf-8")
+    (processes / "999999999").write_text("pid=999999999\n", encoding="utf-8")
+    (processes / "not-a-pid").write_text("", encoding="utf-8")
+    check("a live presence record is reported as open", [os.getpid()],
+          hc.opencode_open_pids(state))
+    check("dead and unreadable presence records are removed", [str(os.getpid())],
+          sorted(p.name for p in processes.iterdir()))
+    check("the plugin facts carry the open pids", [os.getpid()],
+          hc.opencode_plugin_facts(state)["open_pids"])
+    check("no presence folder means nothing is open", [],
+          hc.opencode_open_pids(state / "missing"))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

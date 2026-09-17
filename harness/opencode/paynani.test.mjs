@@ -152,7 +152,7 @@ test("dispose releases the lock only when this plugin held it", async () => {
   await withTarget(owner)
   await owner.tick()
   await owner.dispose()
-  assert.deepEqual(held.calls.at(-1), ["--opencode-release", "42"])
+  assert.ok(held.calls.some((args) => args[0] === "--opencode-release" && args[1] === "42"))
 
   const other = fakeRun({ owner: false })
   const bystander = createPaynani({ client: fakeClient().client, run: other.run, pid: 43 })
@@ -160,6 +160,20 @@ test("dispose releases the lock only when this plugin held it", async () => {
   await bystander.tick()
   await bystander.dispose()
   assert.equal(other.calls.some((args) => args[0] === "--opencode-release"), false)
+})
+
+test("dispose always forgets this process's presence, lock or not", async () => {
+  const held = fakeRun({ pending: PENDING })
+  const owner = createPaynani({ client: fakeClient().client, run: held.run, pid: 42 })
+  await withTarget(owner)
+  await owner.tick()
+  await owner.dispose()
+  assert.deepEqual(held.calls.slice(-2), [["--opencode-release", "42"], ["--opencode-bye", "42"]])
+
+  const idle = fakeRun()
+  const opened = createPaynani({ client: fakeClient().client, run: idle.run, pid: 43 })
+  await opened.dispose()
+  assert.deepEqual(idle.calls, [["--opencode-bye", "43"]])
 })
 
 test("the plugin stays out of one-shot runs and can be turned off", () => {

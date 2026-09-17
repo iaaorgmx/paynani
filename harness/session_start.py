@@ -56,6 +56,11 @@ CODEX_SESSION = STATE_DIR / "codex.session"
 OPENCODE_SPOOL = STATE_DIR / "opencode.spool"
 OPENCODE_OFFSET = STATE_DIR / "opencode.offset"
 OPENCODE_LOCK = STATE_DIR / "opencode.watch.lock.d"
+# Presence, kept apart from the lock. The plugin takes the lock only once it has
+# a session to deliver to, so a lock alone cannot tell "OpenCode is open and
+# nobody has written in it yet" from "OpenCode is closed". Every plugin that
+# loads writes its pid here and removes it when it goes (#160).
+OPENCODE_PROCESSES = STATE_DIR / "opencode.processes"
 # A lock directory whose owner file has not been written yet belongs to a
 # plugin that is in the middle of claiming it, not to a dead one.
 OPENCODE_LOCK_GRACE = 10
@@ -597,6 +602,30 @@ def opencode_release(pid):
     return False
 
 
+def _positive_pid(value):
+    try:
+        pid = int(value)
+    except (TypeError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def opencode_hello(pid):
+    """Record that the OpenCode process `pid` has the paynani plugin loaded."""
+    OPENCODE_PROCESSES.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(OPENCODE_PROCESSES / str(pid), f"pid={pid}\n")
+    return True
+
+
+def opencode_bye(pid):
+    """Forget the OpenCode process `pid`; whether there was anything to forget."""
+    try:
+        (OPENCODE_PROCESSES / str(pid)).unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def opencode_command(args):
     """
     The --opencode-* modes. Each prints one JSON object or nothing.
@@ -622,6 +651,15 @@ def opencode_command(args):
         return 0
     if mode == "--opencode-release" and len(args) == 2:
         print(json.dumps({"released": opencode_release(args[1])}), flush=True)
+        return 0
+    if mode in ("--opencode-hello", "--opencode-bye") and len(args) == 2:
+        pid = _positive_pid(args[1])
+        if pid is None:
+            return 2
+        if mode == "--opencode-hello":
+            print(json.dumps({"registered": opencode_hello(pid)}), flush=True)
+        else:
+            print(json.dumps({"removed": opencode_bye(pid)}), flush=True)
         return 0
     return 2
 

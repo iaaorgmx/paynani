@@ -192,6 +192,7 @@ export function createPaynani({ client, run, pid, pollMs = POLL_MS, setTimer, cl
     if (timer && clearTimer) clearTimer(timer)
     if (state.owner) await run(["--opencode-release", String(pid)])
     state.owner = false
+    await run(["--opencode-bye", String(pid)])
   }
 
   const hooks = {
@@ -225,18 +226,25 @@ export const PaynaniPlugin = async ({ client }) => {
     },
     clearTimer: (handle) => clearInterval(handle),
   })
-  // dispose is not guaranteed on every way a terminal can close, so the lock is
-  // also released on exit. A lock left behind anyway is taken over by the next
-  // plugin once this process is gone.
+  // Presence is separate from the lock: the lock waits for a session to deliver
+  // to, and until then this is the only sign that OpenCode is open (#160). Not
+  // awaited, so a slow Python start never delays OpenCode.
+  void runSessionStart(["--opencode-hello", String(process.pid)])
+  // dispose is not guaranteed on every way a terminal can close, so the lock and
+  // the presence record are also removed on exit. Anything left behind anyway
+  // belongs to a dead pid: the next plugin takes the lock over, and
+  // healthcheck.py drops the stale presence record.
   process.once("exit", () => {
-    if (!paynani.state.owner) return
-    try {
-      execFileSync(pythonBinary(process.env), [SESSION_START, "--opencode-release", String(process.pid)], {
-        timeout: 5000,
-        stdio: "ignore",
-      })
-    } catch {
-      // Nothing to do at exit; the next plugin takes a dead owner's lock over.
+    const steps = paynani.state.owner ? ["--opencode-release", "--opencode-bye"] : ["--opencode-bye"]
+    for (const step of steps) {
+      try {
+        execFileSync(pythonBinary(process.env), [SESSION_START, step, String(process.pid)], {
+          timeout: 5000,
+          stdio: "ignore",
+        })
+      } catch {
+        // Nothing to do at exit; what is left belongs to a dead pid.
+      }
     }
   })
   return paynani.hooks
