@@ -291,6 +291,21 @@ taken is recorded.** Everything after that belongs to the runtime, and the value
 of naming the boundary per runtime is that nobody has to guess which half a
 failure fell in.
 
+### Runtime capability matrix
+
+This table is rendered from `harness/capabilities.py`; edit the data there, not
+the Markdown block.
+
+<!-- capabilities-matrix:start -->
+| Adapter | Modes | Durable handoff | Requires open session | Starts agent run | Presentation observable | Headless | Level |
+|---|---|---|---|---|---|---|---|
+| Claude Code (`claudecode`) | replay | supported | no | opt_in | unknown | supported | replay-only |
+| OpenAI Codex (`codex`) | replay, now | supported | no | opt_in | unknown | supported | live |
+| Hermes Agent (`hermes`) | now, durable | supported | no | yes | unknown | supported | autonomous |
+| OpenClaw (`openclaw`) | now | unsupported | yes | unknown | unknown | unsupported | live |
+| OpenCode (`opencode`) | replay | supported | no | yes | yes | unsupported | autonomous |
+<!-- capabilities-matrix:end -->
+
 ### Looking past the boundary without pretending to see across it
 
 Naming the boundary is not the same as being able to say which side a failure
