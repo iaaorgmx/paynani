@@ -228,6 +228,10 @@ check("INSTALL.md §7: no required check needs a person to send mail", [],
 check("INSTALL.md: the real-mail tests have an optional §7.1", True,
       "### 7.1 Optional: real mail, after the install is complete" in install_text)
 agents_text = (ROOT / "AGENTS.md").read_text()
+check("AGENTS.md step 2: OpenCode asks the human to wake it", True,
+      "write 'listo' here" in agents_text)
+check("AGENTS.md step 2: no promise to continue after onboard exits", False,
+      "and then you\ncontinue at step 3." in agents_text)
 check("AGENTS.md step 8: the checklist no longer has to pass in full", False,
       "passes in full" in agents_text)
 check("AGENTS.md step 8: §7.1 never holds the completion report", True,

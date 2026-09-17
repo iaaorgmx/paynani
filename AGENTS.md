@@ -79,8 +79,14 @@ line it prints along with it, and check that line's host name first: it is this
 machine's own idea of itself, which is not always the name your human reaches it
 by. They fill in the settings, the page signs in to their mail server to confirm
 the account works, and only then writes that file itself. You never see the
-password. `paynani onboard` stops on its own once the file exists, and then you
-continue at step 3.
+password. `paynani onboard` stops on its own once the file exists.
+
+**Whether you notice that depends on your harness.** Claude Code tells you when
+a background command ends, so there you continue at step 3 as soon as it does.
+OpenCode, and any harness that does not tell you, will not wake you when the
+form is saved. In that case, when you send the link, also tell your human:
+*"When you have saved the form, write 'listo' here."* End your turn there, and
+continue at step 3 when they write it. Do not promise to continue on your own.
 
 The same form also asks for your human's own name and email, and adds that row
 to `roster.md` when they save, typed `Human`. On a brand-new install
