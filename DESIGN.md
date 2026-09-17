@@ -256,10 +256,10 @@ OpenClaw adapter does not start an agent run from incoming mail. If you port
 this to another harness, that runtime delivery boundary is the part to inspect
 first; the rest is harness-independent.
 
-### The four runtimes, and where each stops being ours
+### The five runtimes, and where each stops being ours
 
-That delivery boundary is worth stating for all four, because it is the same
-question answered four different ways.
+That delivery boundary is worth stating for all five, because it is the same
+question answered five different ways.
 
 `dispatch.py` moves its cursor only when an adapter reports `ACCEPTED`. What
 `ACCEPTED` means is the adapter's judgement, and it is never *"a person read
@@ -271,12 +271,15 @@ it"*: no runtime can tell us that. Each one draws the line somewhere earlier:
 | Hermes | authenticated HTTP route | `200 status=delivered` on the notify route; `202 status=accepted` on the roster route | for `202`, that the queued agent run ever completed |
 | Claude Code | append to `state/session.spool` | the bytes are on disk | that any session ever read them: a file write cannot fail informatively |
 | OpenAI Codex | append to `state/codex.spool`, then `codex queue` to the registered thread | the event is either queued into a live Codex session or durably spooled for replay | that the agent completed the requested mail work |
+| OpenCode | append to `state/opencode.spool`; a plugin inside OpenCode hands it to the idle session | the bytes are on disk | that OpenCode is open, that the plugin is loaded, or that the agent did the mail work |
 
 Read down the last column and the shape is one thing: **every runtime has a point
 past which this project cannot see, and the runtimes differ only in how early it
 comes.** Claude Code's is the earliest, which is why it needs session-start
 replay. Codex keeps the same replay backstop, but now moves the live boundary to
-`codex queue` when a session has registered its thread. Hermes is explicit about
+`codex queue` when a session has registered its thread. OpenCode's dispatcher
+boundary is as early as Claude Code's, and the plugin moves the practical one
+into the OpenCode process. Hermes is explicit about
 it in its own contract, which is why `HERMES.md` documents `202` as
 *"completion is unconfirmed"* rather than as success. OpenClaw's looks the
 latest and is not
@@ -355,9 +358,10 @@ of the session that produced it works for months and then does not.
 
 ## Why some runtimes pull
 
-Claude Code and OpenAI Codex are exceptions to the section above, and it is worth
-understanding before changing anything in their adapters, `session_watch.sh`, or
-the pull-runtime branch of `session_start.py`.
+Claude Code, OpenAI Codex and OpenCode are exceptions to the section above, and
+it is worth understanding before changing anything in their adapters,
+`session_watch.sh`, the OpenCode plugin, or the pull-runtime branches of
+`session_start.py`.
 
 **Nothing outside a Claude Code session can speak into it.** There is no
 `claude system event`. `claude -p --resume` starts a fresh headless turn and
@@ -396,9 +400,9 @@ the hook is what replaces it.
 
 **Session catch-up is therefore a pull-runtime mechanism by necessity, not a
 feature the push runtimes are missing.** `harness/session_start.py` exists for
-Claude Code and OpenAI Codex; on OpenClaw and Hermes, nothing invokes it and
-nothing should. It is worth saying plainly because the reverse was implied for
-two releases, and it cost an investigation.
+Claude Code, OpenAI Codex and OpenCode; on OpenClaw and Hermes, nothing invokes
+it and nothing should. It is worth saying plainly because the reverse was
+implied for two releases, and it cost an investigation.
 
 ### Why Codex queues first and still keeps replay
 
@@ -444,6 +448,43 @@ readonly database` means the command ran inside Codex's sandbox and is
 configuration, because the dispatcher service is supposed to run outside that
 sandbox.
 
+### Why OpenCode pulls although it has an HTTP API
+
+OpenCode is the one pull runtime that could be pushed to: every OpenCode process
+runs an HTTP server with `POST /session/:id/prompt_async`. The dispatcher still
+does not call it, for three reasons that more code would not remove:
+
+- The TUI serves on a random port. A systemd unit or LaunchAgent has no stable
+  way to find it, or to tell which of several sessions a person is looking at.
+- The server asks for no credentials unless `OPENCODE_SERVER_PASSWORD` is set,
+  so pushing into it means relying on an open local endpoint or owning one more
+  secret.
+- On a push runtime the cursor waits for the session to take the event.
+  OpenCode is closed for much of the day, and the dispatcher would stall each
+  time.
+
+`harness/opencode/paynani.js` avoids all three. It runs inside the OpenCode
+process, gets a client already connected to that process's own server, sees
+that process's sessions go idle, and exists only while OpenCode is open.
+
+The plugin keeps the logic thin on purpose. Reading the spool, building the
+instruction, moving the offset and holding the consumer lock are
+`session_start.py --opencode-pending`, `--opencode-ack`, `--opencode-claim` and
+`--opencode-release`, in Python, where the Codex versions of the same rules are
+already tested. The plugin decides only when and where to send: to the last root
+session that got a message from the person, when it is idle, and it acknowledges
+only after `promptAsync` returned without an error.
+
+Two OpenCode processes open at once is the same hazard `session_watch.sh` locks
+against, and it gets the same answer: a lock directory created atomically, taken
+over only when its owner process is gone.
+
+OpenCode loads plugins from `~/.config/opencode/plugins/` and calls every export
+of a plugin file as a plugin, refusing the file if one is not a function. So
+`scripts/opencode_plugin.py` writes a one-line file there that re-exports
+`PaynaniPlugin` alone, rather than linking to `paynani.js`, which also exports
+the functions its tests import.
+
 ### Where that guarantee stops
 
 The paragraph above rests on a failed injection being visible to the dispatcher,
@@ -486,8 +527,8 @@ to move two independent readers' cursors atomically.
 A rendered notification can carry a line break. A folded subject is the usual
 source. Letting it through makes a pull-runtime reader report one message as two
 and leaves every later offset a line out of step with the file it indexes into.
-The adapters flatten line breaks before appending; `scripts/test_claudecode.py`
-and `scripts/test_codex.py` pin it.
+The adapters flatten line breaks before appending; `scripts/test_claudecode.py`,
+`scripts/test_codex.py` and `scripts/test_opencode.py` pin it.
 
 ### Why the watch takes a lock, when the other runtimes forbid one outright
 

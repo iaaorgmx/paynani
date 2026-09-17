@@ -381,7 +381,7 @@ def spool_facts(selected):
     be seen from out here. Rather than infer it from a proxy and call the guess a
     health state, this reports what is true and says what it does not know.
     """
-    if selected not in ("claudecode", "codex"):
+    if selected not in ("claudecode", "codex", "opencode"):
         return None
     out = {"spool": None, "bytes_total": 0, "bytes_unread": 0,
            "session_arming": "unobservable"}
@@ -389,6 +389,9 @@ def spool_facts(selected):
         if selected == "claudecode":
             from adapters import claudecode as adapter
             offset_name = "session.offset"
+        elif selected == "opencode":
+            from adapters import opencode as adapter
+            offset_name = "opencode.offset"
         else:
             from adapters import codex as adapter
             offset_name = "codex.offset"
@@ -407,6 +410,42 @@ def spool_facts(selected):
     out["bytes_unread"] = max(0, out["bytes_total"] - offset)
     if selected == "codex":
         out["session_arming"] = "queue-or-replay"
+    if selected == "opencode":
+        out["session_arming"] = "opencode-plugin"
+        out.update(opencode_plugin_facts(spool.parent))
+    return out
+
+
+def opencode_plugin_facts(state):
+    """
+    Whether the OpenCode plugin is registered, and whether one is consuming now.
+
+    Both are facts about this host rather than about a session. Registered means
+    the file OpenCode loads from its global plugin directory is the one paynani
+    writes; it cannot show that the OpenCode a person opens reads that
+    directory. A live consumer is the process named in the plugin's lock; none
+    is the normal state while OpenCode is closed.
+    """
+    out = {"plugin_registered": None, "plugin_path": None, "consumer_pid": None}
+    try:
+        import opencode_plugin
+        path = opencode_plugin.default_target()
+        out["plugin_path"] = str(path)
+        out["plugin_registered"] = opencode_plugin.read(path) == opencode_plugin.content()
+    except (Exception, SystemExit):
+        pass
+    try:
+        text = (state / "opencode.watch.lock.d" / "owner").read_text(encoding="utf-8")
+        pid = int(text.strip().partition("=")[2])
+    except (OSError, ValueError):
+        return out
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        pass
+    except OSError:
+        return out
+    out["consumer_pid"] = pid
     return out
 
 
@@ -754,6 +793,21 @@ def render(facts, problems, warnings):
                        "unread bytes wait for SessionStart replay")
             out.append("             picked up here means shown to SessionStart, not that "
                        "the agent read the mail body or answered it")
+        elif spool.get("session_arming") == "opencode-plugin":
+            registered = spool.get("plugin_registered")
+            out.append("             OpenCode plugin "
+                       + ("registered" if registered else
+                          "NOT registered" if registered is False else "registration unknown")
+                       + (f" at {spool['plugin_path']}" if spool.get("plugin_path") else ""))
+            if registered is False:
+                out.append("             run: python3 scripts/opencode_plugin.py --install")
+            if spool.get("consumer_pid"):
+                out.append(f"             delivering from OpenCode process {spool['consumer_pid']}")
+            else:
+                out.append("             no OpenCode process is delivering; unread bytes wait "
+                           "until OpenCode is open, which is normal")
+            out.append("             picked up here means handed to an OpenCode session, not "
+                       "that the agent read the mail body or answered it")
         else:
             out.append("             whether a session has armed a watch is not "
                        "observable from here; unread bytes with no session open is normal")

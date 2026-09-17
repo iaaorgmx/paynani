@@ -340,6 +340,43 @@ check "codex harness: an explicit override still wins" "/srv/named.env" \
 rm -rf "$home"
 
 # ---------------------------------------------------------------------------
+# OpenCode is the fifth harness root, on the same rule as Codex: only
+# workspace/.env resolves under ~/.opencode, while state, runtime.env, the
+# manifest, Hermes secrets and the roster remain clone-owned. OpenCode's own
+# configuration lives in ~/.config/opencode, and a mail-shaped file there is not
+# the agent's mailbox.
+# ---------------------------------------------------------------------------
+home=$(tmpdir)
+mkdir -p "$home/.opencode/workspace"
+printf 'PAYNANI_EMAIL=agent@example.com\n' >"$home/.opencode/workspace/.env"
+agree_all "opencode harness" "$home"
+check "opencode harness: credentials are read where the harness keeps them" \
+    "$home/.opencode/workspace/.env" "$(py "$home" "" env)"
+check "opencode harness: state still hangs off the clone" "$ROOT/state" "$(py "$home" "" state)"
+check "opencode harness: runtime config still hangs off the clone" \
+    "$ROOT/runtime.env" "$(py "$home" "" runtime-env)"
+check "opencode harness: hermes secrets still hang off the clone" \
+    "$ROOT/hermes" "$(py "$home" "" hermes)"
+case "$(py "$home" "" config)" in
+    "$home"/.config/*) opencode_under_config=yes ;;
+    *) opencode_under_config=no ;;
+esac
+check "opencode harness: nothing resolves under ~/.config" "no" \
+    "$opencode_under_config"
+check "opencode harness: an explicit override still wins" "/srv/named.env" \
+    "$(py "$home" /srv/named.env env)"
+rm -rf "$home"
+
+home=$(tmpdir)
+mkdir -p "$home/.config/opencode/workspace"
+printf 'PAYNANI_EMAIL=agent@example.com\n' \
+    >"$home/.config/opencode/workspace/.env"
+agree_all "opencode config directory" "$home"
+check "opencode config directory: is not adopted for credentials" "$ROOT/.env" \
+    "$(py "$home" "" env)"
+rm -rf "$home"
+
+# ---------------------------------------------------------------------------
 # The runtime's own config is not the agent's mailbox.
 #
 # ~/.hermes/.env holds Hermes' gateway token. The rule matches

@@ -1,5 +1,23 @@
 # Changelog
 
+## Sin publicar
+
+- **Soporte para OpenCode** (#152). `scripts/install.sh --runtime opencode` y
+  `PAYNANI_RUNTIME=opencode`. El dispatcher escribe cada evento en
+  `state/opencode.spool`, y un plugin que corre dentro de OpenCode
+  (`harness/opencode/paynani.js`) le pasa los pendientes a la sesión en la que
+  trabajas cuando queda inactiva, y solo entonces avanza `opencode.offset`. El
+  plugin se registra con `scripts/opencode_plugin.py --install`. Las
+  credenciales van en `~/.opencode/workspace/.env`. `scripts/healthcheck.py`
+  dice si el plugin está registrado y qué proceso de OpenCode está entregando.
+
+### Pendientes conocidos
+
+- **OpenCode no se ha probado contra un OpenCode real.** Todo sale de la
+  documentación y del código fuente de OpenCode `v1.18.31`. La primera
+  instalación en un host con OpenCode tiene que confirmar lo que lista
+  `INSTALL.md` §6 *"OpenCode"*.
+
 ## 0.6.0 (2026-09-16)
 
 **La instalación a mano ya no deja pasos sueltos, y la suite pasa en macOS.**

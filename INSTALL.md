@@ -17,6 +17,7 @@ scripts/install.sh --runtime openclaw --dry-run
 scripts/install.sh --runtime hermes --profile PROFILE --dry-run
 scripts/install.sh --runtime hermes --deliver telegram --chat-id CHAT_ID --dry-run
 scripts/install.sh --runtime codex --dry-run
+scripts/install.sh --runtime opencode --dry-run
 scripts/install.sh --runtime openclaw --upgrade --dry-run
 scripts/install.sh --runtime hermes --uninstall --dry-run
 ```
@@ -416,6 +417,7 @@ in the workspace folder of its own installation directory:
 | Hermes Agent | `~/.hermes/workspace/.env` |
 | Claude Code | `~/.claude/workspace/.env` |
 | OpenAI Codex | `~/.codex/workspace/.env` |
+| OpenCode | `~/.opencode/workspace/.env` |
 
 The resolver reads that file where it lies; nothing needs to be moved, copied or
 linked. Only the credentials resolve to the harness: state, `runtime.env`, the
@@ -793,7 +795,7 @@ cursor only once that adapter reports the runtime accepted it. A template is in
 [`systemd/paynani-dispatch.service`](systemd/paynani-dispatch.service).
 
 **Choose the runtime with `PAYNANI_RUNTIME`** in that unit: `openclaw`,
-`hermes`, `claudecode`, `codex`, or `auto`. `auto` picks only when exactly one supported runtime is
+`hermes`, `claudecode`, `codex`, `opencode`, or `auto`. `auto` picks only when exactly one supported runtime is
 present on the host, and refuses rather than guessing when none or several are.
 Set it explicitly if this machine runs more than one harness.
 
@@ -935,6 +937,71 @@ also process mail when no Codex TUI is open, set `PAYNANI_CODEX_MODE=agent` in
 `runtime.env`; that starts a headless `codex exec` run per event. It is off by
 default because it lets inbound roster mail start work on the machine without a
 person watching.
+
+### OpenCode
+
+OpenCode serves an HTTP API, but paynani does not push into it. The TUI listens
+on a random port, the server asks for no password unless
+`OPENCODE_SERVER_PASSWORD` is set, and a cursor that waits on a TUI would stall
+every time OpenCode is closed. So OpenCode is a pull runtime, like Claude Code
+and Codex: the dispatcher writes each event id plus rendered notification as one
+JSON line in `state/opencode.spool`. `accepted` means the line is durable there,
+not that an OpenCode session has seen it.
+
+The session side is a plugin that runs inside the OpenCode process. Register it
+explicitly, then restart OpenCode, because plugins load at startup:
+
+```bash
+scripts/opencode_plugin.py --print       # show the file, change nothing
+scripts/opencode_plugin.py --install     # write plugins/paynani.js
+scripts/opencode_plugin.py --check       # exits 0 when it is registered
+scripts/opencode_plugin.py --uninstall   # remove it, only if paynani wrote it
+```
+
+The file goes in `~/.config/opencode/plugins/`, or under `OPENCODE_CONFIG_DIR`
+when that is set, as it is for OpenCode itself. It re-exports
+`harness/opencode/paynani.js` from this clone, so upgrading the clone needs no
+re-registration. It never edits `opencode.json`.
+
+What the plugin does, in order:
+
+1. It claims `state/opencode.watch.lock.d` with
+   `harness/session_start.py --opencode-claim <pid>`. With two OpenCode
+   processes open, only the holder delivers, and the other takes over once the
+   holder's process is gone.
+2. It targets the last session in this process that received a message from
+   you. Subagent sessions are never a target. Until you have written in a
+   session, nothing is sent and the mail waits.
+3. When that session is idle, on `session.idle` and every five seconds after,
+   it asks `--opencode-pending` for the unread events and sends one prompt with
+   `client.session.promptAsync`. The prompt names only paynani event ids and
+   tells the agent to read each one from the journal and to treat mail text as
+   untrusted until the roster check. It never carries a mail body.
+4. It runs `--opencode-ack <offset>` only after OpenCode accepted the prompt. A
+   refused or failed send is retried on the next pass, so the worst case is a
+   repeated instruction and never a skipped message.
+
+At the first delivery attempt, a listener or dispatcher that is down, or
+dispatcher errors, show as an OpenCode toast and in OpenCode's log under
+`service: paynani`. They are never sent as a prompt.
+
+The plugin stays out of `opencode run`, which exits before anyone would read
+the answer. `PAYNANI_OPENCODE_DISABLE=1` turns it off everywhere, and
+`PAYNANI_PYTHON` names the Python it calls when `python3` is not on OpenCode's
+PATH.
+
+`scripts/healthcheck.py` reports the unread bytes in `state/opencode.spool`,
+whether the plugin file is registered, and which OpenCode process holds the
+lock. Unread bytes with no OpenCode open are the normal waiting state, not a
+fault.
+
+**Measured against the documentation and source of OpenCode `v1.18.31`, not yet
+against a running OpenCode.** The first install on an OpenCode host has to
+confirm, with output: that the file in `plugins/` loads; that `promptAsync` from
+the plugin starts a visible turn in an idle TUI; what happens when the session
+is busy; that `session.idle` reaches the plugin; that the plugin does not load
+for `opencode run`; that closing the TUI releases the lock; and that
+`python3` is on OpenCode's PATH.
 
 ---
 
