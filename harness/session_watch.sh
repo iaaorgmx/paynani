@@ -286,18 +286,23 @@ if ! mkfifo "$FIFO" 2>/dev/null; then
 	exit 1
 fi
 
-tail -c "+$((start + 1))" -F "$SPOOL" 2>/dev/null >"$FIFO" &
+(
+	if [ -n "${PAYNANI_TEST_TAIL_DELAY:-}" ]; then
+		sleep "$PAYNANI_TEST_TAIL_DELAY"
+	fi
+	tail -c "+$((start + 1))" -F "$SPOOL" 2>/dev/null >"$FIFO"
+) &
 tail_pid=$!
 # Both writers are short lines, well under PIPE_BUF, so a tick cannot land in
 # the middle of a message.
 ( while :; do printf '%s\n' "$TICK"; sleep "$STATE_EVERY"; done ) >"$FIFO" &
 ticker_pid=$!
 
-# Blocks until a writer opens its end, which is why the writers start first. The
-# fifo is unlinked immediately: both ends are held open by descriptor from here
-# on, and nothing else can join the stream.
+# Blocks until a writer opens its end, which is why the writers start first.
+# Keep the fifo path until cleanup: if it is unlinked before every background
+# writer has opened it, a late shell redirection can recreate the path as a
+# regular file and send tail output somewhere the reader will never see.
 exec 8<"$FIFO"
-rm -f "$FIFO"
 
 # A watcher that has decided to stop has to actually stop, and that is about
 # processes rather than about the loop returning. The reader runs in this shell
@@ -308,7 +313,7 @@ rm -f "$FIFO"
 # descriptors it had inherited. Under a CI step that captures output with
 # `$(...)`, that is the capture's own pipe, and the step hangs until the runner
 # is taken away rather than failing.
-trap 'rm -rf "$LOCK_DIR"; kill "$tail_pid" "$ticker_pid" 2>/dev/null' EXIT
+trap 'rm -f "$FIFO"; rm -rf "$LOCK_DIR"; kill "$tail_pid" "$ticker_pid" 2>/dev/null' EXIT
 
 while IFS= read -r -u 8 line; do
 	# Cheap enough to ask on every line: `kill -0` is a builtin at ~25us, so a

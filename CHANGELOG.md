@@ -1,5 +1,16 @@
 # Changelog
 
+## Sin publicar
+
+- Claude Code: el vigía de sesión conserva el FIFO hasta cerrar, para que `tail`
+  no pueda escribir en un archivo regular si el ticker abre primero. Incluye una
+  prueba determinista de esa carrera (#179).
+
+### Si actualizas
+
+Rearma el vigía en la siguiente sesión de Claude Code; no hace falta migrar
+estado ni tocar credenciales.
+
 ## 0.7.0 (2026-09-17)
 
 **Paynani corre en OpenCode, el quinto harness.** 17 commits desde 0.6.0
