@@ -744,7 +744,9 @@ runtime's. Two things produce that line and it does not guess between them: the
 agent was told and did not reply, or nothing was attached to be told. If it is
 the first, the standing rule under *"`roster.md` decides what a message is"* in
 `AGENTS.md` never made it into the agent's own persistent instructions, which is
-where it has to live.
+where it has to live. On OpenClaw that has a command, `scripts/openclaw_rules.py
+--install`, and an `instructions` row of its own in the report; see *"OpenClaw"*
+below.
 
 **Where to put the clone.** The clone *is* the install: credentials, generated
 config, route secrets, the roster and the whole state tree live inside it, so
@@ -816,9 +818,11 @@ has already been done and it is a dead end.
 
 The working pattern is the inverse: the OpenClaw adapter **pushes** into
 OpenClaw. Mail goes in as a live notification with `openclaw system event --mode
-now`; roster mail carries the `roster` tag in that rendered line, but the
-OpenClaw adapter does not start an agent run from incoming mail. It is an active
-producer, not a passive stream.
+now`; roster mail carries the `roster` tag in that rendered line and a second
+line saying what to do with it, but the OpenClaw adapter does not start an agent
+run from incoming mail. It is an active producer, not a passive stream. What the
+agent does with the line is decided by its own instructions; *"OpenClaw"* below
+is the step that puts them there.
 
 **Nothing here invokes `harness/session_start.py`, and nothing should.** That hook
 is Claude Code's, and the marked block inside it is Claude Code's payload format.
@@ -830,6 +834,49 @@ two runtimes use instead"*.
 Earlier versions of this section said the payload "may need adapting to your
 harness version", which implied a mechanism that does not exist on this runtime
 and sent at least one operator looking for what was calling it.
+
+### OpenClaw
+
+The dispatcher hands OpenClaw one line per message, and OpenClaw shows it to the
+agent as a `System:` line on its next heartbeat. That heartbeat is the agent run;
+there is no separate one. So whether roster mail gets answered comes down to
+whether the agent, reading that line, knows that `, roster]` means *read it, do
+it, reply*. That knowledge has to be in OpenClaw's own persistent instructions,
+`~/.openclaw/workspace/AGENTS.md`, because a context window loses everything
+else.
+
+Until 0.7.0 the copying was left to the agent, as a sentence in this
+repository's `AGENTS.md`. On a host where it never happened, every row of
+`healthcheck.py` was green, every event was accepted, and no mail was answered
+until a person looked ([#186](https://github.com/iaaorgmx/paynani/issues/186)).
+On a host where it had, the same OpenClaw and paynani versions answered in under
+three minutes with nobody involved. Put the rule in place explicitly:
+
+```bash
+scripts/openclaw_rules.py --print       # show the block, change nothing
+scripts/openclaw_rules.py --install     # write it into ~/.openclaw/workspace/AGENTS.md
+scripts/openclaw_rules.py --check       # exits 0 when the current block is in place
+scripts/openclaw_rules.py --uninstall   # remove the block, leaving the rest of the file
+```
+
+The file stays the agent's. The script owns exactly the block between
+`<!-- paynani:start -->` and `<!-- paynani:end -->`: everything outside it is
+preserved byte for byte, the block is replaced in place when its wording
+changes in a new version, and the first edit of an existing file leaves an
+`AGENTS.md.paynani.bak` beside it. `--target <path>` acts on another file, for a
+workspace that is not at the default location.
+
+This is not an installer-owned artifact, which is why `scripts/install.sh` names
+the step (`openclaw_rules_next_step=`) rather than performing it, exactly as it
+does for the OpenCode plugin, and why its `--uninstall` names the removal rather
+than doing it. `scripts/healthcheck.py` reports the state as an `instructions`
+row and warns, with the command, when the block is absent or out of date.
+
+Roster mail also arrives with the instruction attached: under the rendered line
+the adapter adds one more, naming the exact `himalaya -a paynani message read
+<uid>` command and `scripts/send.sh`. The body of the message is never in the
+notification. That second line helps an agent whose instructions were edited by
+hand; it does not replace them.
 
 ### Claude Code
 
@@ -1119,6 +1166,11 @@ himalaya envelope list -a paynani -s 3
 grep -i "openclaw not found" state/watch.err.log 2>/dev/null \
   || journalctl --user -u paynani-dispatch.service 2>/dev/null | grep -i "openclaw not found" \
   || echo "watcher: openclaw resolved"
+
+# 4c. On OpenClaw only: the agent has been told what the roster tag means.
+#     Exit 1 here is the one state where everything else passes and no roster
+#     mail is ever answered (#186). The fix is the command it prints.
+scripts/openclaw_rules.py --check
 
 # 6. Sending behaves: who it will write to, and what Himalaya is handed.
 #    Includes substring/prefix attacks on the allowlist and the From: header

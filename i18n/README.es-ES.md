@@ -183,7 +183,9 @@ informarte de todo esto cuando termine, y puedes exigirle la lista:
   donde tú lo has dejado y nunca se copia a otro sitio.
 - **Ficheros de registro y estado** dentro de la carpeta del proyecto.
 - **Permiso para que esos servicios sigan vivos cuando cierras sesión.**
-- **Una regla permanente añadida a las instrucciones del propio agente.**
+- **Una regla permanente añadida a las instrucciones del propio agente.** En
+  OpenClaw va en `~/.openclaw/workspace/AGENTS.md`, entre dos marcadores, y la
+  escribe y la quita el mismo script.
 - **En OpenCode, un fichero más:** el plugin que le pasa el correo a tu sesión,
   en `~/.config/opencode/plugins/paynani.js`.
 
