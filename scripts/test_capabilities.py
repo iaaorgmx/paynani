@@ -76,6 +76,11 @@ bad["opencode"]["scenarios"]["open_tui_without_target_session"]["documentation_l
 check("empty scenario documentation_label is invalid", True,
       any("documentation_label" in error for error in capabilities.validate(bad)))
 
+bad = deepcopy(capabilities.CAPABILITIES)
+bad["opencode"]["scenarios"]["open_tui_without_target_session"]["documentation_label"] = None
+check("None scenario documentation_label is invalid", True,
+      any("documentation_label" in error for error in capabilities.validate(bad)))
+
 table = capabilities.markdown_table()
 check("Markdown matrix reflects OpenCode's derived level", True,
       "OpenCode (`opencode`)" in table and "autonomous" in table)

@@ -243,7 +243,9 @@ def _validate_adapter(name, spec):
         for field in REQUIRED_SCENARIO_FIELDS:
             if field not in fields:
                 errors.append(f"{name}: scenario {scenario} missing {field}")
-            elif isinstance(fields.get(field), str) and not fields.get(field).strip():
+            elif field == "documentation_label" and (
+                not isinstance(fields.get(field), str) or not fields.get(field).strip()
+            ):
                 errors.append(f"{name}: scenario {scenario} {field} must not be empty")
         for field in ("event_accepted", "delivered_to_target_session"):
             if fields.get(field) not in TRI_STATE:
