@@ -313,12 +313,24 @@ exec 8<"$FIFO"
 # descriptors it had inherited. Under a CI step that captures output with
 # `$(...)`, that is the capture's own pipe, and the step hangs until the runner
 # is taken away rather than failing.
+tail_followers() {
+	ps -eo pid=,args= 2>/dev/null |
+		awk -v spool="$SPOOL" 'index(" " $0 " ", " tail ") && index($0, spool) { print $1 }'
+}
+
 cleanup() {
+	# Stop the named children first, then sweep by the unique spool path. On
+	# macOS a BSD tail can survive long enough after the reader exits to keep the
+	# caller's captured stdout open, and older bash versions are less reliable
+	# about what a backgrounded compound command leaves in $!. The spool path is
+	# per test/session, so this only targets the reader this watcher started.
 	rm -f "$FIFO"
 	rm -rf "$LOCK_DIR"
-	kill "$tail_pid" "$ticker_pid" 2>/dev/null || true
+	followers=$(tail_followers)
+	kill "$tail_pid" "$ticker_pid" $followers 2>/dev/null || true
 	sleep 0.1
-	kill -KILL "$tail_pid" "$ticker_pid" 2>/dev/null || true
+	followers=$(tail_followers)
+	kill -KILL "$tail_pid" "$ticker_pid" $followers 2>/dev/null || true
 	wait "$tail_pid" "$ticker_pid" 2>/dev/null || true
 }
 trap cleanup EXIT
