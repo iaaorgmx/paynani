@@ -274,5 +274,23 @@ if start_marker in design_text and end_marker in design_text:
     check("DESIGN.md capabilities matrix comes from harness/capabilities.py",
           generated, block)
 
+capabilities_page = (ROOT / "HARNESS_CAPABILITIES.md").read_text().strip()
+check("HARNESS_CAPABILITIES.md is generated from harness/capabilities.py",
+      capabilities.markdown_page().strip(), capabilities_page)
+check("HARNESS_CAPABILITIES.md renders OpenCode no-target-session scenario", True,
+      "OpenCode TUI open without destination session" in capabilities_page)
+
+candidate_template = ROOT / ".github" / "ISSUE_TEMPLATE" / "harness-candidate.md"
+check("candidate harness issue template exists", True, candidate_template.is_file())
+candidate_text = candidate_template.read_text() if candidate_template.is_file() else ""
+for question in (
+    "session-start hook",
+    "open session after it becomes idle",
+    "target session is busy",
+    "non-interactive or headless mode",
+    "credentials and runtime secrets",
+):
+    check(f"candidate template asks about {question}", True, question in candidate_text)
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

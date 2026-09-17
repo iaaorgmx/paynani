@@ -3,6 +3,7 @@
 
 import pathlib
 import sys
+from copy import deepcopy
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "harness"))
@@ -60,9 +61,32 @@ check("OpenCode scenario says accepted is not target-session delivery", "no",
           "delivered_to_target_session"
       ])
 
+bad = deepcopy(capabilities.CAPABILITIES)
+bad["openclaw"]["static"]["credentials_location"] = ""
+check("empty credentials_location is invalid", True,
+      any("credentials_location" in error for error in capabilities.validate(bad)))
+
+bad = deepcopy(capabilities.CAPABILITIES)
+bad["openclaw"]["static"]["session_discovery"] = ""
+check("empty session_discovery is invalid", True,
+      any("session_discovery" in error for error in capabilities.validate(bad)))
+
+bad = deepcopy(capabilities.CAPABILITIES)
+bad["opencode"]["scenarios"]["open_tui_without_target_session"]["documentation_label"] = ""
+check("empty scenario documentation_label is invalid", True,
+      any("documentation_label" in error for error in capabilities.validate(bad)))
+
 table = capabilities.markdown_table()
 check("Markdown matrix reflects OpenCode's derived level", True,
       "OpenCode (`opencode`)" in table and "autonomous" in table)
+
+page = capabilities.markdown_page()
+check("Generated page has the three required blocks per harness", True,
+      "### How It Arrives" in page
+      and "### Guarantee" in page
+      and "### What Not To Promise" in page)
+check("Generated OpenCode page renders the no-target-session scenario", True,
+      "OpenCode TUI open without destination session" in page)
 
 print()
 print(f"{passed} passed, {failed} failed")
