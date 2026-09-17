@@ -415,6 +415,35 @@ class Watcher(unittest.TestCase):
             time.sleep(0.05)
         self.assertGreaterEqual(int(offset.read_text().strip()), 4)
 
+    def test_late_tail_still_feeds_the_live_reader(self):
+        """
+        A ticker can open the fifo before tail does. The fifo path must remain
+        until cleanup so tail's later redirection joins the reader rather than
+        recreating the path as a regular file.
+        """
+        import subprocess as sp
+        spool = self.state / "session.spool"
+        spool.write_text("", encoding="utf-8")
+        out = self.state / "watch.out"
+        handle = open(out, "w", encoding="utf-8")
+        self.addCleanup(handle.close)
+        env = {**os.environ, "PAYNANI_TEST_TAIL_DELAY": "1"}
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
+                        stdout=handle, stderr=sp.STDOUT, text=True, env=env,
+                        start_new_session=True)
+        self.addCleanup(lambda: self._take_down_the_tree(proc))
+        self.assertTrue(self._wait_for_arming(proc), "the watcher did not arm")
+
+        offset = self.state / "session.offset"
+        with spool.open("a", encoding="utf-8") as stream:
+            stream.write("hola\n")
+        self._wait_for(lambda: offset.read_text().strip() == "5",
+                       "tail to deliver after opening later than the ticker",
+                       diagnose=lambda: self._what_the_watcher_saw(out)
+                       + f"\n--- watcher exit code --- {proc.poll()}"
+                       + f"\n--- spool bytes --- {spool.stat().st_size}"
+                       + f"\n--- offset --- {offset.read_text().strip()!r}")
+
     # ---- a host without flock: what #105 was ------------------------------
     #
     # `flock` is util-linux and macOS does not ship it. The old guard read the

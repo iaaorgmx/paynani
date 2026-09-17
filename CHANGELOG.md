@@ -1,5 +1,15 @@
 # Changelog
 
+## Sin publicar
+
+- Claude Code conserva la ruta del FIFO del vigía hasta el `trap`, para que un
+  `tail` que abre tarde no recree la ruta como archivo regular ni pierda la
+  entrega en vivo (#179).
+
+### Si actualizas
+
+Basta rearmar el vigía en la siguiente sesión de Claude Code.
+
 ## 0.7.0 (2026-09-17)
 
 **Paynani corre en OpenCode, el quinto harness.** 17 commits desde 0.6.0
