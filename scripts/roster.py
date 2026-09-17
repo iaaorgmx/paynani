@@ -228,6 +228,21 @@ _KNOWN_COLUMNS = {
 }
 
 
+
+
+def canonical_schema_ok(text: str) -> tuple[bool, str]:
+    """Return whether contacts-table write paths may mutate this roster.
+
+    Legacy column aliases are read-only compatibility. Any command that writes
+    roster.md must first migrate them to canonical names, otherwise a command
+    that does not touch that column can keep mutating an unmigrated file.
+    """
+    legacy = legacy_columns(text)
+    if legacy:
+        aliases = ", ".join(f"{old} -> {new}" for old, new in legacy)
+        return False, f"roster.md uses legacy column(s) ({aliases}); run: paynani roster migrate --apply"
+    return True, ""
+
 def add_contact(text: str, name: str, address: str, *, type_: str = "", github: str = "") -> tuple[bool, str]:
     """
     Add one row to the contacts table.
@@ -254,11 +269,13 @@ def add_contact(text: str, name: str, address: str, *, type_: str = "", github: 
     if header_idx is None:
         return False, "roster.md has no contacts table (no header row found)"
 
+    schema_ok, schema_reason = canonical_schema_ok(text)
+    if not schema_ok:
+        return False, schema_reason
+
     lower_headers = [h.strip().lower() for h in header_fields]
     canonical_headers = [canonical_column(h) for h in header_fields]
     if github and "github" not in lower_headers:
-        if "github" in canonical_headers:
-            return False, "roster.md uses a legacy GitHub column; run: paynani roster migrate --apply"
         return False, "roster.md's contacts table has no GitHub column; add one by hand first"
     if type_ and "type" not in canonical_headers:
         return False, "roster.md's contacts table has no Type column; add one by hand first"
@@ -288,6 +305,10 @@ def remove_contact(text: str, address: str) -> tuple[bool, str]:
     Returns `(True, new_text)` or `(False, reason)`, with the same
     never-claim-success-and-change-nothing rule as add_contact().
     """
+    schema_ok, schema_reason = canonical_schema_ok(text)
+    if not schema_ok:
+        return False, schema_reason
+
     norm = normalise(address)
     target_idx = None
     for fields, is_header, idx in _rows(text, "contacts"):

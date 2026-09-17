@@ -148,19 +148,27 @@ def _apply_roster_text(path: Path, new_text: str, expected_addresses) -> tuple[s
     if existed:
         backup = path.with_suffix(path.suffix + ".bak")
         backup.write_bytes(original_bytes)
-    _write_atomic(path, new_text)
-    actual_addresses = roster_mod.roster_addresses(path)
-    if actual_addresses != expected_addresses:
-        try:
-            if existed:
-                _write_bytes_atomic(path, original_bytes)
-            else:
-                path.unlink(missing_ok=True)
-        except OSError as exc:
-            return "verify_failed", f"verification failed and byte-for-byte restore failed: {exc}"
-        return "verify_failed", "verification failed; original roster.md restored byte for byte"
+    try:
+        _write_atomic(path, new_text)
+        actual_addresses = roster_mod.roster_addresses(path)
+        if actual_addresses != expected_addresses:
+            return _rollback_roster_text(path, existed, original_bytes, "verification failed")
+    except Exception as exc:
+        return _rollback_roster_text(path, existed, original_bytes, f"write or verification failed ({exc})")
     return "ok", str(path)
 
+
+
+
+def _rollback_roster_text(path: Path, existed: bool, original_bytes: bytes, reason: str) -> tuple[str, str]:
+    try:
+        if existed:
+            _write_bytes_atomic(path, original_bytes)
+            return "verify_failed", f"{reason}; original roster.md restored byte for byte"
+        path.unlink(missing_ok=True)
+        return "verify_failed", f"{reason}; created roster.md removed"
+    except OSError as exc:
+        return "verify_failed", f"{reason} and byte-for-byte restore failed: {exc}"
 
 def _logical_diff(before: str, after: str, notes: list[str]) -> None:
     if notes:
@@ -284,23 +292,25 @@ def _apply_change_core(path: Path, new_text: str, expected_addresses) -> tuple[s
     if not ok:
         return "test_failed", output
 
-    _write_atomic(path, new_text)
+    try:
+        _write_atomic(path, new_text)
 
-    # The direct check: does the file this command just wrote actually parse
-    # to what was intended? This one necessarily runs after the write — it is
-    # checking the write itself — so it is the only step with any exposure
-    # window at all, and that window is one in-process re-read, not a
-    # multi-second subprocess suite.
-    actual_addresses = roster_mod.roster_addresses(path)
-    if actual_addresses != expected_addresses:
+        # The direct check: does the file this command just wrote actually parse
+        # to what was intended? This one necessarily runs after the write — it is
+        # checking the write itself — so it is the only step with any exposure
+        # window at all, and that window is one in-process re-read, not a
+        # multi-second subprocess suite.
+        actual_addresses = roster_mod.roster_addresses(path)
+        if actual_addresses != expected_addresses:
+            raise ValueError("the written file did not parse back to the expected address list")
+    except Exception as exc:
         revert_exc = _revert_write(path, original) if existed else _remove_created(path)
         if revert_exc is not None:
             return "verify_failed", (
-                "the written file did not parse back to the expected address "
-                f"list, AND the revert itself failed ({revert_exc}) — "
+                f"write/verification failed ({exc}), AND the revert itself failed ({revert_exc}) — "
                 f"roster.md at {path} may now hold the rejected change."
             )
-        return "verify_failed", "the written file did not parse back to the expected address list. Reverted."
+        return "verify_failed", f"write/verification failed ({exc}). Reverted."
 
     return "ok", str(path)
 
