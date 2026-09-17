@@ -416,6 +416,45 @@ def spool_facts(selected):
     return out
 
 
+def _pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def opencode_open_pids(state):
+    """
+    The OpenCode processes that have the paynani plugin loaded, live ones only.
+
+    The plugin writes `opencode.processes/<pid>` when it loads and removes it when
+    it goes. A process killed hard leaves its file behind, so a dead or
+    unreadable entry is removed here rather than reported as open (#160).
+    """
+    folder = state / "opencode.processes"
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return []
+    alive = []
+    for entry in entries:
+        try:
+            pid = int(entry.name)
+        except ValueError:
+            pid = None
+        if pid is not None and pid > 0 and _pid_alive(pid):
+            alive.append(pid)
+            continue
+        try:
+            entry.unlink()
+        except OSError:
+            pass
+    return sorted(alive)
+
+
 def opencode_plugin_facts(state):
     """
     Whether the OpenCode plugin is registered, and whether one is consuming now.
@@ -426,7 +465,8 @@ def opencode_plugin_facts(state):
     directory. A live consumer is the process named in the plugin's lock; none
     is the normal state while OpenCode is closed.
     """
-    out = {"plugin_registered": None, "plugin_path": None, "consumer_pid": None}
+    out = {"plugin_registered": None, "plugin_path": None, "consumer_pid": None,
+           "open_pids": opencode_open_pids(state)}
     try:
         import opencode_plugin
         path = opencode_plugin.default_target()
@@ -803,8 +843,12 @@ def render(facts, problems, warnings):
                 out.append("             run: python3 scripts/opencode_plugin.py --install")
             if spool.get("consumer_pid"):
                 out.append(f"             delivering from OpenCode process {spool['consumer_pid']}")
+            elif spool.get("open_pids"):
+                pids = ", ".join(str(p) for p in spool["open_pids"])
+                out.append(f"             OpenCode is open (process {pids}) but not delivering yet: "
+                           "write in a session and delivery starts when it is idle")
             else:
-                out.append("             no OpenCode process is delivering; unread bytes wait "
+                out.append("             no OpenCode process is open; unread bytes wait "
                            "until OpenCode is open, which is normal")
             out.append("             picked up here means handed to an OpenCode session, not "
                        "that the agent read the mail body or answered it")
