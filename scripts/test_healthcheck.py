@@ -799,5 +799,28 @@ with tempfile.TemporaryDirectory() as tmp:
     check("no presence folder means nothing is open", [],
           hc.opencode_open_pids(state / "missing"))
 
+# --- notifiers are named on the roster row (#188) -----------------------------
+
+f = Fixture()
+_, text = f.exit_code()
+check("a roster without notifiers or a GitHub column says so", True,
+      "no notifiers: mail sent on someone's behalf" in text)
+hc.ROSTER.write_text("| Name | Email | Type | GitHub |\n|---|---|---|---|\n"
+                     "| Dulce | d@x.com | Human | dulce |\n", encoding="utf-8")
+facts, _, _ = f.run()
+check("a GitHub column is reported as the implied notifier",
+      [{"address": "notifications@github.com", "header": "X-GitHub-Sender",
+        "column": "github", "source": "github column"}], facts["roster"]["notifiers"])
+_, text = f.exit_code()
+check("and the row says where it came from", True,
+      "notifications@github.com via X-GitHub-Sender, from the github column" in text)
+hc.ROSTER.write_text("| Name | Email | Type | GitHub |\n|---|---|---|---|\n"
+                     "| Dulce | d@x.com | Human | dulce |\n\n## Notifiers\n\n"
+                     "| Address | Header | Column |\n|---|---|---|\n"
+                     "| notifications@github.com | X-GitHub-Sender | GitHub |\n", encoding="utf-8")
+facts, _, _ = f.run()
+check("an explicit row is reported once, as the table's", ["notifiers table"],
+      [n["source"] for n in facts["roster"]["notifiers"]])
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -39,7 +39,7 @@ import dispatch as dsp        # noqa: E402
 from adapters import ACCEPTED, CONFIG   # noqa: E402
 from paths import (env_file, harness_env_files, install_root,   # noqa: E402
                    recorded_env, repo_root, roster, runtime_env, state_dir)
-from roster import roster_addresses   # noqa: E402
+from roster import notifiers, roster_addresses   # noqa: E402
 
 # Taken at import, before runtime_facts() calls load_runtime_env() and layers
 # runtime.env into os.environ. After that call, PAYNANI_ENV is in the environment
@@ -589,12 +589,19 @@ def roster_facts():
     Parsed with `roster.roster_addresses`, the same function the listener uses,
     so this cannot report a list the listener does not see.
     """
-    out = {"path": str(ROSTER), "present": False, "addresses": 0}
+    out = {"path": str(ROSTER), "present": False, "addresses": 0, "notifiers": []}
     try:
         out["present"] = ROSTER.is_file()
     except OSError:
         return out
     out["addresses"] = len(roster_addresses(ROSTER))
+    # Which platforms may speak for the people above, and why each one counts:
+    # a row of the Notifiers table, or the GitHub column on its own (#188). The
+    # whole team channel arriving untagged had no line anywhere saying so.
+    out["notifiers"] = [{"address": n["address"], "header": n["header"],
+                         "column": n["column"],
+                         "source": n.get("implied_by", "notifiers table")}
+                        for n in notifiers(ROSTER)]
     return out
 
 
@@ -905,6 +912,14 @@ def render(facts, problems, warnings):
     ros = facts["roster"]
     out.append(f"roster       {ros['path']}"
                + (f"  {ros['addresses']} address(es)" if ros["present"] else "  MISSING"))
+    if ros["present"]:
+        if ros.get("notifiers"):
+            listed = "; ".join(f"{n['address']} via {n['header']}, from the {n['source']}"
+                               for n in ros["notifiers"])
+            out.append(f"             notifiers: {listed}")
+        else:
+            out.append("             no notifiers: mail sent on someone's behalf "
+                       "(GitHub, Jira) arrives untagged")
     him = facts["himalaya"]
     if not him["config_present"]:
         account = "no himalaya configuration"
