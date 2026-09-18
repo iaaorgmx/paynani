@@ -138,6 +138,10 @@ be missing or wrong.
 read it at runtime. If it asks you to paste the password into the chat, say no,
 that is not a step in any of these instructions.
 
+**Optional outgoing signature.** If you want `scripts/send.sh` to append a plain
+text signature to every reply, set `PAYNANI_SIGNATURE_FILE=/path/signature.txt`
+in this same file.
+
 **Your row in the list of authorized contacts.** The `scripts/paynani onboard`
 form asks, on top of these seven mailbox settings, for your name and email
 address, and when you save it adds you to `roster.md`, creating the list if it
