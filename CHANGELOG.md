@@ -1,10 +1,45 @@
 # Changelog
 
-## Sin publicar
+## 0.7.1 (2026-09-18)
 
-- Ledger append-only por evento con estados observados, despachados,
-  presentados, atendidos, respondidos, cerrados o suprimidos. Conserva el
-  sobre seguro y las identidades de proveedor, nunca el cuerpo.
+**Dos defectos de campo del mismo día, y las herramientas de diagnóstico e
+inspección que ya estaban listas.** 23 commits desde 0.7.0 (PRs #176, #177,
+#180, #187 y #189).
+
+- **En OpenClaw, el correo del roster no se contestaba** (#186). Un agente en
+  OpenClaw 2026.9.4 recibió correo del roster, paynani lo entregó y OpenClaw
+  aceptó el evento, y nadie contestó hasta que una persona miró. La regla que
+  convierte la línea `System:` en una respuesta tenía que copiarla el agente a
+  sus instrucciones persistentes, y nada verificaba que lo hubiera hecho. Ahora
+  `scripts/openclaw_rules.py --install` la escribe entre marcadores en
+  `~/.openclaw/workspace/AGENTS.md`, `--check` y `--uninstall` la revisan y la
+  quitan, `scripts/healthcheck.py` la reporta en la fila `instructions` y el
+  instalador nombra el paso (`openclaw_rules_next_step=`). Además, el evento
+  que llega a OpenClaw con `roster_match` trae una segunda línea con el comando
+  exacto de Himalaya para leer el correo y `scripts/send.sh` para contestar,
+  sin cuerpo. Probado en campo por Xochitl: respuesta sola en menos de tres
+  minutos.
+- **Las notificaciones de GitHub llegaban sin etiqueta roster** en nueve de
+  diez hosts (#188): los rosters tenían la columna `GitHub` con los handles y
+  no la fila de `## Notifiers` que activaba el cotejo de `X-GitHub-Sender`. La
+  columna `GitHub` ahora declara ese notificador por sí sola; una fila
+  explícita gana y no se duplica, una celda vacía no coteja a nadie y sin
+  columna nada cambia. `healthcheck.py` dice qué notificadores están activos y
+  de dónde salen. Ningún `roster.md` hay que tocar.
+- **`paynani doctor`, `paynani paths` y `paynani support-bundle`** (#168, parte
+  1, PR #177). `doctor` diagnostica con cuatro estados (`ok`, `warning`,
+  `blocked`, `unknown`) y un `next_command` por check, lee la matriz de
+  capacidades del runtime y reporta `unknown` para lo que el harness no expone;
+  el esquema JSON de su salida está en `examples/doctor.schema.json`.
+  `support-bundle` escribe un paquete redactado: la lista de claves del `.env`
+  con su modo, nunca sus valores.
+- **Matriz de capacidades por runtime** (#169, PR #176):
+  `harness/capabilities.py` es la fuente única de qué observa cada harness, y
+  genera `HARNESS_CAPABILITIES.md` y la tabla de `DESIGN.md`.
+- **Ledger de vida del evento** (#171, PR #180). Append-only por evento, con
+  estados observado, despachado, presentado, atendido, respondido, cerrado o
+  suprimido. Conserva el sobre seguro y las identidades de proveedor, nunca el
+  cuerpo.
 - `scripts/paynani event show/list/mark`, `scripts/paynani status` y
   `scripts/paynani roster explain` hacen observable el recorrido, verifican el
   UID exacto antes de recuperar correo y explican las decisiones del roster.
@@ -13,6 +48,36 @@
 - El estado de Codex distingue sesión registrada, último `codex queue`, caída
   al spool y replay; una CLI sin el contrato opcional de `codex queue` se
   reporta como `unsupported`, no como una instalación rota.
+
+### Si actualizas desde 0.7.0
+
+`git pull` y seguir `UPGRADE.md`. Cambiaron el escucha (`roster.py`,
+`idle_listener.py`), el dispatcher (`dispatch.py`, `event.py`, los adaptadores)
+y el hook de sesión (`session_start.py`), así que en todos los hosts:
+
+```bash
+git pull
+scripts/install.sh --runtime <runtime> --upgrade
+systemctl --user restart paynani-idle.service paynani-dispatch.service
+# macOS: launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"
+#        launchctl kickstart -k "gui/$(id -u)/com.paynani.dispatch"
+scripts/healthcheck.py
+```
+
+En **OpenClaw**, además, `scripts/openclaw_rules.py --install` y `--check` con
+exit 0. En **Claude Code** y **Codex**, reinicia las sesiones abiertas para que
+carguen el hook nuevo. Nadie tiene que tocar `roster.md`: la columna `GitHub`
+basta.
+
+### Pendientes conocidos
+
+- **`suite-macos` todavía no es un check requerido.** Pasa a requerido con 10
+  corridas seguidas en verde en `main`, sin re-runs, y no antes del 2026-09-30.
+  Al preparar esta versión la cuenta va en 11 (desde el re-run de #151 el
+  2026-09-17); manda la fecha.
+- **#168 sigue abierto** con tres requisitos por entregar: `draining` medido,
+  entorno persistente vs vivo de `systemd --user` y telemetría de reconexión
+  IMAP.
 
 ## 0.7.0 (2026-09-17)
 
