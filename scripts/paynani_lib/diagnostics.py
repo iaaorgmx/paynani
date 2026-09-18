@@ -98,10 +98,6 @@ def _queue_check(initial: dict) -> dict:
     second = healthcheck.queue_facts()
     facts = {"first": initial, "second": second, "sample_seconds": QUEUE_DRAIN_SAMPLE_SECONDS}
 
-    first_cursor = initial.get("cursor")
-    second_cursor = second.get("cursor")
-    if isinstance(first_cursor, int) and isinstance(second_cursor, int) and second_cursor > first_cursor:
-        return _check("queue", "ok", "queued events are draining", facts)
     if second.get("damaged_at") is not None:
         return _check(
             "queue",
@@ -109,12 +105,54 @@ def _queue_check(initial: dict) -> dict:
             f"event journal is damaged at byte {second['damaged_at']}; preserve a copy and open an issue with the three lines around that byte",
             facts,
         )
+    first_cursor = initial.get("cursor")
+    second_cursor = second.get("cursor")
+    if isinstance(first_cursor, int) and isinstance(second_cursor, int) and second_cursor > first_cursor:
+        return _check("queue", "ok", "queued events are draining", facts)
     if second.get("pending", 0) == 0:
         return _check("queue", "ok", "queue drained during the diagnostic sample", facts)
     age = second.get("oldest_age_seconds")
     if age is not None and age > healthcheck.STALE_QUEUE:
         return _check("queue", "blocked", "queued events are not draining and appear stalled", facts, _service_fix(healthcheck.DISPATCH_UNIT))
     return _check("queue", "warning", "queued events are not draining yet", facts, "scripts/healthcheck.py")
+
+
+_ENVIRONMENTD_VAR = re.compile(
+    r"\$(?:"
+    r"\{(?P<braced_name>[A-Za-z_][A-Za-z0-9_]*)(?:(?P<op>:-|:\+)(?P<word>[^}]*))?\}"
+    r"|(?P<plain>[A-Za-z_][A-Za-z0-9_]*)"
+    r")"
+)
+
+
+def _strip_environmentd_quotes(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _expand_environmentd_value(value: str, values: dict[str, str]) -> str:
+    context = {**os.environ, **values}
+
+    def replacement(match: re.Match[str]) -> str:
+        name = match.group("plain") or match.group("braced_name")
+        current = context.get(name, "")
+        op = match.group("op")
+        word = match.group("word") or ""
+        if op == ":-":
+            return current if current else word
+        if op == ":+":
+            return word if current else ""
+        return current
+
+    expanded = value
+    for _ in range(10):
+        next_value = _ENVIRONMENTD_VAR.sub(replacement, expanded)
+        if next_value == expanded:
+            return next_value
+        expanded = next_value
+    return expanded
 
 
 def _parse_environment_lines(text: str) -> dict[str, str]:
@@ -126,7 +164,7 @@ def _parse_environment_lines(text: str) -> dict[str, str]:
         name, value = line.split("=", 1)
         name = name.strip()
         if name:
-            values[name] = value.strip().strip('"').strip("'")
+            values[name] = _expand_environmentd_value(_strip_environmentd_quotes(value), values)
     return values
 
 
