@@ -12,6 +12,7 @@ is unambiguous with no lock needed around the in-memory session store below.
 from __future__ import annotations
 
 import html
+import importlib
 import os
 import sys
 from http import cookies
@@ -25,6 +26,10 @@ from .envfile import ENV_FIELDS, read_env, render_env, write_env
 from .probe import probe_imap, probe_smtp
 from .validate import validate
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_REPO_ROOT / "harness"))
+import dispatch  # noqa: E402
+
 PORT_HINTS = {
     "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT": "993",
     "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT": "465",
@@ -35,7 +40,7 @@ PORT_HINTS = {
 # is a separate file with a separate purpose from the agent's own mailbox
 # credentials.
 ROSTER_FIELDS = ["ROSTER_NAME", "ROSTER_EMAIL"]
-RUNTIME_ENV = Path(__file__).resolve().parents[2] / "runtime.env"
+RUNTIME_ENV = _REPO_ROOT / "runtime.env"
 
 COOKIE_NAME = "paynani_psid"
 MAX_BODY_BYTES = 64 * 1024  # generous for 10 short fields; anything past it isn't this form
@@ -419,12 +424,21 @@ def _selected_runtime() -> str:
     try:
         text = RUNTIME_ENV.read_text(encoding="utf-8-sig")
     except OSError:
-        return ""
+        return _detected_runtime()
     for line in text.splitlines():
         line = line.strip()
         if line.startswith("PAYNANI_RUNTIME="):
             return line.split("=", 1)[1].strip().strip('"').strip("'").lower()
-    return ""
+    return _detected_runtime()
+
+
+def _detected_runtime() -> str:
+    detected = []
+    for name in dispatch.available():
+        module = importlib.import_module(f"adapters.{name}")
+        if getattr(module, "detect", lambda: False)():
+            detected.append(name)
+    return detected[0] if len(detected) == 1 else ""
 
 
 def _runtime_next_html() -> str:

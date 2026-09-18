@@ -109,6 +109,39 @@ finally:
     else:
         os.environ["PAYNANI_RUNTIME"] = old_runtime
 
+old_runtime = os.environ.pop("PAYNANI_RUNTIME", None)
+old_runtime_env = server_mod.RUNTIME_ENV
+old_available = server_mod.dispatch.available
+old_import_module = server_mod.importlib.import_module
+class _DetectedRuntime:
+    @staticmethod
+    def detect():
+        return True
+try:
+    server_mod.RUNTIME_ENV = Path(tempfile.mkdtemp(prefix="paynani-test-runtime-")) / "missing.env"
+    server_mod.dispatch.available = lambda: ["opencode"]
+    server_mod.importlib.import_module = lambda name: _DetectedRuntime
+    saved_page = server_mod._page(
+        lang="es-MX",
+        saved="/tmp/paynani/.env",
+        notice=None,
+        report=None,
+        errors={},
+        values=VALID,
+        has_password=True,
+        csrf="csrf",
+    )
+    check(
+        "onboard saved page: without runtime.env one detected harness selects OpenCode",
+        "OpenCode no le avisa" in saved_page,
+    )
+finally:
+    server_mod.RUNTIME_ENV = old_runtime_env
+    server_mod.dispatch.available = old_available
+    server_mod.importlib.import_module = old_import_module
+    if old_runtime is not None:
+        os.environ["PAYNANI_RUNTIME"] = old_runtime
+
 
 def with_override(**kw):
     v = dict(VALID)
