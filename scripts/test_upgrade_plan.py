@@ -6,6 +6,7 @@ Runs against a throwaway git repository built here, so the table is exercised
 on a known diff rather than on whatever this clone's tags happen to contain.
 """
 
+import json
 import pathlib
 import shutil
 import subprocess
@@ -136,8 +137,9 @@ try:
     check("a test file -> none", verbs.get("scripts/test_x.py") == "none")
     check("a file outside the table -> unknown", verbs.get("tools/new_thing.py") == "unknown")
     check("unknown files are listed by name", p["unknown"] == ["tools/new_thing.py"])
-    check("the dispatcher is the only unit to restart",
-          [u for u, _ in p["restart_units"]] == ["paynani-dispatch.service"])
+    check("VERSION restarts the listener and dispatch.py restarts the dispatcher",
+          [u for u, _ in p["restart_units"]]
+          == ["paynani-idle.service", "paynani-dispatch.service"])
     check("a copied unit sets reinstall", p["reinstall"] is True)
 
     here = {f["path"]: f["here"] for f in p["files"]}
@@ -146,15 +148,16 @@ try:
     cmds = up.commands(p)
     check("commands start with the installer when a copy changed",
           cmds and cmds[0] == "scripts/install.sh --runtime claudecode --upgrade", str(cmds))
-    check("commands restart the dispatcher with systemctl",
-          any(c == "systemctl --user restart paynani-dispatch.service" for c in cmds), str(cmds))
+    check("commands restart the listener and dispatcher with systemctl",
+          any(c == "systemctl --user restart paynani-idle.service paynani-dispatch.service"
+              for c in cmds), str(cmds))
     check("commands do not mention OpenCode on a Claude Code host",
           not any("OpenCode" in c for c in cmds), str(cmds))
     text = up.render(p)
     check("render marks the other runtime's file", "(not on this host)" in text)
     check("render warns about unknown files and refuses the happy reading",
           "1 file(s) unknown" in text and "do not read their absence" in text)
-    check("render collapses the quiet files into one line", "3 file(s) read on each call or not executed" in text, text)
+    check("render collapses the quiet files into one line", "2 file(s) read on each call or not executed" in text, text)
 
     mac = up.plan("v1.0.0", "v2.0.0", repo=repo, runtime="opencode", system="Darwin")
     mac_cmds = up.commands(mac)
@@ -217,7 +220,7 @@ try:
     check("render names the overlays", "local overlays: 2 tracked file(s)" in ov_text, ov_text)
     check("render says which one conflicts", "harness/dispatch.py: also changes v1.0.0 -> v2.0.0: conflict likely" in ov_text, ov_text)
     check("render says which one carries over", "scripts/send.sh: unchanged upstream: carries over" in ov_text, ov_text)
-    check("render gives the record and the stash", "git diff > state/overlay-v1.0.0-v2.0.0.patch" in ov_text
+    check("render gives the record and the stash", "git diff HEAD --binary > state/overlay-v1.0.0-v2.0.0-<unique>.patch" in ov_text
           and 'git stash push -m "paynani overlay before v2.0.0"' in ov_text, ov_text)
     check("render says ignored files are not listed", "not overlays" in ov_text)
     check("the plan itself is unaffected by overlays", ov["ok"] and up.commands(ov) == cmds, str(up.commands(ov)))
@@ -266,6 +269,87 @@ try:
     check("CLI names the missing manifest and UPGRADE.md",
           "no install manifest" in run.stdout and "UPGRADE.md" in run.stdout, run.stdout)
     check("CLI prints no commands without a manifest", "run, in this order" not in run.stdout, run.stdout)
+
+    # --- --apply: exact plan, overlays, restart and final verification --------
+    remote = tmp / "apply-origin.git"
+    seed = tmp / "apply-seed"
+    applied = tmp / "apply-clone"
+    sh(tmp, "init", "-q", "--bare", str(remote))
+    seed.mkdir()
+    sh(seed, "init", "-q")
+    write(seed, ".gitignore", "install.manifest\nstate/\n")
+    write(seed, "VERSION", "1.0.0\n")
+    write(seed, "overlay.txt", "upstream\n")
+    write(seed, "scripts/version.sh", "#!/usr/bin/env bash\n[ \"$1\" = --installed ] && tr -d '[:space:]' < VERSION\n")
+    write(seed, "scripts/healthcheck.py", "#!/usr/bin/env python3\nraise SystemExit(0)\n")
+    write(seed, "scripts/test_all.sh", "#!/usr/bin/env bash\nexit 0\n")
+    for executable in ("scripts/version.sh", "scripts/healthcheck.py", "scripts/test_all.sh"):
+        (seed / executable).chmod(0o755)
+    sh(seed, "add", "-A")
+    sh(seed, "commit", "-q", "-m", "one")
+    sh(seed, "tag", "v1.0.0")
+    sh(seed, "remote", "add", "origin", str(remote))
+    sh(seed, "push", "-q", "origin", "HEAD:main", "--tags")
+    write(seed, "VERSION", "2.0.0\n")
+    sh(seed, "add", "VERSION")
+    sh(seed, "commit", "-q", "-m", "two")
+    sh(seed, "tag", "v2.0.0")
+    sh(seed, "push", "-q", "origin", "HEAD:main", "--tags")
+    subprocess.run(["git", "-C", str(remote), "symbolic-ref", "HEAD", "refs/heads/main"],
+                   check=True)
+    subprocess.run(["git", "clone", "-q", str(remote), str(applied)], check=True)
+    sh(applied, "checkout", "-q", "-b", "installed", "v1.0.0")
+    manifest_for(applied)
+    write(applied, "overlay.txt", "local overlay\n")
+    state = applied / "state"
+    state.mkdir()
+    write(applied, "state/idle.json", json.dumps({"heartbeat_at": "old", "version": "1.0.0"}))
+    write(applied, "state/idle.err.log", "old line\n")
+    apply = up.plan("v1.0.0", "v2.0.0", repo=applied, runtime="claudecode", system="Linux")
+    calls = []
+
+    def apply_runner(argv, cwd, text, capture_output):
+        argv = [str(value) for value in argv]
+        calls.append(argv)
+        if argv[:2] == ["systemctl", "--user"]:
+            if argv[2:3] == ["restart"]:
+                (state / "idle.json").write_text(json.dumps({
+                    "heartbeat_at": "new", "version": "2.0.0", "last_uid": 7
+                }), encoding="utf-8")
+                with (state / "idle.err.log").open("a", encoding="utf-8") as handle:
+                    handle.write("listening on INBOX, resuming from uid 7\n")
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if argv and argv[0].endswith("scripts/healthcheck.py"):
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if argv and argv[0].endswith("scripts/test_all.sh"):
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.run(argv, cwd=cwd, text=text, capture_output=capture_output)
+
+    result = up.apply_plan(apply, repo=applied, runner=apply_runner, wait_seconds=0)
+    check("apply advances to the exact planned tag",
+          subprocess.run(["git", "-C", str(applied), "rev-parse", "HEAD"],
+                         capture_output=True, text=True).stdout.strip()
+          == subprocess.run(["git", "-C", str(applied), "rev-parse", "v2.0.0"],
+                            capture_output=True, text=True).stdout.strip())
+    check("apply restores the tracked overlay", (applied / "overlay.txt").read_text() == "local overlay\n")
+    check("apply records a binary-capable overlay patch",
+          result["patch"] is not None and pathlib.Path(result["patch"]).read_text())
+    check("apply runs the suite after restoring an overlay",
+          any(argv and argv[0].endswith("scripts/test_all.sh") for argv in calls), str(calls))
+    check("apply restarts only the listener named by the plan",
+          ["systemctl", "--user", "restart", "paynani-idle.service"] in calls, str(calls))
+    check("apply finishes with healthcheck",
+          any(argv and argv[0].endswith("scripts/healthcheck.py") for argv in calls), str(calls))
+
+    refused = dict(apply, unknown=["mystery.bin"])
+    before_calls = len(calls)
+    try:
+        up.apply_plan(refused, repo=applied, runner=apply_runner, wait_seconds=0)
+        refused_unknown = False
+    except up.ApplyError:
+        refused_unknown = True
+    check("apply refuses unknown files before running a command",
+          refused_unknown and len(calls) == before_calls)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

@@ -114,6 +114,35 @@ put the overlay back and prove it still holds; if `pop` conflicts, the patch is
 the way back. Ignored files (`roster.md`, `.env`, `state/`) are the install's
 own data, never overlays, and do not appear.
 
+When the plan is complete and every line is understood, the same tool can
+apply that exact plan:
+
+```bash
+scripts/version.sh --apply          # installed tag -> newest local tag
+scripts/version.sh --apply REF      # installed tag -> this tag or origin/main
+```
+
+`--apply` refuses before changing the worktree if either ref or the manifest is
+missing, a changed file is `unknown`, an installer-owned copy has drifted, or
+the runtime needed by the installer is unknown. It freezes the target commit,
+fetches the named remote ref and checks that it still resolves to that commit
+before a fast-forward merge. A moving `origin/main` therefore stops before the
+worktree advances instead of applying actions calculated for different bytes.
+
+For tracked overlays it writes a binary patch under `state/`, stashes them,
+fast-forwards, runs only the installer, registration and restart actions shown
+by `--plan`, then restores the stash and runs `scripts/test_all.sh`. A conflict
+on `stash pop` is a failure and leaves the stash plus the patch as recovery
+paths. Ignored credentials, roster and state are never stashed.
+
+The listener records the version it loaded at process start in `idle.json`.
+Every release changes `VERSION`, so the plan restarts the listener; `--apply`
+then requires the disk version and process version to agree, a fresh
+`resuming from uid N` line after the restart, and a successful
+`scripts/healthcheck.py`. Any failed command stops the sequence and exits
+nonzero. Manual harness actions remain explicit notices because a process
+cannot safely restart the session that is running it.
+
 ## 3. Check you have nothing uncommitted
 
 ```bash

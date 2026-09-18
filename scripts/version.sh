@@ -6,6 +6,7 @@
 #   version.sh --line       one cached line, for the session-start hook
 #   version.sh --plan [REF] what has to restart between the installed tag and
 #                           REF (default: the newest local tag); see upgrade_plan.py
+#   version.sh --apply [REF] apply that exact plan and verify the running install
 #
 # Exit: 0 up to date, 2 a newer release exists, 1 could not find out.
 #
@@ -184,8 +185,16 @@ if [ "$mode" = "--plan" ]; then
     exec python3 "$REPO/scripts/upgrade_plan.py"
 fi
 
+if [ "$mode" = "--apply" ]; then
+    shift
+    if [ $# -gt 0 ]; then
+        exec python3 "$REPO/scripts/upgrade_plan.py" --apply --to "$1"
+    fi
+    exec python3 "$REPO/scripts/upgrade_plan.py" --apply
+fi
+
 if [ "$mode" != "--report" ]; then
-    echo "usage: version.sh [--installed|--line|--plan [REF]]" >&2
+    echo "usage: version.sh [--installed|--line|--plan [REF]|--apply [REF]]" >&2
     exit 64
 fi
 
