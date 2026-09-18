@@ -888,5 +888,77 @@ facts, _, _ = f.run()
 check("an explicit row is reported once, as the table's", ["notifiers table"],
       [n["source"] for n in facts["roster"]["notifiers"]])
 
+# --- the Claude Code watch registry is a row of its own (#170) -----------------
+#
+# "whether a session has armed a watch is not observable from here" was true
+# and is not any more: each session's registry says live, expired, orphan.
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=0, bytes_total=100, session_arming="session-registry")
+f.spool_facts.update({"watch_live": None, "watch_expired": [], "watch_orphan": [],
+                      "watch_pending": [], "watch_yielded": 0, "watch_ended": 0})
+_, text = f.exit_code()
+check("no registry at all is said plainly", True,
+      "watch        no session has armed a watch" in text)
+check("and the old unobservable line is gone", False, "not observable from here" in text)
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=0, bytes_total=100, session_arming="session-registry")
+f.spool_facts.update({"watch_live": {"session_id": "abcdef12-rest", "armed_at": "2026-09-18T05:00:00Z",
+                                     "expires_at": "2026-09-18T05:30:00Z", "heartbeat_at": "2026-09-18T05:10:00Z",
+                                     "offset": 100, "watcher_pid": 1},
+                      "watch_expired": [], "watch_orphan": [], "watch_pending": [],
+                      "watch_yielded": 0, "watch_ended": 0})
+_, problems, warnings = f.run()
+_, text = f.exit_code()
+check("a live watch is named with its session, start and expiry", True,
+      "watch        armed by session abcdef12 since 2026-09-18T05:00:00Z, expires 2026-09-18T05:30:00Z" in text)
+check("and carries its heartbeat", True, "last heartbeat 2026-09-18T05:10:00Z" in text)
+check("a live watch raises no warning", [], [w for w in warnings if "no session is watching" in w])
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=240, bytes_total=340, session_arming="session-registry")
+f.spool_facts.update({"watch_live": None,
+                      "watch_expired": [{"session_id": "deadbeef-x", "armed_at": "2026-09-18T04:00:00Z",
+                                         "expires_at": "2026-09-18T04:30:00Z", "offset": 100, "watcher_pid": 1}],
+                      "watch_orphan": [], "watch_pending": [{"session_id": "p"}],
+                      "watch_yielded": 0, "watch_ended": 0})
+_, problems, warnings = f.run()
+_, text = f.exit_code()
+check("an expired watch with mail waiting is a warning", True,
+      any("no session is watching" in w and "expired at 2026-09-18T04:30:00Z" in w for w in warnings))
+check("and never a problem: the mail is safe in the spool", [], problems)
+check("the row names the expired session", True,
+      "watch        none armed: the last one (session deadbeef) expired at 2026-09-18T04:30:00Z without re-arming" in text)
+check("sessions that ran the hook and never armed are counted", True,
+      "1 session(s) ran the hook and never armed" in text)
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=0, bytes_total=340, session_arming="session-registry")
+f.spool_facts.update({"watch_live": None, "watch_expired": [],
+                      "watch_orphan": [{"session_id": "killed99", "armed_at": "2026-09-18T04:00:00Z",
+                                        "expires_at": "2026-09-18T04:30:00Z", "offset": 340, "watcher_pid": 1}],
+                      "watch_pending": [], "watch_yielded": 0, "watch_ended": 0})
+_, problems, warnings = f.run()
+_, text = f.exit_code()
+check("an orphan with nothing unread is reported, not warned about", True,
+      "watch        none armed: the last one (session killed99) was killed (pid gone) without re-arming" in text)
+check("because nothing is waiting", [], [w for w in warnings if "no session is watching" in w])
+
+with tempfile.TemporaryDirectory() as tmp:
+    import session_start as ss
+    with mock.patch.object(ss, "SESSIONS_DIR", Path(tmp) / "sessions"):
+        check("no sessions directory means no registries", {"watch_live": None, "watch_expired": [],
+              "watch_orphan": [], "watch_pending": [], "watch_yielded": 0, "watch_ended": 0},
+              hc.watch_registry_facts())
+        ss.write_registry("s1", 5)
+        facts = hc.watch_registry_facts()
+        check("a pending registry is listed as pending", ["s1"],
+              [w["session_id"] for w in facts["watch_pending"]])
+        ss.update_registry("s1", status="armed", watcher_pid=os.getpid(),
+                           armed_at=ss._utc_now(), expires_at="2999-01-01T00:00:00Z", heartbeat_at=ss._utc_now())
+        check("an armed registry with a live pid and a future expiry is live", "s1",
+              hc.watch_registry_facts()["watch_live"]["session_id"])
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

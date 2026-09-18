@@ -913,41 +913,56 @@ Two consequences for the install:
 only by the opt-in agent mode below, so the installer does not demand it and a
 host without it on `PATH` is fine.
 
-**The session-start hook has to be registered in Claude Code's own settings**,
-and that file is yours rather than this project's. It holds configuration this
+**Two hooks have to be registered in Claude Code's own settings**, and that
+file is yours rather than this project's. It holds configuration this
 repository knows nothing about, so the installer never converges it and never
-records it in the ownership manifest. Register it explicitly:
+records it in the ownership manifest. Register them explicitly:
 
 ```bash
-scripts/claude_hook.py --print     # show the fragment, change nothing
-scripts/claude_hook.py --install   # merge it in, backing up first
-scripts/claude_hook.py --check     # exits 0 when registered
+scripts/claude_hook.py --print     # show the fragments, change nothing
+scripts/claude_hook.py --install   # merge in whichever is missing, backing up first
+scripts/claude_hook.py --check     # exits 0 when both are registered
 ```
 
-`--install` **appends** to any `SessionStart` list already there rather than
-replacing it, because Claude Code runs every hook registered for the event and
-replacing the list would silently disable whatever your host already does at
-startup. Running it twice does not duplicate the entry. If the file is not valid
-JSON it refuses and changes nothing, rather than rewriting a file it could not
-read.
+`--install` **appends** to any `SessionStart` or `UserPromptSubmit` list
+already there rather than replacing it, because Claude Code runs every hook
+registered for an event and replacing the list would silently disable whatever
+your host already does. Running it twice does not duplicate an entry, and an
+install from before #170 gets only the hook it lacks. If the file is not
+valid JSON it refuses and changes nothing, rather than rewriting a file it
+could not read.
 
-**What the hook then asks of the agent.** At each session start it replays what
-arrived while nothing was watching and prints the exact watch command, including
-a byte offset:
+**What the `SessionStart` hook then asks of the agent.** At each session start
+it replays what arrived while nothing was watching, writes this session's
+watch registry, `state/sessions/<session-id>/watch.json`, with the byte offset
+it replayed through, and prints the watch command:
 
 ```
-bash <clone>/harness/session_watch.sh <state_dir> <offset>
+bash <clone>/harness/session_watch.sh <state_dir> --from-hook
 ```
 
-The agent must arm that as a persistent Monitor. The offset is not optional:
-the hook replayed the spool through exactly that byte, so starting anywhere else
-repeats messages or steps over ones nobody has seen. **Arming is also what
-acknowledges the replay**: an agent that skips it sees the same messages again
-next session and receives no new mail for the rest of this one.
+The agent must arm that as a persistent Monitor. There is no number in the
+command on purpose (#170): the offset used to be printed for the agent to
+copy, and one digit wrong repeated mail or skipped it. `--from-hook` reads it
+from the registry under the session id Claude Code puts in
+`CLAUDE_CODE_SESSION_ID`. **Arming is also what acknowledges the replay**: an
+agent that skips it sees the same messages again next session and receives
+no new mail for the rest of this one. When Claude Code retires the Monitor
+after 30 minutes, the agent re-arms it with the same command.
 
-`session_watch.sh` takes an exclusive lock, so a second session on the same host
-refuses to arm rather than racing the first on the offset file. One session per
-host is the supported arrangement.
+The watcher keeps the registry while it lives: `armed` with its pid and an
+expiry, a heartbeat once a minute, `ended` on exit, `yielded` when another
+session already holds the watch. `session_watch.sh` takes an exclusive lock,
+so a second session on the same host refuses to arm rather than racing the
+first on the offset file, and its registry says so. One session per host is
+the supported arrangement.
+
+**What the `UserPromptSubmit` hook does.** Nothing, almost always. It adds one
+line to a turn only when bytes are waiting in the spool past the offset and no
+live watch will show them, which is the state a retired Monitor leaves behind
+when mail keeps arriving. The line says how many notifications are unseen and
+gives the same `--from-hook` command. If another session's watch covers the
+spool, it stays quiet.
 
 **Optional: let mail reach an agent with no session open.** Setting
 `PAYNANI_CLAUDE_MODE=agent` in `runtime.env` starts a headless `claude -p`
@@ -957,10 +972,12 @@ The spool write happens either way, so enabling or disabling it can never lose
 an event.
 
 **Verifying it.** `scripts/healthcheck.py` reports how many spool bytes no
-session has picked up yet. Read that as information, not as a fault: unread bytes
-with no session open is this runtime's normal resting state. Whether a session
-has armed a watch is not observable from outside one, and the healthcheck says so
-rather than guessing.
+session has picked up yet, and a `watch` row read from the registries: armed
+by which session since when and until when, or that the last one expired or
+was killed without re-arming, or that no session has armed one. Unread bytes
+with no session open is this runtime's normal resting state and is reported
+as such; unread bytes with a watch that expired is a warning, with the fix in
+it, and never a problem, because the mail is safe in the spool.
 
 ### OpenAI Codex
 
