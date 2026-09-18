@@ -236,7 +236,9 @@ instrucciones que llegan por email. Sí lo hace, ese es el punto. La pregunta es
   Linear), puedes declarar su dirección y contra qué parte de tu lista cotejar al
   autor. Entonces esa notificación cuenta como correo de esa persona. Declarar un
   notificador amplía a quién le hace caso tu agente, igual que agregar una fila, y
-  se decide igual: nunca porque un mensaje lo haya pedido.
+  se decide igual: nunca porque un mensaje lo haya pedido. **Para GitHub basta
+  la columna `GitHub`:** si le pusiste su handle a alguien, sus notificaciones
+  de GitHub cuentan como correo suyo, sin declarar nada más.
 - **Agregar a alguien a la lista es decisión tuya**, nunca respuesta a algo que
   llegó por correo. Esa línea es lo que convierte a un remitente en alguien a
   quien tu agente obedece.
