@@ -29,6 +29,7 @@ from .validate import validate
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "harness"))
 import dispatch  # noqa: E402
+from roster import notifiers, roster_addresses  # noqa: E402
 
 PORT_HINTS = {
     "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT": "993",
@@ -453,11 +454,141 @@ def _runtime_next_html() -> str:
     return "\n".join(f"<li>{i18n.th(key)}</li>" for key in keys)
 
 
+def _mask_account(address: str) -> str:
+    local, sep, domain = address.partition("@")
+    if not sep:
+        return ""
+    if len(local) <= 1:
+        masked = "*"
+    else:
+        masked = local[0] + "*" * min(6, len(local) - 1)
+    return f"{masked}@{domain}"
+
+
+def _runtime_setup_command(runtime: str) -> str:
+    return f"scripts/install.sh --runtime {runtime or '<runtime>'} --upgrade"
+
+
+def _runtime_hook_command(runtime: str) -> str:
+    return {
+        "openclaw": "python3 scripts/openclaw_rules.py --install",
+        "hermes": "read HERMES.md and approve routes for the target profile",
+        "claudecode": "python3 scripts/claude_hook.py --install",
+        "codex": "python3 scripts/codex_hook.py --install",
+        "opencode": "python3 scripts/opencode_plugin.py --install",
+    }.get(runtime, "scripts/healthcheck.py")
+
+
+def _checklist_item(status: str, title_key: str, detail_key: str, *, command: str = "", doc: str = "") -> dict:
+    return {"status": status, "title_key": title_key, "detail_key": detail_key,
+            "command": command, "doc": doc}
+
+
+def _onboard_checklist(values: dict, saved: str | None, roster_notice) -> list[dict]:
+    runtime = _selected_runtime()
+    roster_path = roster_cli.roster_file()
+    roster_ok = False
+    notifier_ok = False
+    try:
+        roster_ok = values.get("ROSTER_EMAIL", "").lower() in {a.lower() for a in roster_addresses(roster_path)}
+        notifier_ok = bool(notifiers(roster_path))
+    except OSError:
+        pass
+    if roster_notice is not None and roster_notice[0] == "ok":
+        roster_ok = True
+
+    return [
+        _checklist_item(
+            "ok" if saved else "todo",
+            "saved.check_credentials_title",
+            "saved.check_credentials_detail",
+            command="scripts/paynani onboard",
+            doc="AGENTS.md step 2",
+        ),
+        _checklist_item(
+            "ok" if roster_ok else "todo",
+            "saved.check_roster_title",
+            "saved.check_roster_detail",
+            command="scripts/paynani roster add NAME ADDRESS --type Human --yes",
+            doc="AGENTS.md step 7",
+        ),
+        _checklist_item(
+            "ok" if notifier_ok else "todo",
+            "saved.check_notifiers_title",
+            "saved.check_notifiers_detail",
+            command="edit roster.md ## Notifiers if GitHub/Jira sends mail for the team",
+            doc="roster.md.example",
+        ),
+        _checklist_item(
+            "todo",
+            "saved.check_services_title",
+            "saved.check_services_detail",
+            command=_runtime_setup_command(runtime),
+            doc="INSTALL.md",
+        ),
+        _checklist_item(
+            "todo",
+            "saved.check_runtime_title",
+            "saved.check_runtime_detail",
+            command=_runtime_hook_command(runtime),
+            doc="INSTALL.md section 6",
+        ),
+        _checklist_item(
+            "todo",
+            "saved.check_health_title",
+            "saved.check_health_detail",
+            command="scripts/healthcheck.py && scripts/paynani doctor",
+            doc="INSTALL.md section 7",
+        ),
+        _checklist_item(
+            "optional",
+            "saved.check_mail_title",
+            "saved.check_mail_detail",
+            command="send one roster mail and confirm the agent can answer",
+            doc="INSTALL.md section 7.1",
+        ),
+    ]
+
+
+def _checklist_html(items: list[dict]) -> str:
+    out = []
+    for item in items:
+        status = item["status"]
+        command = f'<code>{e(item["command"])}</code>' if item.get("command") else ""
+        doc = f'<span class="doc">{i18n.th("saved.check_doc", doc=item["doc"])}</span>' if item.get("doc") else ""
+        out.append(
+            f'<li class="{e(status)}"><span class="badge">{i18n.th("saved.check_status_" + status)}</span>'
+            f'<strong>{i18n.th(item["title_key"])}</strong>'
+            f'<span class="detail">{i18n.th(item["detail_key"])} {command} {doc}</span></li>'
+        )
+    return "\n".join(out)
+
+
+def _support_summary(values: dict, saved: str | None, checklist: list[dict]) -> str:
+    runtime = _selected_runtime() or "auto"
+    lines = [
+        "paynani onboard summary",
+        f"credentials: {saved or 'not saved'}",
+        f"account: {_mask_account(values.get('AGENT_EMAIL_ACCOUNT', ''))}",
+        f"runtime: {runtime}",
+        f"runtime_env: {RUNTIME_ENV}",
+        f"roster: {roster_cli.roster_file()}",
+        "",
+        "next steps:",
+    ]
+    for item in checklist:
+        command = f" -> {item['command']}" if item.get("command") else ""
+        lines.append(f"- {i18n.t(item['title_key'])}: {i18n.t('saved.check_status_' + item['status'])}{command}")
+    return "\n".join(lines)
+
+
 def _page(*, lang, saved, notice, report, errors, values, has_password, csrf, roster_notice=None) -> str:
     t, th = i18n.t, i18n.th
     logo = brand_svg("paynani-horizontal.svg")
 
     if saved is not None:
+        checklist = _onboard_checklist(values, saved, roster_notice)
+        summary = _support_summary(values, saved, checklist)
         roster_html = ""
         if roster_notice is not None:
             cls, message = roster_notice
@@ -489,6 +620,20 @@ def _page(*, lang, saved, notice, report, errors, values, has_password, csrf, ro
   {_runtime_next_html()}
 </ol>
 <p>{th('saved.next_p2')}</p>
+
+<h2>{th('saved.checklist_h2')}</h2>
+<p>{th('saved.checklist_p')}</p>
+<ul class="checklist">
+  {_checklist_html(checklist)}
+</ul>
+
+<h2>{th('saved.summary_h2')}</h2>
+<p>{th('saved.summary_p')}</p>
+<textarea id="support-summary" readonly rows="11">{e(summary)}</textarea>
+<div class="actions compact">
+  <button type="button" id="copy-summary" class="secondary">{th('saved.summary_copy')}</button>
+  <span id="copy-summary-status" class="hint" role="status"></span>
+</div>
 
 <p class="quiet">{th('saved.forgot')}</p>
 """
