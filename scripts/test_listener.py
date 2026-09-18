@@ -14,8 +14,9 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from idle_listener import (KEEPALIVE_OPTIONS, decode_hdr, describe, keepalive,
-                           resolve_keepalive_option, save_state)
+from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_VERSION, decode_hdr,
+                           describe, keepalive, resolve_keepalive_option,
+                           save_state)
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 from failure_diagnostics import print_diagnostics
@@ -269,6 +270,8 @@ def main():
               "listener state still records mailbox, uidvalidity and uid")
         check("heartbeat_at" in state and state["heartbeat_at"].endswith("Z"),
               "listener state records a UTC heartbeat")
+        check(state.get("version") == PROCESS_VERSION,
+              "listener state records the version loaded by this process")
 
     # --- keepalive, the thing that makes a dead connection announce itself ----
     #

@@ -187,6 +187,7 @@ def tail(path, lines=1):
 def listener_facts():
     out = {"unit": unit_state(LISTENER_UNIT), "mailbox": None,
            "last_uid": None, "uidvalidity": None, "heartbeat_at": None,
+           "version": None,
            "heartbeat_age_seconds": None, "last_error": None,
            "last_error_age_seconds": None}
     try:
@@ -195,6 +196,7 @@ def listener_facts():
         out["last_uid"] = state.get("last_uid")
         out["uidvalidity"] = state.get("uidvalidity")
         out["heartbeat_at"] = state.get("heartbeat_at")
+        out["version"] = state.get("version")
         heartbeat = _stamp_seconds(out["heartbeat_at"])
         if heartbeat is not None:
             out["heartbeat_age_seconds"] = max(0, int(time.time() - heartbeat))

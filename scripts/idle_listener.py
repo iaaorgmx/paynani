@@ -34,6 +34,18 @@ DEFAULT_ENV   = None   # resolved by harness/paths.py, see main()
 DEFAULT_STATE = str(state_dir() / "idle.json")
 DEFAULT_JOURNAL = str(state_dir() / "events.jsonl")
 
+
+def _process_version():
+    """Version loaded by this process, fixed at startup rather than per heartbeat."""
+    try:
+        value = (pathlib.Path(__file__).resolve().parent.parent / "VERSION").read_text().strip()
+    except OSError:
+        return None
+    return value or None
+
+
+PROCESS_VERSION = _process_version()
+
 # RFC 2177: a client must re-issue IDLE at least every 29 minutes. We stay well
 # under the ceiling on purpose: this interval is also the longest a dead
 # connection can sit unnoticed, so 25 minutes bought nothing and cost a
@@ -408,6 +420,7 @@ def save_state(path, mailbox, validity, last_uid):
         "uidvalidity": validity,
         "last_uid": last_uid,
         "heartbeat_at": timestamp(),
+        "version": PROCESS_VERSION,
     }
     if str(path) == "none":
         return state
@@ -557,6 +570,10 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                 state = save_state(state_path, mailbox, validity, last_uid)
                 log(f"listening on {mailbox}, baseline uid {last_uid}")
             else:
+                # Write immediately on a resumed process. Upgrade verification
+                # must distinguish the new listener from the old one without
+                # waiting for the next five-minute IDLE heartbeat.
+                state = save_state(state_path, mailbox, validity, last_uid)
                 log(f"listening on {mailbox}, resuming from uid {last_uid}")
 
             # Anything that landed while this process was not running: a reboot, a

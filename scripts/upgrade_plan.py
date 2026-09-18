@@ -6,8 +6,10 @@ What has to restart after a pull, computed rather than remembered.
     upgrade_plan.py --to REF        installed tag -> REF (a tag, origin/main, ...)
     upgrade_plan.py --from REF --to REF
     upgrade_plan.py --json          the same plan as one JSON object
+    upgrade_plan.py --apply         apply the printed plan and verify the result
 
-Exit: 0 plan printed, 2 the plan could not be computed (and says why), 64 usage.
+Exit: 0 plan printed or applied, 1 apply failed, 2 the plan could not be
+computed (and says why), 64 usage.
 
 The CHANGELOG used to carry a "restart the listener" sentence when whoever wrote
 the entry remembered that `scripts/idle_listener.py` had moved. The 0.7.0 entry
@@ -47,8 +49,10 @@ import os
 import pathlib
 import platform
 import re
+import shlex
 import subprocess
 import sys
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "harness"))
@@ -96,12 +100,16 @@ RULES = (
     (r"^harness/(event|paths|ledger)\.py$", "restart", "listener and dispatcher", "both", "both", None, None),
     # Read when a session starts or a watch is armed.
     (r"^harness/(session_start\.py|session_watch\.sh)$", "next-session", "session hook and watcher", None, None, {"claudecode", "codex"}, None),
+    # The listener records this value at process start. Every tagged upgrade
+    # changes VERSION, so applying one must restart the listener and prove the
+    # process is running the bytes now on disk.
+    (r"^VERSION$", "restart", "listener version state", *LISTENER, None, None),
     # Runs fresh on every timer tick or every call.
     (r"^harness/rotate_logs\.py$", "none", "logrotate (runs fresh on each timer tick)", None, None, None, None),
     (r"^harness/capabilities\.py$", "none", "capability data (read on each call)", None, None, None, None),
     (r"^scripts/test_.*|^harness/.*\.test\.mjs$|^harness/opencode/.*\.test\..*$", "none", "tests", None, None, None, None),
     (r"^scripts/paynani_lib/|^scripts/paynani$|^scripts/.*\.(sh|py)$", "none", "command-line scripts (read on each call)", None, None, None, None),
-    (r"^(i18n/|\.github/|examples/)|\.md$|^VERSION$|^LICENSE$|^\.gitignore$|^roster\.md\.example$", "none", "documentation and repository files", None, None, None, None),
+    (r"^(i18n/|\.github/|examples/)|\.md$|^LICENSE$|^\.gitignore$|^roster\.md\.example$", "none", "documentation and repository files", None, None, None, None),
 )
 
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -268,13 +276,18 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
     out = {"from": from_ref, "to": to_ref, "ok": False, "reason": None, "runtime": runtime,
            "system": system, "files": [], "restart_units": [], "reinstall": False,
            "reinstall_commands": [], "restart_runtime": [], "next_session": False,
-           "unknown": [], "drift": [], "manifest": None, "overlays": []}
+           "unknown": [], "drift": [], "manifest": None, "overlays": [], "to_oid": None}
     for ref in (from_ref, to_ref):
         if not ref_exists(ref, repo=repo):
             out["reason"] = (f"{ref} is not in this clone; run `git fetch --tags origin` "
                              f"and try again. Without both ends there is no diff to read, "
                              f"so nothing here says what needs a restart.")
             return out
+    code, out["to_oid"] = git("rev-parse", f"{to_ref}^{{commit}}", repo=repo)
+    if code != 0:
+        out["reason"] = f"could not resolve target commit for {to_ref}"
+        out["to_oid"] = None
+        return out
     state, manifest = read_manifest(repo)
     out["manifest"] = state
     if state != "present":
@@ -348,6 +361,181 @@ def commands(p):
     return lines
 
 
+class ApplyError(RuntimeError):
+    pass
+
+
+def _safe_ref_name(value):
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-") or "ref"
+
+
+def _state_dir(repo):
+    return harness_paths.state_dir() if pathlib.Path(repo) == ROOT else pathlib.Path(repo) / "state"
+
+
+def _run(argv, repo, runner=subprocess.run, capture=False):
+    result = runner(argv, cwd=str(repo), text=True, capture_output=capture)
+    if result.returncode != 0:
+        detail = ((result.stderr or result.stdout or "").strip()
+                  if capture else f"exit {result.returncode}")
+        raise ApplyError(f"command failed: {shlex.join(str(v) for v in argv)}: {detail}")
+    return result
+
+
+def _fetch_argv(to_ref):
+    if to_ref == "origin/main":
+        return ["git", "fetch", "origin", "main"]
+    if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", to_ref):
+        return ["git", "fetch", "origin", "tag", to_ref]
+    raise ApplyError("--apply accepts a release tag or origin/main as its target; "
+                     "an arbitrary ref cannot be pulled reproducibly")
+
+
+def _target_oid(p, repo):
+    if p.get("to_oid"):
+        return p["to_oid"]
+    code, value = git("rev-parse", "--verify", f"{p['to']}^{{commit}}", repo=repo)
+    if code != 0 or not value:
+        raise ApplyError(f"target {p['to']} disappeared after planning")
+    return value
+
+
+def _restore_overlay(repo, runner):
+    _run(["git", "stash", "pop"], repo, runner=runner, capture=True)
+
+
+def _wait_for_listener(repo, expected, log_offset, timeout, sleeper=time.sleep):
+    state_path = _state_dir(repo) / "idle.json"
+    log_path = _state_dir(repo) / "idle.err.log"
+    deadline = time.monotonic() + timeout
+    last_state = {}
+    while True:
+        try:
+            last_state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            last_state = {}
+        try:
+            with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+                # copytruncate or replacement can make the new file shorter
+                # than the old offset. In that case its entire contents are
+                # new; seeking past EOF would hide the restart line.
+                handle.seek(0 if log_path.stat().st_size < log_offset else log_offset)
+                new_log = handle.read()
+        except OSError:
+            new_log = ""
+        # The new log suffix proves a restart. Timestamps have one-second
+        # resolution, so a fast restart may legitimately reuse the prior text.
+        fresh = bool(last_state.get("heartbeat_at"))
+        if (fresh and last_state.get("version") == expected
+                and re.search(r"resuming from uid [0-9]+", new_log)):
+            return
+        if time.monotonic() >= deadline:
+            break
+        sleeper(0.25)
+    raise ApplyError("listener verification timed out: expected a fresh heartbeat with "
+                     f"version {expected} and a new 'resuming from uid N' line; "
+                     f"last state was {last_state}")
+
+
+def apply_plan(p, repo=ROOT, runner=subprocess.run, sleeper=time.sleep, wait_seconds=None):
+    """Apply one already-computed plan. Refuse before mutation when it is unsafe."""
+    repo = pathlib.Path(repo).resolve()
+    if not p.get("ok"):
+        raise ApplyError(f"plan cannot be applied: {p.get('reason') or 'not computed'}")
+    if p.get("unknown"):
+        raise ApplyError("plan contains unknown files; read UPGRADE.md and update the table first: "
+                         + ", ".join(p["unknown"]))
+    if p.get("drift"):
+        raise ApplyError("installer-owned copies have local changes; refusing to overwrite: "
+                         + ", ".join(path for path, _ in p["drift"]))
+    if p.get("reinstall") and not p.get("runtime"):
+        raise ApplyError("the plan requires the installer but the selected runtime is unknown")
+
+    target_oid = _target_oid(p, repo)
+    state = _state_dir(repo)
+    state.mkdir(parents=True, exist_ok=True)
+    listener_log = state / "idle.err.log"
+    try:
+        log_offset = listener_log.stat().st_size
+    except OSError:
+        log_offset = 0
+
+    stashed = False
+    patch_path = None
+    try:
+        if p.get("overlays"):
+            name = (f"overlay-{_safe_ref_name(p['from'])}-{_safe_ref_name(p['to'])}-"
+                    f"{target_oid[:12]}-{time.time_ns()}.patch")
+            patch_path = state / name
+            diff = _run(["git", "diff", "HEAD", "--binary"], repo, runner=runner, capture=True)
+            # A recovery artifact must never destroy an earlier recovery
+            # artifact from a failed attempt.
+            with patch_path.open("x", encoding="utf-8") as handle:
+                handle.write(diff.stdout)
+            _run(["git", "stash", "push", "-m", f"paynani overlay before {p['to']}"],
+                 repo, runner=runner, capture=True)
+            stashed = True
+
+        print(f"apply: fetching and advancing exactly to {p['to']} ({target_oid[:12]})")
+        _run(_fetch_argv(p["to"]), repo, runner=runner, capture=True)
+        code, fetched = git("rev-parse", "FETCH_HEAD", repo=repo)
+        if code != 0 or fetched != target_oid:
+            raise ApplyError(f"remote {p['to']} is now {fetched or 'unknown'}, not planned target "
+                             f"{target_oid}; the worktree was not advanced")
+        _run(["git", "merge", "--ff-only", target_oid], repo, runner=runner, capture=True)
+        code, head = git("rev-parse", "HEAD", repo=repo)
+        if code != 0 or head != target_oid:
+            raise ApplyError(f"pull reached {head or 'unknown'}, not planned target {target_oid}; "
+                             "no install or restart action was run")
+
+        if p["reinstall"]:
+            _run([str(repo / "scripts/install.sh"), "--runtime", p["runtime"], "--upgrade"],
+                 repo, runner=runner)
+        for command in p["reinstall_commands"]:
+            _run(shlex.split(command), repo, runner=runner)
+        if p["restart_units"]:
+            if p["system"] == "Darwin":
+                for _, label in p["restart_units"]:
+                    _run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{label}"],
+                         repo, runner=runner)
+            else:
+                _run(["systemctl", "--user", "daemon-reload"], repo, runner=runner)
+                _run(["systemctl", "--user", "restart",
+                      *(unit for unit, _ in p["restart_units"])], repo, runner=runner)
+        for notice in p["restart_runtime"]:
+            print(f"apply: manual harness action required: {notice}")
+        if p["next_session"]:
+            print("apply: session hook or watcher changed; the next session must re-arm it")
+
+        if stashed:
+            # A conflicting pop keeps the stash entry and reports the conflict.
+            # Do not attempt a second pop in the exception handler.
+            stashed = False
+            _restore_overlay(repo, runner)
+            _run([str(repo / "scripts/test_all.sh")], repo, runner=runner)
+
+        expected = (repo / "VERSION").read_text(encoding="utf-8").strip()
+        installed = _run([str(repo / "scripts/version.sh"), "--installed"],
+                         repo, runner=runner, capture=True).stdout.strip()
+        if installed != expected:
+            raise ApplyError(f"disk version verification failed: VERSION={expected!r}, "
+                             f"version.sh={installed!r}")
+        timeout = wait_seconds if wait_seconds is not None else float(
+            os.environ.get("PAYNANI_APPLY_WAIT_SECONDS", "40"))
+        _wait_for_listener(repo, expected, log_offset, timeout, sleeper=sleeper)
+        _run([str(repo / "scripts/healthcheck.py")], repo, runner=runner)
+        print(f"apply: verified disk and listener version {expected}, UID resume, and healthcheck")
+        return {"patch": str(patch_path) if patch_path else None, "version": expected}
+    except Exception:
+        if stashed:
+            try:
+                _restore_overlay(repo, runner)
+            except Exception as restore_error:
+                print(f"apply: overlay remains in git stash; restore also failed: {restore_error}",
+                      file=sys.stderr)
+        raise
+
+
 def render(p):
     head = f"upgrade plan: {p['from']} -> {p['to']}"
     if not p["ok"]:
@@ -383,7 +571,7 @@ def render(p):
                     if o["upstream_changed"] else "unchanged upstream: carries over")
             lines.append(f"  {o['path']}: {risk}")
         lines.append("  before pulling, keep a record and set them aside:")
-        lines.append(f"    git diff > state/overlay-{p['from']}-{p['to']}.patch")
+        lines.append(f"    git diff HEAD --binary > state/overlay-{p['from']}-{p['to']}-<unique>.patch")
         lines.append(f'    git stash push -m "paynani overlay before {p["to"]}"')
         lines.append("  after the steps below: git stash pop, then scripts/test_all.sh; "
                      "a conflict on pop is the risk named above, and the patch is the way back")
@@ -395,6 +583,21 @@ def render(p):
         lines.extend(f"  {c}" for c in cmds)
     elif not p["unknown"]:
         lines.append("no service needs a restart: every changed file is read on each call or not executed")
+    lines.append("automatic apply (--apply), in order:")
+    if p["unknown"]:
+        lines.append("  refused: the plan contains unknown files")
+    elif p["drift"]:
+        lines.append("  refused: installer-owned copies have local changes")
+    else:
+        if p["overlays"]:
+            lines.append("  record the tracked overlay as a binary patch, then git stash push")
+        lines.append(f"  {shlex.join(_fetch_argv(p['to']))}")
+        lines.append(f"  git merge --ff-only {p['to_oid']}  # the commit resolved above")
+        lines.extend(f"  {command}" for command in cmds)
+        if p["overlays"]:
+            lines.append("  git stash pop")
+            lines.append("  scripts/test_all.sh")
+        lines.append("  verify disk and listener version, a new 'resuming from uid N', and healthcheck")
     return "\n".join(lines) + "\n"
 
 
@@ -404,6 +607,7 @@ def main(argv=None):
     parser.add_argument("--to", dest="to_ref", help="target ref (default: newest local v* tag)")
     parser.add_argument("--runtime", help="runtime for the install command (default: runtime.env)")
     parser.add_argument("--json", action="store_true", help="print the plan as JSON")
+    parser.add_argument("--apply", action="store_true", help="apply this exact plan, then verify it")
     parser.add_argument("--repo", default=None, help=argparse.SUPPRESS)  # tests plan another clone
     args = parser.parse_args(argv)
     repo = pathlib.Path(args.repo).resolve() if args.repo else ROOT
@@ -428,11 +632,21 @@ def main(argv=None):
 
     p = plan(from_ref, to_ref, repo=repo, runtime=args.runtime or selected_runtime(repo=repo))
     p["commands"] = commands(p)
+    if args.apply and args.json:
+        parser.error("--apply and --json are mutually exclusive")
     if args.json:
         print(json.dumps(p, indent=2, sort_keys=True))
     else:
         sys.stdout.write(render(p))
-    return 0 if p["ok"] else 2
+    if not p["ok"]:
+        return 2
+    if args.apply:
+        try:
+            apply_plan(p, repo=repo)
+        except (ApplyError, OSError, ValueError) as exc:
+            print(f"apply: refused or failed: {exc}", file=sys.stderr)
+            return 1
+    return 0
 
 
 if __name__ == "__main__":

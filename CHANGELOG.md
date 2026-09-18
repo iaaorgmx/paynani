@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- `scripts/version.sh --apply [REF]` ejecuta la parte 2 de #167: congela el
+  commit del plan, comprueba que el ref remoto no cambió antes del fast-forward,
+  aparta overlays con patch binario y stash, ejecuta sólo instalador, registros
+  y reinicios calculados, restaura el overlay y corre la suite. Rehúsa sin plan,
+  ante archivos `unknown`, copias instaladas modificadas o runtime desconocido.
+  El listener guarda en `idle.json` la versión que cargó al arrancar y el apply
+  termina sólo si coinciden versión en disco y proceso, aparece un nuevo
+  `resuming from uid N` y `healthcheck.py` sale verde.
 - Claude Code: el vigía se rearma con el mismo `--from-hook` después de que
   Claude Code retira el Monitor. El registro contestaba sólo en `pending`, y
   a los 30 minutos ya estaba en `ended`, así que el rearme rehusaba; ahora
