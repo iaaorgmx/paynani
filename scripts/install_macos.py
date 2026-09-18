@@ -317,6 +317,7 @@ def install(args: argparse.Namespace) -> int:
             detail = (result.stderr or result.stdout or "").strip()
             die(f"OpenClaw probe failed: {detail}")
         print(f"openclaw_probe=accepted executable={runtime_bin}")
+        print(f"openclaw_rules_next_step=python3 {ROOT / 'scripts' / 'openclaw_rules.py'} --install")
     elif args.runtime == "opencode":
         print(f"opencode_spool_probe=accepted spool={state_dir() / 'opencode.spool'}")
         print("opencode_spool_probe=plugin-reads-in-process scope=writability-only")

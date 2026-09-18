@@ -197,7 +197,9 @@ terminar, e você pode cobrar a lista:
 - **Arquivos de registro e de estado** dentro da pasta do projeto.
 - **Permissão para que esses serviços continuem vivos depois que você sai da
   sessão.**
-- **Uma regra permanente acrescentada às instruções do próprio agente.**
+- **Uma regra permanente acrescentada às instruções do próprio agente.** No
+  OpenClaw ela fica em `~/.openclaw/workspace/AGENTS.md`, entre dois marcadores,
+  e o mesmo script a escreve e a remove.
 - **No OpenCode, um arquivo a mais:** o plugin que entrega o e-mail à sua
   sessão, em `~/.config/opencode/plugins/paynani.js`.
 
@@ -253,6 +255,9 @@ quem**.
   conferir o autor. Aí aquela notificação conta como e-mail daquela pessoa.
   Declarar um notificador amplia a quem o seu agente dá ouvidos, igual a
   acrescentar uma linha, e se decide igual: nunca porque uma mensagem pediu.
+  **Para o GitHub basta a coluna `GitHub`:** uma vez anotado o handle de alguém,
+  as notificações do GitHub dessa pessoa contam como e-mail dela, sem declarar
+  mais nada.
 - **Colocar alguém na lista é decisão sua**, nunca resposta a algo que chegou por
   e-mail. Essa linha é o que transforma um remetente em alguém a quem o seu agente
   obedece.

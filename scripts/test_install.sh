@@ -460,6 +460,11 @@ rm -f "$sandbox/runtime-side-effect"
     printf 'FAIL service verification, runtime probe, or activation command shape is wrong\n'
     fail=$((fail + 1))
 }
+[[ "$LAST_OUTPUT" == *'openclaw_rules_next_step='*'scripts/openclaw_rules.py --install'* &&
+   "$LAST_OUTPUT" == *'standing-rule=unobservable'* ]] || {
+    printf 'FAIL OpenClaw convergence did not name the standing-rule step\n'
+    fail=$((fail + 1))
+}
 : >"$FAKE_SYSTEMD_LOG"
 check_status 'second OpenClaw convergence is idempotent' 0 --runtime openclaw
 [[ "$(<"$FAKE_SYSTEMD_LOG")" != *'enable --now'* ]] || {
@@ -549,6 +554,10 @@ check_status 'partial-run uninstall removes exactly recorded artifacts' 10 \
    -f "$clone/state/uid.json" &&
    ! -e "$clone/install.manifest" ]] || {
     printf 'FAIL partial uninstall removed an unowned artifact or preserved owned state\n'
+    fail=$((fail + 1))
+}
+[[ "$LAST_OUTPUT" == *'openclaw_rules.py --uninstall'* ]] || {
+    printf 'FAIL OpenClaw uninstall did not name the standing-rule removal step\n'
     fail=$((fail + 1))
 }
 check_status 'second partial-run uninstall is idempotent' 0 \
