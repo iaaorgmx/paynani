@@ -248,6 +248,40 @@ def _service_fix(unit: str) -> str:
     return f"systemctl --user restart {unit}"
 
 
+def _imap_telemetry_check(listener: dict) -> dict:
+    facts = {
+        "heartbeat_at": listener.get("heartbeat_at"),
+        "heartbeat_age_seconds": listener.get("heartbeat_age_seconds"),
+        "last_disconnect_at": listener.get("imap_last_disconnect_at"),
+        "last_disconnect_age_seconds": listener.get("imap_last_disconnect_age_seconds"),
+        "last_disconnect_error": listener.get("imap_last_disconnect_error"),
+        "last_recovered_at": listener.get("imap_last_recovered_at"),
+        "last_recovered_age_seconds": listener.get("imap_last_recovered_age_seconds"),
+        "reconnect_attempts": listener.get("imap_reconnect_attempts", 0),
+        "current_backoff_seconds": listener.get("imap_current_backoff_seconds", 0),
+    }
+    if listener.get("heartbeat_at") is None:
+        return _check("imap_telemetry", "unknown", "listener has not written IMAP telemetry yet", facts)
+    if facts["current_backoff_seconds"]:
+        return _check(
+            "imap_telemetry",
+            "warning",
+            f"IMAP listener is retrying after a disconnect; next retry in {facts['current_backoff_seconds']}s",
+            facts,
+            "scripts/healthcheck.py",
+        )
+    heartbeat_age = facts.get("heartbeat_age_seconds")
+    if heartbeat_age is not None and heartbeat_age > healthcheck.STALE_LISTENER_HEARTBEAT:
+        return _check(
+            "imap_telemetry",
+            "warning",
+            f"IMAP listener heartbeat is stale ({heartbeat_age}s)",
+            facts,
+            _service_fix(healthcheck.LISTENER_UNIT),
+        )
+    return _check("imap_telemetry", "ok", "IMAP listener heartbeat and reconnection telemetry are current", facts)
+
+
 # Minimum versions this install has actually been run against, per #173.
 # Documented in INSTALL.md #1 alongside these; keep both in sync.
 MIN_PYTHON = (3, 10)
@@ -465,6 +499,7 @@ def doctor_data() -> dict:
     else:
         status, summary, fix = "blocked", f"listener service is {lu}", _service_fix(healthcheck.LISTENER_UNIT)
     checks.append(_check("listener", status, summary, listener, fix))
+    checks.append(_imap_telemetry_check(listener))
 
     du = facts["dispatcher_unit"]
     if du == "active":
