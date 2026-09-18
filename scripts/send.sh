@@ -26,9 +26,9 @@
 # whole is one you cannot check.
 #
 # --dry-run prints a redacted delivery summary and sends nothing: recipient, cc,
-# roster authorisation, MIME shape, and attachment count. It deliberately does
-# not print the body, env file, password, attachment contents, or any generated
-# raw message.
+# the roster row that authorised each recipient, MIME shape, and attachment
+# names/sizes. It deliberately does not print the body, env file, password,
+# attachment contents, or any generated raw message.
 #
 # Environment:
 #   ROSTER    path to the allowlist        (default: repo root/roster.md)
@@ -102,14 +102,25 @@ fi
 # Attachments are checked before anything is built, so a bad path costs nothing
 # and half a message is never sent. Exit 2 is the same code the roster refusal
 # uses, and means the same thing here: nothing left this host.
+file_size_bytes() {
+    if stat -c %s "$1" >/dev/null 2>&1; then
+        stat -c %s "$1"
+    else
+        stat -f %z "$1"
+    fi
+}
+
 attach_bytes=0
+attachment_sizes=()
 for _paynani_file in ${attachments[@]+"${attachments[@]}"}; do
     if [ ! -f "$_paynani_file" ] || [ ! -r "$_paynani_file" ]; then
         echo "REFUSED: cannot read attachment $_paynani_file" >&2
         echo "Nothing was sent. Check the path, or drop the --attach." >&2
         exit 2
     fi
-    attach_bytes=$(( attach_bytes + $(wc -c < "$_paynani_file") ))
+    _paynani_size=$(file_size_bytes "$_paynani_file")
+    attachment_sizes+=("$_paynani_size")
+    attach_bytes=$(( attach_bytes + _paynani_size ))
 done
 
 # Gmail rejects above 25 MB, and base64 costs a third on top of the raw bytes.
@@ -161,6 +172,44 @@ roster_allows() {
     "$_paynani_scriptdir/roster_extract.sh" "$ROSTER" | grep -qxF "$_paynani_want"
 }
 
+roster_row_for() {
+    _paynani_want=$(printf '%s' "$1" | tr -d '[:blank:]' | tr '[:upper:]' '[:lower:]')
+    awk -v want="$_paynani_want" '
+        function trim(s) { sub(/^[ \t\r]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+        function is_separator(s) {
+            gsub(/[|]/, "", s); gsub(/[ \t\r]/, "", s)
+            return (s != "" && s ~ /^[-:]+$/)
+        }
+        {
+            line = $0
+            sub(/^[ \t]+/, "", line); sub(/[ \t\r]+$/, "", line)
+            if (line ~ /^#/) {
+                heading = line
+                sub(/^#+[ \t]*/, "", heading)
+                heading = tolower(heading)
+                if (heading ~ /^notifier/ || heading ~ /^notificador/) in_notifiers = 1
+                else if (line ~ /^##/) in_notifiers = 0
+                next
+            }
+            if (line == "" || is_separator(line) || in_notifiers) next
+
+            n = split(line, parts, "|")
+            for (i = 1; i <= n; i++) {
+                field = parts[i]
+                gsub(/[ \t\r]/, "", field)
+                if (tolower(field) == want) {
+                    row = line
+                    sub(/^\|[ \t]*/, "", row)
+                    sub(/[ \t]*\|$/, "", row)
+                    gsub(/[ \t]*\|[ \t]*/, " | ", row)
+                    print row
+                    exit
+                }
+            }
+        }
+    ' "$ROSTER"
+}
+
 if ! roster_allows "$to"; then
     echo "REFUSED: $to is not in $ROSTER" >&2
     echo "Add it deliberately, or ask your human to send this one." >&2
@@ -173,13 +222,13 @@ if [ -n "$cc" ] && ! roster_allows "$cc"; then
     exit 2
 fi
 
-# Keep these booleans for the redacted dry-run report. The command exits before
-# any SMTP path, but only after the same allowlist checks that a live send uses.
-to_authorized=yes
+# Keep the roster evidence for the redacted dry-run report. The command exits
+# before any SMTP path, but only after the same allowlist checks a live send uses.
+to_roster_row=$(roster_row_for "$to")
 if [ -n "$cc" ]; then
-    cc_authorized=yes
+    cc_roster_row=$(roster_row_for "$cc")
 else
-    cc_authorized=not-requested
+    cc_roster_row=""
 fi
 
 # --- Who the message is from -------------------------------------------------
@@ -451,10 +500,10 @@ if [ -n "$check_only" ] && [ -n "$dry_run" ]; then
 fi
 
 if [ -n "$dry_run" ]; then
-    printf 'dry-run — nothing sent\n'
-    printf 'To: %s (authorized: %s)\n' "$to" "$to_authorized"
+    printf 'dry-run: nothing sent\n'
+    printf 'To: %s (roster row: %s)\n' "$to" "$to_roster_row"
     if [ -n "$cc" ]; then
-        printf 'Cc: %s (authorized: %s)\n' "$cc" "$cc_authorized"
+        printf 'Cc: %s (roster row: %s)\n' "$cc" "$cc_roster_row"
     else
         printf 'Cc: none\n'
     fi
@@ -473,6 +522,12 @@ if [ -n "$dry_run" ]; then
     fi
     printf 'MIME shape: %s (%s)\n' "$mime_shape" "$body_formats"
     printf 'Attachments: %s file(s)\n' "${#attachments[@]}"
+    _paynani_i=0
+    for _paynani_file in ${attachments[@]+"${attachments[@]}"}; do
+        printf 'Attachment: %s (%s bytes)\n' "$(basename "$_paynani_file" | tr -d '\r\n')" "${attachment_sizes[$_paynani_i]}"
+        _paynani_i=$(( _paynani_i + 1 ))
+    done
+    printf 'Attachment bytes total: %s\n' "$attach_bytes"
     printf 'Secrets/body/raw message: not shown\n'
     exit 0
 fi
@@ -524,3 +579,4 @@ if [ -n "$cc" ]; then
 else
     echo "sent to $to"
 fi
+echo "message-id: $msgid"
