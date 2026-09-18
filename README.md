@@ -287,7 +287,9 @@ el correo a tu sesión, abierto pero esperando a que escribas algo en una sesió
 o cerrado. Con OpenCode cerrado el correo espera sin perderse, y eso es normal.
 
 [`STATUS_MATRIX.md`](STATUS_MATRIX.md) compara esos estados con lo que
-`healthcheck.py` imprime en cada harness.
+`healthcheck.py` imprime en cada harness. [`FIELD_TEST.md`](FIELD_TEST.md) es
+la prueba de campo reproducible para verificar en un host real que cada
+harness entrega correo de verdad.
 
 Las opciones largas y los modos de fallo están en [`INSTALL.md`](INSTALL.md).
 

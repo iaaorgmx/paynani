@@ -292,7 +292,9 @@ sessão, ou fechado. Com o OpenCode fechado o e-mail espera sem se perder, e iss
 é normal.
 
 [`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compara esses estados com o que
-`healthcheck.py` imprime em cada harness.
+`healthcheck.py` imprime em cada harness. [`FIELD_TEST.md`](../FIELD_TEST.md)
+é o teste de campo reproduzível para verificar num host real que cada
+harness realmente entrega e-mail.
 
 As opções longas e os modos de falha estão no [`INSTALL.md`](../INSTALL.md).
 

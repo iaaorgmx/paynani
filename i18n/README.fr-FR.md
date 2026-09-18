@@ -306,6 +306,9 @@ attend sans se perdre, et c'est normal.
 
 [`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compare ces états à ce
 qu'affiche `healthcheck.py` pour chaque harness.
+[`FIELD_TEST.md`](../FIELD_TEST.md) est le test de terrain reproductible
+pour vérifier sur une machine réelle que chaque harness livre vraiment le
+courrier.
 
 Les options longues et les modes de défaillance sont dans
 [`INSTALL.md`](../INSTALL.md).
