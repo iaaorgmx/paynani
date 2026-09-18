@@ -12,6 +12,7 @@ is unambiguous with no lock needed around the in-memory session store below.
 from __future__ import annotations
 
 import html
+import os
 import sys
 from http import cookies
 from http.server import BaseHTTPRequestHandler
@@ -34,6 +35,7 @@ PORT_HINTS = {
 # is a separate file with a separate purpose from the agent's own mailbox
 # credentials.
 ROSTER_FIELDS = ["ROSTER_NAME", "ROSTER_EMAIL"]
+RUNTIME_ENV = Path(__file__).resolve().parents[2] / "runtime.env"
 
 COOKIE_NAME = "paynani_psid"
 MAX_BODY_BYTES = 64 * 1024  # generous for 10 short fields; anything past it isn't this form
@@ -410,6 +412,33 @@ def _steps_html(steps: list) -> str:
     return "\n".join(out)
 
 
+def _selected_runtime() -> str:
+    runtime = (os.environ.get("PAYNANI_RUNTIME") or "").strip().lower()
+    if runtime:
+        return runtime
+    try:
+        text = RUNTIME_ENV.read_text(encoding="utf-8-sig")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("PAYNANI_RUNTIME="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'").lower()
+    return ""
+
+
+def _runtime_next_html() -> str:
+    runtime = _selected_runtime()
+    keys = {
+        "openclaw": ("saved.runtime_openclaw_1", "saved.runtime_openclaw_2"),
+        "hermes": ("saved.runtime_hermes_1", "saved.runtime_hermes_2"),
+        "claudecode": ("saved.runtime_claudecode_1", "saved.runtime_claudecode_2"),
+        "codex": ("saved.runtime_codex_1", "saved.runtime_codex_2"),
+        "opencode": ("saved.runtime_opencode_1", "saved.runtime_opencode_2"),
+    }.get(runtime, ("saved.runtime_generic_1", "saved.runtime_generic_2"))
+    return "\n".join(f"<li>{i18n.th(key)}</li>" for key in keys)
+
+
 def _page(*, lang, saved, notice, report, errors, values, has_password, csrf, roster_notice=None) -> str:
     t, th = i18n.t, i18n.th
     logo = brand_svg("paynani-horizontal.svg")
@@ -442,6 +471,9 @@ def _page(*, lang, saved, notice, report, errors, values, has_password, csrf, ro
 
 <h2>{th('saved.next_h2')}</h2>
 <p>{th('saved.next_p1')}</p>
+<ol>
+  {_runtime_next_html()}
+</ol>
 <p>{th('saved.next_p2')}</p>
 
 <p class="quiet">{th('saved.forgot')}</p>
