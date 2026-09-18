@@ -1260,6 +1260,12 @@ These need a person to send mail, so they are never a condition for reporting
 the install complete. Report it complete first (with the list from `AGENTS.md`
 step 9), then offer them. Do not wait for them.
 
+[`FIELD_TEST.md`](FIELD_TEST.md) is a different, optional exercise: a
+reproducible per-runtime checklist -- state to provoke, exact command, exact
+expected output -- for field-verifying a runtime's mail-delivery mechanism
+itself, not just that mail arrives. Run it when debugging a runtime-specific
+delivery question, not as part of a routine install.
+
 - **Offer the tests in [the README's Step 3](README.md#paso-3-pruebas), not a
   list of your own.** They are what your human was told to expect.
 - **Do not report a test message as missing unless the person confirmed they

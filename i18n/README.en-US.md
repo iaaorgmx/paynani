@@ -288,7 +288,9 @@ or closed. With OpenCode closed, mail waits without being lost, and that is
 normal.
 
 [`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compares those states with what
-`healthcheck.py` prints for each harness.
+`healthcheck.py` prints for each harness. [`FIELD_TEST.md`](../FIELD_TEST.md)
+is the reproducible field test for verifying on a real host that each
+harness actually delivers mail.
 
 The long options and the failure modes are in [`INSTALL.md`](../INSTALL.md).
 
