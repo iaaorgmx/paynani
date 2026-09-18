@@ -89,6 +89,11 @@ def base_facts(listener="active", dispatcher="active", runtime_reachable=True, p
                 "in_origin": True, "dirty_tracked": 0, "ahead": 0, "behind": 0},
         "spool": None,
         "reply": {},
+        "dependencies": {
+            "python": {"found": "3.12.3", "minimum": "3.10", "supported": True},
+            "himalaya": {"runnable": True, "version_output": "himalaya v2.1.0",
+                        "major": 2, "account_check_ok": True},
+        },
     }
 
 
@@ -163,6 +168,54 @@ blocked = doctor_with(base_facts(listener="failed"))
 listener = next(c for c in blocked["checks"] if c["name"] == "listener")
 check("failed service is blocked", blocked["status"] == "blocked" and listener["status"] == "blocked")
 check("failed service names a safe repair command", listener.get("next_command") == "systemctl --user restart paynani-idle.service")
+
+# #173: minimum-version checks (python, himalaya, opencode-only-on-opencode).
+old_python = base_facts()
+old_python["dependencies"]["python"] = {"found": "3.9.6", "minimum": "3.10", "supported": False}
+py_check = next(c for c in doctor_with(old_python)["checks"] if c["name"] == "python")
+check("python below 3.10 is blocked and names the version found", py_check["status"] == "blocked" and "3.9.6" in py_check["summary"] and "3.10" in py_check["summary"])
+
+ok_python = doctor_with(base_facts())
+check("python at or above 3.10 is ok", next(c for c in ok_python["checks"] if c["name"] == "python")["status"] == "ok")
+
+no_himalaya = base_facts()
+no_himalaya["dependencies"]["himalaya"] = {"runnable": False, "version_output": ""}
+him_check = next(c for c in doctor_with(no_himalaya)["checks"] if c["name"] == "himalaya")
+check("himalaya binary that cannot run is unknown, not blocked", him_check["status"] == "unknown")
+
+old_himalaya = base_facts()
+old_himalaya["dependencies"]["himalaya"] = {"runnable": True, "version_output": "himalaya v0.9.0",
+                                            "major": 0, "account_check_ok": None}
+him_check = next(c for c in doctor_with(old_himalaya)["checks"] if c["name"] == "himalaya")
+check("himalaya 0.x is blocked as an unrecognized schema", him_check["status"] == "blocked")
+
+failed_account = base_facts()
+failed_account["dependencies"]["himalaya"]["account_check_ok"] = False
+him_check = next(c for c in doctor_with(failed_account)["checks"] if c["name"] == "himalaya")
+check("himalaya with a recognized schema but a failed account check is blocked", him_check["status"] == "blocked")
+
+no_opencode_check = doctor_with(base_facts())
+check("opencode check is absent when opencode is not the selected runtime", not any(c["name"] == "opencode" for c in no_opencode_check["checks"]))
+
+opencode_facts = base_facts()
+opencode_facts["runtime"]["selected"] = "opencode"
+opencode_facts["dependencies"]["opencode"] = {"runnable": True, "version_output": "1.18.31",
+                                              "field_tested": "1.18.31", "found": "1.18.31"}
+oc_check = next(c for c in doctor_with(opencode_facts)["checks"] if c["name"] == "opencode")
+check("opencode at the field-tested version is ok", oc_check["status"] == "ok")
+
+older_opencode = base_facts()
+older_opencode["runtime"]["selected"] = "opencode"
+older_opencode["dependencies"]["opencode"] = {"runnable": True, "version_output": "1.10.0",
+                                              "field_tested": "1.18.31", "found": "1.10.0"}
+oc_check = next(c for c in doctor_with(older_opencode)["checks"] if c["name"] == "opencode")
+check("opencode below the field-tested version is a warning, not blocked", oc_check["status"] == "warning")
+
+missing_opencode = base_facts()
+missing_opencode["runtime"]["selected"] = "opencode"
+missing_opencode["dependencies"]["opencode"] = {"runnable": False, "version_output": "", "field_tested": "1.18.31"}
+oc_check = next(c for c in doctor_with(missing_opencode)["checks"] if c["name"] == "opencode")
+check("missing opencode binary on the opencode runtime is blocked", oc_check["status"] == "blocked")
 
 unknown = doctor_with(base_facts(listener="unknown", dispatcher="unknown"))
 check("unqueryable service is unknown, not blocked", any(c["status"] == "unknown" for c in unknown["checks"]) and unknown["status"] == "unknown")

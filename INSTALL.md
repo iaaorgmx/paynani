@@ -139,6 +139,18 @@ like style and are not.
 Two things can make the whole design inapplicable. Find out now, not after an
 hour of setup.
 
+### 1.0 Minimum versions
+
+`scripts/paynani doctor` checks these and names what it found; run it after
+the install to confirm rather than trusting this table blind.
+
+| Dependency | Minimum | Why |
+|---|---|---|
+| Python | 3.10 | Union-type (`X \| None`) and builtin generic (`list[str]`) annotations, used throughout, are 3.10 syntax. **Exception:** `scripts/failure_diagnostics.py` is deliberately kept 3.9-compatible, because it is the one module that has to run on the host it is diagnosing, including the Python 3.9 Apple still ships. Its own docstring says so; do not "fix" it to match this floor. |
+| Bash | 3.2 | The version macOS ships and does not update. Nothing here requires a newer one on purpose. |
+| Himalaya | v1.x or v2.x, either recognized schema | There is no single minimum version: the two majors are different config schemas, not points on a scale, and INSTALL.md #4 documents both against a real binary. v2.x is what the current fleet runs; v1.x is verified here but not fleet-tested. 0.x and below are not supported. |
+| Bun (OpenCode only) | Bundled with OpenCode itself | The plugin runs inside OpenCode's own bundled Bun; nothing here calls a separate one. What is pinned instead is OpenCode: field-tested at **1.18.31** ([#157](https://github.com/iaaorgmx/paynani/issues/157), Balam's host). An older release is a warning, not a block -- nobody has reproduced a failure below it, only never tested one. |
+
 ### 1.1 Does this host have a systemd user session?
 
 ```bash
