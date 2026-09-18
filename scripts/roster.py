@@ -364,11 +364,21 @@ def sender_is_listed(message: Message, allowed: set[str],
     header. The roster answers "did my human vouch for whoever wrote this", and
     only From carries that claim.
     """
+    return explain_sender(message, allowed, entries, notifier_list)["matched"]
+
+
+def explain_sender(message: Message, allowed: set[str], entries=(), notifier_list=()) -> dict:
+    """Explain the exact decision sender_is_listed() makes, without side effects."""
     address = sender_address(message)
+    answer = {"matched": False, "from": address, "kind": "none", "reason": ""}
     if not address:
-        return False
+        answer["reason"] = "the From header has no usable address"
+        return answer
     if address in allowed:
-        return True
+        entry = next((e for e in entries if normalise(e.get("address", "")) == address), None)
+        answer.update({"matched": True, "kind": "contact", "entry": entry,
+                       "reason": f"{address} is a contact in roster.md"})
+        return answer
 
     # A declared notifier speaks for whoever its declared header names, and only
     # for somebody already on the list. It grants nothing on its own: an unknown
@@ -378,9 +388,20 @@ def sender_is_listed(message: Message, allowed: set[str],
             continue
         claimed = normalise(message.get(notifier["header"], "")).lstrip("@")
         if not claimed:
-            continue
+            answer.update({"kind": "notifier", "notifier": notifier,
+                           "reason": f"declared notifier is missing {notifier['header']}"})
+            return answer
         for entry in entries or ():
             recorded = normalise(entry.get("columns", {}).get(notifier["column"], ""))
             if recorded and recorded.lstrip("@") == claimed:
-                return True
-    return False
+                answer.update({"matched": True, "kind": "notifier", "notifier": notifier,
+                               "entry": entry,
+                               "reason": (f"{notifier['header']}={claimed} matches "
+                                          f"the {notifier['column']} column")})
+                return answer
+        answer.update({"kind": "notifier", "notifier": notifier,
+                       "reason": (f"{notifier['header']}={claimed} matches no contact in "
+                                  f"the {notifier['column']} column")})
+        return answer
+    answer["reason"] = f"{address} is neither a contact nor a declared notifier"
+    return answer

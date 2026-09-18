@@ -4,7 +4,12 @@ paynani CLI.
 
     paynani onboard [--port PORT]
     paynani set KEY [VALUE] [--skip-check]
+    paynani status [--json]
+    paynani event show EVENT_ID [--body]
+    paynani event list [--limit N]
+    paynani event mark EVENT_ID STATE
     paynani roster list
+    paynani roster explain --from ADDRESS [--header NAME=VALUE]
     paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--yes]
     paynani roster remove ADDRESS [--yes]
     paynani paths [--json]
@@ -31,7 +36,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from paynani_lib import diagnostics, i18n, onboard, roster_cli, set_cli  # noqa: E402
+from paynani_lib import (  # noqa: E402
+    diagnostics, event_cli, i18n, onboard, roster_cli, set_cli, status_cli,
+)
 
 DEFAULT_PORT = 8765
 
@@ -66,6 +73,15 @@ def main(argv: list[str] | None = None) -> int:
 
     roster_sub.add_parser("list", help="Print the current contacts.")
 
+    roster_explain = roster_sub.add_parser(
+        "explain", help="Explain whether a From/header combination matches the roster."
+    )
+    roster_explain.add_argument("--from", dest="from_address", required=True)
+    roster_explain.add_argument(
+        "--header", action="append", default=[], metavar="NAME=VALUE",
+        help="Add a provider header; may be repeated.",
+    )
+
     roster_add = roster_sub.add_parser("add", help="Add a contact.")
     roster_add.add_argument("name")
     roster_add.add_argument("address")
@@ -76,6 +92,22 @@ def main(argv: list[str] | None = None) -> int:
     roster_remove = roster_sub.add_parser("remove", help="Remove a contact by address.")
     roster_remove.add_argument("address")
     roster_remove.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
+
+    event_parser = subparsers.add_parser("event", help="Inspect and update event lifecycle state.")
+    event_sub = event_parser.add_subparsers(dest="event_command", required=True)
+    event_show = event_sub.add_parser("show", help="Show a safe envelope; fetch body only with --body.")
+    event_show.add_argument("event_id")
+    event_show.add_argument("--body", action="store_true", help="Fetch the exact IMAP body after roster verification.")
+    event_list = event_sub.add_parser("list", help="List recent canonical events and lifecycle state.")
+    event_list.add_argument("--limit", type=int, default=20)
+    event_mark = event_sub.add_parser("mark", help="Append a handled/replied/closed transition.")
+    event_mark.add_argument("event_id")
+    event_mark.add_argument("state", choices=("handled", "replied", "closed"))
+    event_mark.add_argument("--runtime")
+    event_mark.add_argument("--detail")
+
+    status_parser = subparsers.add_parser("status", help="Show event lifecycle and Codex delivery status.")
+    status_parser.add_argument("--json", action="store_true")
 
     paths_parser = subparsers.add_parser("paths", help="Print resolved paynani paths.")
     paths_parser.add_argument("--json", action="store_true", help="machine-readable output")
@@ -94,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     # a message from validate.py reached the terminal in Spanish inside an
     # English sentence. onboard is untouched here: server.py sets the
     # language itself on every request, before this default could matter.
-    if args.command in ("set", "roster"):
+    if args.command in ("set", "roster", "event", "status"):
         i18n.set_current("en-US")
 
     if args.command == "onboard":
@@ -108,6 +140,17 @@ def main(argv: list[str] | None = None) -> int:
             return roster_cli.run_add(args)
         if args.roster_command == "remove":
             return roster_cli.run_remove(args)
+        if args.roster_command == "explain":
+            return roster_cli.run_explain(args)
+    if args.command == "event":
+        if args.event_command == "show":
+            return event_cli.run_show(args)
+        if args.event_command == "list":
+            return event_cli.run_list(args)
+        if args.event_command == "mark":
+            return event_cli.run_mark(args)
+    if args.command == "status":
+        return status_cli.run(args)
     if args.command == "paths":
         return diagnostics.print_paths(args.json)
     if args.command == "doctor":

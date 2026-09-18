@@ -108,6 +108,7 @@ class SpoolDelivery(unittest.TestCase):
                                    lambda *a, **kw: self.queue_result(0)):
                 result = codex.deliver(envelope("queued", event_id="imap:INBOX:42:7"))
         self.assertTrue(result.ok, result.detail)
+        self.assertEqual(result.lifecycle, "dispatched")
         self.assertEqual(str(codex.spool_path().stat().st_size),
                          codex.offset_path().read_text(encoding="utf-8"))
 
