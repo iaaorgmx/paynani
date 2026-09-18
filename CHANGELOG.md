@@ -2,6 +2,23 @@
 
 ## Sin publicar
 
+- `scripts/version.sh --plan [REF]` y `scripts/upgrade_plan.py`: qué hay que
+  reiniciar entre dos versiones, calculado a partir del `git diff` entre los
+  tags, del manifiesto del instalador y de una tabla que dice qué proceso o
+  copia carga cada archivo (#167, parte 1). Cada archivo cambiado recibe un
+  verbo: `restart`, `reinstall-and-restart`, `restart-runtime`,
+  `next-session`, `none` o `unknown`, y el plan termina con los comandos en
+  orden para el runtime y el sistema de este host: el instalador si cambió una
+  copia suya, el paso de registro que el instalador nombra y no ejecuta
+  (`opencode_plugin.py`, `claude_hook.py`, `codex_hook.py`,
+  `openclaw_rules.py --install`), los reinicios de servicios y el del harness.
+  Sin un tag o sin `install.manifest` el plan dice que no puede calcularse y
+  remite a `UPGRADE.md`; nunca convierte datos ausentes en «nada que
+  reiniciar». Lista además los overlays locales (archivos rastreados
+  modificados en el clon), dice cuáles también cambian con la actualización y
+  da los comandos para dejar registro y apartarlos antes del pull. El reporte
+  completo de `version.sh` imprime el plan cuando hay una versión más nueva.
+  `UPGRADE.md` §2 lo incorpora.
 - Claude Code: el vigía de sesión conserva el FIFO hasta cerrar, para que `tail`
   no pueda escribir en un archivo regular si el ticker abre primero. Incluye una
   prueba determinista de esa carrera (#179).
