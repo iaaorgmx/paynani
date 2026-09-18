@@ -1145,6 +1145,10 @@ Do not report the install complete until every check in this section passes.
 None of them needs a person to send mail; the ones that do are in §7.1, and they
 are optional.
 
+[`STATUS_MATRIX.md`](STATUS_MATRIX.md) maps what `scripts/healthcheck.py`
+prints, further down in this section, to the situation it describes -- read it
+before treating a line you don't recognise as a failure.
+
 ```bash
 # 0. Which version you just installed, and whether it is the current one.
 #    Exit 2 means a newer release exists; exit 1 means the check could not
