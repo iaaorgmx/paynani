@@ -1163,8 +1163,35 @@ class WatchRegistry(unittest.TestCase):
         run = sp.run(["bash", str(self.WATCH), str(self.state), "--from-hook"],
                      capture_output=True, text=True, timeout=10, env=env)
         self.assertEqual(1, run.returncode)
-        self.assertIn("no pending registry", run.stdout)
+        self.assertIn("no registry to arm from", run.stdout)
         self.assertFalse(self.offset.exists(), "nothing armed, so nothing acknowledged")
+
+    def test_a_retired_watch_re_arms_from_where_it_stopped(self):
+        """
+        Claude Code retires a Monitor after 30 minutes; the agent runs the same
+        --from-hook command again. The registry is `ended` by then, and it has
+        to answer with the cursor the watcher reached, not refuse.
+        """
+        import signal
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-re", spool_through=0)
+        first = self._watch("sess-re")
+        self.assertTrue(self._wait(lambda: self._registry("sess-re")["status"] == "armed"))
+        self.assertTrue(self._wait(lambda: first.stdout.readline() == "a\n", timeout=8))
+        self.assertTrue(self._wait(lambda: self.offset.exists() and self.offset.read_text().strip() == "4"),
+                        "both lines acknowledged before the retirement")
+        first.send_signal(signal.SIGTERM)
+        self.assertTrue(self._wait(lambda: self._registry("sess-re")["status"] == "ended"))
+        self.assertEqual(4, self._registry("sess-re")["offset"], "the cursor after both lines")
+        self.spool.write_text("a\nb\nc\n", encoding="utf-8")
+        second = self._watch("sess-re")
+        if not self._wait(lambda: self._registry("sess-re")["status"] == "armed"):
+            second.send_signal(signal.SIGTERM); second.wait()
+            self.fail("second watcher did not arm: " + second.stdout.read() + second.stderr.read())
+        record = self._registry("sess-re")
+        self.assertEqual(second.pid, record["watcher_pid"])
+        self.assertIsNone(record["ended_at"])
+        self.assertEqual("c\n", second.stdout.readline(), "resumes past what the first showed")
 
     def test_two_sessions_yield_exactly_one_watch_and_no_stranded_offset(self):
         """
