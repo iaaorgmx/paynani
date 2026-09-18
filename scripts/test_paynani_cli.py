@@ -35,6 +35,7 @@ sys.path.insert(0, str(REPO / "harness"))
 
 from paynani_lib import envfile, guard, i18n, validate  # noqa: E402
 from paynani_lib import roster_cli, set_cli  # noqa: E402
+from paynani_lib import server as server_mod  # noqa: E402
 from paynani_lib.i18n_data import CATALOGUES  # noqa: E402
 from paynani_lib.server import make_handler  # noqa: E402
 import roster as roster_mod  # noqa: E402  (scripts/roster.py; REPO/scripts is already on sys.path above)
@@ -86,6 +87,60 @@ VALID = {
     "ROSTER_NAME": "Test Human",
     "ROSTER_EMAIL": "human@example.com",
 }
+
+old_runtime = os.environ.get("PAYNANI_RUNTIME")
+os.environ["PAYNANI_RUNTIME"] = "opencode"
+try:
+    saved_page = server_mod._page(
+        lang="es-MX",
+        saved="/tmp/paynani/.env",
+        notice=None,
+        report=None,
+        errors={},
+        values=VALID,
+        has_password=True,
+        csrf="csrf",
+    )
+    check("onboard saved page: OpenCode tells the human to write listo", "OpenCode no le avisa" in saved_page)
+    check("onboard saved page: OpenCode tells the human to restart OpenCode", "vuelve a abrir OpenCode" in saved_page)
+finally:
+    if old_runtime is None:
+        os.environ.pop("PAYNANI_RUNTIME", None)
+    else:
+        os.environ["PAYNANI_RUNTIME"] = old_runtime
+
+old_runtime = os.environ.pop("PAYNANI_RUNTIME", None)
+old_runtime_env = server_mod.RUNTIME_ENV
+old_available = server_mod.dispatch.available
+old_import_module = server_mod.importlib.import_module
+class _DetectedRuntime:
+    @staticmethod
+    def detect():
+        return True
+try:
+    server_mod.RUNTIME_ENV = Path(tempfile.mkdtemp(prefix="paynani-test-runtime-")) / "missing.env"
+    server_mod.dispatch.available = lambda: ["opencode"]
+    server_mod.importlib.import_module = lambda name: _DetectedRuntime
+    saved_page = server_mod._page(
+        lang="es-MX",
+        saved="/tmp/paynani/.env",
+        notice=None,
+        report=None,
+        errors={},
+        values=VALID,
+        has_password=True,
+        csrf="csrf",
+    )
+    check(
+        "onboard saved page: without runtime.env one detected harness selects OpenCode",
+        "OpenCode no le avisa" in saved_page,
+    )
+finally:
+    server_mod.RUNTIME_ENV = old_runtime_env
+    server_mod.dispatch.available = old_available
+    server_mod.importlib.import_module = old_import_module
+    if old_runtime is not None:
+        os.environ["PAYNANI_RUNTIME"] = old_runtime
 
 
 def with_override(**kw):

@@ -304,6 +304,9 @@ livre le courrier à votre session, il est ouvert mais attend que vous écriviez
 quelque chose dans une session, ou il est fermé. OpenCode fermé, le courrier
 attend sans se perdre, et c'est normal.
 
+[`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compare ces états à ce
+qu'affiche `healthcheck.py` pour chaque harness.
+
 Les options longues et les modes de défaillance sont dans
 [`INSTALL.md`](../INSTALL.md).
 
@@ -341,6 +344,7 @@ fichier `.env` et à votre propre jugement sur qui entre.
 | Voir les changements par version | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autoriser des expéditeurs | `roster.md` et [`roster.md.example`](../roster.md.example) |
 | Envoyer du courrier depuis la frontière sûre | [`scripts/send.sh`](../scripts/send.sh) |
+| Voir ce que garantit chaque harness | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
 ## Le tenir à jour
 

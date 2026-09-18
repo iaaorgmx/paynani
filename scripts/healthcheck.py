@@ -56,6 +56,7 @@ DISPATCH_ERR = STATE_DIR / "dispatch.err.log"
 DELIVERY = STATE_DIR / "delivery.json"
 IDLE_ERR = STATE_DIR / "idle.err.log"
 SENT_LOG = STATE_DIR / "sent.log"
+OPENCLAW_PROBE = STATE_DIR / "openclaw.probe.json"
 
 ROSTER = roster()
 
@@ -705,6 +706,34 @@ def instructions_facts(selected):
     return out
 
 
+def openclaw_probe_facts(selected):
+    """
+    The last explicit OpenClaw route probe, separate from real mail delivery.
+
+    `paynani openclaw probe --dry-run` sends a synthetic `probe:<uuid>` event
+    through OpenClaw without writing the paynani journal or touching IMAP. This
+    row reports that receipt so nobody has to read the real delivery cursor as
+    evidence of a synthetic smoke test.
+    """
+    if selected != "openclaw":
+        return None
+    out = {"path": str(OPENCLAW_PROBE), "present": False}
+    try:
+        stored = json.loads(OPENCLAW_PROBE.read_text(encoding="utf-8"))
+    except OSError:
+        return out
+    except ValueError as exc:
+        out.update({"present": True, "status": "unknown",
+                    "detail": f"cannot parse probe record: {exc.__class__.__name__}"})
+        return out
+    out["present"] = True
+    for key in ("probe_id", "namespace", "at", "runtime", "dry_run", "status",
+                "detail", "returncode"):
+        if key in stored:
+            out[key] = stored.get(key)
+    return out
+
+
 def assess(facts):
     """
     The failures, in the order they stop mail.
@@ -927,6 +956,16 @@ def render(facts, problems, warnings):
         else:
             out.append(f"instructions standing rule {state.upper()} in {path}")
             out.append("             run: python3 scripts/openclaw_rules.py --install")
+    probe = facts.get("openclaw_probe")
+    if probe:
+        if probe.get("present"):
+            out.append("openclaw probe "
+                       + f"{probe.get('status', 'unknown')} at {probe.get('at', 'unknown-time')}"
+                       + (f" ({probe.get('namespace')})" if probe.get("namespace") else ""))
+            if probe.get("detail"):
+                out.append(f"             {probe['detail']}")
+        else:
+            out.append(f"openclaw probe no synthetic probe recorded at {probe['path']}")
     out.append(f"listener     {listener['unit']}"
                + (f", {listener['mailbox']} at uid {listener['last_uid']}"
                   if listener["last_uid"] is not None else ", no position recorded yet"))
@@ -1044,6 +1083,7 @@ def main(argv=None):
     }
     facts["spool"] = spool_facts(facts["runtime"].get("selected"))
     facts["instructions"] = instructions_facts(facts["runtime"].get("selected"))
+    facts["openclaw_probe"] = openclaw_probe_facts(facts["runtime"].get("selected"))
     facts["reply"] = reply_facts(facts["queue"]["cursor"])
     problems, warnings = assess(facts)
 
