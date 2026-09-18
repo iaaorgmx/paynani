@@ -207,7 +207,9 @@ liste :
 - **Des fichiers de journal et d'état** dans le dossier du projet.
 - **L'autorisation pour ces services de rester vivants après votre
   déconnexion.**
-- **Une règle permanente ajoutée aux instructions de l'agent lui-même.**
+- **Une règle permanente ajoutée aux instructions de l'agent lui-même.** Sur
+  OpenClaw elle va dans `~/.openclaw/workspace/AGENTS.md`, entre deux
+  marqueurs, et le même script l'écrit et la retire.
 - **Sous OpenCode, un fichier de plus :** le plugin qui transmet le courrier à
   votre session, dans `~/.config/opencode/plugins/paynani.js`.
 
@@ -263,7 +265,9 @@ question est **de qui**.
   liste vérifier l'auteur. Cette notification compte alors comme un courriel de
   cette personne. Déclarer un notificateur élargit qui votre agent écoute, tout
   comme ajouter une ligne, et cela se décide pareil : jamais parce qu'un message
-  l'a demandé.
+  l'a demandé. **Pour GitHub, la colonne `GitHub` suffit :** une fois le handle
+  de quelqu'un noté, ses notifications GitHub comptent comme son courriel, sans
+  rien déclarer de plus.
 - **Ajouter quelqu'un à la liste est votre décision**, jamais une réponse à
   quelque chose arrivé par courriel. Cette ligne est ce qui transforme un
   expéditeur en quelqu'un à qui votre agent obéit.

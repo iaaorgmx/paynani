@@ -251,10 +251,16 @@ That search has been done; it is a dead end.
 
 The inverse works: `dispatch.py` is an **active producer**. It injects each
 OpenClaw mail event as a live notification with `openclaw system event --mode
-now`; roster mail carries the `roster` tag in that rendered line, but the
-OpenClaw adapter does not start an agent run from incoming mail. If you port
-this to another harness, that runtime delivery boundary is the part to inspect
-first; the rest is harness-independent.
+now`; roster mail carries the `roster` tag in that rendered line, and under it
+one line saying what to do (`event.openclaw_text`), but the OpenClaw adapter
+does not start an agent run from incoming mail. The heartbeat that shows the
+line is the run, and what makes the agent act is a rule in its own
+`~/.openclaw/workspace/AGENTS.md`, put there by `scripts/openclaw_rules.py`.
+That rule used to be left for the agent to copy, and the one host where it was
+not copied passed every check and answered nothing
+([#186](https://github.com/iaaorgmx/paynani/issues/186)). If you port this to
+another harness, that runtime delivery boundary is the part to inspect first;
+the rest is harness-independent.
 
 ### The five runtimes, and where each stops being ours
 

@@ -27,6 +27,14 @@ DEFAULT_ROSTER = pathlib.Path(__file__).resolve().parents[1] / "roster.md"
 # senders may speak for somebody on the list above — see notifiers().
 NOTIFIER_HEADINGS = ("notifier", "notificador")
 
+# The one notifier a `GitHub` column declares by itself. A handle in that column
+# exists for exactly one purpose, matching GitHub's notification mail back to the
+# person, so recording one is the decision the `## Notifiers` table used to ask
+# for a second time. On nine of ten hosts the second time never happened, and the
+# team's whole coordination channel arrived untagged (#188).
+GITHUB_NOTIFIER = {"address": "notifications@github.com",
+                   "header": "X-GitHub-Sender", "column": "github"}
+
 
 def normalise(address: str) -> str:
     """Strip every space and casefold — mirrors `tr -d [:blank:]` in send.sh."""
@@ -288,9 +296,17 @@ def notifiers(path: pathlib.Path) -> list[dict]:
     A row needs three fields: one containing `@`, one that names a mail header,
     and one that names a column. They are found by shape rather than by position,
     so column order does not matter, the same way it does not for a contact row.
+
+    **A `GitHub` column in the contacts table declares GitHub's notifier on its
+    own** (`GITHUB_NOTIFIER`), unless a row of the table above already names
+    that address, in which case the row wins and nothing is added. The column is
+    the human's declaration: a handle written there has no other use, and asking
+    for it twice produced rosters full of handles that matched nothing (#188).
+    Without the column, nothing is implied.
     """
+    text = _read(path)
     out: list[dict] = []
-    for fields, is_header, _ in _rows(_read(path), "notifiers"):
+    for fields, is_header, _ in _rows(text, "notifiers"):
         if is_header:
             continue
         address = next((normalise(f) for f in fields if "@" in normalise(f)), "")
@@ -309,7 +325,17 @@ def notifiers(path: pathlib.Path) -> list[dict]:
             continue
         out.append({"address": address, "header": header,
                     "column": column.strip().lower()})
+    if _has_github_column(text) and not any(
+            n["address"] == GITHUB_NOTIFIER["address"] for n in out):
+        out.append(dict(GITHUB_NOTIFIER, implied_by="github column"))
     return out
+
+
+def _has_github_column(text: str) -> bool:
+    for fields, is_header, _ in _rows(text, "contacts"):
+        if is_header:
+            return GITHUB_NOTIFIER["column"] in (f.strip().lower() for f in fields)
+    return False
 
 
 def notifier_headers(notifier_list) -> list[str]:

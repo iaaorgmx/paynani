@@ -1136,6 +1136,11 @@ probe_openclaw_service_environment() {
         die_config 'OpenClaw is present but cannot run in the systemd user service environment'
     fi
     printf 'openclaw_service_probe=accepted executable=%s\n' "$discovered_runtime_cli"
+    # The rule that turns a delivered line into a reply lives in OpenClaw's own
+    # AGENTS.md, which is the agent's file and not an owned artifact, so it is
+    # written by a separate step and named here, the way the OpenCode plugin is.
+    # An install that skipped it passes every check and answers no mail (#186).
+    printf 'openclaw_rules_next_step=%s\n' "python3 $ROOT/scripts/openclaw_rules.py --install"
 }
 
 probe_claudecode_spool() {
@@ -1259,6 +1264,9 @@ print_final_verification_report() {
     else
         printf 'verification_secret=not-applicable runtime=openclaw\n'
         printf 'verification_smoke=openclaw-service-environment result=accepted\n'
+        # Accepted means OpenClaw took the line. Whether the agent then acts on
+        # it depends on a rule in its own AGENTS.md that nothing here can see.
+        printf 'verification_note=openclaw-delivery scope=notification-accepted standing-rule=unobservable\n'
     fi
     # The hygiene state reaches the final report, not only the inventory stream.
     # It used to be printed once, mid-inventory, while the report still ended
@@ -1491,6 +1499,10 @@ if [[ "$mode" == uninstall ]]; then
         # The plugin file lives in OpenCode's configuration, not in the ownership
         # manifest, so it is named here rather than removed silently.
         printf 'install: the OpenCode plugin is not removed by this step; run: python3 %s/scripts/opencode_plugin.py --uninstall\n' "$ROOT"
+    elif [[ "$runtime" == openclaw ]]; then
+        # Same boundary: the standing rule sits in the agent's own AGENTS.md.
+        # Leaving it there tells an agent to act on mail nothing tags any more.
+        printf 'install: the standing rule in OpenClaw AGENTS.md is not removed by this step; run: python3 %s/scripts/openclaw_rules.py --uninstall\n' "$ROOT"
     fi
     if ((changes_made)); then
         printf 'install: owned services deactivated when reachable and recorded artifacts removed; credentials and state preserved.\n'

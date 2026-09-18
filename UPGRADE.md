@@ -133,6 +133,22 @@ systemd-analyze verify ~/.config/systemd/user/paynani-*.{service,timer}
 
 `systemd-analyze verify` prints nothing and exits 0 when the units are sound.
 
+**On OpenClaw, the standing rule in the agent's own `AGENTS.md` is a copy
+too.** Since #186, `scripts/openclaw_rules.py` writes it into
+`~/.openclaw/workspace/AGENTS.md`, between two markers, and a pull does not
+touch that file. Run it after every upgrade; it replaces the block only when
+the wording changed and says `nothing to do` otherwise:
+
+```bash
+scripts/openclaw_rules.py --install
+scripts/openclaw_rules.py --check      # exit 0: the current block is in place
+```
+
+If you are coming from 0.7.0 or earlier the block is new, and an agent that had
+copied the rule by hand keeps its own copy: the script adds the block below it
+and never edits text outside the markers. Both saying the same thing is
+harmless; remove the hand copy when you like.
+
 ### On macOS, the same trap with different files
 
 A macOS install is supervised by three LaunchAgents in
@@ -286,6 +302,9 @@ tail -2 state/idle.err.log
 
 # The watcher can still reach openclaw: silence is the pass
 grep -iE "openclaw not found|injection failed" state/watch.err.log
+
+# On OpenClaw: the agent still knows what the roster tag means (exit 0)
+scripts/openclaw_rules.py --check
 
 # The allowlist still behaves, on both the send and the receive side
 scripts/test_roster.sh

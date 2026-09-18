@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "paynani doctor JSON output",
+  "type": "object",
+  "required": ["schema_version", "status", "generated_at", "checks", "paths"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["ok", "warning", "blocked", "unknown"]},
+    "generated_at": {"type": "string"},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "summary"],
+        "properties": {
+          "name": {"type": "string"},
+          "status": {"enum": ["ok", "warning", "blocked", "unknown"]},
+          "summary": {"type": "string"},
+          "next_command": {"type": "string"},
+          "facts": {}
+        }
+      }
+    },
+    "paths": {"type": "object"}
+  }
+}
