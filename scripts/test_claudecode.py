@@ -537,16 +537,25 @@ class Watcher(unittest.TestCase):
 
     def _take_down_the_tree(self, holder):
         import signal
+        # The tests start watcher processes with start_new_session=True, so the
+        # process group id is the leader pid. On BSD/macOS the leader can exit
+        # before cleanup while a child such as tail still holds descriptors into
+        # the temporary state directory. If os.getpgid() fails in that window,
+        # still signal the group by the known leader pid instead of returning and
+        # leaving the child to race TemporaryDirectory cleanup.
         try:
             group = os.getpgid(holder.pid)
         except OSError:
-            return
+            group = holder.pid
         for sig in (signal.SIGCONT, signal.SIGKILL):
             try:
                 os.killpg(group, sig)
             except OSError:
                 pass
-        holder.wait()
+        try:
+            holder.wait(timeout=5)
+        except Exception:
+            pass
 
     def _recorded_chain(self, timeout=8):
         """The chain the watcher wrote into the lock, once it has written one."""
