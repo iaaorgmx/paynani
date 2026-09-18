@@ -126,6 +126,9 @@ try:
     check("the manifest state is present", p["manifest"] == "present")
     verbs = {f["path"]: f["verb"] for f in p["files"]}
     check("dispatch.py -> restart", verbs.get("harness/dispatch.py") == "restart")
+    # ledger.py (0.7.1) is imported by the listener, the dispatcher and the
+    # session hook; the real v0.7.0 -> v0.7.1 plan listed it as unknown.
+    check("ledger.py -> restart both", up.classify("harness/ledger.py")["unit"] == "both")
     check("systemd unit -> reinstall-and-restart", verbs.get("systemd/paynani-idle.service") == "reinstall-and-restart")
     check("opencode plugin -> reinstall-and-restart", verbs.get("harness/opencode/paynani.js") == "reinstall-and-restart")
     check("session watcher -> next-session", verbs.get("harness/session_watch.sh") == "next-session")

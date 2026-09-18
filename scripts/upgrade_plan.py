@@ -93,7 +93,7 @@ RULES = (
     (r"^scripts/roster\.py$", "restart", "listener", *LISTENER, None, None),
     (r"^harness/dispatch\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
     (r"^harness/adapters/.*\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
-    (r"^harness/(event|paths)\.py$", "restart", "listener and dispatcher", "both", "both", None, None),
+    (r"^harness/(event|paths|ledger)\.py$", "restart", "listener and dispatcher", "both", "both", None, None),
     # Read when a session starts or a watch is armed.
     (r"^harness/(session_start\.py|session_watch\.sh)$", "next-session", "session hook and watcher", None, None, {"claudecode", "codex"}, None),
     # Runs fresh on every timer tick or every call.
