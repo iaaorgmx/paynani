@@ -564,7 +564,8 @@ def registry_command(args):
                        "heartbeat_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))})
         return 0 if update_registry(session_id, **fields) else 1
     if verb == "beat":
-        return 0 if update_registry(session_id, heartbeat_at=_utc_now()) else 1
+        fields["heartbeat_at"] = _utc_now()
+        return 0 if update_registry(session_id, **fields) else 1
     if verb == "yield":
         return 0 if update_registry(session_id, status="yielded", ended_at=_utc_now(), **fields) else 1
     if verb == "end":
