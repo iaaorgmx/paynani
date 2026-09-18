@@ -292,5 +292,49 @@ for question in (
 ):
     check(f"candidate template asks about {question}", True, question in candidate_text)
 
+def readme_shape(document):
+    """
+    A translation-agnostic fingerprint of a README: how many headers at each
+    level, how many fenced code blocks, and which other repository documents
+    it links to.
+
+    Text differs by design between README.md (es-MX, the source of truth) and
+    its four i18n/README.*.md translations, so this never compares words. It
+    compares structure: a heading added to one and not the others, or a code
+    block present in the source but dropped from a translation (#173 found
+    i18n/README.es-ES.md missing the `roster explain` example this way), moves
+    the counts out of sync and fails by name.
+
+    Link targets are normalized before comparing: a translation links to its
+    own locale's MAILBOX_SETUP.<locale>.md and to its sibling
+    README.<locale>.md files, neither of which the source or any other
+    translation names, so both are stripped -- one by dropping the locale
+    suffix shared with every other per-locale document, the other by
+    recognising the README-to-README navigation links by name and excluding
+    them outright.
+    """
+    text = (ROOT / document).read_text()
+    headers = re.findall(r"^(#{1,6})\s", text, re.MULTILINE)
+    header_counts = tuple(
+        sum(1 for h in headers if len(h) == level) for level in range(1, 7)
+    )
+    code_blocks = len(re.findall(r"^```", text, re.MULTILINE)) // 2
+    link_targets = set()
+    for link in re.findall(r"\]\(([^)]+)\)", text):
+        if link.startswith(("http://", "https://", "#")) or not link.endswith(".md"):
+            continue
+        name = pathlib.Path(link).name
+        if re.fullmatch(r"README(\.[a-z]{2}-[A-Z]{2})?\.md", name):
+            continue
+        link_targets.add(re.sub(r"\.[a-z]{2}-[A-Z]{2}(?=\.md$)", "", name))
+    return {"headers by level": header_counts, "code blocks": code_blocks,
+            "linked documents": link_targets}
+
+translations = sorted(path.name for path in (ROOT / "i18n").glob("README.*.md"))
+source_shape = readme_shape("README.md")
+for translation in translations:
+    check(f"i18n/{translation} matches README.md's structure",
+          source_shape, readme_shape(f"i18n/{translation}"))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
