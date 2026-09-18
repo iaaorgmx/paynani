@@ -341,6 +341,7 @@ fichier `.env` et à votre propre jugement sur qui entre.
 | Voir les changements par version | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autoriser des expéditeurs | `roster.md` et [`roster.md.example`](../roster.md.example) |
 | Envoyer du courrier depuis la frontière sûre | [`scripts/send.sh`](../scripts/send.sh) |
+| Voir ce que garantit chaque harness | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
 ## Le tenir à jour
 

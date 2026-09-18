@@ -327,6 +327,7 @@ seu próprio critério sobre quem entra.
 | Ver mudanças por versão | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autorizar remetentes | `roster.md` e [`roster.md.example`](../roster.md.example) |
 | Enviar e-mail pela fronteira segura | [`scripts/send.sh`](../scripts/send.sh) |
+| Ver o que cada harness garante | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
 ## Mantendo atualizado
 
