@@ -19,6 +19,14 @@
   da los comandos para dejar registro y apartarlos antes del pull. El reporte
   completo de `version.sh` imprime el plan cuando hay una versión más nueva.
   `UPGRADE.md` §2 lo incorpora.
+- Claude Code: el vigía de sesión conserva el FIFO hasta cerrar, para que `tail`
+  no pueda escribir en un archivo regular si el ticker abre primero. Incluye una
+  prueba determinista de esa carrera (#179).
+
+### Si actualizas
+
+Rearma el vigía en la siguiente sesión de Claude Code; no hace falta migrar
+estado ni tocar credenciales.
 
 ## 0.7.1 (2026-09-18)
 
