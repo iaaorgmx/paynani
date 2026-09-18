@@ -286,6 +286,9 @@ En OpenCode, el reporte también dice en cuál de tres estados está: entregando
 el correo a tu sesión, abierto pero esperando a que escribas algo en una sesión,
 o cerrado. Con OpenCode cerrado el correo espera sin perderse, y eso es normal.
 
+[`STATUS_MATRIX.md`](STATUS_MATRIX.md) compara esos estados con lo que
+`healthcheck.py` imprime en cada harness.
+
 Las opciones largas y los modos de fallo están en [`INSTALL.md`](INSTALL.md).
 
 ## Cómo está construido, en corto

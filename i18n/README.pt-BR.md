@@ -291,6 +291,9 @@ entregando o e-mail à sua sessão, aberto mas esperando você escrever algo em 
 sessão, ou fechado. Com o OpenCode fechado o e-mail espera sem se perder, e isso
 é normal.
 
+[`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compara esses estados com o que
+`healthcheck.py` imprime em cada harness.
+
 As opções longas e os modos de falha estão no [`INSTALL.md`](../INSTALL.md).
 
 ## Como é construído, em resumo

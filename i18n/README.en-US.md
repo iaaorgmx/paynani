@@ -287,6 +287,9 @@ mail to your session, open but waiting for you to write something in a session,
 or closed. With OpenCode closed, mail waits without being lost, and that is
 normal.
 
+[`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compares those states with what
+`healthcheck.py` prints for each harness.
+
 The long options and the failure modes are in [`INSTALL.md`](../INSTALL.md).
 
 ## How it is built, in short
