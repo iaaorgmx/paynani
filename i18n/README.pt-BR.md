@@ -197,7 +197,9 @@ terminar, e você pode cobrar a lista:
 - **Arquivos de registro e de estado** dentro da pasta do projeto.
 - **Permissão para que esses serviços continuem vivos depois que você sai da
   sessão.**
-- **Uma regra permanente acrescentada às instruções do próprio agente.**
+- **Uma regra permanente acrescentada às instruções do próprio agente.** No
+  OpenClaw ela fica em `~/.openclaw/workspace/AGENTS.md`, entre dois marcadores,
+  e o mesmo script a escreve e a remove.
 - **No OpenCode, um arquivo a mais:** o plugin que entrega o e-mail à sua
   sessão, em `~/.config/opencode/plugins/paynani.js`.
 

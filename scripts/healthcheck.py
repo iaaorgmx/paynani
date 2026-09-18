@@ -670,6 +670,30 @@ def config_facts():
     return out
 
 
+def instructions_facts(selected):
+    """
+    On OpenClaw, whether the agent has been told what the roster tag means.
+
+    The adapter hands OpenClaw one line per message and the heartbeat shows it.
+    What turns that line into a reply is a rule in the agent's own AGENTS.md,
+    which `scripts/openclaw_rules.py --install` writes. Its absence is the one
+    state in which every other row here is green and no roster mail is ever
+    answered (#186), so it is a row of its own rather than a sentence under the
+    replies warning. Other runtimes carry the instruction in the prompt itself.
+    """
+    if selected != "openclaw":
+        return None
+    out = {"path": None, "state": "unknown"}
+    try:
+        import openclaw_rules
+        path = openclaw_rules.default_target()
+        out["path"] = str(path)
+        out["state"] = openclaw_rules.state(path)
+    except (Exception, SystemExit):
+        pass
+    return out
+
+
 def assess(facts):
     """
     The failures, in the order they stop mail.
@@ -736,6 +760,20 @@ def assess(facts):
             and queue["oldest_age_seconds"] > STALE_QUEUE:
         problems.append(f"{queue['pending']} event(s) queued, the oldest for "
                         f"{queue['oldest_age_seconds'] // 60} minutes: it is not moving")
+
+    instructions = facts.get("instructions")
+    if instructions and instructions["state"] != "present":
+        state = instructions["state"]
+        path = instructions["path"] or "~/.openclaw/workspace/AGENTS.md"
+        if state == "unknown":
+            warnings.append(f"whether the paynani standing rule is in {path} could not be "
+                            "checked; the agent may not know what the roster tag means")
+        else:
+            what = ("is not in" if state == "absent" else "is out of date in")
+            warnings.append(f"the paynani standing rule {what} {path}: OpenClaw will show "
+                            "each roster message and the agent has nothing telling it to "
+                            "read, do and reply. Run: python3 scripts/openclaw_rules.py "
+                            "--install")
 
     # A warning and never a problem. Delivery is working in this case — that is
     # what makes it worth saying at all — and the two readings of it are answered
@@ -867,6 +905,17 @@ def render(facts, problems, warnings):
         out.append(f"             {reach}" + (f": {runtime['detail']}" if runtime["detail"] else ""))
         out.append("             this proves the runtime answers, not that a delivered "
                    "event reaches anyone")
+    instructions = facts.get("instructions")
+    if instructions:
+        state = instructions["state"]
+        path = instructions["path"] or "~/.openclaw/workspace/AGENTS.md"
+        if state == "present":
+            out.append(f"instructions standing rule in place in {path}")
+        elif state == "unknown":
+            out.append(f"instructions standing rule in {path}: could not check")
+        else:
+            out.append(f"instructions standing rule {state.upper()} in {path}")
+            out.append("             run: python3 scripts/openclaw_rules.py --install")
     out.append(f"listener     {listener['unit']}"
                + (f", {listener['mailbox']} at uid {listener['last_uid']}"
                   if listener["last_uid"] is not None else ", no position recorded yet"))
@@ -983,6 +1032,7 @@ def main(argv=None):
         "git": git_facts(),
     }
     facts["spool"] = spool_facts(facts["runtime"].get("selected"))
+    facts["instructions"] = instructions_facts(facts["runtime"].get("selected"))
     facts["reply"] = reply_facts(facts["queue"]["cursor"])
     problems, warnings = assess(facts)
 

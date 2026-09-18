@@ -207,7 +207,9 @@ liste :
 - **Des fichiers de journal et d'état** dans le dossier du projet.
 - **L'autorisation pour ces services de rester vivants après votre
   déconnexion.**
-- **Une règle permanente ajoutée aux instructions de l'agent lui-même.**
+- **Une règle permanente ajoutée aux instructions de l'agent lui-même.** Sur
+  OpenClaw elle va dans `~/.openclaw/workspace/AGENTS.md`, entre deux
+  marqueurs, et le même script l'écrit et la retire.
 - **Sous OpenCode, un fichier de plus :** le plugin qui transmet le courrier à
   votre session, dans `~/.config/opencode/plugins/paynani.js`.
 

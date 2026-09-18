@@ -194,7 +194,9 @@ when it finishes, and you can hold it to the list:
   where you left it and never copied elsewhere.
 - **Log and state files** inside the project folder.
 - **Permission for those services to stay alive after you log out.**
-- **A permanent rule added to the agent's own instructions.**
+- **A permanent rule added to the agent's own instructions.** On OpenClaw it
+  goes in `~/.openclaw/workspace/AGENTS.md`, between two markers, and the same
+  script writes it and removes it.
 - **On OpenCode, one more file:** the plugin that hands mail to your session,
   at `~/.config/opencode/plugins/paynani.js`.
 
