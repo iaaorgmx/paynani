@@ -949,7 +949,8 @@ with tempfile.TemporaryDirectory() as tmp:
     import session_start as ss
     with mock.patch.object(ss, "SESSIONS_DIR", Path(tmp) / "sessions"):
         check("no sessions directory means no registries", {"watch_live": None, "watch_expired": [],
-              "watch_orphan": [], "watch_pending": [], "watch_yielded": 0, "watch_ended": 0},
+              "watch_orphan": [], "watch_pending": [], "watch_yielded": 0, "watch_ended": 0,
+              "watch_ended_last": None},
               hc.watch_registry_facts())
         ss.write_registry("s1", 5)
         facts = hc.watch_registry_facts()
@@ -959,6 +960,28 @@ with tempfile.TemporaryDirectory() as tmp:
                            armed_at=ss._utc_now(), expires_at="2999-01-01T00:00:00Z", heartbeat_at=ss._utc_now())
         check("an armed registry with a live pid and a future expiry is live", "s1",
               hc.watch_registry_facts()["watch_live"]["session_id"])
+        # Claude Code retires a Monitor with a signal the watcher catches, so an
+        # expiry shows up as `ended`; the newest ended one is what the row names.
+        ss.update_registry("s1", status="ended", ended_at="2026-09-18T07:15:23Z")
+        ss.write_registry("s0", 1)
+        ss.update_registry("s0", status="ended", ended_at="2026-09-18T06:00:00Z")
+        facts = hc.watch_registry_facts()
+        check("two ended registries count as ended", 2, facts["watch_ended"])
+        check("and the newest one is the last", "s1", facts["watch_ended_last"]["session_id"])
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=300, bytes_total=900, session_arming="session-registry")
+f.spool_facts.update({"watch_live": None, "watch_expired": [], "watch_orphan": [], "watch_pending": [],
+                      "watch_yielded": 0, "watch_ended": 1,
+                      "watch_ended_last": {"session_id": "2be4f360-x", "ended_at": "2026-09-18T07:15:23Z",
+                                           "offset": 600, "watcher_pid": 1}})
+_, problems, warnings = f.run()
+_, text = f.exit_code()
+check("a retired Monitor with mail waiting is named as ended, not as nobody", True,
+      "watch        none armed: the last one (session 2be4f360) ended at 2026-09-18T07:15:23Z (the Monitor was retired) without re-arming" in text)
+check("and warns with the same words", True,
+      any("ended at 2026-09-18T07:15:23Z (the Monitor was retired) and nobody re-armed" in w for w in warnings))
+check("still never a problem", [], problems)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

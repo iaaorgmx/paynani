@@ -1163,8 +1163,35 @@ class WatchRegistry(unittest.TestCase):
         run = sp.run(["bash", str(self.WATCH), str(self.state), "--from-hook"],
                      capture_output=True, text=True, timeout=10, env=env)
         self.assertEqual(1, run.returncode)
-        self.assertIn("no pending registry", run.stdout)
+        self.assertIn("no registry to arm from", run.stdout)
         self.assertFalse(self.offset.exists(), "nothing armed, so nothing acknowledged")
+
+    def test_a_retired_watch_re_arms_from_where_it_stopped(self):
+        """
+        Claude Code retires a Monitor after 30 minutes; the agent runs the same
+        --from-hook command again. The registry is `ended` by then, and it has
+        to answer with the cursor the watcher reached, not refuse.
+        """
+        import signal
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-re", spool_through=0)
+        first = self._watch("sess-re")
+        self.assertTrue(self._wait(lambda: self._registry("sess-re")["status"] == "armed"))
+        self.assertTrue(self._wait(lambda: first.stdout.readline() == "a\n", timeout=8))
+        self.assertTrue(self._wait(lambda: self.offset.exists() and self.offset.read_text().strip() == "4"),
+                        "both lines acknowledged before the retirement")
+        first.send_signal(signal.SIGTERM)
+        self.assertTrue(self._wait(lambda: self._registry("sess-re")["status"] == "ended"))
+        self.assertEqual(4, self._registry("sess-re")["offset"], "the cursor after both lines")
+        self.spool.write_text("a\nb\nc\n", encoding="utf-8")
+        second = self._watch("sess-re")
+        if not self._wait(lambda: self._registry("sess-re")["status"] == "armed"):
+            second.send_signal(signal.SIGTERM); second.wait()
+            self.fail("second watcher did not arm: " + second.stdout.read() + second.stderr.read())
+        record = self._registry("sess-re")
+        self.assertEqual(second.pid, record["watcher_pid"])
+        self.assertIsNone(record["ended_at"])
+        self.assertEqual("c\n", second.stdout.readline(), "resumes past what the first showed")
 
     def test_two_sessions_yield_exactly_one_watch_and_no_stranded_offset(self):
         """
@@ -1196,6 +1223,40 @@ class WatchRegistry(unittest.TestCase):
         proc.wait()
         self.assertEqual("orphan", self.ss.registry_state(self._registry("sess-k")))
         self.assertIsNone(self.ss.live_watch())
+
+    def test_a_killed_watcher_rearms_from_the_last_shown_line(self):
+        import signal
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-k-re", spool_through=0)
+        first = self._watch("sess-k-re")
+        self.assertTrue(self._wait(lambda: self._registry("sess-k-re")["status"] == "armed"))
+        self.assertTrue(self._wait(lambda: first.stdout.readline() == "a\n", timeout=8))
+        self.assertTrue(self._wait(lambda: self._registry("sess-k-re").get("offset") == 4),
+                        "the registry tracks the cursor before cleanup can run")
+        os.killpg(os.getpgid(first.pid), signal.SIGKILL)
+        first.wait()
+        self.assertEqual("orphan", self.ss.registry_state(self._registry("sess-k-re")))
+        # This unit harness is the fake session parent, so the stale lock owner is
+        # still usable even though the watcher is dead. Remove the lock here; this
+        # test is about the orphan registry cursor used after takeover.
+        import shutil
+        shutil.rmtree(self.state / "session.watch.lock.d")
+        self.spool.write_text("a\nb\nc\n", encoding="utf-8")
+        second = self._watch("sess-k-re")
+        self.assertTrue(self._wait(lambda: self._registry("sess-k-re")["status"] == "armed"))
+        self.assertEqual("c\n", second.stdout.readline(), "orphan re-arm resumes past shown mail")
+
+    def test_an_expired_registry_rearms_from_the_recorded_cursor(self):
+        self.spool.write_text("a\nb\nc\n", encoding="utf-8")
+        self.ss.write_registry("sess-exp", 4)
+        self.ss.update_registry("sess-exp", status="armed", watcher_pid=os.getpid(),
+                                armed_at="2000-01-01T00:00:00Z",
+                                expires_at="2000-01-01T00:30:00Z",
+                                heartbeat_at="2000-01-01T00:29:00Z")
+        self.assertEqual("expired", self.ss.registry_state(self._registry("sess-exp")))
+        proc = self._watch("sess-exp")
+        self.assertTrue(self._wait(lambda: self._registry("sess-exp")["status"] == "armed"))
+        self.assertEqual("c\n", proc.stdout.readline(), "expired re-arm resumes past shown mail")
 
     def test_an_expired_registry_is_expired_even_with_a_live_pid(self):
         record = {"status": "armed", "watcher_pid": os.getpid(),

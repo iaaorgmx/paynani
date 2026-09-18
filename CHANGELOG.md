@@ -2,6 +2,16 @@
 
 ## Sin publicar
 
+- Claude Code: el vigía se rearma con el mismo `--from-hook` después de que
+  Claude Code retira el Monitor. El registro contestaba sólo en `pending`, y
+  a los 30 minutos ya estaba en `ended`, así que el rearme rehusaba; ahora
+  devuelve el cursor al que llegó el vigía anterior. `healthcheck.py` nombra
+  ese estado («ended at ... (the Monitor was retired) without re-arming»)
+  en vez de decir que ninguna sesión vigiló, y avisa si hay correo sin ver. Y
+  los escritores del fifo cierran el descriptor del lock: un `sleep` huérfano
+  del ticker lo retenía hasta dos segundos y el siguiente vigía leía «a
+  watcher from a previous version still holds this spool». Visto en vivo el
+  2026-09-18 a las 07:15Z, en el paso 4 de `FIELD_TEST.md`.
 - **Claude Code: el vigía se arma sin copiar números y su estado se ve desde
   fuera** (#170). El hook de `SessionStart` escribe
   `state/sessions/<session-id>/watch.json` con el offset que replicó (el id

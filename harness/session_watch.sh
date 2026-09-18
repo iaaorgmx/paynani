@@ -31,7 +31,7 @@ HOOK="${0%/*}/session_start.py"
 
 registry() {   # verb [k=v ...]  -> the registry of this session, if it has one
 	[ -n "${session_id:-}" ] || return 0
-	PAYNANI_RUNTIME=claudecode python3 "$HOOK" --registry "$1" "$session_id" "state=$STATE_DIR" "${@:2}" 2>/dev/null
+	PAYNANI_RUNTIME=claudecode python3 "$HOOK" --registry "$1" "$session_id" "state=$STATE_DIR" "${@:2}" 2>/dev/null 9>&-
 }
 
 session_id=""
@@ -43,7 +43,7 @@ if [ "$start" = "--from-hook" ]; then
 		exit 1
 	fi
 	if ! start=$(registry offset); then
-		echo "[watch] no pending registry for session $session_id in $STATE_DIR/sessions; NOT armed. The SessionStart hook writes it: start a new session, or pass the offset by hand."
+		echo "[watch] no registry to arm from for session $session_id in $STATE_DIR/sessions (none written, or its watcher is still alive); NOT armed. The SessionStart hook writes it: start a new session, or pass the offset by hand."
 		exit 1
 	fi
 fi
@@ -329,7 +329,12 @@ if ! mkfifo "$FIFO" 2>/dev/null; then
 	exit 1
 fi
 
+# Neither writer holds the cross-version lock: descriptor 9 is closed in each
+# before it starts. A `sleep` orphaned from the ticker for up to STATE_EVERY
+# seconds after cleanup kept flock held, and the next watcher of the same
+# session read that as "a watcher from a previous version" and refused to arm.
 (
+	exec 9>&-
 	if [ -n "${PAYNANI_TEST_TAIL_DELAY:-}" ]; then
 		sleep "$PAYNANI_TEST_TAIL_DELAY"
 	fi
@@ -338,7 +343,7 @@ fi
 tail_pid=$!
 # Both writers are short lines, well under PIPE_BUF, so a tick cannot land in
 # the middle of a message.
-( while :; do printf '%s\n' "$TICK"; sleep "$STATE_EVERY"; done ) >"$FIFO" &
+( exec 9>&-; while :; do printf '%s\n' "$TICK"; sleep "$STATE_EVERY"; done ) >"$FIFO" &
 ticker_pid=$!
 
 # Blocks until a writer opens its end, which is why the writers start first.
@@ -402,4 +407,8 @@ while IFS= read -r -u 8 line; do
 	cursor=$((cursor + width))
 	printf '%s' "$cursor" >"$OFFSET_FILE.tmp" 2>/dev/null &&
 		mv -f "$OFFSET_FILE.tmp" "$OFFSET_FILE" 2>/dev/null
+	# If the Monitor is killed hard, cleanup cannot persist the cursor. Keep the
+	# registry current as lines are shown so a later --from-hook does not replay
+	# mail that already reached this session.
+	registry beat "offset=$cursor" >/dev/null || true
 done

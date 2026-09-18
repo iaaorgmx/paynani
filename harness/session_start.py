@@ -545,20 +545,27 @@ def registry_command(args):
         else:
             fields[key] = value
     if verb == "offset":
+        # Pending: the offset the hook replayed through. Ended, expired or
+        # orphan: the cursor the last watcher reached, which is where a
+        # re-arm resumes. Live: another watcher of this session is running,
+        # and the lock will say so; do not hand out an offset to race it.
+        # Claude Code retires a Monitor after 30 minutes and the agent re-arms
+        # with the same command, so the registry has to answer more than once.
         record = read_registry(session_id)
-        if record is None or registry_state(record) != "pending":
+        if record is None or registry_state(record) == "live":
             return 1
         print(record.get("offset", 0))
         return 0
     if verb == "arm":
         now = time.time()
-        fields.update({"status": "armed",
+        fields.update({"status": "armed", "ended_at": None, "holder_session": None,
                        "armed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
                        "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + WATCH_TTL)),
                        "heartbeat_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))})
         return 0 if update_registry(session_id, **fields) else 1
     if verb == "beat":
-        return 0 if update_registry(session_id, heartbeat_at=_utc_now()) else 1
+        fields["heartbeat_at"] = _utc_now()
+        return 0 if update_registry(session_id, **fields) else 1
     if verb == "yield":
         return 0 if update_registry(session_id, status="yielded", ended_at=_utc_now(), **fields) else 1
     if verb == "end":

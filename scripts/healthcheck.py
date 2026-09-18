@@ -443,7 +443,8 @@ def watch_registry_facts():
     to a holder, and registries still pending (the hook ran, nothing armed).
     """
     out = {"watch_live": None, "watch_expired": [], "watch_orphan": [],
-           "watch_pending": [], "watch_yielded": 0, "watch_ended": 0}
+           "watch_pending": [], "watch_yielded": 0, "watch_ended": 0,
+           "watch_ended_last": None}
     try:
         import session_start as ss
     except Exception:
@@ -469,6 +470,13 @@ def watch_registry_facts():
             out["watch_yielded"] += 1
         elif state == "ended":
             out["watch_ended"] += 1
+            # The newest ended watch is the one that mattered: Claude Code
+            # retires a Monitor after 30 minutes with a signal the watcher
+            # catches, so "ended" is what an expiry looks like in practice.
+            brief["ended_at"] = record.get("ended_at")
+            last = out["watch_ended_last"]
+            if last is None or (brief["ended_at"] or "") > (last.get("ended_at") or ""):
+                out["watch_ended_last"] = brief
     return out
 
 
@@ -847,13 +855,20 @@ def assess(facts):
 
     spool = facts.get("spool") or {}
     if spool.get("session_arming") == "session-registry":
-        stranded = [w for w in spool.get("watch_expired", []) + spool.get("watch_orphan", [])]
+        stranded = list(spool.get("watch_expired", []) + spool.get("watch_orphan", []))
+        if spool.get("watch_ended_last"):
+            stranded.append(spool["watch_ended_last"])
         if spool.get("bytes_unread") and not spool.get("watch_live") and stranded:
-            newest = max(stranded, key=lambda w: w.get("expires_at") or w.get("armed_at") or "")
+            newest = max(stranded, key=lambda w: w.get("ended_at") or w.get("expires_at") or w.get("armed_at") or "")
+            if newest in spool.get("watch_expired", []):
+                how = "expired at " + str(newest.get("expires_at"))
+            elif newest is spool.get("watch_ended_last"):
+                how = "ended at " + str(newest.get("ended_at")) + " (the Monitor was retired)"
+            else:
+                how = "was killed"
             warnings.append(
                 f"{spool['bytes_unread']} byte(s) of mail are in the spool and no session is "
-                f"watching: the last watch (session {str(newest['session_id'])[:8]}) "
-                f"{'expired at ' + str(newest.get('expires_at')) if newest in spool.get('watch_expired', []) else 'was killed'} "
+                f"watching: the last watch (session {str(newest['session_id'])[:8]}) {how} "
                 "and nobody re-armed. The next prompt in that session says so; a new session replays it")
 
     instructions = facts.get("instructions")
@@ -998,11 +1013,17 @@ def render(facts, problems, warnings):
                 out.append(f"watch        armed by session {str(live['session_id'])[:8]} since "
                            f"{live.get('armed_at')}, expires {live.get('expires_at')}"
                            + (f", last heartbeat {live.get('heartbeat_at')}" if live.get("heartbeat_at") else ""))
-            elif spool.get("watch_expired") or spool.get("watch_orphan"):
-                stranded = spool.get("watch_expired", []) + spool.get("watch_orphan", [])
-                newest = max(stranded, key=lambda w: w.get("expires_at") or w.get("armed_at") or "")
-                how = ("expired at " + str(newest.get("expires_at"))
-                       if newest in spool.get("watch_expired", []) else "was killed (pid gone)")
+            elif spool.get("watch_expired") or spool.get("watch_orphan") or spool.get("watch_ended_last"):
+                stranded = list(spool.get("watch_expired", []) + spool.get("watch_orphan", []))
+                if spool.get("watch_ended_last"):
+                    stranded.append(spool["watch_ended_last"])
+                newest = max(stranded, key=lambda w: w.get("ended_at") or w.get("expires_at") or w.get("armed_at") or "")
+                if newest in spool.get("watch_expired", []):
+                    how = "expired at " + str(newest.get("expires_at"))
+                elif newest is spool.get("watch_ended_last"):
+                    how = "ended at " + str(newest.get("ended_at")) + " (the Monitor was retired)"
+                else:
+                    how = "was killed (pid gone)"
                 out.append(f"watch        none armed: the last one (session {str(newest['session_id'])[:8]}) "
                            f"{how} without re-arming")
             else:
