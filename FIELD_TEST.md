@@ -57,9 +57,35 @@ from memory -- reread both before reusing this table on a future version.
 
 ## Other runtimes
 
-Codex, OpenClaw, Hermes Agent and OpenCode are next, one section each, same
-skeleton, in a follow-up PR (#173): Ocelotl validates Codex, Xochitl
-OpenClaw, Atenea Hermes Agent, and Balam OpenCode, each on their own host.
-OpenCode's five states already have a version of this table in
-[#160](https://github.com/iaaorgmx/paynani/issues/160)'s acceptance
-criteria; that PR moves it here rather than rewriting it.
+Codex, Hermes Agent and OpenCode are next, one section each, same skeleton, in
+a follow-up PR (#173): Ocelotl validates Codex, Atenea Hermes Agent, and Balam
+OpenCode, each on their own host. OpenCode's five states already have a
+version of this table in [#160](https://github.com/iaaorgmx/paynani/issues/160)'s
+acceptance criteria; that PR moves it here rather than rewriting it.
+
+## OpenClaw (`openclaw`)
+
+OpenClaw is a push runtime. Paynani calls `openclaw system event --mode now`;
+that can prove the Gateway accepted the notification attempt, but not that a
+session read it or answered. The extra OpenClaw-only state is the permanent
+standing rule in `~/.openclaw/workspace/AGENTS.md`; without that rule, mail can
+arrive, be accepted by OpenClaw, and still never be acted on by the agent.
+
+**Before you start:** run this on the real OpenClaw host, from the paynani clone
+that the services use. Do not edit `AGENTS.md` to provoke a failure. The missing
+rule case is covered by `scripts/openclaw_rules.py --check`; the field test on a
+healthy host should leave the rule in place.
+
+| # | State to provoke | Command | Exact expected output | Paste as evidence |
+|---|---|---|---|---|
+| 1 | OpenClaw is the selected runtime and the CLI is reachable from the service environment | `scripts/healthcheck.py \| sed -n '1,7p'` | `runtime      openclaw` followed by `configured by <repo>/runtime.env`, `reachable: OpenClaw <version>`, `this proves the runtime answers, not that a delivered event reaches anyone`, and `instructions standing rule in place in ~/.openclaw/workspace/AGENTS.md` | The first seven `healthcheck.py` lines. |
+| 2 | The standing rule exists in the actual OpenClaw workspace | `scripts/openclaw_rules.py --check` | `standing rule in place in <path-to-AGENTS.md>` and exit 0 | The command output and exit code if the shell prints it. |
+| 3 | A synthetic OpenClaw route probe is accepted without touching IMAP or the mail journal | `scripts/paynani openclaw probe --dry-run` | `openclaw_probe=accepted namespace=probe:<uuid> state=<repo>/state/openclaw.probe.json` | That line, plus `cat state/openclaw.probe.json`. |
+| 4 | `healthcheck.py` reports the latest synthetic probe separately from real mail | `scripts/healthcheck.py \| grep -A1 '^openclaw probe'` | `openclaw probe accepted at <time> (probe:<uuid>)` followed by `             openclaw system event accepted the synthetic probe` | The two `openclaw probe` lines. |
+| 5 | A real roster mail event was accepted by OpenClaw | After a roster GitHub notification or roster email arrives, copy the event id from the wake line and run `scripts/paynani event show <event-id>` and `scripts/healthcheck.py \| grep -A1 '^dispatcher'` | The event JSON has `"roster_match": true` and lifecycle states `observed` then `dispatched`; `healthcheck.py` prints `dispatcher   active` followed by `last accepted <event-id> by openclaw at <time>` | The event JSON block around `roster_match` and `lifecycle`, plus the two dispatcher lines. |
+| 6 | A reply was sent when the roster task required a reply | After acting on the mail, run `tail -1 state/sent.log` | A tab-separated line with `to=<roster address>`, optional `cc=<Julian address>`, `subject=<subject>`, and `message-id=<id>` | The `sent.log` line. If the task was a GitHub review or comment rather than an email reply, paste the GitHub URL and say why no `sent.log` line was expected. |
+
+Source for the OpenClaw lines above: `scripts/healthcheck.py`
+(`runtime`, `instructions`, `openclaw probe`, and `dispatcher` rows),
+`scripts/paynani_lib/openclaw_cli.py` (`openclaw_probe=accepted`), and
+`scripts/openclaw_rules.py --check`.
