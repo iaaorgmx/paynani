@@ -29,6 +29,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
@@ -399,6 +400,16 @@ def spool_facts(selected):
     except Exception:
         return out
     out["spool"] = str(spool)
+    probe_dir = spool.parent
+    probe = probe_dir / f".paynani-writable-probe-{uuid.uuid4().hex}"
+    try:
+        fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(fd)
+        probe.unlink()
+        out["writable"] = True
+    except OSError as exc:
+        out["writable"] = False
+        out["writable_error"] = exc.__class__.__name__
     try:
         out["bytes_total"] = spool.stat().st_size
     except OSError:
