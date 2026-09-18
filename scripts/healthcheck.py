@@ -188,7 +188,14 @@ def listener_facts():
     out = {"unit": unit_state(LISTENER_UNIT), "mailbox": None,
            "last_uid": None, "uidvalidity": None, "heartbeat_at": None,
            "heartbeat_age_seconds": None, "last_error": None,
-           "last_error_age_seconds": None}
+           "last_error_age_seconds": None,
+           "imap_last_disconnect_at": None,
+           "imap_last_disconnect_age_seconds": None,
+           "imap_last_disconnect_error": None,
+           "imap_last_recovered_at": None,
+           "imap_last_recovered_age_seconds": None,
+           "imap_reconnect_attempts": 0,
+           "imap_current_backoff_seconds": 0}
     try:
         state = json.loads(LISTENER_STATE.read_text())
         out["mailbox"] = state.get("mailbox")
@@ -198,6 +205,17 @@ def listener_facts():
         heartbeat = _stamp_seconds(out["heartbeat_at"])
         if heartbeat is not None:
             out["heartbeat_age_seconds"] = max(0, int(time.time() - heartbeat))
+        out["imap_last_disconnect_at"] = state.get("imap_last_disconnect_at")
+        disconnected = _stamp_seconds(out["imap_last_disconnect_at"])
+        if disconnected is not None:
+            out["imap_last_disconnect_age_seconds"] = max(0, int(time.time() - disconnected))
+        out["imap_last_disconnect_error"] = state.get("imap_last_disconnect_error")
+        out["imap_last_recovered_at"] = state.get("imap_last_recovered_at")
+        recovered = _stamp_seconds(out["imap_last_recovered_at"])
+        if recovered is not None:
+            out["imap_last_recovered_age_seconds"] = max(0, int(time.time() - recovered))
+        out["imap_reconnect_attempts"] = int(state.get("imap_reconnect_attempts") or 0)
+        out["imap_current_backoff_seconds"] = int(state.get("imap_current_backoff_seconds") or 0)
     except (OSError, ValueError):
         pass
     last = tail(IDLE_ERR)

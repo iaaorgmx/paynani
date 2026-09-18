@@ -164,6 +164,31 @@ with mock.patch.object(d, "platform") as platform_mock, \
     path_fix = d._service_environment_check(base_facts())
 check("doctor emits resolved PATH repair command, not literal $PATH", path_fix.get("next_command") == "systemctl --user set-environment PATH=/opt/foo/bin:/usr/bin:/bin")
 
+imap_ok = base_facts()
+imap_ok["listener"].update({
+    "heartbeat_age_seconds": 10,
+    "imap_last_disconnect_at": "2026-01-01T00:00:00Z",
+    "imap_last_disconnect_age_seconds": 30,
+    "imap_last_disconnect_error": "connection lost",
+    "imap_last_recovered_at": "2026-01-01T00:00:20Z",
+    "imap_last_recovered_age_seconds": 10,
+    "imap_reconnect_attempts": 2,
+    "imap_current_backoff_seconds": 0,
+})
+imap_check = next(c for c in doctor_with(imap_ok)["checks"] if c["name"] == "imap_telemetry")
+check("doctor reports IMAP reconnection telemetry when healthy", imap_check["status"] == "ok" and imap_check["facts"]["reconnect_attempts"] == 2)
+
+imap_retry = base_facts()
+imap_retry["listener"].update({
+    "heartbeat_age_seconds": 900,
+    "imap_last_disconnect_at": "2026-01-01T00:00:00Z",
+    "imap_last_disconnect_error": "connection lost",
+    "imap_reconnect_attempts": 3,
+    "imap_current_backoff_seconds": 40,
+})
+imap_check = next(c for c in doctor_with(imap_retry)["checks"] if c["name"] == "imap_telemetry")
+check("doctor warns while IMAP listener is backing off", imap_check["status"] == "warning" and imap_check["facts"]["current_backoff_seconds"] == 40)
+
 blocked = doctor_with(base_facts(listener="failed"))
 listener = next(c for c in blocked["checks"] if c["name"] == "listener")
 check("failed service is blocked", blocked["status"] == "blocked" and listener["status"] == "blocked")
