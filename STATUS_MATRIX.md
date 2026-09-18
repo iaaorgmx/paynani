@@ -11,12 +11,13 @@ nobody has written to it yet" for "OpenCode closed", and
 lesson to every runtime and to the other two mechanisms `healthcheck.py`
 reports on.
 
-Two of the six rows are universal -- every runtime prints the same shape of
-line, because the listener and the dispatcher exist outside any runtime
-adapter. The other four turn on whether a runtime session was ever open, which
-only matters for a pull-based runtime (Claude Code, Codex, OpenCode); OpenClaw
-and Hermes Agent are always either reachable or not, with no distinct "open
-without a session" state to report.
+The listener, dispatcher, replies and notifiers rows are universal -- every
+runtime prints the same shape of line, because those mechanisms exist outside
+any runtime adapter. The closed/open/delivering distinction turns on whether a
+runtime session was ever open, which only matters for a pull-based runtime
+(Claude Code, Codex, OpenCode); OpenClaw and Hermes Agent are always either
+reachable or not, with no distinct "open without a session" state to report.
+The instructions standing rule exists on OpenClaw alone.
 
 ## Universal: listener, dispatcher, replies
 
@@ -28,6 +29,14 @@ without a session" state to report.
 | Dispatcher unhealthy | The service is down, or it has never accepted anything. | `dispatcher   <inactive/failed/unknown>`, or `active` with `nothing has been accepted by a runtime yet`. |
 | Roster mail unanswered | Roster mail was delivered to a runtime and nothing has been sent since. | `replies      N roster message(s) delivered; ...` followed by `nothing sent since the newest one at <timestamp>`. Reported, never judged: the reply may be in progress, or the message may not have warranted one. |
 | Roster mail answered (or none pending) | Every delivered roster message has a send recorded after it, or none has been delivered yet. | Same `replies` line, with no `nothing sent since...` line under it. |
+
+Two more rows, both universal and both new in 0.7.1 (#188), sit under
+`roster` rather than getting their own line:
+
+| State | What it means | What `healthcheck.py` prints |
+|---|---|---|
+| GitHub notifier declared | A roster row's `GitHub` column has a handle, so that person's GitHub notifications count as their mail. | `             notifiers: <address> via <header>, from the github column` (or `from the notifiers table`, for the older explicit-row form). |
+| No notifier declared | Nothing in `roster.md` maps a notification sender to a roster address. | `             no notifiers: mail sent on someone's behalf (GitHub, Jira) arrives untagged`. |
 
 ## Per-runtime: closed, open without a session, delivering
 
@@ -50,6 +59,24 @@ answers, not that a delivered event reaches anyone` (OpenClaw/Hermes/Codex); on
 Claude Code the `watch` row sits between the spool line and that one. None of these lines is
 proof that a person saw and acted on a message -- only `replies` speaks to
 that, and only for roster mail.
+
+## OpenClaw only: the instructions standing rule
+
+A row that exists on no other runtime, because it caught a real gap:
+`healthcheck.py` and every other row here could be green while OpenClaw never
+answered a single piece of roster mail (#186). Delivery only hands OpenClaw a
+notification line; turning that into a reply needs a standing rule in the
+agent's own `AGENTS.md`, and nothing else checks whether it is there.
+
+| State | What it means | What `healthcheck.py` prints |
+|---|---|---|
+| Rule in place | `scripts/openclaw_rules.py --install` has written the rule block. | `instructions standing rule in place in <path>` |
+| Rule missing or outdated | The block is absent, or its wording no longer matches. | `instructions standing rule <ABSENT/OUTDATED> in <path>` followed by `run: python3 scripts/openclaw_rules.py --install` |
+| Could not check | The target file could not be read. | `instructions standing rule in <path>: could not check` |
+
+This row is absent entirely on every runtime except OpenClaw -- Claude Code,
+Codex, OpenCode and Hermes Agent carry the same instruction inside the prompt
+itself, so there is nothing standing to verify.
 
 See [`HARNESS_CAPABILITIES.md`](HARNESS_CAPABILITIES.md) for which of these
 states each runtime's mode (`replay`, `now`, `durable`) and `Requires open
