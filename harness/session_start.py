@@ -545,10 +545,11 @@ def registry_command(args):
         else:
             fields[key] = value
     if verb == "offset":
-        # Pending: the offset the hook replayed through. Ended, expired or
-        # orphan: the cursor the last watcher reached, which is where a
-        # re-arm resumes. Live: another watcher of this session is running,
-        # and the lock will say so; do not hand out an offset to race it.
+        # Pending: the offset the hook replayed through. Ended: the cursor the
+        # watcher reached. Expired or orphan: the cursor as of the last beat,
+        # at most a minute old, so a re-arm repeats at most that much and
+        # skips nothing. Live: another watcher of this session is running, and
+        # the lock will say so; do not hand out an offset to race it.
         # Claude Code retires a Monitor after 30 minutes and the agent re-arms
         # with the same command, so the registry has to answer more than once.
         record = read_registry(session_id)
@@ -564,7 +565,10 @@ def registry_command(args):
                        "heartbeat_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))})
         return 0 if update_registry(session_id, **fields) else 1
     if verb == "beat":
-        return 0 if update_registry(session_id, heartbeat_at=_utc_now()) else 1
+        # The cursor rides on the heartbeat, so a watcher killed hard leaves a
+        # registry at most one beat behind where it showed mail. A re-arm from
+        # an orphan then repeats at most a minute of lines, never skips any.
+        return 0 if update_registry(session_id, heartbeat_at=_utc_now(), **fields) else 1
     if verb == "yield":
         return 0 if update_registry(session_id, status="yielded", ended_at=_utc_now(), **fields) else 1
     if verb == "end":

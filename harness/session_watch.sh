@@ -215,6 +215,17 @@ if ! claim_lock; then
 			echo "[watch] could not take the watch lock; NOT armed. Mail will queue but nothing will show it."
 			exit 1
 		}
+	elif [ -n "$held_watcher" ] && ! kill -0 "$held_watcher" 2>/dev/null; then
+		# The session is fine; its watcher is not. A Monitor killed hard
+		# leaves this exact shape: live chain, dead watcher, lock in place.
+		# Judging the chain alone read it as "already watching" and the
+		# session could never re-arm without deleting the lock by hand.
+		echo "[watch] the watcher holding this lock (pid $held_watcher) is dead; taking over."
+		rm -rf "$LOCK_DIR"
+		claim_lock || {
+			echo "[watch] could not take the watch lock after clearing it; NOT armed. Mail will queue but nothing will show it."
+			exit 1
+		}
 	elif { held_chain=$(read_owner chain)
 	       if [ -n "$held_chain" ]; then chain_is_usable "$held_chain"
 	       else session_is_usable "$held_session"; fi; }; then
@@ -374,7 +385,8 @@ trap cleanup EXIT
 
 # A heartbeat every BEAT_EVERY ticks. One python3 a minute is cheap; one per
 # tick would put a fork between every liveness check for no more information.
-BEAT_EVERY=$((60 / STATE_EVERY))
+BEAT_EVERY=$((${PAYNANI_TEST_BEAT_EVERY:-60} / STATE_EVERY))
+[ "$BEAT_EVERY" -ge 1 ] || BEAT_EVERY=1
 ticks=0
 
 while IFS= read -r -u 8 line; do
