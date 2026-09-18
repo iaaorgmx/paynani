@@ -11,11 +11,13 @@ import pathlib
 import socket
 import sys
 import tempfile
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import idle_listener
 from idle_listener import (KEEPALIVE_OPTIONS, decode_hdr, describe, keepalive,
-                           resolve_keepalive_option, save_state)
+                           note_reconnect, resolve_keepalive_option, save_state)
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 from failure_diagnostics import print_diagnostics
@@ -269,6 +271,69 @@ def main():
               "listener state still records mailbox, uidvalidity and uid")
         check("heartbeat_at" in state and state["heartbeat_at"].endswith("Z"),
               "listener state records a UTC heartbeat")
+
+        telemetry = idle_listener.fresh_telemetry()
+        state = note_reconnect(tmp / "idle.json", "INBOX", "42", 117, telemetry,
+                               "connection lost (ConnectionError: fake server cut connection)", 5)
+        check(state["reconnects"] == 1 and state["reconnects_last_hour"] == 1,
+              "listener state counts reconnects in the current process and hour")
+        check(state["last_reconnect_at"] and state["last_error"].startswith("connection lost"),
+              "listener state records the latest reconnect time and error")
+        check(state["backoff_seconds"] == 5,
+              "listener state records the current IMAP reconnect backoff")
+
+        class FakeIMAP:
+            capabilities = ("IDLE",)
+
+            def select(self, mailbox):
+                return "OK", []
+
+            def status(self, mailbox, fields):
+                return "OK", [b"INBOX (UIDVALIDITY 42)"]
+
+            def uid(self, command, *args):
+                if command.lower() == "search":
+                    return "OK", [b""]
+                return "OK", []
+
+            def logout(self):
+                return "OK", []
+
+        fake_env = tmp / "env"
+        fake_env.write_text(
+            "PAYNANI_IMAP_HOST=imap.example.test\n"
+            "PAYNANI_IMAP_PORT=993\n"
+            "PAYNANI_EMAIL=agent@example.test\n"
+            "PAYNANI_PASSWORD=secret\n",
+            encoding="utf-8",
+        )
+        cut_state = tmp / "cut-state.json"
+        journal = tmp / "events.jsonl"
+        original_save = idle_listener.save_state
+
+        def save_and_stop(path, mailbox, validity, last_uid, telemetry=None):
+            written = original_save(path, mailbox, validity, last_uid, telemetry)
+            if telemetry and telemetry.get("reconnects"):
+                idle_listener._stop = True
+            return written
+
+        idle_listener._stop = False
+        try:
+            with mock.patch.object(idle_listener, "connect", return_value=FakeIMAP()), \
+                 mock.patch.object(idle_listener, "idle", side_effect=ConnectionError("fake server cut connection")), \
+                 mock.patch.object(idle_listener, "save_state", side_effect=save_and_stop), \
+                 mock.patch.object(idle_listener, "BACKOFF_MIN", 5), \
+                 mock.patch.object(idle_listener, "BACKOFF_MAX", 5):
+                idle_listener.run(fake_env, "INBOX", False, cut_state, tmp / "roster.md", journal)
+        finally:
+            idle_listener._stop = False
+        recorded = idle_listener.load_state(cut_state)
+        check(recorded["reconnects"] == 1 and recorded["reconnects_last_hour"] == 1,
+              "a fake IMAP connection cut during IDLE is recorded as one reconnect")
+        check(recorded["last_error"] == "connection lost (ConnectionError: fake server cut connection)",
+              "the fake IMAP cut records the exact reconnect error")
+        check(recorded["backoff_seconds"] == 5,
+              "the fake IMAP cut records the retry backoff")
 
     # --- keepalive, the thing that makes a dead connection announce itself ----
     #

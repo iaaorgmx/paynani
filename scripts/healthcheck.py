@@ -188,13 +188,26 @@ def listener_facts():
     out = {"unit": unit_state(LISTENER_UNIT), "mailbox": None,
            "last_uid": None, "uidvalidity": None, "heartbeat_at": None,
            "heartbeat_age_seconds": None, "last_error": None,
-           "last_error_age_seconds": None}
+           "last_error_age_seconds": None, "reconnects": 0,
+           "last_reconnect_at": None, "reconnects_last_hour": 0,
+           "backoff_seconds": 0, "state_last_error": None}
     try:
         state = json.loads(LISTENER_STATE.read_text())
         out["mailbox"] = state.get("mailbox")
         out["last_uid"] = state.get("last_uid")
         out["uidvalidity"] = state.get("uidvalidity")
         out["heartbeat_at"] = state.get("heartbeat_at")
+        out["reconnects"] = state.get("reconnects", 0)
+        out["last_reconnect_at"] = state.get("last_reconnect_at")
+        history = state.get("reconnect_history") or []
+        now = time.time()
+        out["reconnects_last_hour"] = len([
+            stamp for stamp in history
+            if _stamp_seconds(stamp) is not None
+            and now - _stamp_seconds(stamp) <= 60 * 60
+        ])
+        out["backoff_seconds"] = state.get("backoff_seconds", 0)
+        out["state_last_error"] = state.get("last_error")
         heartbeat = _stamp_seconds(out["heartbeat_at"])
         if heartbeat is not None:
             out["heartbeat_age_seconds"] = max(0, int(time.time() - heartbeat))

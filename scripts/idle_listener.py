@@ -18,7 +18,7 @@ Usage:  python3 scripts/idle_listener.py [--env PATH] [--mailbox INBOX] [--once]
 Exit:   0 clean shutdown · 1 configuration or login failure (not retryable)
 """
 
-import argparse, datetime, email, email.utils, imaplib, json, os, pathlib, re
+import argparse, calendar, datetime, email, email.utils, imaplib, json, os, pathlib, re
 import select, signal, socket, ssl, sys, time
 from email.header import decode_header, make_header
 
@@ -40,6 +40,7 @@ DEFAULT_JOURNAL = str(state_dir() / "events.jsonl")
 # 25-minute blind window. See keepalive() for the primary defence.
 IDLE_REFRESH = 5 * 60
 BACKOFF_MIN, BACKOFF_MAX = 5, 300
+RECONNECT_WINDOW = 60 * 60
 
 # Optional: collapse GitHub notification subjects into something scannable.
 # Delete this and the branch in describe() if you do not get GitHub mail.
@@ -402,13 +403,51 @@ def timestamp():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def save_state(path, mailbox, validity, last_uid):
+def _stamp_seconds(value):
+    try:
+        return calendar.timegm(time.strptime(value, "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def fresh_telemetry():
+    return {
+        "started_at": timestamp(),
+        "reconnects": 0,
+        "last_reconnect_at": None,
+        "last_error": None,
+        "backoff_seconds": 0,
+        "reconnect_history": [],
+        "reconnects_last_hour": 0,
+    }
+
+
+def _recent_reconnects(history, now_seconds):
+    recent = []
+    for stamp in history:
+        seconds = _stamp_seconds(stamp)
+        if seconds is not None and now_seconds - seconds <= RECONNECT_WINDOW:
+            recent.append(stamp)
+    return recent
+
+
+def save_state(path, mailbox, validity, last_uid, telemetry=None):
     state = {
         "mailbox": mailbox,
         "uidvalidity": validity,
         "last_uid": last_uid,
         "heartbeat_at": timestamp(),
     }
+    if telemetry is not None:
+        state.update({
+            "started_at": telemetry.get("started_at"),
+            "reconnects": telemetry.get("reconnects", 0),
+            "last_reconnect_at": telemetry.get("last_reconnect_at"),
+            "last_error": telemetry.get("last_error"),
+            "backoff_seconds": telemetry.get("backoff_seconds", 0),
+            "reconnects_last_hour": telemetry.get("reconnects_last_hour", 0),
+            "reconnect_history": list(telemetry.get("reconnect_history", [])),
+        })
     if str(path) == "none":
         return state
     try:
@@ -419,6 +458,20 @@ def save_state(path, mailbox, validity, last_uid):
     except OSError as exc:
         log(f"could not persist state to {path}: {exc}")
     return state
+
+
+def note_reconnect(path, mailbox, validity, last_uid, telemetry, message, backoff):
+    now = timestamp()
+    now_seconds = _stamp_seconds(now) or int(time.time())
+    history = _recent_reconnects(list(telemetry.get("reconnect_history", [])) + [now],
+                                 now_seconds)
+    telemetry["reconnects"] = int(telemetry.get("reconnects", 0)) + 1
+    telemetry["last_reconnect_at"] = now
+    telemetry["last_error"] = message
+    telemetry["backoff_seconds"] = backoff
+    telemetry["reconnect_history"] = history
+    telemetry["reconnects_last_hour"] = len(history)
+    return save_state(path, mailbox, validity, last_uid, telemetry)
 
 
 def uidvalidity(conn, mailbox):
@@ -532,6 +585,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
     faults = FaultLog(journal_path, account)
     state = load_state(state_path)
     last_uid = state.get("last_uid") if state.get("mailbox") == mailbox else None
+    telemetry = fresh_telemetry()
 
     while not _stop:
         conn = None
@@ -554,7 +608,8 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
 
             if last_uid is None:
                 last_uid = newest_uid(conn)
-                state = save_state(state_path, mailbox, validity, last_uid)
+                telemetry["backoff_seconds"] = 0
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
                 log(f"listening on {mailbox}, baseline uid {last_uid}")
             else:
                 log(f"listening on {mailbox}, resuming from uid {last_uid}")
@@ -570,15 +625,17 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                 # Only now. The record is on disk and flushed, so acknowledging
                 # this UID cannot outlive the thing it is acknowledging.
                 last_uid = uid
-                state = save_state(state_path, mailbox, validity, last_uid)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
 
             # Settles anything owed from an earlier outage before saying it is over.
             faults.recovered()
             backoff = BACKOFF_MIN
+            telemetry["backoff_seconds"] = 0
+            state = save_state(state_path, mailbox, validity, last_uid, telemetry)
 
             while not _stop:
                 idle(conn, IDLE_REFRESH)
-                state = save_state(state_path, mailbox, validity, last_uid)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
                 # Check unconditionally, not only when IDLE reported a change:
                 # mail landing between DONE and the next IDLE produces no EXISTS we
                 # can see, and would sit unnoticed until the *next* message arrived.
@@ -592,7 +649,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                     found = True
                     # Persist per message, not per batch: a crash mid-batch must
                     # not replay what was already reported.
-                    state = save_state(state_path, mailbox, validity, last_uid)
+                    state = save_state(state_path, mailbox, validity, last_uid, telemetry)
                 if found and once:
                     return 0
 
@@ -612,6 +669,8 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
             if _stop:
                 break
             message = f"connection lost ({type(exc).__name__}: {exc})"
+            state = note_reconnect(state_path, mailbox, state.get("uidvalidity"), last_uid,
+                                   telemetry, message, backoff)
             faults.fault(message)
             log(f"{message}; retrying in {backoff}s")
             slept = 0

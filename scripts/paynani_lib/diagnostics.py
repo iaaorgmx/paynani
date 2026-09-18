@@ -459,7 +459,15 @@ def doctor_data() -> dict:
     listener = facts["listener"]
     lu = listener.get("unit")
     if lu == "active":
-        status, summary, fix = "ok", "listener service is active", None
+        reconnects = listener.get("reconnects_last_hour") or 0
+        if reconnects > 5:
+            status, summary, fix = (
+                "warning",
+                f"listener reconnected {reconnects} time(s) in the last hour",
+                "tail -80 state/idle.err.log",
+            )
+        else:
+            status, summary, fix = "ok", "listener service is active", None
     elif lu == "unknown":
         status, summary, fix = "unknown", "listener unit cannot be queried from this environment", "scripts/healthcheck.py"
     else:

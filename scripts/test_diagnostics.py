@@ -72,7 +72,10 @@ def check(desc, condition):
 def base_facts(listener="active", dispatcher="active", runtime_reachable=True, pending=0):
     return {
         "listener": {"unit": listener, "mailbox": "INBOX", "last_uid": 7,
-                     "uidvalidity": 42, "heartbeat_at": "2026-01-01T00:00:00Z"},
+                     "uidvalidity": 42, "heartbeat_at": "2026-01-01T00:00:00Z",
+                     "reconnects": 0, "last_reconnect_at": None,
+                     "reconnects_last_hour": 0, "backoff_seconds": 0,
+                     "state_last_error": None},
         "dispatcher_unit": dispatcher,
         "queue": {"pending": pending, "oldest_age_seconds": 1 if pending else None,
                   "damaged_at": None, "cursor": 0, "journal_bytes": 0},
@@ -168,6 +171,20 @@ blocked = doctor_with(base_facts(listener="failed"))
 listener = next(c for c in blocked["checks"] if c["name"] == "listener")
 check("failed service is blocked", blocked["status"] == "blocked" and listener["status"] == "blocked")
 check("failed service names a safe repair command", listener.get("next_command") == "systemctl --user restart paynani-idle.service")
+
+reconnecting = base_facts()
+reconnecting["listener"].update({
+    "reconnects": 9,
+    "reconnects_last_hour": 6,
+    "last_reconnect_at": "2026-01-01T00:10:00Z",
+    "state_last_error": "connection lost (ConnectionError: fake server cut connection)",
+    "backoff_seconds": 300,
+})
+listener = next(c for c in doctor_with(reconnecting)["checks"] if c["name"] == "listener")
+check("listener warns after more than five reconnects in the last hour",
+      listener["status"] == "warning" and "6 time(s)" in listener["summary"])
+check("listener reconnect warning points at idle.err.log",
+      listener.get("next_command") == "tail -80 state/idle.err.log")
 
 # #173: minimum-version checks (python, himalaya, opencode-only-on-opencode).
 old_python = base_facts()
