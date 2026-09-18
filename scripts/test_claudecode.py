@@ -1193,6 +1193,34 @@ class WatchRegistry(unittest.TestCase):
         self.assertIsNone(record["ended_at"])
         self.assertEqual("c\n", second.stdout.readline(), "resumes past what the first showed")
 
+    def test_the_heartbeat_carries_the_cursor_so_an_orphan_re_arms_close_to_where_it_died(self):
+        """
+        Xochitl's finding on #202: the beat ignored the cursor, so a watcher
+        killed hard left the registry at the hook's offset and a re-arm
+        replayed everything it had already shown.
+        """
+        import signal
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-orph", spool_through=0)
+        proc = self._watch("sess-orph")
+        self.assertTrue(self._wait(lambda: self._registry("sess-orph")["status"] == "armed"))
+        self.assertTrue(self._wait(lambda: self.offset.exists() and self.offset.read_text().strip() == "4"))
+        self.assertTrue(self._wait(lambda: self._registry("sess-orph")["offset"] == 4, timeout=10),
+                        "the per-line beat wrote the cursor")
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.wait()
+        record = self._registry("sess-orph")
+        self.assertEqual("orphan", self.ss.registry_state(record))
+        self.assertEqual(4, record["offset"])
+        self.spool.write_text("a\nb\nc\n", encoding="utf-8")
+        # The lock directory the hard kill left behind is the watcher's own
+        # stale-holder case; it takes it over rather than needing help.
+        second = self._watch("sess-orph")
+        self.assertTrue(self._wait(lambda: self._registry("sess-orph")["status"] == "armed"))
+        first_line = second.stdout.readline()
+        self.assertIn("is dead; taking over", first_line, "the stale lock is the watcher's to clear")
+        self.assertEqual("c\n", second.stdout.readline(), "resumes at the beat's cursor, not the hook's")
+
     def test_two_sessions_yield_exactly_one_watch_and_no_stranded_offset(self):
         """
         The acceptance case: one arms, the other is told there is an owner, and
