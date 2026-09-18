@@ -763,6 +763,37 @@ echo "OK $chain"
         self.assertEqual(0, done.returncode, done.stdout + done.stderr)
         self.assertTrue(done.stdout.startswith("OK "), done.stdout)
 
+
+    def test_tail_still_joins_after_the_ticker_opens_first(self):
+        """
+        The ticker can open the fifo before tail does. If the fifo path is
+        removed at that point, tail's later redirection recreates a regular file
+        and the watcher stays alive but never sees new mail.
+        """
+        import subprocess as sp, time
+        spool = self.state / "session.spool"
+        spool.write_text("", encoding="utf-8")
+        out = self.state / "watch.out"
+        handle = open(out, "w", encoding="utf-8")
+        self.addCleanup(handle.close)
+        env = {**os.environ, "PAYNANI_TEST_TAIL_DELAY": "1"}
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
+                        stdout=handle, stderr=sp.STDOUT, text=True,
+                        start_new_session=True, env=env)
+        self.addCleanup(lambda: self._take_down_the_tree(proc))
+        self.assertTrue(self._wait_for_arming(proc), "the watcher did not arm")
+        time.sleep(1.5)
+
+        with spool.open("a", encoding="utf-8") as handle:
+            handle.write("hola\n")
+        offset = self.state / "session.offset"
+        self._wait_for(lambda: offset.read_text().strip() == "5",
+                       "tail output after the ticker opened the fifo first",
+                       diagnose=lambda: self._what_the_watcher_saw(out)
+                       + f"\n--- watcher exit code --- {proc.poll()}"
+                       + f"\n--- spool bytes --- {spool.stat().st_size}"
+                       + f"\n--- offset --- {offset.read_text().strip()!r}")
+
     def test_the_watcher_takes_its_tail_with_it(self):
         """
         Stopping has to mean the processes are gone, not that the loop returned.
