@@ -230,6 +230,7 @@ def _facts() -> dict:
     }
     facts["spool"] = healthcheck.spool_facts(facts["runtime"].get("selected"))
     facts["reply"] = healthcheck.reply_facts(facts["queue"]["cursor"])
+    facts["dependencies"] = _dependency_facts(facts["runtime"].get("selected"))
     return facts
 
 
@@ -245,6 +246,127 @@ def _check(name: str, status: str, summary: str, facts=None, fix: str | None = N
 
 def _service_fix(unit: str) -> str:
     return f"systemctl --user restart {unit}"
+
+
+# Minimum versions this install has actually been run against, per #173.
+# Documented in INSTALL.md #1 alongside these; keep both in sync.
+MIN_PYTHON = (3, 10)
+MIN_OPENCODE = (1, 18, 31)
+
+HIMALAYA_VERSION_RE = re.compile(r"himalaya\s+v?(\d+)\.")
+OPENCODE_VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+
+def _python_version() -> tuple[int, int, int]:
+    """The running interpreter's version, indirected so tests can fake it."""
+    return tuple(sys.version_info[:3])
+
+
+def _dependency_facts(selected_runtime) -> dict:
+    """
+    What is actually installed, gathered once per doctor run so the checks
+    below can be pure functions over a dict, the same shape as every other
+    check in this file. Live subprocess calls belong here, in the facts
+    layer -- never inside a check function itself, or a test cannot fake
+    them without a real himalaya/opencode binary on the test host.
+    """
+    found = _python_version()
+    python = {"found": ".".join(str(p) for p in found), "minimum": "3.10",
+              "supported": found[:2] >= MIN_PYTHON}
+
+    version = _safe_run(["himalaya", "--version"])
+    himalaya = {"runnable": version["returncode"] is not None,
+                "version_output": version["stdout"].strip()}
+    if himalaya["runnable"]:
+        match = HIMALAYA_VERSION_RE.search(version["stdout"])
+        himalaya["major"] = int(match.group(1)) if match else None
+        if himalaya["major"] in (1, 2):
+            account = _safe_run(["himalaya", "account", "check", "-a", "paynani"])
+            himalaya["account_check_output"] = (account["stdout"].strip()
+                                                or account["stderr"].strip())
+            himalaya["account_check_ok"] = account["returncode"] == 0
+        else:
+            himalaya["account_check_ok"] = None
+    else:
+        himalaya["major"] = None
+        himalaya["account_check_ok"] = None
+
+    out = {"python": python, "himalaya": himalaya}
+    if selected_runtime == "opencode":
+        version = _safe_run(["opencode", "--version"])
+        opencode = {"runnable": version["returncode"] is not None,
+                    "version_output": version["stdout"].strip(),
+                    "field_tested": "1.18.31"}
+        if opencode["runnable"]:
+            match = OPENCODE_VERSION_RE.search(version["stdout"])
+            opencode["found"] = ".".join(match.groups()) if match else None
+        out["opencode"] = opencode
+    return out
+
+
+def _python_check(deps: dict) -> dict:
+    """
+    Python 3.10, except scripts/failure_diagnostics.py, kept compatible with
+    the Python 3.9 Apple ships so it can still print a diagnosis on the one
+    host everything else in this project cannot run on. That module says so
+    in its own docstring; this check does not relax it.
+    """
+    py = deps.get("python") or {}
+    found = py.get("found")
+    if found is None:
+        return _check("python", "unknown", "python version could not be determined", py)
+    if py.get("supported"):
+        return _check("python", "ok", f"{found} (minimum 3.10)", py)
+    return _check("python", "blocked", f"{found} found, minimum 3.10", py,
+                  "install Python 3.10 or newer for this host")
+
+
+def _himalaya_version_check(deps: dict) -> dict:
+    """
+    A recognized config schema, not a pinned version -- INSTALL.md #4 has two
+    completely different schemas (v1.x and v2.x) rather than a version scale,
+    and both are fleet-tested against a real binary. 0.x is blocked; a binary
+    that cannot be run is unknown rather than guessed at. Named apart from the
+    existing "smtp" check, which only looks for the config file on disk.
+    """
+    him = deps.get("himalaya") or {}
+    if not him.get("runnable"):
+        return _check("himalaya", "unknown", "himalaya binary could not be run",
+                       him, "see INSTALL.md #4 to install Himalaya")
+    major = him.get("major")
+    if major not in (1, 2):
+        shown = him.get("version_output") or "no output"
+        return _check("himalaya", "blocked", f"unrecognized schema ({shown})", him,
+                       "see INSTALL.md #4 to install a supported Himalaya (v1.x or v2.x)")
+    if him.get("account_check_ok"):
+        return _check("himalaya", "ok", f"v{major}.x, account check passed", him)
+    return _check("himalaya", "blocked", f"v{major}.x, account check failed", him,
+                   "himalaya account check -a paynani")
+
+
+def _opencode_version_check(deps: dict) -> dict:
+    """
+    OpenCode bundles its own Bun, so nothing here pins a Bun version -- what
+    is pinned is the OpenCode release itself, field-tested at 1.18.31 (#157,
+    Balam's host). Older is a warning, not blocked: nobody has reproduced a
+    failure below that version, only never tested one.
+    """
+    oc = deps.get("opencode") or {}
+    if not oc.get("runnable"):
+        return _check("opencode", "blocked", "opencode binary not found", oc,
+                       "install OpenCode; see INSTALL.md #6 OpenCode")
+    found = oc.get("found")
+    if not found:
+        shown = oc.get("version_output") or "no output"
+        return _check("opencode", "unknown", f"could not parse a version from {shown!r}", oc)
+    if tuple(int(x) for x in found.split(".")) >= MIN_OPENCODE:
+        return _check("opencode", "ok", f"{found} (field-tested at 1.18.31, #157)", oc)
+    return _check(
+        "opencode", "warning",
+        f"{found} found, field-tested at 1.18.31 or newer (#157); "
+        "not known to fail below that, only never tested",
+        oc,
+    )
 
 
 OBSERVATION_LABELS = {
@@ -384,6 +506,12 @@ def doctor_data() -> dict:
         checks.append(_check("roster", "blocked", "roster.md is missing", ros, "scripts/paynani roster add NAME ADDRESS"))
 
     checks.extend(_capability_checks(facts))
+
+    deps = facts.get("dependencies") or {}
+    checks.append(_python_check(deps))
+    checks.append(_himalaya_version_check(deps))
+    if runtime.get("selected") == "opencode":
+        checks.append(_opencode_version_check(deps))
 
     him = facts["himalaya"]
     if him.get("account_present"):
