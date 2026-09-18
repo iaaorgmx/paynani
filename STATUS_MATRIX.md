@@ -31,21 +31,23 @@ without a session" state to report.
 
 ## Per-runtime: closed, open without a session, delivering
 
-Only OpenCode's plugin keeps a presence registry (`state/opencode.processes/`,
-added by #160) that can tell "closed" apart from "open, nobody has written to a
-session yet." Codex, Claude Code, OpenClaw and Hermes Agent each report a
-single reachability check instead -- they cannot make this distinction today.
+OpenCode's plugin keeps a presence registry (`state/opencode.processes/`,
+added by #160) and Claude Code's watcher keeps one per session
+(`state/sessions/<id>/watch.json`, added by #170); both can tell "closed"
+apart from "open, nothing delivering yet." Codex, OpenClaw and Hermes Agent
+each report a single reachability check instead -- they cannot make this
+distinction today.
 
 | State | OpenCode | Codex | Claude Code | OpenClaw / Hermes Agent |
 |---|---|---|---|---|
-| Runtime closed | `no OpenCode process is open; unread bytes wait until OpenCode is open, which is normal` | Not distinguished from "reachable": `NOT REACHABLE: <detail>` if the CLI cannot be run right now, `reachable` otherwise. | Not distinguished: `whether a session has armed a watch is not observable from here; unread bytes with no session open is normal`. | Not distinguished: `NOT REACHABLE: <detail>` (binary not found or not runnable) or `reachable`. |
-| Runtime open, no session yet | `OpenCode is open (process <pid>) but not delivering yet: write in a session and delivery starts when it is idle` | Not distinguished -- see above. | Not distinguished -- see above. | Not distinguished -- see above. |
-| Runtime delivering | `delivering from OpenCode process <pid>` | `Codex wakes a registered live session with codex queue; unread bytes wait for SessionStart replay`, plus `reachable`. | `reachable` (this proves the spool is writable, not that a session picked anything up -- session arming is unobservable from here). | `reachable` (proves the binary answers, not that a delivered event reached anyone). |
+| Runtime closed | `no OpenCode process is open; unread bytes wait until OpenCode is open, which is normal` | Not distinguished from "reachable": `NOT REACHABLE: <detail>` if the CLI cannot be run right now, `reachable` otherwise. | `watch        no session has armed a watch; unread bytes with no session open is normal` (no registry at all), or `watch        none armed: the last one (session <id>) expired at <time> without re-arming` / `was killed (pid gone) without re-arming`; with unread bytes the second form is also a warning. | Not distinguished: `NOT REACHABLE: <detail>` (binary not found or not runnable) or `reachable`. |
+| Runtime open, no session yet | `OpenCode is open (process <pid>) but not delivering yet: write in a session and delivery starts when it is idle` | Not distinguished -- see above. | `N session(s) ran the hook and never armed` under the `watch` row: the SessionStart hook wrote a registry and no watcher took it. | Not distinguished -- see above. |
+| Runtime delivering | `delivering from OpenCode process <pid>` | `Codex wakes a registered live session with codex queue; unread bytes wait for SessionStart replay`, plus `reachable`. | `watch        armed by session <id> since <time>, expires <time>, last heartbeat <time>` (#170: read from `state/sessions/<id>/watch.json`, kept by the watcher). | `reachable` (proves the binary answers, not that a delivered event reached anyone). |
 
 **Reading this table:** "reachable" and "NOT REACHABLE" always sit on their
 own line, right after the spool line, prefixed with `this proves the runtime
-answers, not that a delivered event reaches anyone` (OpenClaw/Hermes/Codex) or
-the Claude-Code-specific version of the same caveat. None of these lines is
+answers, not that a delivered event reaches anyone` (OpenClaw/Hermes/Codex); on
+Claude Code the `watch` row sits between the spool line and that one. None of these lines is
 proof that a person saw and acted on a message -- only `replies` speaks to
 that, and only for roster mail.
 

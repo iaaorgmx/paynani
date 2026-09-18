@@ -17,7 +17,7 @@ Never fails the session: any unexpected error degrades to a quiet no-op, because
 broken hook must not be able to block startup.
 """
 
-import json, os, pathlib, platform, select, shutil, subprocess, sys, time
+import calendar, json, os, pathlib, platform, re, secrets, select, shutil, subprocess, sys, time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import event as ev
@@ -69,6 +69,19 @@ OPENCODE_PROCESSES = STATE_DIR / "opencode.processes"
 OPENCODE_LOCK_GRACE = 10
 SESSION_WATCH = REPO / "harness/session_watch.sh"
 RUNTIME_ENV = REPO / "runtime.env"
+# One registry per Claude Code session, written by the SessionStart hook and
+# kept by the watcher for as long as it lives (#170). The hook used to print a
+# byte offset for the agent to copy into the Monitor command; a digit wrong
+# repeated mail or skipped it, and nothing outside the session could say
+# whether a watch was armed at all. Now the hook writes the offset here under
+# the session's own id, the watcher reads it back with --from-hook, and the
+# registry is what healthcheck.py and the UserPromptSubmit hook read.
+SESSIONS_DIR = STATE_DIR / "sessions"
+WATCH_REGISTRY = "watch.json"
+# How long an armed watch is believed without word from it. Claude Code kills a
+# Monitor after 30 minutes; a registry older than that with no end recorded is
+# a watch that expired and was not re-armed.
+WATCH_TTL = int(os.environ.get("PAYNANI_WATCH_TTL", "1800"))
 
 MAX_REPLAY = 20   # enough to see overnight without flooding the context window
 MAX_DISPATCH_ERR = 5   # the last few lines say whether it is still failing
@@ -319,6 +332,245 @@ def acknowledge_spool(offset_path, through):
         write_text_atomic(offset_path, str(int(through)))
     except (OSError, ValueError):
         pass
+
+
+def _utc_now():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _stamp_seconds(stamp):
+    try:
+        return calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_session_id(session_id):
+    """
+    A session id usable as a directory name, or None.
+
+    It comes from the hook's stdin JSON and is a UUID on every Claude Code seen;
+    the check is there so a payload with a path in it cannot write outside
+    SESSIONS_DIR.
+    """
+    session_id = str(session_id or "").strip()
+    if not session_id or len(session_id) > 128:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", session_id) or session_id in (".", ".."):
+        return None
+    return session_id
+
+
+def registry_path(session_id):
+    return SESSIONS_DIR / session_id / WATCH_REGISTRY
+
+
+def write_registry(session_id, offset):
+    """
+    Record, for this session alone, the offset its watcher must start from.
+
+    Written pending: the hook has replayed the spool through `offset`, and
+    nothing has been acknowledged yet. The watcher turns it into armed when it
+    takes the lock, or yielded when another session already holds it, so a
+    pending registry that stays pending is a session that never armed.
+    """
+    record = {
+        "schema_version": 1,
+        "session_id": session_id,
+        "offset": int(offset),
+        "token": secrets.token_hex(8),
+        "status": "pending",
+        "written_at": _utc_now(),
+        "armed_at": None,
+        "expires_at": None,
+        "watcher_pid": None,
+        "heartbeat_at": None,
+        "ended_at": None,
+        "holder_session": None,
+    }
+    write_text_atomic(registry_path(session_id), json.dumps(record, indent=2, sort_keys=True) + "\n")
+    return record
+
+
+def read_registry(session_id):
+    try:
+        data = json.loads(registry_path(session_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def update_registry(session_id, **fields):
+    """Merge fields into the session's registry, atomically. Missing: no-op, False."""
+    record = read_registry(session_id)
+    if record is None:
+        return False
+    record.update(fields)
+    try:
+        write_text_atomic(registry_path(session_id), json.dumps(record, indent=2, sort_keys=True) + "\n")
+    except OSError:
+        return False
+    return True
+
+
+def registry_state(record, now=None):
+    """
+    live, expired, orphan, pending, yielded or ended: one word per registry.
+
+    live: armed, the watcher's pid answers, and expires_at is ahead. expired:
+    armed, but past expires_at, or a heartbeat older than the TTL. orphan: armed
+    and the watcher's pid is gone without an ended_at, which is a hard kill or
+    a Monitor Claude Code took away. pending: the hook wrote it and nothing
+    armed. The other two are what they say.
+    """
+    if not isinstance(record, dict):
+        return "orphan"
+    now = time.time() if now is None else now
+    status = record.get("status")
+    if status in ("pending", "yielded", "ended"):
+        return status
+    if status != "armed":
+        return "orphan"
+    pid = record.get("watcher_pid")
+    if not (isinstance(pid, int) and pid > 0 and _pid_alive(pid)):
+        return "orphan"
+    expires = _stamp_seconds(record.get("expires_at"))
+    if expires is not None and now >= expires:
+        return "expired"
+    beat = _stamp_seconds(record.get("heartbeat_at") or record.get("armed_at"))
+    if beat is not None and now - beat > WATCH_TTL:
+        return "expired"
+    return "live"
+
+
+def list_registries():
+    """Every session registry on this host, as (session_id, record, state)."""
+    out = []
+    try:
+        entries = sorted(SESSIONS_DIR.iterdir())
+    except OSError:
+        return out
+    for entry in entries:
+        record = read_registry(entry.name)
+        if record is None:
+            continue
+        out.append((entry.name, record, registry_state(record)))
+    return out
+
+
+def live_watch():
+    """The registry of the live watcher, or None. There is at most one lock."""
+    for _, record, state in list_registries():
+        if state == "live":
+            return record
+    return None
+
+
+def unseen_spool_bytes():
+    """Bytes in the spool past session.offset: mail delivered and shown to nobody."""
+    try:
+        total = SPOOL.stat().st_size
+    except OSError:
+        return 0
+    try:
+        offset = int(SESSION_OFFSET.read_text(encoding="utf-8").strip() or 0)
+    except (OSError, ValueError):
+        offset = 0
+    return max(0, total - offset)
+
+
+def prompt_submit(payload):
+    """
+    The UserPromptSubmit hook: say something only when mail is waiting unseen.
+
+    Quiet when the spool has nothing past the offset, and quiet when a live
+    watcher covers it (this session's or another's): a watcher that is alive
+    reads from the offset onward, so anything above it will be shown. It speaks
+    only when bytes are waiting and no live owner will ever render them, which
+    is exactly the state a killed Monitor leaves behind (#170).
+    """
+    unseen = unseen_spool_bytes()
+    if unseen <= 0:
+        return None
+    owner = live_watch()
+    if owner is not None:
+        return None
+    lines = 0
+    try:
+        with SPOOL.open("rb") as fh:
+            fh.seek(max(0, SPOOL.stat().st_size - unseen))
+            lines = sum(1 for chunk in fh if chunk.strip())
+    except OSError:
+        lines = 0
+    what = f"{lines} mail notification(s)" if lines else f"{unseen} byte(s) of mail notifications"
+    return (f"paynani: {what} arrived and no watch is showing them. Re-arm the "
+            f"watch now, before answering, with a Monitor running exactly:\n\n"
+            f"    bash {SESSION_WATCH} {STATE_DIR} --from-hook\n\n"
+            "It replays what is waiting first and then keeps watching.")
+
+
+def prompt_submit_command():
+    payload = read_hook_input()
+    context = prompt_submit(payload)
+    if context:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": context}}), flush=True)
+    return 0
+
+
+def registry_command(args):
+    """
+    `--registry <verb> <session-id> [k=v ...]`: the watcher's side of the
+    registry, in the same code that writes it. bash has no JSON; this has.
+    """
+    verb = args[0] if args else ""
+    session_id = _safe_session_id(args[1] if len(args) > 1 else "")
+    if not session_id:
+        print("registry: session id missing or unusable", file=sys.stderr)
+        return 2
+    fields = {}
+    for pair in args[2:]:
+        key, _, value = pair.partition("=")
+        if key == "state":
+            # The watcher names the state directory it was armed on, which is
+            # the tests' temporary one as often as this checkout's.
+            global SESSIONS_DIR
+            SESSIONS_DIR = pathlib.Path(value) / "sessions"
+            continue
+        if value.isdigit():
+            fields[key] = int(value)
+        elif value in ("", "null"):
+            fields[key] = None
+        else:
+            fields[key] = value
+    if verb == "offset":
+        record = read_registry(session_id)
+        if record is None or registry_state(record) != "pending":
+            return 1
+        print(record.get("offset", 0))
+        return 0
+    if verb == "arm":
+        now = time.time()
+        fields.update({"status": "armed",
+                       "armed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                       "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + WATCH_TTL)),
+                       "heartbeat_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))})
+        return 0 if update_registry(session_id, **fields) else 1
+    if verb == "beat":
+        return 0 if update_registry(session_id, heartbeat_at=_utc_now()) else 1
+    if verb == "yield":
+        return 0 if update_registry(session_id, status="yielded", ended_at=_utc_now(), **fields) else 1
+    if verb == "end":
+        return 0 if update_registry(session_id, status="ended", ended_at=_utc_now(), **fields) else 1
+    if verb == "show":
+        record = read_registry(session_id)
+        if record is None:
+            return 1
+        print(json.dumps({"state": registry_state(record), **record}, sort_keys=True))
+        return 0
+    print(f"registry: unknown verb {verb!r}", file=sys.stderr)
+    return 2
 
 
 def read_hook_input():
@@ -714,12 +966,17 @@ def opencode_command(args):
 def main():
     if sys.argv[1:2] and sys.argv[1].startswith("--opencode-"):
         return opencode_command(sys.argv[1:])
+    if sys.argv[1:2] == ["--registry"]:
+        return registry_command(sys.argv[2:])
+    if sys.argv[1:2] == ["--prompt-submit"]:
+        return prompt_submit_command()
     runtime = selected_runtime()
     if "--session-end" in sys.argv[1:]:
         forget_codex_session()
         return 0
+    payload = read_hook_input() if runtime in ("codex", "claudecode") else {}
     if runtime == "codex":
-        remember_codex_session(read_hook_input())
+        remember_codex_session(payload)
     lines, capped = read_backlog()
     spool_lines, spool_capped, spool_through = ([], False, 0)
     spool_path, spool_offset = spool_paths(runtime)
@@ -786,19 +1043,44 @@ def main():
         else:
             parts.append("No unseen mail since the last session armed the watch.")
 
+        # The offset goes into this session's registry, not into the text: a
+        # number the agent has to copy is a number it can get wrong, and one
+        # digit repeated mail or skipped it (#170). The watcher reads it back
+        # by the session id Claude Code puts in its environment.
+        session_id = _safe_session_id(payload.get("session_id"))
+        registered = False
+        if session_id:
+            try:
+                write_registry(session_id, spool_through)
+                registered = True
+            except OSError:
+                registered = False
+        if registered:
+            arm = f"    bash {SESSION_WATCH} {STATE_DIR} --from-hook\n\n"
+            offset_note = (
+                "The offset is not in this text on purpose: this hook wrote it to "
+                f"{registry_path(session_id)} and --from-hook reads it back, so "
+                "there is nothing to copy and nothing to get wrong. "
+            )
+        else:
+            arm = f"    bash {SESSION_WATCH} {STATE_DIR} {spool_through}\n\n"
+            offset_note = (
+                "The byte offset is not optional and must not be rounded: this "
+                "hook has replayed the spool through exactly that byte, so "
+                "starting anywhere else either repeats messages or steps over "
+                "ones nobody has seen. "
+            )
         parts.append(
             "ARM THE MAIL WATCH NOW, before doing anything else, with a persistent "
             "Monitor running exactly:\n\n"
-            f"    bash {SESSION_WATCH} {STATE_DIR} {spool_through}\n\n"
+            + arm +
             "Each stdout line is one new mail notification, except a line saying "
             "the watch could not be armed because another session already holds "
-            "it — that one is not mail. The byte offset is not optional and must "
-            "not be rounded: this hook has replayed the spool through exactly "
-            "that byte, so starting anywhere else either repeats messages or "
-            "steps over ones nobody has seen. Arming is also what acknowledges "
-            "the replay above — if you skip it, the next session shows these "
-            "same messages again, and no new mail reaches you for the rest of "
-            "this one."
+            "it — that one is not mail. " + offset_note +
+            "Arming is also what acknowledges the replay above — if you skip it, "
+            "the next session shows these same messages again, and no new mail "
+            "reaches you for the rest of this one. When the Monitor expires, "
+            "re-arm it with the same command."
         )
     elif runtime == "codex":
         if spool_lines:

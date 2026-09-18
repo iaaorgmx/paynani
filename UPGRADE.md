@@ -172,6 +172,13 @@ systemd-analyze verify ~/.config/systemd/user/paynani-*.{service,timer}
 
 `systemd-analyze verify` prints nothing and exits 0 when the units are sound.
 
+**On Claude Code, the hooks in `~/.claude/settings.json` are copies too.**
+Since #170 there are two, and `scripts/claude_hook.py --install` adds only
+the one an older install lacks; `--check` exits 0 when both are there. Then
+restart the open sessions: the new `SessionStart` hook prints the
+`--from-hook` form of the watch command, and only a session that started
+with it has a registry to read.
+
 **On OpenClaw, the standing rule in the agent's own `AGENTS.md` is a copy
 too.** Since #186, `scripts/openclaw_rules.py` writes it into
 `~/.openclaw/workspace/AGENTS.md`, between two markers, and a pull does not
