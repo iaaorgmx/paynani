@@ -323,6 +323,7 @@ and to your own judgement about who gets in.
 | See what changed per version | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Authorize senders | `roster.md` and [`roster.md.example`](../roster.md.example) |
 | Send mail from the safe boundary | [`scripts/send.sh`](../scripts/send.sh) |
+| See what each harness guarantees | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
 ## Keeping it up to date
 

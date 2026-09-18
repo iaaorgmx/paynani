@@ -322,6 +322,7 @@ propio criterio sobre a quién le das entrada.
 | Ver cambios por versión | [`CHANGELOG.md`](CHANGELOG.md) |
 | Autorizar remitentes | `roster.md` y [`roster.md.example`](roster.md.example) |
 | Enviar correo desde la frontera segura | [`scripts/send.sh`](scripts/send.sh) |
+| Ver qué garantiza cada harness | [`HARNESS_CAPABILITIES.md`](HARNESS_CAPABILITIES.md) |
 
 ## Cómo mantenerlo al día
 
