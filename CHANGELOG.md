@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- `scripts/ci_streak.sh` (#174): cuántas corridas seguidas en verde lleva
+  `main` para volver requerido `suite-macos`, con la regla del CHANGELOG de
+  0.7.0 aplicada igual cada vez: un re-run (`attempt > 1`) o una falla
+  reinician la cuenta y se nombran con su commit; una corrida en curso no
+  cuenta; sale 0 sólo con las diez seguidas y no antes del 2026-09-30.
+  `--json` para scripts.
 - `scripts/version.sh --plan [REF]` y `scripts/upgrade_plan.py`: qué hay que
   reiniciar entre dos versiones, calculado a partir del `git diff` entre los
   tags, del manifiesto del instalador y de una tabla que dice qué proceso o

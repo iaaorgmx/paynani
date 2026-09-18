@@ -15,6 +15,7 @@ paynani CLI.
     paynani paths [--json]
     paynani doctor [--json]
     paynani support-bundle --output DIR
+    paynani openclaw probe --dry-run
 
 `onboard` starts the mailbox onboarding flow: a local, loopback-only web
 server prints a one-time link, a human fills in the seven mailbox settings,
@@ -37,7 +38,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paynani_lib import (  # noqa: E402
-    diagnostics, event_cli, i18n, onboard, roster_cli, set_cli, status_cli,
+    diagnostics, event_cli, i18n, onboard, openclaw_cli, roster_cli, set_cli,
+    status_cli,
 )
 
 DEFAULT_PORT = 8765
@@ -118,6 +120,15 @@ def main(argv: list[str] | None = None) -> int:
     bundle_parser = subparsers.add_parser("support-bundle", help="Write a redacted support bundle.")
     bundle_parser.add_argument("--output", required=True, help="Directory to create or update with redacted diagnostics.")
 
+    openclaw_parser = subparsers.add_parser("openclaw", help="OpenClaw-specific utilities.")
+    openclaw_sub = openclaw_parser.add_subparsers(dest="openclaw_command", required=True)
+    openclaw_probe = openclaw_sub.add_parser("probe", help="Send a synthetic OpenClaw route probe.")
+    openclaw_probe.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Use a synthetic probe event, not mail or the paynani journal.",
+    )
+
     args = parser.parse_args(argv)
 
     # `set` and `roster` are terminal commands whose own strings are English,
@@ -159,6 +170,9 @@ def main(argv: list[str] | None = None) -> int:
         out = diagnostics.support_bundle(args.output)
         print(f"wrote redacted support bundle to {out}")
         return 0
+    if args.command == "openclaw":
+        if args.openclaw_command == "probe":
+            return openclaw_cli.run_probe(args)
 
     parser.print_help()
     return 64
