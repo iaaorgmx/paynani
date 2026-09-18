@@ -5,7 +5,9 @@
 - Claude Code: el vigía se rearma con el mismo `--from-hook` después de que
   Claude Code retira el Monitor. El registro contestaba sólo en `pending`, y
   a los 30 minutos ya estaba en `ended`, así que el rearme rehusaba; ahora
-  devuelve el cursor al que llegó el vigía anterior. `healthcheck.py` nombra
+  devuelve el cursor al que llegó el vigía anterior, que el latido guarda
+  tras cada línea mostrada (así un SIGKILL tampoco repite nada). Un lock
+  cuyo vigía murió con la sesión viva se recupera solo. `healthcheck.py` nombra
   ese estado («ended at ... (the Monitor was retired) without re-arming»)
   en vez de decir que ninguna sesión vigiló, y avisa si hay correo sin ver. Y
   los escritores del fifo cierran el descriptor del lock: un `sleep` huérfano

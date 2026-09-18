@@ -1202,11 +1202,11 @@ class WatchRegistry(unittest.TestCase):
         import signal
         self.spool.write_text("a\nb\n", encoding="utf-8")
         self._hook("sess-orph", spool_through=0)
-        proc = self._watch("sess-orph", env_extra={"PAYNANI_TEST_BEAT_EVERY": "1"})
+        proc = self._watch("sess-orph")
         self.assertTrue(self._wait(lambda: self._registry("sess-orph")["status"] == "armed"))
         self.assertTrue(self._wait(lambda: self.offset.exists() and self.offset.read_text().strip() == "4"))
         self.assertTrue(self._wait(lambda: self._registry("sess-orph")["offset"] == 4, timeout=10),
-                        "the beat wrote the cursor")
+                        "the per-line beat wrote the cursor")
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         proc.wait()
         record = self._registry("sess-orph")

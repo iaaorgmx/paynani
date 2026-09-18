@@ -385,8 +385,7 @@ trap cleanup EXIT
 
 # A heartbeat every BEAT_EVERY ticks. One python3 a minute is cheap; one per
 # tick would put a fork between every liveness check for no more information.
-BEAT_EVERY=$((${PAYNANI_TEST_BEAT_EVERY:-60} / STATE_EVERY))
-[ "$BEAT_EVERY" -ge 1 ] || BEAT_EVERY=1
+BEAT_EVERY=$((60 / STATE_EVERY))
 ticks=0
 
 while IFS= read -r -u 8 line; do
