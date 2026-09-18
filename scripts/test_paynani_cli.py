@@ -379,6 +379,7 @@ e2e_state.mkdir()
 e2e_env = e2e_dir / ".env"
 os.environ["PAYNANI_ENV"] = str(e2e_env)
 os.environ["PAYNANI_STATE"] = str(e2e_state)
+os.environ["PAYNANI_RUNTIME"] = "opencode"
 
 token = "e2e-test-token"
 guard.token_path(e2e_state).write_text(token + "\n", encoding="utf-8")
@@ -491,6 +492,11 @@ try:
     page = r.read().decode()
     check("e2e: both probes passing writes the file and shows the saved screen", r.status == 200 and e2e_env.exists())
     check("e2e: the saved screen never contains the password", VALID["AGENT_EMAIL_PASSWORD"] not in page)
+    check("e2e: the saved screen shows the recalculated checklist", i18n.t("saved.checklist_h2") in page)
+    check("e2e: the checklist names the OpenCode plugin command", "scripts/opencode_plugin.py --install" in page)
+    check("e2e: the saved screen shows a copy-safe summary", 'id="support-summary"' in page)
+    check("e2e: the copy-safe summary masks the account", "a****@example.com" in page)
+    check("e2e: the copy-safe summary omits the password", VALID["AGENT_EMAIL_PASSWORD"] not in page)
     check(
         "e2e: the saved .env has the submitted account",
         f"AGENT_EMAIL_ACCOUNT={VALID['AGENT_EMAIL_ACCOUNT']}" in e2e_env.read_text(encoding="utf-8"),
@@ -574,6 +580,7 @@ finally:
     thread.join(timeout=5)
     os.environ.pop("PAYNANI_ENV", None)
     os.environ.pop("PAYNANI_STATE", None)
+    os.environ.pop("PAYNANI_RUNTIME", None)
     roster_cli.roster_file = real_e2e_roster_file
     roster_cli._run_regression_tests = real_e2e_run_tests
     shutil.rmtree(e2e_dir, ignore_errors=True)

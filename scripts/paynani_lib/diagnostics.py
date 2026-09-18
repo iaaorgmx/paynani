@@ -248,6 +248,40 @@ def _service_fix(unit: str) -> str:
     return f"systemctl --user restart {unit}"
 
 
+def _imap_telemetry_check(listener: dict) -> dict:
+    facts = {
+        "heartbeat_at": listener.get("heartbeat_at"),
+        "heartbeat_age_seconds": listener.get("heartbeat_age_seconds"),
+        "last_disconnect_at": listener.get("imap_last_disconnect_at"),
+        "last_disconnect_age_seconds": listener.get("imap_last_disconnect_age_seconds"),
+        "last_disconnect_error": listener.get("imap_last_disconnect_error"),
+        "last_recovered_at": listener.get("imap_last_recovered_at"),
+        "last_recovered_age_seconds": listener.get("imap_last_recovered_age_seconds"),
+        "reconnect_attempts": listener.get("imap_reconnect_attempts", 0),
+        "current_backoff_seconds": listener.get("imap_current_backoff_seconds", 0),
+    }
+    if listener.get("heartbeat_at") is None:
+        return _check("imap_telemetry", "unknown", "listener has not written IMAP telemetry yet", facts)
+    if facts["current_backoff_seconds"]:
+        return _check(
+            "imap_telemetry",
+            "warning",
+            f"IMAP listener is retrying after a disconnect; next retry in {facts['current_backoff_seconds']}s",
+            facts,
+            "scripts/healthcheck.py",
+        )
+    heartbeat_age = facts.get("heartbeat_age_seconds")
+    if heartbeat_age is not None and heartbeat_age > healthcheck.STALE_LISTENER_HEARTBEAT:
+        return _check(
+            "imap_telemetry",
+            "warning",
+            f"IMAP listener heartbeat is stale ({heartbeat_age}s)",
+            facts,
+            _service_fix(healthcheck.LISTENER_UNIT),
+        )
+    return _check("imap_telemetry", "ok", "IMAP listener heartbeat and reconnection telemetry are current", facts)
+
+
 # Minimum versions this install has actually been run against, per #173.
 # Documented in INSTALL.md #1 alongside these; keep both in sync.
 MIN_PYTHON = (3, 10)
@@ -389,6 +423,70 @@ OBSERVATION_LABELS = {
 }
 
 
+
+def _codex_observation_facts() -> dict:
+    out = {"session_path": None, "status_path": None, "session_id_present": None, "last_queue": None, "last_spool": None, "last_agent_run": None}
+    try:
+        from adapters import codex as adapter
+        session_path = adapter.session_path()
+        status_path = adapter.status_path()
+    except Exception as exc:
+        out["error"] = f"codex adapter facts unavailable: {exc.__class__.__name__}"
+        return out
+    out["session_path"] = str(session_path)
+    out["status_path"] = str(status_path)
+    try:
+        out["session_id_present"] = bool(session_path.read_text(encoding="utf-8").strip())
+    except OSError:
+        out["session_id_present"] = False
+    try:
+        stored = json.loads(status_path.read_text(encoding="utf-8"))
+    except OSError:
+        out["status_present"] = False
+        return out
+    except ValueError as exc:
+        out["status_present"] = True
+        out["status_error"] = f"invalid JSON: {exc.__class__.__name__}"
+        return out
+    out["status_present"] = True
+    for key in ("last_queue", "last_spool", "last_agent_run"):
+        entry = stored.get(key)
+        if isinstance(entry, dict):
+            out[key] = {k: entry.get(k) for k in ("event_id", "at", "detail")}
+    return out
+
+
+def _hermes_route_observation(route: str) -> dict:
+    upper = route.upper()
+    url_var = f"HERMES_{upper}_URL"
+    secret_var = f"HERMES_{upper}_SECRET_FILE"
+    url = os.environ.get(url_var, "").strip()
+    secret_file = os.environ.get(secret_var, "").strip()
+    facts = {"route": route, "url_var": url_var, "secret_file_var": secret_var,
+             "url_present": bool(url), "secret_file_present": bool(secret_file)}
+    if not url or not secret_file:
+        return _check(
+            f"{route}_route_configured",
+            "blocked",
+            f"Hermes {route} route is missing URL or secret file configuration",
+            facts,
+            f"set {url_var} and {secret_var} in runtime.env",
+        )
+    try:
+        from adapters import hermes as hermes_adapter
+        url_error = hermes_adapter._url_error(url)
+        _secret, secret_error = hermes_adapter._load_secret(secret_file)
+    except Exception as exc:
+        facts["error"] = exc.__class__.__name__
+        return _check(f"{route}_route_configured", "unknown", f"Hermes {route} route configuration could not be inspected", facts)
+    if url_error:
+        facts["url_error"] = url_error
+        return _check(f"{route}_route_configured", "blocked", f"Hermes {route} route URL is invalid", facts, f"fix {url_var}")
+    if secret_error:
+        facts["secret_error"] = secret_error
+        return _check(f"{route}_route_configured", "blocked", f"Hermes {route} route secret file is invalid", facts, f"fix {secret_var}")
+    return _check(f"{route}_route_configured", "ok", f"Hermes {route} route URL and secret file are configured", facts)
+
 def _observation_check(name: str, facts: dict) -> dict:
     runtime = facts.get("runtime") or {}
     delivery = facts.get("delivery") or {}
@@ -423,6 +521,27 @@ def _observation_check(name: str, facts: dict) -> dict:
             status = "warning" if spool.get("bytes_unread", 0) else "ok"
             return _check(name, status, OBSERVATION_LABELS[name], spool)
         return _check(name, "unknown", OBSERVATION_LABELS[name], spool)
+
+    if selected == "codex" and name in {"registered_session", "last_queue_attempt", "last_queue_result"}:
+        codex = _codex_observation_facts()
+        if codex.get("error") or codex.get("status_error"):
+            return _check(name, "unknown", OBSERVATION_LABELS[name], codex)
+        if name == "registered_session":
+            if codex.get("session_id_present"):
+                return _check(name, "ok", "Codex has a registered live session id", codex)
+            return _check(name, "unknown", "no Codex live session is registered", codex)
+        if name == "last_queue_attempt":
+            if codex.get("last_queue"):
+                return _check(name, "ok", "Codex queue was attempted for the last registered-session delivery", codex)
+            if codex.get("last_spool"):
+                return _check(name, "unknown", "last Codex delivery was spooled without a queue attempt", codex)
+            return _check(name, "unknown", "no Codex queue attempt has been recorded", codex)
+        if codex.get("last_queue"):
+            return _check(name, "ok", "last Codex queue result was accepted", codex)
+        return _check(name, "unknown", "no Codex queue result has been recorded", codex)
+
+    if selected == "hermes" and name in {"notify_route_configured", "roster_route_configured"}:
+        return _hermes_route_observation(name.removesuffix("_route_configured"))
 
     if name in {"plugin_installed", "open_processes", "session_destination_available"} and selected == "opencode":
         plugin = healthcheck.opencode_plugin_facts(state_dir())
@@ -465,6 +584,7 @@ def doctor_data() -> dict:
     else:
         status, summary, fix = "blocked", f"listener service is {lu}", _service_fix(healthcheck.LISTENER_UNIT)
     checks.append(_check("listener", status, summary, listener, fix))
+    checks.append(_imap_telemetry_check(listener))
 
     du = facts["dispatcher_unit"]
     if du == "active":

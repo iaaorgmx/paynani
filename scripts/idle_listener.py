@@ -414,7 +414,7 @@ def timestamp():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def save_state(path, mailbox, validity, last_uid):
+def save_state(path, mailbox, validity, last_uid, telemetry=None):
     state = {
         "mailbox": mailbox,
         "uidvalidity": validity,
@@ -422,6 +422,8 @@ def save_state(path, mailbox, validity, last_uid):
         "heartbeat_at": timestamp(),
         "version": PROCESS_VERSION,
     }
+    if telemetry:
+        state.update({k: v for k, v in telemetry.items() if v is not None})
     if str(path) == "none":
         return state
     try:
@@ -541,9 +543,18 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
         # treats everything as read-only until a human writes the file.
         log(f"no roster at {roster_path}; no sender will be tagged as trusted")
     backoff = BACKOFF_MIN
+    state = load_state(state_path)
+    # IMAP reconnection telemetry lives beside the UID cursor so doctor can
+    # distinguish a quiet, healthy mailbox from a listener that is only retrying.
+    telemetry = {
+        "imap_last_disconnect_at": state.get("imap_last_disconnect_at"),
+        "imap_last_disconnect_error": state.get("imap_last_disconnect_error"),
+        "imap_last_recovered_at": state.get("imap_last_recovered_at"),
+        "imap_reconnect_attempts": int(state.get("imap_reconnect_attempts") or 0),
+        "imap_current_backoff_seconds": int(state.get("imap_current_backoff_seconds") or 0),
+    }
     # What the journal has been told about the listener's own health.
     faults = FaultLog(journal_path, account)
-    state = load_state(state_path)
     last_uid = state.get("last_uid") if state.get("mailbox") == mailbox else None
 
     while not _stop:
@@ -567,7 +578,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
 
             if last_uid is None:
                 last_uid = newest_uid(conn)
-                state = save_state(state_path, mailbox, validity, last_uid)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
                 log(f"listening on {mailbox}, baseline uid {last_uid}")
             else:
                 # Write immediately on a resumed process. Upgrade verification
@@ -587,15 +598,19 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                 # Only now. The record is on disk and flushed, so acknowledging
                 # this UID cannot outlive the thing it is acknowledging.
                 last_uid = uid
-                state = save_state(state_path, mailbox, validity, last_uid)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
 
             # Settles anything owed from an earlier outage before saying it is over.
             faults.recovered()
+            if telemetry.get("imap_last_disconnect_at") and telemetry.get("imap_current_backoff_seconds"):
+                telemetry["imap_last_recovered_at"] = timestamp()
+            telemetry["imap_current_backoff_seconds"] = 0
+            state = save_state(state_path, mailbox, validity, last_uid, telemetry)
             backoff = BACKOFF_MIN
 
             while not _stop:
                 idle(conn, IDLE_REFRESH)
-                state = save_state(state_path, mailbox, validity, last_uid)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
                 # Check unconditionally, not only when IDLE reported a change:
                 # mail landing between DONE and the next IDLE produces no EXISTS we
                 # can see, and would sit unnoticed until the *next* message arrived.
@@ -609,7 +624,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                     found = True
                     # Persist per message, not per batch: a crash mid-batch must
                     # not replay what was already reported.
-                    state = save_state(state_path, mailbox, validity, last_uid)
+                    state = save_state(state_path, mailbox, validity, last_uid, telemetry)
                 if found and once:
                     return 0
 
@@ -629,6 +644,14 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
             if _stop:
                 break
             message = f"connection lost ({type(exc).__name__}: {exc})"
+            telemetry["imap_last_disconnect_at"] = timestamp()
+            telemetry["imap_last_disconnect_error"] = message
+            telemetry["imap_reconnect_attempts"] = int(telemetry.get("imap_reconnect_attempts") or 0) + 1
+            telemetry["imap_current_backoff_seconds"] = backoff
+            try:
+                save_state(state_path, mailbox, state.get("uidvalidity"), last_uid, telemetry)
+            except UnboundLocalError:
+                pass
             faults.fault(message)
             log(f"{message}; retrying in {backoff}s")
             slept = 0
