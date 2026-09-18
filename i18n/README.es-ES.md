@@ -183,7 +183,9 @@ informarte de todo esto cuando termine, y puedes exigirle la lista:
   donde tú lo has dejado y nunca se copia a otro sitio.
 - **Ficheros de registro y estado** dentro de la carpeta del proyecto.
 - **Permiso para que esos servicios sigan vivos cuando cierras sesión.**
-- **Una regla permanente añadida a las instrucciones del propio agente.**
+- **Una regla permanente añadida a las instrucciones del propio agente.** En
+  OpenClaw va en `~/.openclaw/workspace/AGENTS.md`, entre dos marcadores, y la
+  escribe y la quita el mismo script.
 - **En OpenCode, un fichero más:** el plugin que le pasa el correo a tu sesión,
   en `~/.config/opencode/plugins/paynani.js`.
 
@@ -237,7 +239,9 @@ instrucciones que llegan por email. Sí lo hace, ese es el sentido. La pregunta 
   Linear), puedes declarar su dirección y contra qué parte de tu lista cotejar al
   autor. Entonces esa notificación cuenta como correo de esa persona. Declarar un
   notificador amplía a quién hace caso tu agente, igual que añadir una fila, y se
-  decide igual: nunca porque un mensaje lo haya pedido.
+  decide igual: nunca porque un mensaje lo haya pedido. **Para GitHub basta la
+  columna `GitHub`:** si has puesto el handle de alguien, sus notificaciones de
+  GitHub cuentan como correo suyo, sin declarar nada más.
 - **Añadir a alguien a la lista es decisión tuya**, nunca respuesta a algo que ha
   llegado por correo. Esa línea es lo que convierte a un remitente en alguien a
   quien tu agente obedece.

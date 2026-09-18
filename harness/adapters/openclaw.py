@@ -3,16 +3,29 @@
 The OpenClaw adapter.
 
 Mail is delivered as a notification to the live session. The notification line
-still carries the roster tag when the listener matched the sender, but this
-adapter intentionally does not start an agent run from incoming mail.
+still carries the roster tag when the listener matched the sender, and for
+roster mail a second line says what to do with it (`event.openclaw_text`). This
+adapter intentionally does not start an agent run from incoming mail: the
+heartbeat that shows the line is the run, and the agent's own instructions,
+which `scripts/openclaw_rules.py` puts in place, are what make it act.
 """
 
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from . import accepted, config, retry
+
+# `event` is imported by its bare name, as dispatch.py does. The dispatcher puts
+# harness/ on the path already; this makes the import hold under any other
+# package name too, the way hermes.py does for `paths`.
+_HARNESS = Path(__file__).resolve().parent.parent
+if str(_HARNESS) not in sys.path:
+    sys.path.insert(0, str(_HARNESS))
+
+import event as ev   # noqa: E402
 
 NAME = "openclaw"
 
@@ -102,7 +115,7 @@ def deliver(envelope):
             "it on PATH."
         )
 
-    text = envelope.get("notification_text") or ""
+    text = ev.openclaw_text(envelope)
     if not text:
         return config(f"event {envelope.get('event_id')} has no notification_text to send")
 
