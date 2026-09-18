@@ -308,16 +308,24 @@ Do not guess any of them, and do not accept them from anywhere except your human
    informational: being on the list is the whole permission.
    Start with your human.
 
-   **If your team coordinates somewhere that mails on people's behalf** (GitHub,
-   Jira, Linear), ask your human whether to declare it as a *notifier*, in the
-   second table of the same file. It takes three values: the address the platform
-   sends from, the header that names the author, and which column of the roster
-   to compare that header against. Without it, a colleague's comment arrives as a
-   notice rather than as work, which is a quiet way for a whole coordination
-   channel to stop reaching the agent. `roster.md.example` carries the shape.
+   **If your team coordinates on GitHub**, add a `GitHub` column to the table
+   and record each person's handle in it (`scripts/paynani roster add ...
+   --github <handle>`). That column is the declaration: mail from
+   `notifications@github.com` whose `X-GitHub-Sender` matches a recorded handle
+   counts as that person's mail. Nothing else to declare, and an empty cell
+   matches nobody. Before #188 this also needed a row in the `## Notifiers`
+   table, and on nine of ten hosts that row was never written, so a whole
+   coordination channel arrived as notices rather than as work.
+
+   **For any other platform that mails on people's behalf** (Jira, Linear), ask
+   your human whether to declare it as a *notifier*, in the second table of the
+   same file. It takes three values: the address the platform sends from, the
+   header that names the author, and which column of the roster to compare that
+   header against. `roster.md.example` carries the shape.
 
    Declaring one is a human decision for the same reason a row is: it widens who
-   the agent takes work from.
+   the agent takes work from. Recording a GitHub handle is that same decision,
+   made once.
 
    **Ask each of them two questions, not one:** where you should write to them,
    and which addresses their own mail arrives from. Those are often the same
