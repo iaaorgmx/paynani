@@ -25,6 +25,30 @@
     select.addEventListener('change', function () {
       button.click();
     });
+
+    var copy = document.getElementById('copy-summary');
+    var summary = document.getElementById('support-summary');
+    var status = document.getElementById('copy-summary-status');
+    if (copy && summary) {
+      copy.addEventListener('click', function () {
+        function copied() {
+          if (status) {
+            status.textContent = 'Copied.';
+          }
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(summary.value).then(copied, function () {
+            summary.select();
+            document.execCommand('copy');
+            copied();
+          });
+        } else {
+          summary.select();
+          document.execCommand('copy');
+          copied();
+        }
+      });
+    }
   }
 
   if (document.readyState === 'loading') {
