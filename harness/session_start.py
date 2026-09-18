@@ -21,6 +21,7 @@ import json, os, pathlib, platform, select, shutil, subprocess, sys, time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import event as ev
+import ledger
 from paths import repo_root, state_dir
 
 STATE_DIR = state_dir()
@@ -47,6 +48,8 @@ SESSION_OFFSET = STATE_DIR / "session.offset"
 CODEX_SPOOL = STATE_DIR / "codex.spool"
 CODEX_OFFSET = STATE_DIR / "codex.offset"
 CODEX_SESSION = STATE_DIR / "codex.session"
+CODEX_STATUS = STATE_DIR / "codex.delivery.json"
+LIFECYCLE = STATE_DIR / "lifecycle.jsonl"
 # OpenCode keeps a spool too, but nothing in OpenCode runs this file as a hook.
 # The paynani plugin inside the OpenCode process (harness/opencode/paynani.js)
 # calls the --opencode-* modes below instead: it asks what is pending, hands the
@@ -452,6 +455,31 @@ def codex_replay_instructions(spool_lines):
     return out
 
 
+def codex_replayed(spool_lines):
+    """Record only after the replay payload was successfully printed."""
+    event_ids = [event_id for event_id, _ in map(_codex_spool_record, spool_lines) if event_id]
+    for event_id in event_ids:
+        try:
+            ledger.transition(LIFECYCLE, event_id, "presented", runtime="codex",
+                              detail="session-start replay")
+        except (OSError, ValueError):
+            pass
+    try:
+        current = json.loads(CODEX_STATUS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        current = {}
+    current["last_replay"] = {
+        "event_id": event_ids[-1] if event_ids else "",
+        "count": len(spool_lines),
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    try:
+        write_text_atomic(CODEX_STATUS, json.dumps(current, indent=2, sort_keys=True))
+        os.chmod(CODEX_STATUS, 0o600)
+    except OSError:
+        pass
+
+
 def system_message_parts(listener_state, dispatcher_state, faults, runtime,
                          spool_lines, lines):
     messages = []
@@ -515,8 +543,27 @@ def opencode_ack(value):
     if current > size:
         current = 0
     if through > current:
+        event_ids = []
+        try:
+            with open(OPENCODE_SPOOL, "rb") as handle:
+                handle.seek(current)
+                acknowledged = handle.read(through - current)
+            for raw in acknowledged.splitlines():
+                event_id, _ = _codex_spool_record(raw.decode("utf-8", "replace"))
+                if event_id:
+                    event_ids.append(event_id)
+        except OSError:
+            event_ids = []
         write_text_atomic(OPENCODE_OFFSET, str(through))
         current = through
+        for event_id in event_ids:
+            try:
+                ledger.transition(
+                    LIFECYCLE, event_id, "presented", runtime="opencode",
+                    detail="opencode plugin acknowledged prompt",
+                )
+            except (OSError, ValueError):
+                pass
     return current
 
 
@@ -834,6 +881,7 @@ def main():
     print(json.dumps(payload), flush=True)
     if (runtime == "codex" and spool_lines
             and len(additional_context.encode("utf-8")) <= CODEX_ACK_CONTEXT_LIMIT):
+        codex_replayed(spool_lines)
         acknowledge_spool(spool_offset, spool_through)
     # -----------------------------------------------------------------------
     return 0

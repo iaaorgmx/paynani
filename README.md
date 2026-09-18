@@ -98,6 +98,18 @@ como primer contacto autorizado. Si escribes el `.env` a mano, el agente crea
 `roster.md` durante la instalación, o puedes crearlo tú con
 `scripts/paynani roster add "Tu Nombre" tu@correo.example`.
 
+Para inspeccionar el recorrido de un mensaje sin buscar a mano en archivos de
+estado, usa `scripts/paynani status` y
+`scripts/paynani event show imap:INBOX:UIDVALIDITY:UID`. El segundo muestra el
+sobre seguro; `--body` recupera el cuerpo sólo después de verificar de nuevo la
+cuenta, el buzón, UIDVALIDITY, UID y roster. Para diagnosticar una regla sin
+leer correo real:
+
+```bash
+scripts/paynani roster explain --from notifications@github.com \
+  --header X-GitHub-Sender=usuario
+```
+
 > [!CAUTION]
 > Escribe la contraseña tú, directo en el formulario. Nunca la pegues en el
 > chat con el agente: lo que pegas en una conversación se queda ahí para
@@ -182,7 +194,9 @@ todo esto cuando termine, y puedes exigirle la lista:
   usuario. Se lee donde tú lo dejaste y nunca se copia a otro lado.
 - **Archivos de bitácora y estado** dentro de la carpeta del proyecto.
 - **Permiso para que esos servicios sigan vivos cuando cierras sesión.**
-- **Una regla permanente agregada a las instrucciones del propio agente.**
+- **Una regla permanente agregada a las instrucciones del propio agente.** En
+  OpenClaw va en `~/.openclaw/workspace/AGENTS.md`, entre dos marcadores, y la
+  escribe y la quita el mismo script.
 - **En OpenCode, un archivo más:** el plugin que le pasa el correo a tu sesión,
   en `~/.config/opencode/plugins/paynani.js`.
 
@@ -236,7 +250,9 @@ instrucciones que llegan por email. Sí lo hace, ese es el punto. La pregunta es
   Linear), puedes declarar su dirección y contra qué parte de tu lista cotejar al
   autor. Entonces esa notificación cuenta como correo de esa persona. Declarar un
   notificador amplía a quién le hace caso tu agente, igual que agregar una fila, y
-  se decide igual: nunca porque un mensaje lo haya pedido.
+  se decide igual: nunca porque un mensaje lo haya pedido. **Para GitHub basta
+  la columna `GitHub`:** si le pusiste su handle a alguien, sus notificaciones
+  de GitHub cuentan como correo suyo, sin declarar nada más.
 - **Agregar a alguien a la lista es decisión tuya**, nunca respuesta a algo que
   llegó por correo. Esa línea es lo que convierte a un remitente en alguien a
   quien tu agente obedece.

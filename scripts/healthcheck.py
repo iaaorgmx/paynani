@@ -29,6 +29,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
@@ -39,7 +40,7 @@ import dispatch as dsp        # noqa: E402
 from adapters import ACCEPTED, CONFIG   # noqa: E402
 from paths import (env_file, harness_env_files, install_root,   # noqa: E402
                    recorded_env, repo_root, roster, runtime_env, state_dir)
-from roster import roster_addresses   # noqa: E402
+from roster import notifiers, roster_addresses   # noqa: E402
 
 # Taken at import, before runtime_facts() calls load_runtime_env() and layers
 # runtime.env into os.environ. After that call, PAYNANI_ENV is in the environment
@@ -399,6 +400,16 @@ def spool_facts(selected):
     except Exception:
         return out
     out["spool"] = str(spool)
+    probe_dir = spool.parent
+    probe = probe_dir / f".paynani-writable-probe-{uuid.uuid4().hex}"
+    try:
+        fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(fd)
+        probe.unlink()
+        out["writable"] = True
+    except OSError as exc:
+        out["writable"] = False
+        out["writable_error"] = exc.__class__.__name__
     try:
         out["bytes_total"] = spool.stat().st_size
     except OSError:
@@ -589,12 +600,19 @@ def roster_facts():
     Parsed with `roster.roster_addresses`, the same function the listener uses,
     so this cannot report a list the listener does not see.
     """
-    out = {"path": str(ROSTER), "present": False, "addresses": 0}
+    out = {"path": str(ROSTER), "present": False, "addresses": 0, "notifiers": []}
     try:
         out["present"] = ROSTER.is_file()
     except OSError:
         return out
     out["addresses"] = len(roster_addresses(ROSTER))
+    # Which platforms may speak for the people above, and why each one counts:
+    # a row of the Notifiers table, or the GitHub column on its own (#188). The
+    # whole team channel arriving untagged had no line anywhere saying so.
+    out["notifiers"] = [{"address": n["address"], "header": n["header"],
+                         "column": n["column"],
+                         "source": n.get("implied_by", "notifiers table")}
+                        for n in notifiers(ROSTER)]
     return out
 
 
@@ -659,6 +677,30 @@ def config_facts():
                              capture_output=True, text=True, timeout=20)
         out["version"] = (run.stdout or "").strip() or None
     except (OSError, subprocess.SubprocessError):
+        pass
+    return out
+
+
+def instructions_facts(selected):
+    """
+    On OpenClaw, whether the agent has been told what the roster tag means.
+
+    The adapter hands OpenClaw one line per message and the heartbeat shows it.
+    What turns that line into a reply is a rule in the agent's own AGENTS.md,
+    which `scripts/openclaw_rules.py --install` writes. Its absence is the one
+    state in which every other row here is green and no roster mail is ever
+    answered (#186), so it is a row of its own rather than a sentence under the
+    replies warning. Other runtimes carry the instruction in the prompt itself.
+    """
+    if selected != "openclaw":
+        return None
+    out = {"path": None, "state": "unknown"}
+    try:
+        import openclaw_rules
+        path = openclaw_rules.default_target()
+        out["path"] = str(path)
+        out["state"] = openclaw_rules.state(path)
+    except (Exception, SystemExit):
         pass
     return out
 
@@ -729,6 +771,20 @@ def assess(facts):
             and queue["oldest_age_seconds"] > STALE_QUEUE:
         problems.append(f"{queue['pending']} event(s) queued, the oldest for "
                         f"{queue['oldest_age_seconds'] // 60} minutes: it is not moving")
+
+    instructions = facts.get("instructions")
+    if instructions and instructions["state"] != "present":
+        state = instructions["state"]
+        path = instructions["path"] or "~/.openclaw/workspace/AGENTS.md"
+        if state == "unknown":
+            warnings.append(f"whether the paynani standing rule is in {path} could not be "
+                            "checked; the agent may not know what the roster tag means")
+        else:
+            what = ("is not in" if state == "absent" else "is out of date in")
+            warnings.append(f"the paynani standing rule {what} {path}: OpenClaw will show "
+                            "each roster message and the agent has nothing telling it to "
+                            "read, do and reply. Run: python3 scripts/openclaw_rules.py "
+                            "--install")
 
     # A warning and never a problem. Delivery is working in this case — that is
     # what makes it worth saying at all — and the two readings of it are answered
@@ -860,6 +916,17 @@ def render(facts, problems, warnings):
         out.append(f"             {reach}" + (f": {runtime['detail']}" if runtime["detail"] else ""))
         out.append("             this proves the runtime answers, not that a delivered "
                    "event reaches anyone")
+    instructions = facts.get("instructions")
+    if instructions:
+        state = instructions["state"]
+        path = instructions["path"] or "~/.openclaw/workspace/AGENTS.md"
+        if state == "present":
+            out.append(f"instructions standing rule in place in {path}")
+        elif state == "unknown":
+            out.append(f"instructions standing rule in {path}: could not check")
+        else:
+            out.append(f"instructions standing rule {state.upper()} in {path}")
+            out.append("             run: python3 scripts/openclaw_rules.py --install")
     out.append(f"listener     {listener['unit']}"
                + (f", {listener['mailbox']} at uid {listener['last_uid']}"
                   if listener["last_uid"] is not None else ", no position recorded yet"))
@@ -905,6 +972,14 @@ def render(facts, problems, warnings):
     ros = facts["roster"]
     out.append(f"roster       {ros['path']}"
                + (f"  {ros['addresses']} address(es)" if ros["present"] else "  MISSING"))
+    if ros["present"]:
+        if ros.get("notifiers"):
+            listed = "; ".join(f"{n['address']} via {n['header']}, from the {n['source']}"
+                               for n in ros["notifiers"])
+            out.append(f"             notifiers: {listed}")
+        else:
+            out.append("             no notifiers: mail sent on someone's behalf "
+                       "(GitHub, Jira) arrives untagged")
     him = facts["himalaya"]
     if not him["config_present"]:
         account = "no himalaya configuration"
@@ -968,6 +1043,7 @@ def main(argv=None):
         "git": git_facts(),
     }
     facts["spool"] = spool_facts(facts["runtime"].get("selected"))
+    facts["instructions"] = instructions_facts(facts["runtime"].get("selected"))
     facts["reply"] = reply_facts(facts["queue"]["cursor"])
     problems, warnings = assess(facts)
 

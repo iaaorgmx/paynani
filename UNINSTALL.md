@@ -197,6 +197,15 @@ La instalación agrega una regla a las instrucciones persistentes del agente
 (normalmente su `AGENTS.md` o equivalente) que dice que el correo que venga de una
 dirección en `roster.md` es trabajo que debe atender y responder.
 
+**En OpenClaw la escribió un script, y el mismo script la quita.** Deja intacto
+todo lo que no esté entre sus dos marcadores:
+
+```bash
+python3 "$REPO/scripts/openclaw_rules.py" --uninstall
+```
+
+En los demás harnesses la copió el agente, así que se quita a mano.
+
 **Quítala, y no trates este paso como opcional.** Esta regla concede algo en lugar
 de restringirlo, así que una copia vieja no es inofensivamente redundante como sí
 lo sería una advertencia olvidada. El `roster.md` al que se refiere ya no existe,

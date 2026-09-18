@@ -251,10 +251,16 @@ That search has been done; it is a dead end.
 
 The inverse works: `dispatch.py` is an **active producer**. It injects each
 OpenClaw mail event as a live notification with `openclaw system event --mode
-now`; roster mail carries the `roster` tag in that rendered line, but the
-OpenClaw adapter does not start an agent run from incoming mail. If you port
-this to another harness, that runtime delivery boundary is the part to inspect
-first; the rest is harness-independent.
+now`; roster mail carries the `roster` tag in that rendered line, and under it
+one line saying what to do (`event.openclaw_text`), but the OpenClaw adapter
+does not start an agent run from incoming mail. The heartbeat that shows the
+line is the run, and what makes the agent act is a rule in its own
+`~/.openclaw/workspace/AGENTS.md`, put there by `scripts/openclaw_rules.py`.
+That rule used to be left for the agent to copy, and the one host where it was
+not copied passed every check and answered nothing
+([#186](https://github.com/iaaorgmx/paynani/issues/186)). If you port this to
+another harness, that runtime delivery boundary is the part to inspect first;
+the rest is harness-independent.
 
 ### The five runtimes, and where each stops being ours
 
@@ -290,6 +296,21 @@ It is **mail is never lost before the runtime takes it, and the moment it is
 taken is recorded.** Everything after that belongs to the runtime, and the value
 of naming the boundary per runtime is that nobody has to guess which half a
 failure fell in.
+
+### Runtime capability matrix
+
+This table is rendered from `harness/capabilities.py`; edit the data there, not
+the Markdown block.
+
+<!-- capabilities-matrix:start -->
+| Adapter | Modes | Durable handoff | Requires open session | Starts agent run | Presentation observable | Headless | Level |
+|---|---|---|---|---|---|---|---|
+| Claude Code (`claudecode`) | replay | supported | no | opt_in | unknown | supported | replay-only |
+| OpenAI Codex (`codex`) | replay, now | supported | no | opt_in | unknown | supported | live |
+| Hermes Agent (`hermes`) | now, durable | supported | no | yes | unknown | supported | autonomous |
+| OpenClaw (`openclaw`) | now | unsupported | yes | unknown | unknown | unsupported | live |
+| OpenCode (`opencode`) | replay | supported | no | yes | yes | unsupported | autonomous |
+<!-- capabilities-matrix:end -->
 
 ### Looking past the boundary without pretending to see across it
 
@@ -728,6 +749,18 @@ it did not. `harness/session_start.py` is meant to be edited per harness, so a
 pull that touches it conflicts, and the conflict is the correct outcome rather
 than a nuisance to force past. Both of those are in [`UPGRADE.md`](UPGRADE.md)
 because they are the parts somebody working from memory would miss.
+
+---
+
+## Event lifecycle ledger
+
+`state/lifecycle.jsonl` is the append-only audit trail keyed by canonical
+`event_id`. It records `observed`, `dispatched`, `presented`, `handled`,
+`replied`, `closed`, and explicit duplicate suppression. The observed row keeps
+the safe envelope and provider identities so journal compaction does not erase
+inspectability; it never keeps a mail body. Runtime adapters report the deepest
+state they can actually observe, so a spool handoff remains `dispatched` while
+a successful live Codex queue or acknowledged replay is `presented`.
 
 ---
 

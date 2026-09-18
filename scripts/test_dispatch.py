@@ -582,6 +582,34 @@ check("openclaw: the roster tag survives in the notification",
       True, "[mail 12:00:00, roster] Dulce — haz algo" in called)
 check("openclaw: roster mail does not start an agent run",
       False, "agent --session-key" in called)
+# The line alone relied on the agent remembering what `, roster]` means. On the
+# host where it did not, every check passed and nobody answered (#186), so
+# roster mail now carries the instruction with it, and only roster mail does.
+check("openclaw: roster mail says how to read it",
+      True, "himalaya -a paynani message read 4" in called)
+check("openclaw: roster mail says to reply with send.sh",
+      True, "scripts/send.sh" in called)
+check("openclaw: the instruction is a second line under the notification",
+      True, "[mail 12:00:00, roster] Dulce — haz algo\npaynani: correo del roster" in called)
+check("openclaw: mail outside INBOX names its mailbox",
+      True, "(buzón Trabajo)" in ev.openclaw_text(dict(roster_event, mailbox="Trabajo")))
+check("openclaw: INBOX is the default and goes unsaid",
+      False, "buzón" in ev.openclaw_text(roster_event))
+check("openclaw: the instruction never carries a body", False,
+      "body" in ev.openclaw_text(roster_event).lower())
+unlisted_event = ev.mail_event(
+    account="agent@example.com", mailbox="INBOX", uidvalidity=42, uid=5,
+    sender_name="Nadie", sender_address="nadie@example.com",
+    subject="hola", sent_at="", roster_match=False,
+    notification_text="[mail 12:00:01] Nadie — hola")
+check("openclaw: mail from outside the roster is the bare line",
+      "[mail 12:00:01] Nadie — hola", ev.openclaw_text(unlisted_event))
+check("openclaw: a listener error is the bare line",
+      "[listener] boom", ev.openclaw_text(ev.listener_error(account="a@x", message="boom")))
+check("openclaw: a roster record without a uid falls back to the bare line",
+      "[mail 12:00:00, roster] Dulce — haz algo",
+      ev.openclaw_text({"notification_text": "[mail 12:00:00, roster] Dulce — haz algo",
+                        "roster_match": True}))
 
 check("openclaw: a nonzero exit is retryable, not fatal", "retry",
       openclaw.deliver({"event_id": "x", "notification_text": "BOOM"}).status)
