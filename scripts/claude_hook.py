@@ -12,10 +12,17 @@ this script edits it by merge, additively, on request.
 The same rule §5.0 applies to `~/.config/himalaya/config.toml`, for the same
 reason and after the same near miss.
 
+Two hooks since #170. SessionStart replays the spool, writes this session's
+watch registry and says how to arm the watch. UserPromptSubmit adds one line
+to a turn only when mail is waiting in the spool and no live watch will show
+it: a Monitor Claude Code took away after 30 minutes, with mail arriving after,
+used to stay invisible until the next session. Both are registered by this
+script, additively, and --check reports each.
+
 Usage:
-  claude_hook.py --print     show the fragment, change nothing
-  claude_hook.py --check     report whether it is already registered
-  claude_hook.py --install   merge it in, backing up first
+  claude_hook.py --print     show the fragments, change nothing
+  claude_hook.py --check     report whether both are registered
+  claude_hook.py --install   merge in whichever is missing, backing up first
 """
 
 import argparse
@@ -29,14 +36,26 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SETTINGS = pathlib.Path.home() / ".claude" / "settings.json"
 HOOK = ROOT / "harness" / "session_start.py"
 EVENT = "SessionStart"
+PROMPT_EVENT = "UserPromptSubmit"
 TIMEOUT = 15
+PROMPT_TIMEOUT = 5
+EVENTS = (EVENT, PROMPT_EVENT)
 
 
-def command():
+def command(event=EVENT):
+    if event == PROMPT_EVENT:
+        return f"python3 {HOOK} --prompt-submit"
     return f"python3 {HOOK}"
 
 
-def fragment():
+def fragment(event=EVENT):
+    if event == PROMPT_EVENT:
+        return {
+            "type": "command",
+            "command": command(event),
+            "timeout": PROMPT_TIMEOUT,
+            "statusMessage": "Checking paynani for unseen mail",
+        }
     return {
         "type": "command",
         "command": command(),
@@ -66,34 +85,40 @@ def load(path):
         )
 
 
-def already_registered(settings):
-    for entry in settings.get("hooks", {}).get(EVENT, []) or []:
+def already_registered(settings, event=EVENT):
+    for entry in settings.get("hooks", {}).get(event, []) or []:
         for hook in entry.get("hooks", []) or []:
             if str(HOOK) in (hook.get("command") or ""):
                 return True
     return False
 
 
-def merge(settings):
-    """
-    Add our hook, leaving every other hook exactly where it was.
+def missing_events(settings):
+    return [event for event in EVENTS if not already_registered(settings, event)]
 
-    Appends to the SessionStart list rather than replacing it: a host may
-    already run its own session-start hooks, and Claude Code runs all of them.
+
+def merge(settings, events=EVENTS):
+    """
+    Add our hooks, leaving every other hook exactly where it was.
+
+    Appends to each event's list rather than replacing it: a host may already
+    run its own hooks on these events, and Claude Code runs all of them.
     """
     hooks = settings.setdefault("hooks", {})
-    entries = hooks.setdefault(EVENT, [])
-    entries.append({"hooks": [fragment()]})
+    for event in events:
+        entries = hooks.setdefault(event, [])
+        entries.append({"hooks": [fragment(event)]})
     return settings
 
 
 def install(path):
     settings, existed = load(path)
-    if already_registered(settings):
+    missing = missing_events(settings)
+    if not missing:
         print(f"already registered in {path}; nothing to do")
         return 0
 
-    merged = merge(settings)
+    merged = merge(settings, missing)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if existed:
@@ -111,7 +136,7 @@ def install(path):
         handle.flush()
         os.fsync(handle.fileno())
     tmp.replace(path)
-    print(f"registered the {EVENT} hook in {path}")
+    print(f"registered the {' and '.join(missing)} hook(s) in {path}")
     return 0
 
 
@@ -127,14 +152,15 @@ def main():
     path = pathlib.Path(args.settings).expanduser() if args.settings else SETTINGS
 
     if args.show:
-        print(json.dumps({"hooks": {EVENT: [{"hooks": [fragment()]}]}}, indent=2))
+        print(json.dumps({"hooks": {event: [{"hooks": [fragment(event)]}] for event in EVENTS}}, indent=2))
         return 0
     if args.check:
         settings, _ = load(path)
-        if already_registered(settings):
-            print(f"registered in {path}")
+        missing = missing_events(settings)
+        if not missing:
+            print(f"registered in {path}: {' and '.join(EVENTS)}")
             return 0
-        print(f"NOT registered in {path}")
+        print(f"NOT registered in {path}: {' and '.join(missing)}; run: {ROOT}/scripts/claude_hook.py --install")
         return 1
     return install(path)
 

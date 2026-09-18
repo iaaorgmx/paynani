@@ -6,6 +6,16 @@
 # the hook running and this being armed would otherwise fall in the gap.
 #
 # Usage: session_watch.sh <state_dir> [start_byte_offset]
+#        session_watch.sh <state_dir> --from-hook [session_id]
+#
+# --from-hook reads the offset from this session's own registry,
+# state/sessions/<session_id>/watch.json, which the SessionStart hook wrote
+# (#170). The session id comes from CLAUDE_CODE_SESSION_ID, which Claude Code
+# sets for every command a session runs, so nothing is copied by hand. The
+# registry is then kept for as long as this watcher lives: armed with the pid
+# and an expiry, a heartbeat once a minute, and ended on exit. healthcheck.py
+# and the UserPromptSubmit hook read it; that is how "whether a session has
+# armed a watch" stopped being unobservable.
 
 set -uo pipefail
 
@@ -13,8 +23,30 @@ STATE_DIR=${1:?state directory required}
 SPOOL="$STATE_DIR/session.spool"
 OFFSET_FILE="$STATE_DIR/session.offset"
 LOCK="$STATE_DIR/session.watch.lock"
+# Resolved with parameter expansion, not dirname: a test runs this with a PATH
+# that has no coreutils to prove the guard needs no flock, and it needs no
+# dirname either.
+HOOK="${0%/*}/session_start.py"
+[ "$HOOK" != "$0/session_start.py" ] || HOOK="./session_start.py"
 
+registry() {   # verb [k=v ...]  -> the registry of this session, if it has one
+	[ -n "${session_id:-}" ] || return 0
+	PAYNANI_RUNTIME=claudecode python3 "$HOOK" --registry "$1" "$session_id" "state=$STATE_DIR" "${@:2}" 2>/dev/null
+}
+
+session_id=""
 start=${2:-0}
+if [ "$start" = "--from-hook" ]; then
+	session_id=${3:-${CLAUDE_CODE_SESSION_ID:-}}
+	if [ -z "$session_id" ]; then
+		echo "[watch] --from-hook needs a session id and CLAUDE_CODE_SESSION_ID is not set; NOT armed. Pass the offset the hook printed instead."
+		exit 1
+	fi
+	if ! start=$(registry offset); then
+		echo "[watch] no pending registry for session $session_id in $STATE_DIR/sessions; NOT armed. The SessionStart hook writes it: start a new session, or pass the offset by hand."
+		exit 1
+	fi
+fi
 case "$start" in '' | *[!0-9]*) start=0 ;; esac
 
 mkdir -p "$STATE_DIR"
@@ -149,6 +181,13 @@ read_owner() {   # field
 	awk -v want="$1" -F'=' '$1 == want { print $2 }' "$OWNER_FILE" 2>/dev/null
 }
 
+# A Monitor that Claude Code takes away gets SIGTERM. Routed through exit from
+# here on, so whichever EXIT trap is current runs and the registry says ended
+# rather than looking killed. Set before the lock is taken: a signal between
+# arming and the fifo setup used to skip every trap.
+trap 'exit 143' TERM
+trap 'exit 130' INT
+
 claim_lock() {
 	mkdir "$LOCK_DIR" 2>/dev/null || return 1
 	printf 'watcher=%s
@@ -157,7 +196,7 @@ chain=%s
 ' "$watcher_pid" "$session_pid" "$session_chain" >"$OWNER_FILE"
 	# Release on every ordinary exit. A hard kill skips this, and the stale
 	# branch below is what covers that.
-	trap 'rm -rf "$LOCK_DIR"' EXIT
+	trap 'rm -rf "$LOCK_DIR"; registry end "offset=${cursor:-$start}" >/dev/null 2>&1 || true' EXIT
 	return 0
 }
 
@@ -180,6 +219,9 @@ if ! claim_lock; then
 	       if [ -n "$held_chain" ]; then chain_is_usable "$held_chain"
 	       else session_is_usable "$held_session"; fi; }; then
 		echo "[watch] another session is already watching this spool; not arming a second."
+		# Recorded, so no registry is left pending with an offset nobody will
+		# use: the holder's watcher covers the spool from its own offset.
+		registry yield "holder_session=$held_session" >/dev/null || true
 		exit 0
 	else
 		# The holder is gone, or suspended and going to stay that way. Its
@@ -220,6 +262,7 @@ fi
 # Written up front so a session that arms and then sees no mail does not make the
 # next session replay the same messages.
 printf '%s' "$start" >"$OFFSET_FILE"
+registry arm "watcher_pid=$watcher_pid" "session_pid=$session_pid" >/dev/null || true
 
 [ -f "$SPOOL" ] || : >"$SPOOL"
 
@@ -318,8 +361,16 @@ cleanup() {
 	rm -rf "$LOCK_DIR"
 	kill "$tail_pid" "$ticker_pid" 2>/dev/null || true
 	wait "$tail_pid" "$ticker_pid" 2>/dev/null || true
+	# Last, and best effort: a hard kill skips this whole function, and the
+	# dead pid in the registry is what tells healthcheck.py it was an orphan.
+	registry end "offset=$cursor" >/dev/null || true
 }
 trap cleanup EXIT
+
+# A heartbeat every BEAT_EVERY ticks. One python3 a minute is cheap; one per
+# tick would put a fork between every liveness check for no more information.
+BEAT_EVERY=$((60 / STATE_EVERY))
+ticks=0
 
 while IFS= read -r -u 8 line; do
 	# Cheap enough to ask on every line: `kill -0` is a builtin at ~25us, so a
@@ -337,6 +388,11 @@ while IFS= read -r -u 8 line; do
 		if ! chain_is_awake "$session_chain"; then
 			stop_watching "the session that armed this watch is suspended"
 			exit 0
+		fi
+		ticks=$((ticks + 1))
+		if [ "$ticks" -ge "$BEAT_EVERY" ]; then
+			ticks=0
+			registry beat "offset=$cursor" >/dev/null || true
 		fi
 		continue
 	fi

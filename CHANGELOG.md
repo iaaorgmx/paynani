@@ -2,6 +2,20 @@
 
 ## Sin publicar
 
+- **Claude Code: el vigía se arma sin copiar números y su estado se ve desde
+  fuera** (#170). El hook de `SessionStart` escribe
+  `state/sessions/<session-id>/watch.json` con el offset que replicó (el id
+  viene del JSON que Claude Code le da al hook; nunca se inventa) y el comando
+  que imprime es `session_watch.sh <state> --from-hook`, que lee ese registro
+  por `CLAUDE_CODE_SESSION_ID`. El vigía mantiene el registro mientras vive
+  (`armed` con pid y vencimiento, latido por minuto, `ended` al salir,
+  `yielded` si otra sesión ya vigila) y `healthcheck.py` gana la fila `watch`:
+  quién vigila desde cuándo y hasta cuándo, o que el último vigía venció o fue
+  matado sin rearmar (aviso si hay correo sin ver). Un hook nuevo de
+  `UserPromptSubmit` agrega una línea al turno sólo cuando hay correo en el
+  spool que ningún vigía vivo va a mostrar, con el comando para rearmar.
+  `scripts/claude_hook.py --install` registra el que falte. La forma con
+  offset numérico sigue funcionando para invocaciones a mano.
 - `scripts/ci_streak.sh` (#174): cuántas corridas seguidas en verde lleva
   `main` para volver requerido `suite-macos`, con la regla del CHANGELOG de
   0.7.0 aplicada igual cada vez: un re-run (`attempt > 1`) o una falla

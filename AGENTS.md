@@ -137,12 +137,16 @@ perform it, because that file is yours. Without it every check passes and no
 roster mail is answered (#186); `scripts/healthcheck.py` reports the state as
 `instructions`.
 
-For a Claude Code runtime, register the session-start hook after installing,
+For a Claude Code runtime, register the two hooks after installing,
 `scripts/claude_hook.py --install`, and read `INSTALL.md` §6 *"Claude Code"*
-first. That hook is what makes a session aware of mail at all, and it is the one
+first. The `SessionStart` hook is what makes a session aware of mail at all and
+writes the session's watch registry; the `UserPromptSubmit` hook speaks up on
+the next prompt when mail arrived after a watch expired. They are the one
 piece the installer deliberately does not converge, because Claude Code's
 settings file is the operator's and holds configuration this project knows
-nothing about.
+nothing about. Arm the watch with `session_watch.sh <state> --from-hook`,
+exactly as the hook prints it: the offset lives in the registry, not in the
+command, so there is nothing to copy.
 
 For an OpenAI Codex runtime, register the session-start hook after installing,
 `scripts/codex_hook.py --install`, and read `INSTALL.md` §6 *"OpenAI Codex"*

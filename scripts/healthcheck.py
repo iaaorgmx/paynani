@@ -420,11 +420,55 @@ def spool_facts(selected):
     except (OSError, ValueError):
         offset = 0
     out["bytes_unread"] = max(0, out["bytes_total"] - offset)
+    if selected == "claudecode":
+        out["session_arming"] = "session-registry"
+        out.update(watch_registry_facts())
     if selected == "codex":
         out["session_arming"] = "queue-or-replay"
     if selected == "opencode":
         out["session_arming"] = "opencode-plugin"
         out.update(opencode_plugin_facts(spool.parent))
+    return out
+
+
+def watch_registry_facts():
+    """
+    Which Claude Code sessions have armed a watch, from their registries (#170).
+
+    Each session's SessionStart hook writes state/sessions/<id>/watch.json and
+    its watcher keeps it: armed with a pid and an expiry, a heartbeat, ended on
+    exit. So the question this file used to call unobservable has an answer:
+    a live owner (pid alive, not expired), an expired or orphaned one (the
+    Monitor ran out or was killed and nobody re-armed), sessions that yielded
+    to a holder, and registries still pending (the hook ran, nothing armed).
+    """
+    out = {"watch_live": None, "watch_expired": [], "watch_orphan": [],
+           "watch_pending": [], "watch_yielded": 0, "watch_ended": 0}
+    try:
+        import session_start as ss
+    except Exception:
+        return out
+    try:
+        entries = ss.list_registries()
+    except Exception:
+        return out
+    for session_id, record, state in entries:
+        brief = {"session_id": session_id, "offset": record.get("offset"),
+                 "armed_at": record.get("armed_at"), "expires_at": record.get("expires_at"),
+                 "heartbeat_at": record.get("heartbeat_at"), "written_at": record.get("written_at"),
+                 "watcher_pid": record.get("watcher_pid")}
+        if state == "live":
+            out["watch_live"] = brief
+        elif state == "expired":
+            out["watch_expired"].append(brief)
+        elif state == "orphan":
+            out["watch_orphan"].append(brief)
+        elif state == "pending":
+            out["watch_pending"].append(brief)
+        elif state == "yielded":
+            out["watch_yielded"] += 1
+        elif state == "ended":
+            out["watch_ended"] += 1
     return out
 
 
@@ -801,6 +845,17 @@ def assess(facts):
         problems.append(f"{queue['pending']} event(s) queued, the oldest for "
                         f"{queue['oldest_age_seconds'] // 60} minutes: it is not moving")
 
+    spool = facts.get("spool") or {}
+    if spool.get("session_arming") == "session-registry":
+        stranded = [w for w in spool.get("watch_expired", []) + spool.get("watch_orphan", [])]
+        if spool.get("bytes_unread") and not spool.get("watch_live") and stranded:
+            newest = max(stranded, key=lambda w: w.get("expires_at") or w.get("armed_at") or "")
+            warnings.append(
+                f"{spool['bytes_unread']} byte(s) of mail are in the spool and no session is "
+                f"watching: the last watch (session {str(newest['session_id'])[:8]}) "
+                f"{'expired at ' + str(newest.get('expires_at')) if newest in spool.get('watch_expired', []) else 'was killed'} "
+                "and nobody re-armed. The next prompt in that session says so; a new session replays it")
+
     instructions = facts.get("instructions")
     if instructions and instructions["state"] != "present":
         state = instructions["state"]
@@ -937,6 +992,25 @@ def render(facts, problems, warnings):
                            "until OpenCode is open, which is normal")
             out.append("             picked up here means handed to an OpenCode session, not "
                        "that the agent read the mail body or answered it")
+        elif spool.get("session_arming") == "session-registry":
+            live = spool.get("watch_live")
+            if live:
+                out.append(f"watch        armed by session {str(live['session_id'])[:8]} since "
+                           f"{live.get('armed_at')}, expires {live.get('expires_at')}"
+                           + (f", last heartbeat {live.get('heartbeat_at')}" if live.get("heartbeat_at") else ""))
+            elif spool.get("watch_expired") or spool.get("watch_orphan"):
+                stranded = spool.get("watch_expired", []) + spool.get("watch_orphan", [])
+                newest = max(stranded, key=lambda w: w.get("expires_at") or w.get("armed_at") or "")
+                how = ("expired at " + str(newest.get("expires_at"))
+                       if newest in spool.get("watch_expired", []) else "was killed (pid gone)")
+                out.append(f"watch        none armed: the last one (session {str(newest['session_id'])[:8]}) "
+                           f"{how} without re-arming")
+            else:
+                out.append("watch        no session has armed a watch; unread bytes with no session open is normal")
+            if spool.get("watch_pending"):
+                out.append(f"             {len(spool['watch_pending'])} session(s) ran the hook and never armed")
+            out.append("             picked up here means shown by a watch, not that the agent "
+                       "read the mail body or answered it")
         else:
             out.append("             whether a session has armed a watch is not "
                        "observable from here; unread bytes with no session open is normal")
