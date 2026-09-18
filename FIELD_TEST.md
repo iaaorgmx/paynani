@@ -125,7 +125,7 @@ provoke and read the routes directly, as below, rather than trusting
 
 | # | State to provoke | Command | Exact expected output | Paste as evidence |
 |---|---|---|---|---|
-| 1 | Health route reachable | `HERMES_HEALTH_URL` configured and answering | `scripts/healthcheck.py` prints `reachable` on the runtime line, with no detail suffix | That line. |
+| 1 | Health route reachable | `HERMES_HEALTH_URL` configured and answering | `scripts/healthcheck.py` prints `reachable: Hermes webhook server answers GET /health; this is reachability, not route readiness or agent completion` | That line. |
 | 2 | Health route unreachable | Point `HERMES_HEALTH_URL` at a closed port or wrong host, then run the check | `scripts/healthcheck.py` prints `NOT REACHABLE: Hermes health endpoint is unreachable or timed out: <error>` | That line, then revert the URL. |
 | 3 | Notify route delivers directly | Send real roster mail with the notify route configured correctly | The adapter's `_classify()` returns `accepted`, detail `Hermes completed direct delivery (HTTP 200)`; `scripts/healthcheck.py`'s `delivery` block shows `runtime said: Hermes completed direct delivery (HTTP 200)` | The `delivery` block. |
 | 4 | Roster route queues an agent run, unconfirmed | Send real roster mail with the roster route configured correctly | Detail `Hermes queued the agent run (HTTP 202); completion is unconfirmed`; same `delivery` block shows that text | The `delivery` block, plus whatever the agent did afterward (or didn't) as the actual confirmation this line admits it cannot give. |
