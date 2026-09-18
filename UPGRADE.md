@@ -75,6 +75,45 @@ not just the newest. Entries with an **Upgrade actions** section need a step
 beyond the pull, and doing the pull first and the reading afterwards is how a
 working install becomes a broken one.
 
+Then ask the clone what the pull will change underneath the running processes:
+
+```bash
+git fetch --tags origin
+scripts/version.sh --plan          # installed tag -> newest tag
+```
+
+It prints one line per changed file with a verb: `restart` (a service reads it
+at start), `reinstall-and-restart` (a copy lives outside the clone, so
+something has to write it again), `restart-runtime` (the harness itself loads
+it), `next-session` (the next session picks it up), `none`, or `unknown`. It
+ends with the commands to run, in order, for this host's runtime and OS: the
+installer when one of its own copies changed, then the registration step for a
+copy the installer names but does not write (`opencode_plugin.py --install`,
+`claude_hook.py --install`, `codex_hook.py --install`, `openclaw_rules.py
+--install`), then the service restarts, then the harness restart. `unknown`
+means the table behind the plan does not know that file; fall back to this
+document for it.
+
+"could not compute" has two causes and names which: one of the two tags is
+not in the clone yet, and the `git fetch` above is the fix; or there is no
+`install.manifest` in the clone, which means the installer never ran here (or
+ran and was removed) and the plan cannot know which copies outside the clone
+this install owns. For the second, follow this document by hand this once,
+then run `scripts/install.sh --runtime <runtime> --upgrade` so the next
+upgrade has a manifest to read. In neither case does the plan say "nothing to
+restart". The full report (`scripts/version.sh` with no flag) prints the same
+plan whenever a newer release exists.
+
+The plan also lists **local overlays**: tracked files modified in this clone,
+such as a `send.sh` carrying a local patch. For each it says whether the
+upgrade also changes that file (a conflict on pull is then likely) or leaves it
+alone (the change carries over), and it prints the two commands that keep a
+record before the pull, `git diff > state/overlay-<from>-<to>.patch` and
+`git stash push`. After the restarts, `git stash pop` and `scripts/test_all.sh`
+put the overlay back and prove it still holds; if `pop` conflicts, the patch is
+the way back. Ignored files (`roster.md`, `.env`, `state/`) are the install's
+own data, never overlays, and do not appear.
+
 ## 3. Check you have nothing uncommitted
 
 ```bash
@@ -183,7 +222,9 @@ it was in fact objecting.
 ## 6. Restart, and only then believe the new version is running
 
 The listener is a long-lived process. Until it restarts, you have pulled new
-code and are still running the old.
+code and are still running the old. Section 2's `scripts/version.sh --plan`
+already named which services this particular upgrade touches; the commands
+below restart both, which is always safe and sometimes more than needed.
 
 ```bash
 systemctl --user daemon-reload
