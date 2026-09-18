@@ -565,9 +565,10 @@ def registry_command(args):
                        "heartbeat_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))})
         return 0 if update_registry(session_id, **fields) else 1
     if verb == "beat":
-        # The cursor rides on the heartbeat, so a watcher killed hard leaves a
-        # registry at most one beat behind where it showed mail. A re-arm from
-        # an orphan then repeats at most a minute of lines, never skips any.
+        # The cursor rides on every beat, and the watcher beats after each
+        # line it shows (Atenea, #202), so a watcher killed hard leaves a
+        # registry at the last line it showed. A re-arm from an orphan then
+        # repeats nothing and skips nothing.
         return 0 if update_registry(session_id, heartbeat_at=_utc_now(), **fields) else 1
     if verb == "yield":
         return 0 if update_registry(session_id, status="yielded", ended_at=_utc_now(), **fields) else 1

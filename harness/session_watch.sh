@@ -419,4 +419,8 @@ while IFS= read -r -u 8 line; do
 	cursor=$((cursor + width))
 	printf '%s' "$cursor" >"$OFFSET_FILE.tmp" 2>/dev/null &&
 		mv -f "$OFFSET_FILE.tmp" "$OFFSET_FILE" 2>/dev/null
+	# If the Monitor is killed hard, cleanup cannot persist the cursor. Keep the
+	# registry current as lines are shown so a later --from-hook does not replay
+	# mail that already reached this session.
+	registry beat "offset=$cursor" >/dev/null || true
 done
