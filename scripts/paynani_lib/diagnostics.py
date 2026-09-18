@@ -6,6 +6,7 @@ import json
 import os
 import re
 import platform
+import shlex
 import subprocess
 import sys
 import time
@@ -75,6 +76,106 @@ def paths_data() -> dict:
         "install_manifest": str(manifest()),
         "install_root": str(install_root()),
     }
+
+
+
+QUEUE_DRAIN_SAMPLE_SECONDS = float(os.environ.get("PAYNANI_DOCTOR_QUEUE_SAMPLE_SECONDS", 5))
+
+
+def _queue_check(initial: dict) -> dict:
+    if initial.get("damaged_at") is not None:
+        return _check(
+            "queue",
+            "blocked",
+            f"event journal is damaged at byte {initial['damaged_at']}; preserve a copy and open an issue with the three lines around that byte",
+            initial,
+        )
+    if initial.get("pending", 0) == 0:
+        return _check("queue", "ok", "no events are waiting", initial)
+
+    if QUEUE_DRAIN_SAMPLE_SECONDS > 0:
+        time.sleep(QUEUE_DRAIN_SAMPLE_SECONDS)
+    second = healthcheck.queue_facts()
+    facts = {"first": initial, "second": second, "sample_seconds": QUEUE_DRAIN_SAMPLE_SECONDS}
+
+    first_cursor = initial.get("cursor")
+    second_cursor = second.get("cursor")
+    if isinstance(first_cursor, int) and isinstance(second_cursor, int) and second_cursor > first_cursor:
+        return _check("queue", "ok", "queued events are draining", facts)
+    if second.get("damaged_at") is not None:
+        return _check(
+            "queue",
+            "blocked",
+            f"event journal is damaged at byte {second['damaged_at']}; preserve a copy and open an issue with the three lines around that byte",
+            facts,
+        )
+    if second.get("pending", 0) == 0:
+        return _check("queue", "ok", "queue drained during the diagnostic sample", facts)
+    age = second.get("oldest_age_seconds")
+    if age is not None and age > healthcheck.STALE_QUEUE:
+        return _check("queue", "blocked", "queued events are not draining and appear stalled", facts, _service_fix(healthcheck.DISPATCH_UNIT))
+    return _check("queue", "warning", "queued events are not draining yet", facts, "scripts/healthcheck.py")
+
+
+def _parse_environment_lines(text: str) -> dict[str, str]:
+    values = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name = name.strip()
+        if name:
+            values[name] = value.strip().strip('"').strip("'")
+    return values
+
+
+def _environmentd_values(directory: Path | None = None) -> dict[str, str]:
+    directory = directory or (Path.home() / ".config" / "environment.d")
+    values = {}
+    try:
+        files = sorted(directory.glob("*.conf"))
+    except OSError:
+        return values
+    for path in files:
+        try:
+            values.update(_parse_environment_lines(path.read_text(encoding="utf-8-sig", errors="replace")))
+        except OSError:
+            continue
+    return values
+
+
+def _service_environment_check(facts: dict) -> dict:
+    if platform.system() == "Darwin":
+        return _check("service_environment", "unknown", "systemd --user is not available on macOS", {"supervisor": "launchd"})
+
+    wanted = ["PATH"]
+    if (facts.get("runtime") or {}).get("selected") == "openclaw":
+        wanted.append("OPENCLAW")
+    run = _safe_run(["systemctl", "--user", "show-environment"], timeout=5)
+    if run.get("returncode") != 0:
+        return _check("service_environment", "unknown", "systemd --user environment cannot be queried from this environment", {"command": run.get("command"), "returncode": run.get("returncode"), "stderr": run.get("stderr", "")})
+
+    live = _parse_environment_lines(run.get("stdout", ""))
+    declared_all = _environmentd_values()
+    declared = {name: declared_all[name] for name in wanted if name in declared_all}
+    if not declared:
+        return _check("service_environment", "ok", "no persistent PATH/OPENCLAW declarations need comparison", {"checked": wanted, "declared": []})
+
+    mismatches = {name: {"live": live.get(name), "declared": declared[name]}
+                  for name in declared if live.get(name) != declared[name]}
+    compare = {"checked": wanted, "declared": sorted(declared), "mismatches": mismatches}
+    if not mismatches:
+        return _check("service_environment", "ok", "systemd --user environment matches persistent declarations", compare)
+
+    assignments = " ".join(f"{name}={shlex.quote(values['declared'])}" for name, values in mismatches.items())
+    return _check(
+        "service_environment",
+        "warning",
+        "systemd --user live environment differs from ~/.config/environment.d",
+        compare,
+        f"systemctl --user set-environment {assignments}",
+    )
 
 
 def _facts() -> dict:
@@ -225,14 +326,8 @@ def doctor_data() -> dict:
         checks.append(_check("runtime", "unknown", "runtime reachability is unknown", runtime, "scripts/healthcheck.py"))
 
     q = facts["queue"]
-    if q.get("damaged_at") is not None:
-        checks.append(_check("queue", "blocked", f"event journal is damaged at byte {q['damaged_at']}; preserve a copy and open an issue with the three lines around that byte", q))
-    elif q.get("pending", 0) == 0:
-        checks.append(_check("queue", "ok", "no events are waiting", q))
-    elif q.get("oldest_age_seconds") and q["oldest_age_seconds"] > healthcheck.STALE_QUEUE:
-        checks.append(_check("queue", "blocked", "queued events appear stalled", q, _service_fix(healthcheck.DISPATCH_UNIT)))
-    else:
-        checks.append(_check("queue", "warning", "queued events are draining or too new to call stalled", q, "scripts/healthcheck.py"))
+    checks.append(_queue_check(q))
+    checks.append(_service_environment_check(facts))
 
     config = facts["config"]
     if config.get("env_present") and config.get("env_mode") == "0o600":

@@ -115,6 +115,26 @@ spool_data = doctor_with(spool_facts)
 check("doctor reads published spool bytes_unread signal", any(c["name"] == "spool_unread_bytes" and c["status"] == "warning" for c in spool_data["checks"]))
 check("doctor reads measured spool writable signal", any(c["name"] == "spool_writable" and c["status"] == "ok" for c in spool_data["checks"]))
 
+queue_first = {"pending": 1, "oldest_age_seconds": 1, "damaged_at": None, "cursor": 10, "journal_bytes": 20}
+queue_second = {"pending": 1, "oldest_age_seconds": 1, "damaged_at": None, "cursor": 15, "journal_bytes": 25}
+with mock.patch.object(d, "QUEUE_DRAIN_SAMPLE_SECONDS", 0), \
+     mock.patch.object(d.healthcheck, "queue_facts", return_value=queue_second):
+    draining = d._queue_check(queue_first)
+check("doctor measures cursor advancement before calling a queue stalled", draining["status"] == "ok" and draining["summary"] == "queued events are draining")
+
+stale_second = dict(queue_second, cursor=10, oldest_age_seconds=d.healthcheck.STALE_QUEUE + 1)
+with mock.patch.object(d, "QUEUE_DRAIN_SAMPLE_SECONDS", 0), \
+     mock.patch.object(d.healthcheck, "queue_facts", return_value=stale_second):
+    stalled = d._queue_check(queue_first)
+check("doctor marks a non-draining stale queue blocked", stalled["status"] == "blocked")
+
+with mock.patch.object(d, "platform") as platform_mock, \
+     mock.patch.object(d, "_safe_run", return_value={"command": ["systemctl", "--user", "show-environment"], "returncode": 0, "stdout": "PATH=/usr/bin\nOPENCLAW=/old/bin/openclaw\n", "stderr": ""}), \
+     mock.patch.object(d, "_environmentd_values", return_value={"PATH": "/usr/bin", "OPENCLAW": "/new/bin/openclaw"}):
+    platform_mock.system.return_value = "Linux"
+    service_env = d._service_environment_check(base_facts()["runtime"] and base_facts())
+check("doctor warns when systemd live environment differs from environment.d", service_env["status"] == "warning" and service_env.get("next_command") == "systemctl --user set-environment OPENCLAW=/new/bin/openclaw")
+
 blocked = doctor_with(base_facts(listener="failed"))
 listener = next(c for c in blocked["checks"] if c["name"] == "listener")
 check("failed service is blocked", blocked["status"] == "blocked" and listener["status"] == "blocked")
