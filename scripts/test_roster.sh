@@ -239,6 +239,16 @@ assert "--check sends nothing"          '[ ! -s "$CAPTURE" ]'
 assert "--check still obeys the roster" '! "$SEND" --check "stranger@example.com" "s" "$body" >/dev/null 2>&1'
 
 : >"$CAPTURE"
+dry_plain=$("$SEND" --dry-run --cc "second_contact@example.org" "jjulianfe@gmail.com" "dry run" "$body" 2>/dev/null)
+assert "--dry-run reports recipients and authorization" 'printf "%s" "$dry_plain" | grep -q "To: jjulianfe@gmail.com (authorized: yes)" && printf "%s" "$dry_plain" | grep -q "Cc: second_contact@example.org (authorized: yes)"'
+assert "--dry-run reports plain MIME shape" 'printf "%s" "$dry_plain" | grep -q "MIME shape: single-part (text/plain)" && printf "%s" "$dry_plain" | grep -q "Attachments: 0 file"'
+assert "--dry-run hides body and raw message" '! printf "%s" "$dry_plain" | grep -q "^hi$" && ! printf "%s" "$dry_plain" | grep -q "^From: "'
+assert "--dry-run sends nothing" '[ ! -s "$CAPTURE" ]'
+assert "--dry-run still obeys the roster" '! "$SEND" --dry-run "stranger@example.com" "s" "$body" >/dev/null 2>&1'
+"$SEND" --check --dry-run "jjulianfe@gmail.com" "choose one" "$body" >/dev/null 2>&1 && cdrc=0 || cdrc=$?
+assert "--check and --dry-run cannot be combined" '[ "${cdrc:-0}" -eq 2 ]'
+
+: >"$CAPTURE"
 send_ok "jjulianfe@gmail.com" "Prueba de correo — ñ, á" "$body"
 
 # A display name must be quoted, and a comma inside it must not split the header.
@@ -394,6 +404,11 @@ attach_dir="$tmp/attach"
 mkdir -p "$attach_dir"
 printf 'col1,col2\n1,2\n' >"$attach_dir/datos.csv"
 printf 'segundo archivo\n' >"$attach_dir/otro.txt"
+
+: >"$CAPTURE"
+dry_attach=$("$SEND" --dry-run --html "$html" --attach "$attach_dir/datos.csv" --cc "second_contact@example.org" "jjulianfe@gmail.com" "dry with attachment" "$body" 2>/dev/null)
+assert "--dry-run reports HTML and attachment count" 'printf "%s" "$dry_attach" | grep -q "MIME shape: multipart/mixed (text/plain, text/html)" && printf "%s" "$dry_attach" | grep -q "Attachments: 1 file"'
+assert "--dry-run with attachments sends nothing" '[ ! -s "$CAPTURE" ]'
 
 : >"$CAPTURE"
 send_ok "jjulianfe@gmail.com" "sin adjuntos" "$body"

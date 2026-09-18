@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Send via Himalaya, but only to allowlisted recipients.
 #
-#   send.sh [--check] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>
+#   send.sh [--check|--dry-run] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>
 #
 # Anything not in roster.md exits 2 and sends nothing. That is the point: this
 # agent reads mail all day and acts on the part of it that comes from the roster,
@@ -19,11 +19,16 @@
 # body is the first part rather than the whole message. A field report that could
 # only be pasted into the body is what asked for this (#38).
 #
-# --check prints the message it would send and sends nothing. Use it to prove
-# this script can find its credentials, which the roster tests cannot: the roster
-# gate runs first, so a refusal exits before the env file is ever read. It prints
-# attachments encoded, not summarised, because a message you cannot see whole is
-# one you cannot check.
+# --check prints the exact message it would send and sends nothing. Use it to
+# prove this script can find its credentials, which the roster tests cannot: the
+# roster gate runs first, so a refusal exits before the env file is ever read. It
+# prints attachments encoded, not summarised, because a message you cannot see
+# whole is one you cannot check.
+#
+# --dry-run prints a redacted delivery summary and sends nothing: recipient, cc,
+# roster authorisation, MIME shape, and attachment count. It deliberately does
+# not print the body, env file, password, attachment contents, or any generated
+# raw message.
 #
 # Environment:
 #   ROSTER    path to the allowlist        (default: repo root/roster.md)
@@ -51,6 +56,7 @@ ENV_FILE="${ENV_FILE:-$(paynani_env_file)}"
 ACCOUNT="paynani"
 
 check_only=""
+dry_run=""
 cc=""
 htmlfile=""
 attachments=()
@@ -58,6 +64,10 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --check)
             check_only=yes
+            shift
+            ;;
+        --dry-run)
+            dry_run=yes
             shift
             ;;
         --cc)
@@ -78,7 +88,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-to=${1:?usage: send.sh [--check] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
+to=${1:?usage: send.sh [--check|--dry-run] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
 
@@ -161,6 +171,15 @@ if [ -n "$cc" ] && ! roster_allows "$cc"; then
     echo "REFUSED: cc $cc is not in $ROSTER" >&2
     echo "Add it deliberately, or ask your human to send this one." >&2
     exit 2
+fi
+
+# Keep these booleans for the redacted dry-run report. The command exits before
+# any SMTP path, but only after the same allowlist checks that a live send uses.
+to_authorized=yes
+if [ -n "$cc" ]; then
+    cc_authorized=yes
+else
+    cc_authorized=not-requested
 fi
 
 # --- Who the message is from -------------------------------------------------
@@ -425,6 +444,38 @@ build_message() {
     done
     printf -- '--%s--\n' "$boundary"
 }
+
+if [ -n "$check_only" ] && [ -n "$dry_run" ]; then
+    echo "REFUSED: choose only one of --check or --dry-run" >&2
+    exit 2
+fi
+
+if [ -n "$dry_run" ]; then
+    printf 'dry-run — nothing sent\n'
+    printf 'To: %s (authorized: %s)\n' "$to" "$to_authorized"
+    if [ -n "$cc" ]; then
+        printf 'Cc: %s (authorized: %s)\n' "$cc" "$cc_authorized"
+    else
+        printf 'Cc: none\n'
+    fi
+    printf 'Subject: %s\n' "$subject"
+    if [ -n "$htmlfile" ]; then
+        body_formats='text/plain, text/html'
+    else
+        body_formats='text/plain'
+    fi
+    if [ -n "$boundary" ]; then
+        mime_shape='multipart/mixed'
+    elif [ -n "$htmlfile" ]; then
+        mime_shape='multipart/alternative'
+    else
+        mime_shape='single-part'
+    fi
+    printf 'MIME shape: %s (%s)\n' "$mime_shape" "$body_formats"
+    printf 'Attachments: %s file(s)\n' "${#attachments[@]}"
+    printf 'Secrets/body/raw message: not shown\n'
+    exit 0
+fi
 
 if [ -n "$check_only" ]; then
     build_message
