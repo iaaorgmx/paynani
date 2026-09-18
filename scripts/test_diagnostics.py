@@ -120,6 +120,38 @@ spool_data = doctor_with(spool_facts)
 check("doctor reads published spool bytes_unread signal", any(c["name"] == "spool_unread_bytes" and c["status"] == "warning" for c in spool_data["checks"]))
 check("doctor reads measured spool writable signal", any(c["name"] == "spool_writable" and c["status"] == "ok" for c in spool_data["checks"]))
 
+codex_facts = base_facts()
+codex_facts["runtime"]["selected"] = "codex"
+codex_facts["spool"] = {"bytes_unread": 0, "bytes_total": 12, "writable": True}
+with mock.patch.object(d, "_codex_observation_facts", return_value={
+    "session_id_present": True,
+    "last_queue": {"event_id": "imap:INBOX:42:7", "at": "2026-01-01T00:00:00Z", "detail": "queued"},
+    "last_spool": None,
+    "last_agent_run": None,
+}):
+    codex_data = doctor_with(codex_facts)
+check("doctor renders Codex registered_session from a measured session id", any(c["name"] == "registered_session" and c["status"] == "ok" for c in codex_data["checks"]))
+check("doctor renders Codex last_queue_attempt from recorded status", any(c["name"] == "last_queue_attempt" and c["status"] == "ok" for c in codex_data["checks"]))
+check("doctor renders Codex last_queue_result from recorded status", any(c["name"] == "last_queue_result" and c["status"] == "ok" for c in codex_data["checks"]))
+
+codex_unknown = base_facts()
+codex_unknown["runtime"]["selected"] = "codex"
+with mock.patch.object(d, "_codex_observation_facts", return_value={
+    "session_id_present": False,
+    "last_queue": None,
+    "last_spool": {"event_id": "imap:INBOX:42:8", "at": "2026-01-01T00:00:01Z", "detail": "spooled"},
+}):
+    codex_unknown_data = doctor_with(codex_unknown)
+check("doctor gives Codex registered_session an explicit unknown reason", any(c["name"] == "registered_session" and c["status"] == "unknown" and "no Codex live session" in c["summary"] for c in codex_unknown_data["checks"]))
+check("doctor gives Codex last_queue_attempt an explicit unknown reason", any(c["name"] == "last_queue_attempt" and c["status"] == "unknown" and "spooled without a queue attempt" in c["summary"] for c in codex_unknown_data["checks"]))
+
+hermes_facts = base_facts()
+hermes_facts["runtime"]["selected"] = "hermes"
+with mock.patch.object(d, "_hermes_route_observation", side_effect=lambda route: d._check(f"{route}_route_configured", "ok", f"{route} configured", {"route": route})):
+    hermes_data = doctor_with(hermes_facts)
+check("doctor renders Hermes notify route configuration observation", any(c["name"] == "notify_route_configured" and c["status"] == "ok" for c in hermes_data["checks"]))
+check("doctor renders Hermes roster route configuration observation", any(c["name"] == "roster_route_configured" and c["status"] == "ok" for c in hermes_data["checks"]))
+
 queue_first = {"pending": 1, "oldest_age_seconds": 1, "damaged_at": None, "cursor": 10, "journal_bytes": 20}
 queue_second = {"pending": 1, "oldest_age_seconds": 1, "damaged_at": None, "cursor": 15, "journal_bytes": 25}
 with mock.patch.object(d, "QUEUE_DRAIN_SAMPLE_SECONDS", 0), \
