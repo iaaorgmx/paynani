@@ -34,6 +34,12 @@ failure_diagnostics() {
         --mime-observed "${diagnostic_mime_observed:-not observed}" >&2
 }
 
+normalise_volatile_message_headers() {
+    sed -E \
+        -e 's/^Date: .*/Date: <normalised>/' \
+        -e 's/^Message-ID: <[^>]+>$/Message-ID: <normalised>/'
+}
+
 # Before the test redirects send.sh's state, remember the log a live send would
 # use. The assertion at the end proves the suite did not write there.
 # shellcheck source=envpath.sh
@@ -52,6 +58,12 @@ html="$tmp/body.html"
 printf '<!doctype html><html><body><p>hi</p></body></html>\n' >"$html"
 long_html="$tmp/long-body.html"
 python3 -c 'from pathlib import Path; Path(__import__("sys").argv[1]).write_text("<html><body><p style=\"" + "x" * 1200 + "\">hola</p></body></html>\n", encoding="utf-8")' "$long_html"
+signature="$tmp/signature.txt"
+cat >"$signature" <<'EOF'
+Paynani Test Agent
+Fixture Signature
+https://example.invalid/paynani
+EOF
 
 > "$tmp/sent.eml"
 export CAPTURE="$tmp/sent.eml"
@@ -182,6 +194,20 @@ assert "encoded Subject round-trips"    '[ "$(grep -m1 "^Subject: " "$CAPTURE" |
 assert "blank line separates the body"  'awk "/^\$/{found=1} END{exit !found}" "$CAPTURE"'
 assert "body is last"                   '[ "$(tail -1 "$CAPTURE")" = "hi" ]'
 
+cp "$CAPTURE" "$tmp/plain-unsigned-reference.eml"
+: >"$CAPTURE"
+send_ok "jjulianfe@gmail.com" "Prueba de correo — ñ, á" "$body"
+normalise_volatile_message_headers <"$tmp/plain-unsigned-reference.eml" >"$tmp/plain-unsigned-reference.normalised"
+normalise_volatile_message_headers <"$CAPTURE" >"$tmp/plain-unsigned-again.normalised"
+assert "no signature keeps plain message unchanged" 'cmp -s "$tmp/plain-unsigned-reference.normalised" "$tmp/plain-unsigned-again.normalised"'
+
+printf 'PAYNANI_EMAIL=agent@example.com\nPAYNANI_SIGNATURE_FILE=%s\n' "$signature" >"$tmp/env-signature"
+: >"$CAPTURE"
+ENV_FILE="$tmp/env-signature" send_ok "jjulianfe@gmail.com" "signed" "$body"
+assert "signature separator is appended" 'grep -qx -- "-- " "$CAPTURE"'
+assert "signature name is appended"      'grep -qx "Paynani Test Agent" "$CAPTURE"'
+assert "signature url is last"           '[ "$(tail -1 "$CAPTURE")" = "https://example.invalid/paynani" ]'
+
 # Gmail accepted the From:-only message over SMTP and then bounced it as spam.
 # These are the headers that made the difference on the live host in #23.
 assert "Date: is RFC 5322"              'grep -qE "^Date: [A-Z][a-z]{2}, [0-9]{1,2} [A-Z][a-z]{2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4}\$" "$CAPTURE"'
@@ -242,12 +268,16 @@ assert "--check still obeys the roster" '! "$SEND" --check "stranger@example.com
 dry_plain=$("$SEND" --dry-run --cc "second_contact@example.org" "jjulianfe@gmail.com" "dry run" "$body" 2>/dev/null)
 assert "--dry-run reports recipients and roster rows" 'printf "%s" "$dry_plain" | grep -q "To: jjulianfe@gmail.com (roster row: Julian Flores | jjulianfe@gmail.com | Human)" && printf "%s" "$dry_plain" | grep -q "Cc: second_contact@example.org (roster row: Second Contact | second_contact@example.org | AI Agent)"'
 assert "--dry-run reports plain MIME shape" 'printf "%s" "$dry_plain" | grep -q "MIME shape: single-part (text/plain)" && printf "%s" "$dry_plain" | grep -q "Attachments: 0 file" && printf "%s" "$dry_plain" | grep -q "Attachment bytes total: 0"'
+assert "--dry-run reports no signature" 'printf "%s" "$dry_plain" | grep -qx "Signature: no"'
 assert "--dry-run uses ASCII status line" 'printf "%s" "$dry_plain" | grep -q "^dry-run: nothing sent$"'
 assert "--dry-run hides body and raw message" '! printf "%s" "$dry_plain" | grep -q "^hi$" && ! printf "%s" "$dry_plain" | grep -q "^From: "'
 assert "--dry-run sends nothing" '[ ! -s "$CAPTURE" ]'
 assert "--dry-run still obeys the roster" '! "$SEND" --dry-run "stranger@example.com" "s" "$body" >/dev/null 2>&1'
 "$SEND" --check --dry-run "jjulianfe@gmail.com" "choose one" "$body" >/dev/null 2>&1 && cdrc=0 || cdrc=$?
 assert "--check and --dry-run cannot be combined" '[ "${cdrc:-0}" -eq 2 ]'
+
+dry_signed=$(ENV_FILE="$tmp/env-signature" "$SEND" --dry-run "jjulianfe@gmail.com" "dry signed" "$body" 2>/dev/null)
+assert "--dry-run reports signature without contents" 'printf "%s" "$dry_signed" | grep -qx "Signature: yes (text/plain, source: PAYNANI_SIGNATURE_FILE)" && ! printf "%s" "$dry_signed" | grep -q "Paynani Test Agent"'
 
 : >"$CAPTURE"
 send_ok "jjulianfe@gmail.com" "Prueba de correo — ñ, á" "$body"
@@ -282,6 +312,12 @@ assert "falls back to AGENT_EMAIL_ACCOUNT" 'grep -qx "From: agent@example.com" "
 ENV_FILE="$tmp/no-such-env" send_ok "jjulianfe@gmail.com" "subject" "$body" && rc=0 || rc=$?
 assert "missing sender exits 1"         '[ "${rc:-0}" -eq 1 ]'
 assert "missing sender sends nothing"   '[ ! -s "$CAPTURE" ]'
+
+printf 'PAYNANI_EMAIL=agent@example.com\nPAYNANI_SIGNATURE_FILE=%s\n' "$tmp/missing-signature.txt" >"$tmp/env-missing-signature"
+: >"$CAPTURE"
+ENV_FILE="$tmp/env-missing-signature" send_ok "jjulianfe@gmail.com" "subject" "$body" && sigrc=0 || sigrc=$?
+assert "missing signature exits 1"      '[ "${sigrc:-0}" -eq 1 ]'
+assert "missing signature sends nothing" '[ ! -s "$CAPTURE" ]'
 
 # A newline in the subject must not become a second header. The subject is built
 # from mail the agent was told to act on, so this is reachable from outside.
@@ -426,6 +462,11 @@ assert "the attachment is base64"          'grep -qx "Content-Transfer-Encoding:
 assert "the attachment is named"           'grep -qx "Content-Disposition: attachment; filename=\"datos.csv\"" "$CAPTURE"'
 assert "the type is named"                 'grep -qx "Content-Type: text/csv" "$CAPTURE"'
 assert "the closing separator is present"  'grep -qE "^--=_paynani_[0-9a-f]{32}--\$" "$CAPTURE"'
+
+: >"$CAPTURE"
+ENV_FILE="$tmp/env-signature" send_ok --attach "$attach_dir/datos.csv" "jjulianfe@gmail.com" "con adjunto firmado" "$body"
+assert "the signed body survives as a part" 'grep -qx "Paynani Test Agent" "$CAPTURE"'
+assert "the signed attachment is base64"    'grep -qx "Content-Transfer-Encoding: base64" "$CAPTURE"'
 
 : >"$CAPTURE"
 send_ok --html "$html" --attach "$attach_dir/datos.csv" "jjulianfe@gmail.com" "html con adjunto" "$body"

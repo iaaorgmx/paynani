@@ -30,6 +30,10 @@
 # names/sizes. It deliberately does not print the body, env file, password,
 # attachment contents, or any generated raw message.
 #
+# PAYNANI_SIGNATURE_FILE in ENV_FILE points at a readable plain-text signature
+# appended to text/plain bodies. AGENT_EMAIL_SIGNATURE_FILE is accepted as a
+# compatibility alias.
+#
 # Environment:
 #   ROSTER    path to the allowlist        (default: repo root/roster.md)
 #   ENV_FILE  path to the credentials file (default: from envpath.sh)
@@ -261,6 +265,16 @@ from_name=$(env_value PAYNANI_FROM_NAME)
 [ -n "$from_name" ] || from_name=$(env_value AGENT_EMAIL_FROM_NAME)
 from_name=$(printf '%s' "$from_name" | tr -d '\r\n')
 
+signature_file=$(env_value PAYNANI_SIGNATURE_FILE)
+[ -n "$signature_file" ] || signature_file=$(env_value AGENT_EMAIL_SIGNATURE_FILE)
+signature_file=$(printf '%s' "$signature_file" | tr -d '\r\n')
+
+if [ -n "$signature_file" ] && { [ ! -f "$signature_file" ] || [ ! -r "$signature_file" ]; }; then
+    echo "signature file $signature_file is not readable - refusing to send" >&2
+    echo "Fix PAYNANI_SIGNATURE_FILE in $ENV_FILE, or remove it to send unsigned." >&2
+    exit 1
+fi
+
 if [ -z "$from_addr" ]; then
     echo "no sender address in $ENV_FILE — refusing to send" >&2
     echo "Set PAYNANI_EMAIL (or AGENT_EMAIL_ACCOUNT), or point ENV_FILE at" >&2
@@ -406,15 +420,40 @@ attachment_part() {
     printf '\n'
 }
 
+file_ends_with_newline() {
+    [ -s "$1" ] || return 0
+    [ "$(tail -c 1 "$1" | od -An -t x1 | tr -d ' \n')" = "0a" ]
+}
+
+body_with_signature() {
+    cat "$bodyfile"
+    _paynani_last_body_file=$bodyfile
+
+    if [ -n "$signature_file" ]; then
+        if ! file_ends_with_newline "$bodyfile"; then
+            printf '\n'
+        fi
+        printf '\n-- \n'
+        cat "$signature_file"
+        _paynani_last_body_file=$signature_file
+    fi
+
+    if ! file_ends_with_newline "$_paynani_last_body_file"; then
+        printf '\n'
+    fi
+}
+
 plain_body_part() {
     printf 'Content-Type: text/plain; charset=UTF-8\n'
     printf 'Content-Transfer-Encoding: 8bit\n'
     printf '\n'
-    cat "$bodyfile"
+    body_with_signature
     # A body file that does not end in a newline would otherwise put the next
     # separator on the same line as its last word, and a separator that is not
     # alone on its line is not a separator.
-    printf '\n'
+    if [ -z "$signature_file" ]; then
+        printf '\n'
+    fi
 }
 
 html_body_part() {
@@ -475,7 +514,7 @@ build_message() {
     printf 'Subject: %s\n' "$(encode_header "$subject")"
     printf '\n'
     if [ -z "$boundary" ] && [ -z "$htmlfile" ]; then
-        cat "$bodyfile"
+        body_with_signature
         return
     fi
     if [ -z "$boundary" ]; then
@@ -528,6 +567,11 @@ if [ -n "$dry_run" ]; then
         _paynani_i=$(( _paynani_i + 1 ))
     done
     printf 'Attachment bytes total: %s\n' "$attach_bytes"
+    if [ -n "$signature_file" ]; then
+        printf 'Signature: yes (text/plain, source: PAYNANI_SIGNATURE_FILE)\n'
+    else
+        printf 'Signature: no\n'
+    fi
     printf 'Secrets/body/raw message: not shown\n'
     exit 0
 fi
