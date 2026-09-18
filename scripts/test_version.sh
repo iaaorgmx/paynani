@@ -107,11 +107,19 @@ assert "behind carries an upgrade plan"  'grep -q "^upgrade plan: v1.9.0 -> v1.1
 assert "plan without local tags says so" 'grep -q "could not compute: v1.9.0 is not in this clone" <<<"$out"'
 assert "and tells the operator to fetch" 'grep -q "git fetch --tags" <<<"$out"'
 assert "and never says nothing to restart" '! grep -q "no service needs a restart" <<<"$out"'
-# With the tags fetched the plan computes. The seed history is empty commits, so
-# the diff is empty and the plan must say that in those words.
+# With the tags fetched but no install manifest, the plan still refuses: the
+# manifest is what says which copies outside the clone this install owns
+# (#167 requirement 2). Missing data is never "nothing to restart".
 git -C "$clone" fetch -q origin --tags
 run 1.9.0
-assert "plan with tags computes"         'grep -q "no files differ between these two refs" <<<"$out"'
+assert "plan without a manifest cannot compute" 'grep -q "could not compute: no install manifest at" <<<"$out"'
+assert "and points at UPGRADE.md"               'grep -q "UPGRADE.md" <<<"$out"'
+assert "and never says nothing to restart"      '! grep -q "no service needs a restart" <<<"$out"'
+# With the manifest in place the plan computes. The seed history is empty
+# commits, so the diff is empty and the plan must say that in those words.
+printf 'runtime\tclaudecode\n' >"$clone/install.manifest"
+run 1.9.0
+assert "plan with tags and manifest computes" 'grep -q "no files differ between these two refs" <<<"$out"'
 run 1.9.0 --plan v1.10.0
 assert "--plan REF exits 0 when computed" '[ "$rc" -eq 0 ]'
 assert "--plan REF prints the header"    'grep -q "^upgrade plan: v1.9.0 -> v1.10.0" <<<"$out"'
