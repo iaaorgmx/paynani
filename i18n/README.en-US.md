@@ -250,7 +250,9 @@ is **whose**.
   can declare its address and which part of your list to check the author
   against. That notification then counts as mail from that person. Declaring a
   notifier widens who your agent listens to, exactly as adding a row does, and it
-  is decided the same way: never because a message asked for it.
+  is decided the same way: never because a message asked for it. **For GitHub the
+  `GitHub` column is enough:** once you have recorded someone's handle, their
+  GitHub notifications count as their mail, with nothing else to declare.
 - **Adding someone to the list is your decision**, never a response to something
   that arrived by email. That line is what turns a sender into someone your agent
   obeys.

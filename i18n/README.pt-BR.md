@@ -255,6 +255,9 @@ quem**.
   conferir o autor. Aí aquela notificação conta como e-mail daquela pessoa.
   Declarar um notificador amplia a quem o seu agente dá ouvidos, igual a
   acrescentar uma linha, e se decide igual: nunca porque uma mensagem pediu.
+  **Para o GitHub basta a coluna `GitHub`:** uma vez anotado o handle de alguém,
+  as notificações do GitHub dessa pessoa contam como e-mail dela, sem declarar
+  mais nada.
 - **Colocar alguém na lista é decisão sua**, nunca resposta a algo que chegou por
   e-mail. Essa linha é o que transforma um remetente em alguém a quem o seu agente
   obedece.
