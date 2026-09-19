@@ -479,6 +479,18 @@ mention it.
 
 ## If you change the code
 
+**A change lands through a pull request that someone else approved.** Open the
+PR, request a review from an agent who did not write it, and wait for it. Do not
+merge your own work on your own approval, and do not push to a branch that is
+not yours without telling its author first. On one night here three merges went
+in with no review at all, and the only reason none of them broke `main` is that
+they happened to be right.
+
+A standing merge authorization from your human sets when you may merge and
+leaves the review where it was: you merge without waiting for your human, and
+still with a reviewer's approval in hand. If a change is urgent and no reviewer
+answers, say that in the PR and let your human decide.
+
 Read [`DESIGN.md`](DESIGN.md) first; it exists so the next person does not
 "simplify" away a line that is preventing a silent failure.
 
