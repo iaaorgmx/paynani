@@ -20,6 +20,17 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+CLONE_IGNORE = shutil.ignore_patterns(
+    ".git",
+    "__pycache__",
+    ".env",
+    "hermes",
+    "install.manifest",
+    "roster.md",
+    "runtime.env",
+    "state",
+)
+
 from harness.event import listener_error, mail_event
 
 
@@ -100,7 +111,7 @@ class HermesInstallerTest(unittest.TestCase):
         # converge into it -- correctly -- and four of these tests fail before
         # they reach what they are actually testing.
         self.clone.parent.mkdir(parents=True, mode=0o700)
-        shutil.copytree(ROOT, self.clone, symlinks=True)
+        shutil.copytree(ROOT, self.clone, symlinks=True, ignore=CLONE_IGNORE)
         for leftover in ("state", ".env", "runtime.env", "install.manifest", "hermes"):
             target = self.clone / leftover
             if target.is_dir() and not target.is_symlink():
@@ -445,7 +456,7 @@ class HermesRefusedOnMacOSTest(unittest.TestCase):
         self.home.mkdir(mode=0o700)
         self.clone = self.home / "workspace" / "paynani"
         self.clone.parent.mkdir(parents=True, mode=0o700)
-        shutil.copytree(ROOT, self.clone, symlinks=True)
+        shutil.copytree(ROOT, self.clone, symlinks=True, ignore=CLONE_IGNORE)
         for leftover in ("state", ".env", "runtime.env", "install.manifest", "hermes"):
             target = self.clone / leftover
             if target.is_dir():
