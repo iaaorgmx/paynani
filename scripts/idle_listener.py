@@ -22,7 +22,7 @@ import argparse, datetime, email, email.utils, imaplib, json, os, pathlib, re
 import select, signal, socket, ssl, sys, time
 from email.header import decode_header, make_header
 
-from roster import (DEFAULT_ROSTER, notifier_headers, notifiers,
+from roster import (DEFAULT_ROSTER, normalise, notifier_headers, notifiers,
                     roster_addresses, roster_entries, sender_is_listed)
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "harness"))
@@ -284,11 +284,11 @@ def recipient_role_for(msg, account):
     every header the message carries, and neither is an instruction the way a
     direct `To` is.
     """
-    target = (account or "").strip().lower()
-    to_addrs = {addr.lower() for _, addr in email.utils.getaddresses(msg.get_all("To", []))}
+    target = normalise(account or "")
+    to_addrs = {normalise(addr) for _, addr in email.utils.getaddresses(msg.get_all("To", []))}
     if target in to_addrs:
         return "to"
-    cc_addrs = {addr.lower() for _, addr in email.utils.getaddresses(msg.get_all("Cc", []))}
+    cc_addrs = {normalise(addr) for _, addr in email.utils.getaddresses(msg.get_all("Cc", []))}
     if target in cc_addrs:
         return "cc"
     return "undisclosed"
