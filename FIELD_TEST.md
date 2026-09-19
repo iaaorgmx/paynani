@@ -71,7 +71,7 @@ step below uses instead.
 
 | # | State to provoke | Command | Exact expected output | Paste as evidence |
 |---|---|---|---|---|
-| 1 | Hooks not installed | Before running `scripts/codex_hook.py --install` | `scripts/codex_hook.py --check` exits nonzero. | The exit code and stderr. |
+| 1 | Hooks not installed | Before running `scripts/codex_hook.py --install` | `scripts/codex_hook.py --check` prints `NOT registered in <path>` on stdout and exits 1. | The exit code and the stdout line. |
 | 2 | No session registered | Hooks installed, but no Codex TUI has started (or `SessionEnd` already ran and removed `state/codex.session`) | `scripts/paynani status` prints `Codex session: not registered` | That line. |
 | 3 | A session is registered | Open a Codex TUI with the hooks installed, so `SessionStart` writes `state/codex.session` | `scripts/paynani status` prints `Codex session: registered` | That line, plus `cat state/codex.session`. |
 | 4 | Mail lands in the spool, no live session to wake | With mail delivered and no session registered (state 2) | `scripts/paynani status` shows `Codex spool: <offset>/<total> bytes acknowledged` with `offset` behind `total`, and no `Last queue:` line; the next Codex `SessionStart` replays it | The `Codex spool` and `Codex session` lines together. |
