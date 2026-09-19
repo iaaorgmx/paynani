@@ -1,5 +1,9 @@
 """Python version floor shared by long-running paynani services."""
 
+# This file must keep parsing under Python 3.9: it is what tells an old host why
+# it cannot start. An `X | None` annotation here turns that message into a
+# SyntaxError.
+
 from __future__ import annotations
 
 import sys
