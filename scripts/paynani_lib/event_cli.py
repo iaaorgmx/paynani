@@ -81,6 +81,49 @@ def _body_text(message):
     return (payload or b"").decode(charset, errors="replace")
 
 
+def _agent_roster_entry(agent_address: str):
+    agent = roster_mod.normalise(agent_address)
+    for entry in roster_mod.roster_entries(roster_file()):
+        if roster_mod.normalise(entry.get("address", "")) == agent:
+            return entry
+    return {"address": agent, "name": "", "columns": {}}
+
+
+def _recipient_role(record, message) -> str:
+    recorded = str(record.get("recipient_role") or "").strip()
+    if recorded:
+        return recorded
+    return idle_listener.recipient_role_for(message, record.get("account", ""))
+
+
+def _instruction_summary(record, message, body: str) -> dict:
+    role = _recipient_role(record, message)
+    if role == "to":
+        return {
+            "recipient_role": role,
+            "instruction_for_me": True,
+            "instruction_lines": [],
+        }
+
+    entry = _agent_roster_entry(record.get("account", ""))
+    markers = [entry.get("address", ""), entry.get("name", "")]
+    prefixes = tuple(
+        marker.casefold() + ":"
+        for marker in markers
+        if str(marker or "").strip()
+    )
+    instruction_lines = [
+        line.lstrip()
+        for line in body.splitlines()
+        if prefixes and line.lstrip().casefold().startswith(prefixes)
+    ]
+    return {
+        "recipient_role": role,
+        "instruction_for_me": bool(instruction_lines),
+        "instruction_lines": instruction_lines,
+    }
+
+
 def fetch_verified(record, *, include_body=False):
     """Fetch one exact UID and recheck its envelope and current roster decision."""
     if record.get("event_type") != event_mod.MAIL_RECEIVED:
@@ -158,13 +201,18 @@ def run_show(args) -> int:
     output["roster_decision"] = decision
     output["envelope_verified"] = bool(verified)
     output["lifecycle"] = ledger.history(state_dir() / "lifecycle.jsonl", args.event_id)
-    print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     if not args.body:
+        if verified is not None:
+            output["recipient_role"] = _recipient_role(record, verified)
+        print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
         return 0
     if not record.get("roster_match"):
+        print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
         print("body refused: the listener did not record a roster match", file=sys.stderr)
         return 2
     body = _body_text(verified)
+    output.update(_instruction_summary(record, verified, body))
+    print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     print("\n--- verified body ---")
     print(body, end="" if body.endswith("\n") else "\n")
     print(f"--- authorized: {decision['reason']} ---")

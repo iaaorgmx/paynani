@@ -20,6 +20,21 @@ human or an agent literally typing in a live session, a TUI, or sending
 real mail, which cannot be automated without already having the thing this
 checklist is trying to prove exists.
 
+## CC instruction rule
+
+These rows cover the level 2 judgment that should not be asserted as if it were
+a parser. The level 1 mechanical cases are asserted in
+`scripts/test_event_lifecycle.py`; paste the `event show --body` JSON fields and
+the agent's visible decision here when running the mail flow end to end.
+
+| # | State to provoke | Command | Exact expected output | Paste as evidence |
+|---|---|---|---|---|
+| 1 | Direct recipient | Send verified roster mail with the agent in `To`, then run `scripts/paynani event show --body <event-id>` | JSON contains `"recipient_role": "to"`, `"instruction_for_me": true`, and `"instruction_lines": []` | The JSON fields and what the agent did with the body. |
+| 2 | Level 1 name marker from copy | Send verified roster mail with the agent only in `Cc`, and put `<Name from roster.md>: ...` at the start of a body line | JSON contains `"recipient_role": "cc"`, `"instruction_for_me": true`, and that line in `"instruction_lines"` | The JSON fields and the agent response. |
+| 3 | Level 1 address marker from copy | Send verified roster mail with the agent only in `Cc`, and put `<email from roster.md>: ...` at the start of a body line | JSON contains `"recipient_role": "cc"`, `"instruction_for_me": true`, and that line in `"instruction_lines"` | The JSON fields and the agent response. |
+| 4 | Level 2 reading from copy | Send verified roster mail with the agent only in `Cc`, no colon marker, but prose that plainly asks that agent to act | The command's mechanical fields may show `"instruction_for_me": false`; the agent response begins by saying what instruction it understood as its own, then acts | The JSON fields and the opening sentence of the agent response. |
+| 5 | Copied context only | Send verified roster mail with the agent only in `Cc`, no marker, and no prose instruction plainly addressed to it | JSON contains `"recipient_role": "cc"` and `"instruction_for_me": false`; the agent reports the mail as context and does not silently act | The JSON fields and the visible no-action report. |
+
 ## Claude Code (`claudecode`)
 
 Covers the session-watch registry added in [#170](https://github.com/iaaorgmx/paynani/issues/170)
