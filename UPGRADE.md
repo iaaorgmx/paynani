@@ -75,6 +75,74 @@ not just the newest. Entries with an **Upgrade actions** section need a step
 beyond the pull, and doing the pull first and the reading afterwards is how a
 working install becomes a broken one.
 
+Then ask the clone what the pull will change underneath the running processes:
+
+```bash
+git fetch --tags origin
+scripts/version.sh --plan          # installed tag -> newest tag
+```
+
+It prints one line per changed file with a verb: `restart` (a service reads it
+at start), `reinstall-and-restart` (a copy lives outside the clone, so
+something has to write it again), `restart-runtime` (the harness itself loads
+it), `next-session` (the next session picks it up), `none`, or `unknown`. It
+ends with the commands to run, in order, for this host's runtime and OS: the
+installer when one of its own copies changed, then the registration step for a
+copy the installer names but does not write (`opencode_plugin.py --install`,
+`claude_hook.py --install`, `codex_hook.py --install`, `openclaw_rules.py
+--install`), then the service restarts, then the harness restart. `unknown`
+means the table behind the plan does not know that file; fall back to this
+document for it.
+
+"could not compute" has two causes and names which: one of the two tags is
+not in the clone yet, and the `git fetch` above is the fix; or there is no
+`install.manifest` in the clone, which means the installer never ran here (or
+ran and was removed) and the plan cannot know which copies outside the clone
+this install owns. For the second, follow this document by hand this once,
+then run `scripts/install.sh --runtime <runtime> --upgrade` so the next
+upgrade has a manifest to read. In neither case does the plan say "nothing to
+restart". The full report (`scripts/version.sh` with no flag) prints the same
+plan whenever a newer release exists.
+
+The plan also lists **local overlays**: tracked files modified in this clone,
+such as a `send.sh` carrying a local patch. For each it says whether the
+upgrade also changes that file (a conflict on pull is then likely) or leaves it
+alone (the change carries over), and it prints the two commands that keep a
+record before the pull, `git diff > state/overlay-<from>-<to>.patch` and
+`git stash push`. After the restarts, `git stash pop` and `scripts/test_all.sh`
+put the overlay back and prove it still holds; if `pop` conflicts, the patch is
+the way back. Ignored files (`roster.md`, `.env`, `state/`) are the install's
+own data, never overlays, and do not appear.
+
+When the plan is complete and every line is understood, the same tool can
+apply that exact plan:
+
+```bash
+scripts/version.sh --apply          # installed tag -> newest local tag
+scripts/version.sh --apply REF      # installed tag -> this tag or origin/main
+```
+
+`--apply` refuses before changing the worktree if either ref or the manifest is
+missing, a changed file is `unknown`, an installer-owned copy has drifted, or
+the runtime needed by the installer is unknown. It freezes the target commit,
+fetches the named remote ref and checks that it still resolves to that commit
+before a fast-forward merge. A moving `origin/main` therefore stops before the
+worktree advances instead of applying actions calculated for different bytes.
+
+For tracked overlays it writes a binary patch under `state/`, stashes them,
+fast-forwards, runs only the installer, registration and restart actions shown
+by `--plan`, then restores the stash and runs `scripts/test_all.sh`. A conflict
+on `stash pop` is a failure and leaves the stash plus the patch as recovery
+paths. Ignored credentials, roster and state are never stashed.
+
+The listener records the version it loaded at process start in `idle.json`.
+Every release changes `VERSION`, so the plan restarts the listener; `--apply`
+then requires the disk version and process version to agree, a fresh
+`resuming from uid N` line after the restart, and a successful
+`scripts/healthcheck.py`. Any failed command stops the sequence and exits
+nonzero. Manual harness actions remain explicit notices because a process
+cannot safely restart the session that is running it.
+
 ## 3. Check you have nothing uncommitted
 
 ```bash
@@ -133,6 +201,29 @@ systemd-analyze verify ~/.config/systemd/user/paynani-*.{service,timer}
 
 `systemd-analyze verify` prints nothing and exits 0 when the units are sound.
 
+**On Claude Code, the hooks in `~/.claude/settings.json` are copies too.**
+Since #170 there are two, and `scripts/claude_hook.py --install` adds only
+the one an older install lacks; `--check` exits 0 when both are there. Then
+restart the open sessions: the new `SessionStart` hook prints the
+`--from-hook` form of the watch command, and only a session that started
+with it has a registry to read.
+
+**On OpenClaw, the standing rule in the agent's own `AGENTS.md` is a copy
+too.** Since #186, `scripts/openclaw_rules.py` writes it into
+`~/.openclaw/workspace/AGENTS.md`, between two markers, and a pull does not
+touch that file. Run it after every upgrade; it replaces the block only when
+the wording changed and says `nothing to do` otherwise:
+
+```bash
+scripts/openclaw_rules.py --install
+scripts/openclaw_rules.py --check      # exit 0: the current block is in place
+```
+
+If you are coming from 0.7.0 or earlier the block is new, and an agent that had
+copied the rule by hand keeps its own copy: the script adds the block below it
+and never edits text outside the markers. Both saying the same thing is
+harmless; remove the hand copy when you like.
+
 ### On macOS, the same trap with different files
 
 A macOS install is supervised by three LaunchAgents in
@@ -167,7 +258,9 @@ it was in fact objecting.
 ## 6. Restart, and only then believe the new version is running
 
 The listener is a long-lived process. Until it restarts, you have pulled new
-code and are still running the old.
+code and are still running the old. Section 2's `scripts/version.sh --plan`
+already named which services this particular upgrade touches; the commands
+below restart both, which is always safe and sometimes more than needed.
 
 ```bash
 systemctl --user daemon-reload
@@ -286,6 +379,9 @@ tail -2 state/idle.err.log
 
 # The watcher can still reach openclaw: silence is the pass
 grep -iE "openclaw not found|injection failed" state/watch.err.log
+
+# On OpenClaw: the agent still knows what the roster tag means (exit 0)
+scripts/openclaw_rules.py --check
 
 # The allowlist still behaves, on both the send and the receive side
 scripts/test_roster.sh

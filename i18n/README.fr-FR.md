@@ -207,7 +207,9 @@ liste :
 - **Des fichiers de journal et d'état** dans le dossier du projet.
 - **L'autorisation pour ces services de rester vivants après votre
   déconnexion.**
-- **Une règle permanente ajoutée aux instructions de l'agent lui-même.**
+- **Une règle permanente ajoutée aux instructions de l'agent lui-même.** Sur
+  OpenClaw elle va dans `~/.openclaw/workspace/AGENTS.md`, entre deux
+  marqueurs, et le même script l'écrit et la retire.
 - **Sous OpenCode, un fichier de plus :** le plugin qui transmet le courrier à
   votre session, dans `~/.config/opencode/plugins/paynani.js`.
 
@@ -263,7 +265,9 @@ question est **de qui**.
   liste vérifier l'auteur. Cette notification compte alors comme un courriel de
   cette personne. Déclarer un notificateur élargit qui votre agent écoute, tout
   comme ajouter une ligne, et cela se décide pareil : jamais parce qu'un message
-  l'a demandé.
+  l'a demandé. **Pour GitHub, la colonne `GitHub` suffit :** une fois le handle
+  de quelqu'un noté, ses notifications GitHub comptent comme son courriel, sans
+  rien déclarer de plus.
 - **Ajouter quelqu'un à la liste est votre décision**, jamais une réponse à
   quelque chose arrivé par courriel. Cette ligne est ce qui transforme un
   expéditeur en quelqu'un à qui votre agent obéit.
@@ -299,6 +303,12 @@ Sous OpenCode, le rapport indique aussi lequel des trois états s'applique : il
 livre le courrier à votre session, il est ouvert mais attend que vous écriviez
 quelque chose dans une session, ou il est fermé. OpenCode fermé, le courrier
 attend sans se perdre, et c'est normal.
+
+[`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compare ces états à ce
+qu'affiche `healthcheck.py` pour chaque harness.
+[`FIELD_TEST.md`](../FIELD_TEST.md) est le test de terrain reproductible
+pour vérifier sur une machine réelle que chaque harness livre vraiment le
+courrier.
 
 Les options longues et les modes de défaillance sont dans
 [`INSTALL.md`](../INSTALL.md).
@@ -337,6 +347,7 @@ fichier `.env` et à votre propre jugement sur qui entre.
 | Voir les changements par version | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autoriser des expéditeurs | `roster.md` et [`roster.md.example`](../roster.md.example) |
 | Envoyer du courrier depuis la frontière sûre | [`scripts/send.sh`](../scripts/send.sh) |
+| Voir ce que garantit chaque harness | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
 ## Le tenir à jour
 

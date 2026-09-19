@@ -38,6 +38,12 @@
 # says: when mail arrives from this address, the value of this header names the
 # author, and it is matched against that column of the table above.
 #
+# GitHub needs no row here. A `GitHub` column in the table above is the
+# declaration by itself: add `| GitHub |` to the header and each person's handle
+# in it, and mail from notifications@github.com whose X-GitHub-Sender matches a
+# recorded handle counts as that person's. An empty cell matches nobody. The
+# row below is shown so you can see the shape; writing it is harmless.
+#
 # This widens who can give the agent work, exactly as adding a row does, and it
 # is the same kind of decision: never because a message asked for it. It is also
 # only as trustworthy as the platform's own From address, which nothing here
@@ -50,9 +56,8 @@
 # |---|---|---|
 # | notifications@github.com | X-GitHub-Sender | GitHub |
 #
-# The column is one of the columns you named above -- add `| GitHub |` to the
-# table and put each person's handle in it. Someone with no handle recorded is
-# simply not matched through that notifier; their own mail still is.
+# The column is one of the columns you named above. Someone with no handle
+# recorded is simply not matched through that notifier; their own mail still is.
 
 ## Notifiers
 

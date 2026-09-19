@@ -28,6 +28,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import event as ev
 import healthcheck as hc
 
+_real_instructions_facts = hc.instructions_facts
+
 # Fixture replaces hc.runtime_facts wholesale, so the real one is kept here
 # while it still exists — one test below is about what it actually does.
 REAL_RUNTIME_FACTS = hc.runtime_facts
@@ -54,6 +56,12 @@ class Fixture:
         self.reachable = reachable
         self.runtime = runtime
         self.spool_facts = None
+        # The standing rule is read from the real ~/.openclaw/workspace by
+        # default, which is whoever runs the suite. Stubbed to "in place" so the
+        # healthy fixture is healthy on every host; the tests below override it.
+        self.instructions = {"path": str(self.dir / "AGENTS.md"), "state": "present"}
+        hc.instructions_facts = lambda selected: (
+            self.instructions if selected == "openclaw" else None)
 
         hc.STATE_DIR = self.dir
         hc.LISTENER_STATE = self.dir / "idle.json"
@@ -185,6 +193,7 @@ class Fixture:
             "git": hc.git_facts(),
         }
         facts["spool"] = self.spool_facts
+        facts["instructions"] = hc.instructions_facts(self.runtime)
         facts["reply"] = hc.reply_facts(facts["queue"]["cursor"])
         problems, warnings = hc.assess(facts)
         return facts, problems, warnings
@@ -798,6 +807,181 @@ with tempfile.TemporaryDirectory() as tmp:
           hc.opencode_plugin_facts(state)["open_pids"])
     check("no presence folder means nothing is open", [],
           hc.opencode_open_pids(state / "missing"))
+
+# --- the standing rule in OpenClaw's own AGENTS.md (#186) ---------------------
+#
+# Every other row can be green while no roster mail is ever answered, if the
+# agent was never told what the tag means. That state is a warning with the fix
+# in it, not a problem: delivery is working, which is what makes it worth saying.
+
+f = Fixture()
+_, problems, warnings = f.run()
+check("the rule in place raises no warning", [], [w for w in warnings if "standing rule" in w])
+_, text = f.exit_code()
+check("the rule in place is reported as such", True,
+      "instructions standing rule in place in" in text)
+
+f = Fixture()
+f.instructions = {"path": str(f.dir / "AGENTS.md"), "state": "absent"}
+_, problems, warnings = f.run()
+check("a missing rule is a warning", True,
+      any("standing rule is not in" in w for w in warnings))
+check("the warning names the command that fixes it", True,
+      any("openclaw_rules.py --install" in w for w in warnings))
+check("but delivery is not called broken over it", [], problems)
+code, text = f.exit_code()
+check("and the install still exits 0", 0, code)
+check("the row says ABSENT", True, "instructions standing rule ABSENT in" in text)
+check("and how to fix it", True, "run: python3 scripts/openclaw_rules.py --install" in text)
+
+f = Fixture()
+f.instructions = {"path": str(f.dir / "AGENTS.md"), "state": "outdated"}
+_, problems, warnings = f.run()
+check("an old wording is a warning too", True,
+      any("standing rule is out of date in" in w for w in warnings))
+
+f = Fixture()
+f.instructions = {"path": None, "state": "unknown"}
+_, problems, warnings = f.run()
+check("an unreadable check says so rather than guessing", True,
+      any("could not be checked" in w for w in warnings))
+
+f = Fixture(runtime="hermes")
+_, problems, warnings = f.run()
+check("other runtimes carry the instruction in the prompt and get no row", [],
+      [w for w in warnings if "standing rule" in w])
+_, text = f.exit_code()
+check("and print nothing about it", False, "instructions " in text)
+
+check("the real facts function is silent off OpenClaw", None,
+      _real_instructions_facts("codex"))
+with tempfile.TemporaryDirectory() as tmp:
+    import openclaw_rules
+    target = Path(tmp) / "AGENTS.md"
+    with mock.patch.object(openclaw_rules, "default_target", lambda: target):
+        check("the real facts function reads the rule as absent from an empty workspace",
+              {"path": str(target), "state": "absent"}, _real_instructions_facts("openclaw"))
+        target.write_text("# mine\n\n" + openclaw_rules.block(), encoding="utf-8")
+        check("and as present once written",
+              "present", _real_instructions_facts("openclaw")["state"])
+
+# --- notifiers are named on the roster row (#188) -----------------------------
+
+f = Fixture()
+_, text = f.exit_code()
+check("a roster without notifiers or a GitHub column says so", True,
+      "no notifiers: mail sent on someone's behalf" in text)
+hc.ROSTER.write_text("| Name | Email | Type | GitHub |\n|---|---|---|---|\n"
+                     "| Dulce | d@x.com | Human | dulce |\n", encoding="utf-8")
+facts, _, _ = f.run()
+check("a GitHub column is reported as the implied notifier",
+      [{"address": "notifications@github.com", "header": "X-GitHub-Sender",
+        "column": "github", "source": "github column"}], facts["roster"]["notifiers"])
+_, text = f.exit_code()
+check("and the row says where it came from", True,
+      "notifications@github.com via X-GitHub-Sender, from the github column" in text)
+hc.ROSTER.write_text("| Name | Email | Type | GitHub |\n|---|---|---|---|\n"
+                     "| Dulce | d@x.com | Human | dulce |\n\n## Notifiers\n\n"
+                     "| Address | Header | Column |\n|---|---|---|\n"
+                     "| notifications@github.com | X-GitHub-Sender | GitHub |\n", encoding="utf-8")
+facts, _, _ = f.run()
+check("an explicit row is reported once, as the table's", ["notifiers table"],
+      [n["source"] for n in facts["roster"]["notifiers"]])
+
+# --- the Claude Code watch registry is a row of its own (#170) -----------------
+#
+# "whether a session has armed a watch is not observable from here" was true
+# and is not any more: each session's registry says live, expired, orphan.
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=0, bytes_total=100, session_arming="session-registry")
+f.spool_facts.update({"watch_live": None, "watch_expired": [], "watch_orphan": [],
+                      "watch_pending": [], "watch_yielded": 0, "watch_ended": 0})
+_, text = f.exit_code()
+check("no registry at all is said plainly", True,
+      "watch        no session has armed a watch" in text)
+check("and the old unobservable line is gone", False, "not observable from here" in text)
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=0, bytes_total=100, session_arming="session-registry")
+f.spool_facts.update({"watch_live": {"session_id": "abcdef12-rest", "armed_at": "2026-09-18T05:00:00Z",
+                                     "expires_at": "2026-09-18T05:30:00Z", "heartbeat_at": "2026-09-18T05:10:00Z",
+                                     "offset": 100, "watcher_pid": 1},
+                      "watch_expired": [], "watch_orphan": [], "watch_pending": [],
+                      "watch_yielded": 0, "watch_ended": 0})
+_, problems, warnings = f.run()
+_, text = f.exit_code()
+check("a live watch is named with its session, start and expiry", True,
+      "watch        armed by session abcdef12 since 2026-09-18T05:00:00Z, expires 2026-09-18T05:30:00Z" in text)
+check("and carries its heartbeat", True, "last heartbeat 2026-09-18T05:10:00Z" in text)
+check("a live watch raises no warning", [], [w for w in warnings if "no session is watching" in w])
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=240, bytes_total=340, session_arming="session-registry")
+f.spool_facts.update({"watch_live": None,
+                      "watch_expired": [{"session_id": "deadbeef-x", "armed_at": "2026-09-18T04:00:00Z",
+                                         "expires_at": "2026-09-18T04:30:00Z", "offset": 100, "watcher_pid": 1}],
+                      "watch_orphan": [], "watch_pending": [{"session_id": "p"}],
+                      "watch_yielded": 0, "watch_ended": 0})
+_, problems, warnings = f.run()
+_, text = f.exit_code()
+check("an expired watch with mail waiting is a warning", True,
+      any("no session is watching" in w and "expired at 2026-09-18T04:30:00Z" in w for w in warnings))
+check("and never a problem: the mail is safe in the spool", [], problems)
+check("the row names the expired session", True,
+      "watch        none armed: the last one (session deadbeef) expired at 2026-09-18T04:30:00Z without re-arming" in text)
+check("sessions that ran the hook and never armed are counted", True,
+      "1 session(s) ran the hook and never armed" in text)
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=0, bytes_total=340, session_arming="session-registry")
+f.spool_facts.update({"watch_live": None, "watch_expired": [],
+                      "watch_orphan": [{"session_id": "killed99", "armed_at": "2026-09-18T04:00:00Z",
+                                        "expires_at": "2026-09-18T04:30:00Z", "offset": 340, "watcher_pid": 1}],
+                      "watch_pending": [], "watch_yielded": 0, "watch_ended": 0})
+_, problems, warnings = f.run()
+_, text = f.exit_code()
+check("an orphan with nothing unread is reported, not warned about", True,
+      "watch        none armed: the last one (session killed99) was killed (pid gone) without re-arming" in text)
+check("because nothing is waiting", [], [w for w in warnings if "no session is watching" in w])
+
+with tempfile.TemporaryDirectory() as tmp:
+    import session_start as ss
+    with mock.patch.object(ss, "SESSIONS_DIR", Path(tmp) / "sessions"):
+        check("no sessions directory means no registries", {"watch_live": None, "watch_expired": [],
+              "watch_orphan": [], "watch_pending": [], "watch_yielded": 0, "watch_ended": 0,
+              "watch_ended_last": None},
+              hc.watch_registry_facts())
+        ss.write_registry("s1", 5)
+        facts = hc.watch_registry_facts()
+        check("a pending registry is listed as pending", ["s1"],
+              [w["session_id"] for w in facts["watch_pending"]])
+        ss.update_registry("s1", status="armed", watcher_pid=os.getpid(),
+                           armed_at=ss._utc_now(), expires_at="2999-01-01T00:00:00Z", heartbeat_at=ss._utc_now())
+        check("an armed registry with a live pid and a future expiry is live", "s1",
+              hc.watch_registry_facts()["watch_live"]["session_id"])
+        # Claude Code retires a Monitor with a signal the watcher catches, so an
+        # expiry shows up as `ended`; the newest ended one is what the row names.
+        ss.update_registry("s1", status="ended", ended_at="2026-09-18T07:15:23Z")
+        ss.write_registry("s0", 1)
+        ss.update_registry("s0", status="ended", ended_at="2026-09-18T06:00:00Z")
+        facts = hc.watch_registry_facts()
+        check("two ended registries count as ended", 2, facts["watch_ended"])
+        check("and the newest one is the last", "s1", facts["watch_ended_last"]["session_id"])
+
+f = Fixture(runtime="claudecode")
+f.spool(bytes_unread=300, bytes_total=900, session_arming="session-registry")
+f.spool_facts.update({"watch_live": None, "watch_expired": [], "watch_orphan": [], "watch_pending": [],
+                      "watch_yielded": 0, "watch_ended": 1,
+                      "watch_ended_last": {"session_id": "2be4f360-x", "ended_at": "2026-09-18T07:15:23Z",
+                                           "offset": 600, "watcher_pid": 1}})
+_, problems, warnings = f.run()
+_, text = f.exit_code()
+check("a retired Monitor with mail waiting is named as ended, not as nobody", True,
+      "watch        none armed: the last one (session 2be4f360) ended at 2026-09-18T07:15:23Z (the Monitor was retired) without re-arming" in text)
+check("and warns with the same words", True,
+      any("ended at 2026-09-18T07:15:23Z (the Monitor was retired) and nobody re-armed" in w for w in warnings))
+check("still never a problem", [], problems)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

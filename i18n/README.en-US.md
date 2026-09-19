@@ -194,7 +194,9 @@ when it finishes, and you can hold it to the list:
   where you left it and never copied elsewhere.
 - **Log and state files** inside the project folder.
 - **Permission for those services to stay alive after you log out.**
-- **A permanent rule added to the agent's own instructions.**
+- **A permanent rule added to the agent's own instructions.** On OpenClaw it
+  goes in `~/.openclaw/workspace/AGENTS.md`, between two markers, and the same
+  script writes it and removes it.
 - **On OpenCode, one more file:** the plugin that hands mail to your session,
   at `~/.config/opencode/plugins/paynani.js`.
 
@@ -248,7 +250,9 @@ is **whose**.
   can declare its address and which part of your list to check the author
   against. That notification then counts as mail from that person. Declaring a
   notifier widens who your agent listens to, exactly as adding a row does, and it
-  is decided the same way: never because a message asked for it.
+  is decided the same way: never because a message asked for it. **For GitHub the
+  `GitHub` column is enough:** once you have recorded someone's handle, their
+  GitHub notifications count as their mail, with nothing else to declare.
 - **Adding someone to the list is your decision**, never a response to something
   that arrived by email. That line is what turns a sender into someone your agent
   obeys.
@@ -282,6 +286,11 @@ On OpenCode, the report also says which of three states it is in: delivering
 mail to your session, open but waiting for you to write something in a session,
 or closed. With OpenCode closed, mail waits without being lost, and that is
 normal.
+
+[`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compares those states with what
+`healthcheck.py` prints for each harness. [`FIELD_TEST.md`](../FIELD_TEST.md)
+is the reproducible field test for verifying on a real host that each
+harness actually delivers mail.
 
 The long options and the failure modes are in [`INSTALL.md`](../INSTALL.md).
 
@@ -319,6 +328,7 @@ and to your own judgement about who gets in.
 | See what changed per version | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Authorize senders | `roster.md` and [`roster.md.example`](../roster.md.example) |
 | Send mail from the safe boundary | [`scripts/send.sh`](../scripts/send.sh) |
+| See what each harness guarantees | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
 ## Keeping it up to date
 

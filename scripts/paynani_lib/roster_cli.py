@@ -22,6 +22,7 @@ import json
 import os
 import subprocess
 import sys
+from email.message import EmailMessage
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -205,6 +206,47 @@ def run_list(args) -> int:
         extra = f" ({e['type']})" if e.get("type") else ""
         print(f"{e['name']} <{e['address']}>{extra}")
     return 0
+
+
+def run_explain(args) -> int:
+    """Explain the same roster decision the listener would make."""
+    message = EmailMessage()
+    message["From"] = args.from_address
+    for raw in args.header or ():
+        if "=" not in raw:
+            print(f"Invalid --header {raw!r}; use NAME=VALUE.", file=sys.stderr)
+            return 64
+        name, value = raw.split("=", 1)
+        name = name.strip()
+        if not name or "\n" in name or "\r" in name:
+            print(f"Invalid header name in {raw!r}.", file=sys.stderr)
+            return 64
+        try:
+            message[name] = value.strip()
+        except (ValueError, TypeError) as exc:
+            print(f"Invalid --header {raw!r}: {exc}", file=sys.stderr)
+            return 64
+
+    path = roster_file()
+    decision = roster_mod.explain_sender(
+        message,
+        roster_mod.roster_addresses(path),
+        roster_mod.roster_entries(path),
+        roster_mod.notifiers(path),
+    )
+    verdict = "AUTHORIZED" if decision["matched"] else "NOT AUTHORIZED"
+    print(f"{verdict}: {decision['reason']}")
+    entry = decision.get("entry") or {}
+    if entry:
+        print(f"Contact: {entry.get('name', '')} <{entry.get('address', '')}>")
+    notifier = decision.get("notifier") or {}
+    if notifier:
+        print(
+            "Notifier: "
+            f"{notifier.get('address', '')} via {notifier.get('header', '')} "
+            f"→ {notifier.get('column', '')}"
+        )
+    return 0 if decision["matched"] else 1
 
 
 def _print_diff(before: str, after: str) -> None:

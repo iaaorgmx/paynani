@@ -165,12 +165,49 @@ input:focus {
   margin-top: .2rem;
 }
 
+.checklist { list-style: none; margin: 0 0 1.25rem; padding: 0; }
+.checklist li {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: .85rem 1rem;
+  margin: .55rem 0;
+}
+.checklist strong { display: block; margin: .25rem 0; }
+.checklist .badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: .08rem .55rem;
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.checklist .ok .badge { background: var(--ok-bg); color: var(--ok-ink); border: 1px solid var(--ok-line); }
+.checklist .todo .badge { background: var(--warn-bg); color: var(--warn-ink); border: 1px solid var(--warn-line); }
+.checklist .optional .badge { background: var(--bg); color: var(--quiet); border: 1px solid var(--line); }
+.checklist .detail, .checklist .doc {
+  display: block;
+  color: var(--quiet);
+  font-size: .85rem;
+}
+
+textarea[readonly] {
+  width: 100%;
+  min-height: 12rem;
+  padding: .75rem;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: .85rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .actions {
   display: flex;
   gap: .75rem;
   margin-top: 1.5rem;
   flex-wrap: wrap;
 }
+.actions.compact { margin-top: .75rem; align-items: center; }
 
 button {
   font: inherit;

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Send via Himalaya, but only to allowlisted recipients.
 #
-#   send.sh [--check] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>
+#   send.sh [--check|--dry-run] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>
 #
 # Anything not in roster.md exits 2 and sends nothing. That is the point: this
 # agent reads mail all day and acts on the part of it that comes from the roster,
@@ -19,11 +19,20 @@
 # body is the first part rather than the whole message. A field report that could
 # only be pasted into the body is what asked for this (#38).
 #
-# --check prints the message it would send and sends nothing. Use it to prove
-# this script can find its credentials, which the roster tests cannot: the roster
-# gate runs first, so a refusal exits before the env file is ever read. It prints
-# attachments encoded, not summarised, because a message you cannot see whole is
-# one you cannot check.
+# --check prints the exact message it would send and sends nothing. Use it to
+# prove this script can find its credentials, which the roster tests cannot: the
+# roster gate runs first, so a refusal exits before the env file is ever read. It
+# prints attachments encoded, not summarised, because a message you cannot see
+# whole is one you cannot check.
+#
+# --dry-run prints a redacted delivery summary and sends nothing: recipient, cc,
+# the roster row that authorised each recipient, MIME shape, and attachment
+# names/sizes. It deliberately does not print the body, env file, password,
+# attachment contents, or any generated raw message.
+#
+# PAYNANI_SIGNATURE_FILE in ENV_FILE points at a readable plain-text signature
+# appended to text/plain bodies. AGENT_EMAIL_SIGNATURE_FILE is accepted as a
+# compatibility alias.
 #
 # Environment:
 #   ROSTER    path to the allowlist        (default: repo root/roster.md)
@@ -51,6 +60,7 @@ ENV_FILE="${ENV_FILE:-$(paynani_env_file)}"
 ACCOUNT="paynani"
 
 check_only=""
+dry_run=""
 cc=""
 htmlfile=""
 attachments=()
@@ -58,6 +68,10 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --check)
             check_only=yes
+            shift
+            ;;
+        --dry-run)
+            dry_run=yes
             shift
             ;;
         --cc)
@@ -78,7 +92,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-to=${1:?usage: send.sh [--check] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
+to=${1:?usage: send.sh [--check|--dry-run] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
 
@@ -92,14 +106,25 @@ fi
 # Attachments are checked before anything is built, so a bad path costs nothing
 # and half a message is never sent. Exit 2 is the same code the roster refusal
 # uses, and means the same thing here: nothing left this host.
+file_size_bytes() {
+    if stat -c %s "$1" >/dev/null 2>&1; then
+        stat -c %s "$1"
+    else
+        stat -f %z "$1"
+    fi
+}
+
 attach_bytes=0
+attachment_sizes=()
 for _paynani_file in ${attachments[@]+"${attachments[@]}"}; do
     if [ ! -f "$_paynani_file" ] || [ ! -r "$_paynani_file" ]; then
         echo "REFUSED: cannot read attachment $_paynani_file" >&2
         echo "Nothing was sent. Check the path, or drop the --attach." >&2
         exit 2
     fi
-    attach_bytes=$(( attach_bytes + $(wc -c < "$_paynani_file") ))
+    _paynani_size=$(file_size_bytes "$_paynani_file")
+    attachment_sizes+=("$_paynani_size")
+    attach_bytes=$(( attach_bytes + _paynani_size ))
 done
 
 # Gmail rejects above 25 MB, and base64 costs a third on top of the raw bytes.
@@ -151,6 +176,44 @@ roster_allows() {
     "$_paynani_scriptdir/roster_extract.sh" "$ROSTER" | grep -qxF "$_paynani_want"
 }
 
+roster_row_for() {
+    _paynani_want=$(printf '%s' "$1" | tr -d '[:blank:]' | tr '[:upper:]' '[:lower:]')
+    awk -v want="$_paynani_want" '
+        function trim(s) { sub(/^[ \t\r]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+        function is_separator(s) {
+            gsub(/[|]/, "", s); gsub(/[ \t\r]/, "", s)
+            return (s != "" && s ~ /^[-:]+$/)
+        }
+        {
+            line = $0
+            sub(/^[ \t]+/, "", line); sub(/[ \t\r]+$/, "", line)
+            if (line ~ /^#/) {
+                heading = line
+                sub(/^#+[ \t]*/, "", heading)
+                heading = tolower(heading)
+                if (heading ~ /^notifier/ || heading ~ /^notificador/) in_notifiers = 1
+                else if (line ~ /^##/) in_notifiers = 0
+                next
+            }
+            if (line == "" || is_separator(line) || in_notifiers) next
+
+            n = split(line, parts, "|")
+            for (i = 1; i <= n; i++) {
+                field = parts[i]
+                gsub(/[ \t\r]/, "", field)
+                if (tolower(field) == want) {
+                    row = line
+                    sub(/^\|[ \t]*/, "", row)
+                    sub(/[ \t]*\|$/, "", row)
+                    gsub(/[ \t]*\|[ \t]*/, " | ", row)
+                    print row
+                    exit
+                }
+            }
+        }
+    ' "$ROSTER"
+}
+
 if ! roster_allows "$to"; then
     echo "REFUSED: $to is not in $ROSTER" >&2
     echo "Add it deliberately, or ask your human to send this one." >&2
@@ -161,6 +224,15 @@ if [ -n "$cc" ] && ! roster_allows "$cc"; then
     echo "REFUSED: cc $cc is not in $ROSTER" >&2
     echo "Add it deliberately, or ask your human to send this one." >&2
     exit 2
+fi
+
+# Keep the roster evidence for the redacted dry-run report. The command exits
+# before any SMTP path, but only after the same allowlist checks a live send uses.
+to_roster_row=$(roster_row_for "$to")
+if [ -n "$cc" ]; then
+    cc_roster_row=$(roster_row_for "$cc")
+else
+    cc_roster_row=""
 fi
 
 # --- Who the message is from -------------------------------------------------
@@ -192,6 +264,16 @@ from_addr=$(printf '%s' "$from_addr" | tr -d '[:space:]')
 from_name=$(env_value PAYNANI_FROM_NAME)
 [ -n "$from_name" ] || from_name=$(env_value AGENT_EMAIL_FROM_NAME)
 from_name=$(printf '%s' "$from_name" | tr -d '\r\n')
+
+signature_file=$(env_value PAYNANI_SIGNATURE_FILE)
+[ -n "$signature_file" ] || signature_file=$(env_value AGENT_EMAIL_SIGNATURE_FILE)
+signature_file=$(printf '%s' "$signature_file" | tr -d '\r\n')
+
+if [ -n "$signature_file" ] && { [ ! -f "$signature_file" ] || [ ! -r "$signature_file" ]; }; then
+    echo "signature file $signature_file is not readable - refusing to send" >&2
+    echo "Fix PAYNANI_SIGNATURE_FILE in $ENV_FILE, or remove it to send unsigned." >&2
+    exit 1
+fi
 
 if [ -z "$from_addr" ]; then
     echo "no sender address in $ENV_FILE — refusing to send" >&2
@@ -338,15 +420,40 @@ attachment_part() {
     printf '\n'
 }
 
+file_ends_with_newline() {
+    [ -s "$1" ] || return 0
+    [ "$(tail -c 1 "$1" | od -An -t x1 | tr -d ' \n')" = "0a" ]
+}
+
+body_with_signature() {
+    cat "$bodyfile"
+    _paynani_last_body_file=$bodyfile
+
+    if [ -n "$signature_file" ]; then
+        if ! file_ends_with_newline "$bodyfile"; then
+            printf '\n'
+        fi
+        printf '\n-- \n'
+        cat "$signature_file"
+        _paynani_last_body_file=$signature_file
+    fi
+
+    if ! file_ends_with_newline "$_paynani_last_body_file"; then
+        printf '\n'
+    fi
+}
+
 plain_body_part() {
     printf 'Content-Type: text/plain; charset=UTF-8\n'
     printf 'Content-Transfer-Encoding: 8bit\n'
     printf '\n'
-    cat "$bodyfile"
+    body_with_signature
     # A body file that does not end in a newline would otherwise put the next
     # separator on the same line as its last word, and a separator that is not
     # alone on its line is not a separator.
-    printf '\n'
+    if [ -z "$signature_file" ]; then
+        printf '\n'
+    fi
 }
 
 html_body_part() {
@@ -407,7 +514,7 @@ build_message() {
     printf 'Subject: %s\n' "$(encode_header "$subject")"
     printf '\n'
     if [ -z "$boundary" ] && [ -z "$htmlfile" ]; then
-        cat "$bodyfile"
+        body_with_signature
         return
     fi
     if [ -z "$boundary" ]; then
@@ -425,6 +532,49 @@ build_message() {
     done
     printf -- '--%s--\n' "$boundary"
 }
+
+if [ -n "$check_only" ] && [ -n "$dry_run" ]; then
+    echo "REFUSED: choose only one of --check or --dry-run" >&2
+    exit 2
+fi
+
+if [ -n "$dry_run" ]; then
+    printf 'dry-run: nothing sent\n'
+    printf 'To: %s (roster row: %s)\n' "$to" "$to_roster_row"
+    if [ -n "$cc" ]; then
+        printf 'Cc: %s (roster row: %s)\n' "$cc" "$cc_roster_row"
+    else
+        printf 'Cc: none\n'
+    fi
+    printf 'Subject: %s\n' "$subject"
+    if [ -n "$htmlfile" ]; then
+        body_formats='text/plain, text/html'
+    else
+        body_formats='text/plain'
+    fi
+    if [ -n "$boundary" ]; then
+        mime_shape='multipart/mixed'
+    elif [ -n "$htmlfile" ]; then
+        mime_shape='multipart/alternative'
+    else
+        mime_shape='single-part'
+    fi
+    printf 'MIME shape: %s (%s)\n' "$mime_shape" "$body_formats"
+    printf 'Attachments: %s file(s)\n' "${#attachments[@]}"
+    _paynani_i=0
+    for _paynani_file in ${attachments[@]+"${attachments[@]}"}; do
+        printf 'Attachment: %s (%s bytes)\n' "$(basename "$_paynani_file" | tr -d '\r\n')" "${attachment_sizes[$_paynani_i]}"
+        _paynani_i=$(( _paynani_i + 1 ))
+    done
+    printf 'Attachment bytes total: %s\n' "$attach_bytes"
+    if [ -n "$signature_file" ]; then
+        printf 'Signature: yes (text/plain, source: PAYNANI_SIGNATURE_FILE)\n'
+    else
+        printf 'Signature: no\n'
+    fi
+    printf 'Secrets/body/raw message: not shown\n'
+    exit 0
+fi
 
 if [ -n "$check_only" ]; then
     build_message
@@ -473,3 +623,4 @@ if [ -n "$cc" ]; then
 else
     echo "sent to $to"
 fi
+echo "message-id: $msgid"

@@ -27,11 +27,24 @@ from roster import (DEFAULT_ROSTER, notifier_headers, notifiers,
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "harness"))
 import event as ev
+import ledger
 from paths import env_file, state_dir
 
 DEFAULT_ENV   = None   # resolved by harness/paths.py, see main()
 DEFAULT_STATE = str(state_dir() / "idle.json")
 DEFAULT_JOURNAL = str(state_dir() / "events.jsonl")
+
+
+def _process_version():
+    """Version loaded by this process, fixed at startup rather than per heartbeat."""
+    try:
+        value = (pathlib.Path(__file__).resolve().parent.parent / "VERSION").read_text().strip()
+    except OSError:
+        return None
+    return value or None
+
+
+PROCESS_VERSION = _process_version()
 
 # RFC 2177: a client must re-issue IDLE at least every 29 minutes. We stay well
 # under the ceiling on purpose: this interval is also the longest a dead
@@ -77,8 +90,16 @@ def record(journal_path, envelope):
     permission error, with a line in mail.log as the only trace. Writing the
     operator line is not queueing.
     """
+    if envelope.get("event_type") == ev.MAIL_RECEIVED:
+        command = envelope.get("inspection_command")
+        if command and command not in envelope.get("notification_text", ""):
+            envelope = dict(envelope)
+            envelope["notification_text"] = (
+                envelope.get("notification_text", "") + f" [{command}]"
+            )
     try:
         ev.append(journal_path, envelope)
+        ledger.observed(ledger.path_for(journal_path), envelope)
     except (OSError, ValueError) as exc:
         log(f"could not write the event journal at {journal_path}: {exc}")
         log("This message is NOT queued for delivery, so its UID is deliberately "
@@ -198,7 +219,7 @@ def describe(sender, subject, date, trusted=False):
     return parts(sender, subject, date, trusted)["notification_text"]
 
 
-def parts(sender, subject, date, trusted=False):
+def parts(sender, subject, date, trusted=False, message_id="", provider_id=""):
     """
     One message, rendered and structured at the same time.
 
@@ -239,7 +260,16 @@ def parts(sender, subject, date, trusted=False):
         "subject": subject or "",
         "sent_at": sent_iso,
         "roster_match": bool(trusted),
+        "message_id": (message_id or "").strip(),
+        "provider_id": (provider_id or "").strip(),
     }
+
+
+def provider_identifier(message_id):
+    """A stable provider-side identity when the Message-ID exposes one."""
+    value = (message_id or "").strip()
+    match = re.fullmatch(r"<([^<>]+)@github\.com>", value, re.IGNORECASE)
+    return f"github:{match.group(1).lower()}" if match else ""
 
 
 # Two key schemas are accepted, so a host that already keeps credentials for its
@@ -384,13 +414,16 @@ def timestamp():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def save_state(path, mailbox, validity, last_uid):
+def save_state(path, mailbox, validity, last_uid, telemetry=None):
     state = {
         "mailbox": mailbox,
         "uidvalidity": validity,
         "last_uid": last_uid,
         "heartbeat_at": timestamp(),
+        "version": PROCESS_VERSION,
     }
+    if telemetry:
+        state.update({k: v for k, v in telemetry.items() if v is not None})
     if str(path) == "none":
         return state
     try:
@@ -437,18 +470,20 @@ def fetch_since(conn, last_uid, listed):
     uids = sorted(u for u in (int(x) for x in data[0].split()) if u > last_uid)
     out = []
     for uid in uids:
-        fields_wanted = " ".join(["FROM", "SUBJECT", "DATE"]
+        fields_wanted = " ".join(["FROM", "SUBJECT", "DATE", "MESSAGE-ID"]
                                  + [h.upper() for h in notifier_headers(listed.notifiers)])
         typ, payload = conn.uid("fetch", str(uid),
                                 f"(BODY.PEEK[HEADER.FIELDS ({fields_wanted})])")
         if typ != "OK" or not payload or not isinstance(payload[0], tuple):
             continue
         msg = email.message_from_bytes(payload[0][1])
+        message_id = decode_hdr(msg.get("Message-ID"))
         out.append((uid, parts(decode_hdr(msg.get("From")),
                                decode_hdr(msg.get("Subject")),
                                msg.get("Date", ""),
                                sender_is_listed(msg, listed.allowed,
-                                                listed.entries, listed.notifiers))))
+                                                listed.entries, listed.notifiers),
+                               message_id, provider_identifier(message_id))))
     return out
 
 
@@ -508,9 +543,18 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
         # treats everything as read-only until a human writes the file.
         log(f"no roster at {roster_path}; no sender will be tagged as trusted")
     backoff = BACKOFF_MIN
+    state = load_state(state_path)
+    # IMAP reconnection telemetry lives beside the UID cursor so doctor can
+    # distinguish a quiet, healthy mailbox from a listener that is only retrying.
+    telemetry = {
+        "imap_last_disconnect_at": state.get("imap_last_disconnect_at"),
+        "imap_last_disconnect_error": state.get("imap_last_disconnect_error"),
+        "imap_last_recovered_at": state.get("imap_last_recovered_at"),
+        "imap_reconnect_attempts": int(state.get("imap_reconnect_attempts") or 0),
+        "imap_current_backoff_seconds": int(state.get("imap_current_backoff_seconds") or 0),
+    }
     # What the journal has been told about the listener's own health.
     faults = FaultLog(journal_path, account)
-    state = load_state(state_path)
     last_uid = state.get("last_uid") if state.get("mailbox") == mailbox else None
 
     while not _stop:
@@ -534,9 +578,13 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
 
             if last_uid is None:
                 last_uid = newest_uid(conn)
-                state = save_state(state_path, mailbox, validity, last_uid)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
                 log(f"listening on {mailbox}, baseline uid {last_uid}")
             else:
+                # Write immediately on a resumed process. Upgrade verification
+                # must distinguish the new listener from the old one without
+                # waiting for the next five-minute IDLE heartbeat.
+                state = save_state(state_path, mailbox, validity, last_uid)
                 log(f"listening on {mailbox}, resuming from uid {last_uid}")
 
             # Anything that landed while this process was not running: a reboot, a
@@ -550,15 +598,19 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                 # Only now. The record is on disk and flushed, so acknowledging
                 # this UID cannot outlive the thing it is acknowledging.
                 last_uid = uid
-                state = save_state(state_path, mailbox, validity, last_uid)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
 
             # Settles anything owed from an earlier outage before saying it is over.
             faults.recovered()
+            if telemetry.get("imap_last_disconnect_at") and telemetry.get("imap_current_backoff_seconds"):
+                telemetry["imap_last_recovered_at"] = timestamp()
+            telemetry["imap_current_backoff_seconds"] = 0
+            state = save_state(state_path, mailbox, validity, last_uid, telemetry)
             backoff = BACKOFF_MIN
 
             while not _stop:
                 idle(conn, IDLE_REFRESH)
-                state = save_state(state_path, mailbox, validity, last_uid)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
                 # Check unconditionally, not only when IDLE reported a change:
                 # mail landing between DONE and the next IDLE produces no EXISTS we
                 # can see, and would sit unnoticed until the *next* message arrived.
@@ -572,7 +624,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                     found = True
                     # Persist per message, not per batch: a crash mid-batch must
                     # not replay what was already reported.
-                    state = save_state(state_path, mailbox, validity, last_uid)
+                    state = save_state(state_path, mailbox, validity, last_uid, telemetry)
                 if found and once:
                     return 0
 
@@ -592,6 +644,14 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
             if _stop:
                 break
             message = f"connection lost ({type(exc).__name__}: {exc})"
+            telemetry["imap_last_disconnect_at"] = timestamp()
+            telemetry["imap_last_disconnect_error"] = message
+            telemetry["imap_reconnect_attempts"] = int(telemetry.get("imap_reconnect_attempts") or 0) + 1
+            telemetry["imap_current_backoff_seconds"] = backoff
+            try:
+                save_state(state_path, mailbox, state.get("uidvalidity"), last_uid, telemetry)
+            except UnboundLocalError:
+                pass
             faults.fault(message)
             log(f"{message}; retrying in {backoff}s")
             slept = 0

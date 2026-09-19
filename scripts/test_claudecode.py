@@ -537,16 +537,25 @@ class Watcher(unittest.TestCase):
 
     def _take_down_the_tree(self, holder):
         import signal
+        # The tests start watcher processes with start_new_session=True, so the
+        # process group id is the leader pid. On BSD/macOS the leader can exit
+        # before cleanup while a child such as tail still holds descriptors into
+        # the temporary state directory. If os.getpgid() fails in that window,
+        # still signal the group by the known leader pid instead of returning and
+        # leaving the child to race TemporaryDirectory cleanup.
         try:
             group = os.getpgid(holder.pid)
         except OSError:
-            return
+            group = holder.pid
         for sig in (signal.SIGCONT, signal.SIGKILL):
             try:
                 os.killpg(group, sig)
             except OSError:
                 pass
-        holder.wait()
+        try:
+            holder.wait(timeout=5)
+        except Exception:
+            pass
 
     def _recorded_chain(self, timeout=8):
         """The chain the watcher wrote into the lock, once it has written one."""
@@ -762,6 +771,37 @@ echo "OK $chain"
         done = sp.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
         self.assertEqual(0, done.returncode, done.stdout + done.stderr)
         self.assertTrue(done.stdout.startswith("OK "), done.stdout)
+
+
+    def test_tail_still_joins_after_the_ticker_opens_first(self):
+        """
+        The ticker can open the fifo before tail does. If the fifo path is
+        removed at that point, tail's later redirection recreates a regular file
+        and the watcher stays alive but never sees new mail.
+        """
+        import subprocess as sp, time
+        spool = self.state / "session.spool"
+        spool.write_text("", encoding="utf-8")
+        out = self.state / "watch.out"
+        handle = open(out, "w", encoding="utf-8")
+        self.addCleanup(handle.close)
+        env = {**os.environ, "PAYNANI_TEST_TAIL_DELAY": "1"}
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "0"],
+                        stdout=handle, stderr=sp.STDOUT, text=True,
+                        start_new_session=True, env=env)
+        self.addCleanup(lambda: self._take_down_the_tree(proc))
+        self.assertTrue(self._wait_for_arming(proc), "the watcher did not arm")
+        time.sleep(1.5)
+
+        with spool.open("a", encoding="utf-8") as handle:
+            handle.write("hola\n")
+        offset = self.state / "session.offset"
+        self._wait_for(lambda: offset.read_text().strip() == "5",
+                       "tail output after the ticker opened the fifo first",
+                       diagnose=lambda: self._what_the_watcher_saw(out)
+                       + f"\n--- watcher exit code --- {proc.poll()}"
+                       + f"\n--- spool bytes --- {spool.stat().st_size}"
+                       + f"\n--- offset --- {offset.read_text().strip()!r}")
 
     def test_the_watcher_takes_its_tail_with_it(self):
         """
@@ -994,6 +1034,369 @@ class HookRegistration(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.run_install()
         self.assertEqual(self.settings.read_text(encoding="utf-8"), "{ not json")
+
+
+class WatchRegistry(unittest.TestCase):
+    """
+    One registry per session, written by the hook and kept by the watcher (#170).
+
+    The hook used to print a byte offset for the agent to copy; the registry
+    is where that number lives now, under the session's own id, and it is what
+    lets healthcheck.py and the UserPromptSubmit hook answer the question this
+    repository used to call unobservable: is anybody watching?
+    """
+
+    WATCH = ROOT / "harness/session_watch.sh"
+
+    def setUp(self):
+        import json
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = pathlib.Path(self.tmp.name)
+        sys.path.insert(0, str(ROOT / "harness"))
+        import session_start as ss
+        self.ss = ss
+        self.json = json
+        self.spool = self.state / "session.spool"
+        self.offset = self.state / "session.offset"
+        for attr, value in (("SPOOL", self.spool), ("SESSION_OFFSET", self.offset),
+                            ("SESSIONS_DIR", self.state / "sessions"), ("STATE_DIR", self.state)):
+            patcher = mock.patch.object(ss, attr, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.procs = []
+        self.addCleanup(self._take_down)
+
+    def _take_down(self):
+        import signal
+        for proc in self.procs:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except OSError:
+                pass
+            proc.wait()
+            proc.stdout.close(); proc.stderr.close()
+
+    def _hook(self, session_id, spool_through=0, **stubs):
+        """Run the SessionStart hook as Claude Code would: JSON on stdin."""
+        import contextlib, io
+        ss = self.ss
+        defaults = {
+            "unit_state": lambda unit: "active",
+            "dispatcher_faults": lambda: [],
+            "read_backlog": lambda: ([], False),
+            "read_spool_backlog": lambda: (["[mail] one"], False, spool_through),
+            "selected_runtime": lambda: "claudecode",
+            "version_line": lambda: None,
+            "local_code_line": lambda: "",
+            "read_hook_input": lambda: {"session_id": session_id, "hook_event_name": "SessionStart"},
+        }
+        defaults.update(stubs)
+        patchers = [mock.patch.object(ss, name, value) for name, value in defaults.items()]
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ss.main()
+        return self.json.loads(buf.getvalue())["hookSpecificOutput"]["additionalContext"]
+
+    def _watch(self, session_id, env_extra=None):
+        import subprocess as sp
+        env = dict(os.environ)
+        env["CLAUDE_CODE_SESSION_ID"] = session_id
+        env.update(env_extra or {})
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "--from-hook"],
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True, env=env,
+                        start_new_session=True)
+        self.procs.append(proc)
+        return proc
+
+    def _registry(self, session_id):
+        return self.json.loads((self.state / "sessions" / session_id / "watch.json").read_text())
+
+    def _wait(self, predicate, timeout=8):
+        import time
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_the_hook_writes_the_offset_to_the_registry_not_the_text(self):
+        context = self._hook("sess-one", spool_through=32)
+        record = self._registry("sess-one")
+        self.assertEqual(32, record["offset"])
+        self.assertEqual("pending", record["status"])
+        self.assertEqual(16, len(record["token"]))
+        self.assertIn("--from-hook", context)
+        self.assertNotIn(f"{self.state} 32", context, "the offset must not be in the arming command")
+
+    def test_the_session_id_is_never_invented(self):
+        """No id on stdin: the old numeric command, so a manual run still works."""
+        context = self._hook(None, spool_through=32, read_hook_input=lambda: {})
+        self.assertIn(f"{self.state} 32", context)
+        self.assertFalse((self.state / "sessions").exists())
+
+    def test_a_session_id_with_a_path_in_it_is_refused(self):
+        context = self._hook("../../etc", spool_through=5)
+        self.assertIn(f"{self.state} 5", context)
+        self.assertFalse((self.state / "sessions").exists())
+
+    def test_the_watcher_arms_from_its_own_registry(self):
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-two", spool_through=4)
+        proc = self._watch("sess-two")
+        self.assertTrue(self._wait(lambda: self.offset.exists()))
+        self.assertEqual("4", self.offset.read_text().strip())
+        self.assertTrue(self._wait(lambda: self._registry("sess-two")["status"] == "armed"))
+        record = self._registry("sess-two")
+        self.assertEqual(proc.pid, record["watcher_pid"])
+        self.assertIsNotNone(record["expires_at"])
+        self.assertEqual("live", self.ss.registry_state(record))
+
+    def test_a_numeric_offset_still_arms_the_registry_when_a_session_id_is_set(self):
+        """
+        #215: re-arming mid-session with the byte offset from state/session.offset
+        (not --from-hook, the only way to resume without replaying the whole
+        spool) left `session_id` empty in the bash script, so `registry()`
+        returned before writing anything. The watcher kept delivering mail while
+        healthcheck.py reported none armed -- a health report that contradicted
+        the fact.
+        """
+        import subprocess as sp
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-numeric", spool_through=4)
+        env = dict(os.environ, CLAUDE_CODE_SESSION_ID="sess-numeric")
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "4"],
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True, env=env,
+                        start_new_session=True)
+        self.procs.append(proc)
+        self.assertTrue(self._wait(lambda: self._registry("sess-numeric")["status"] == "armed"))
+        record = self._registry("sess-numeric")
+        self.assertEqual(proc.pid, record["watcher_pid"])
+        self.assertIsNotNone(record["expires_at"])
+
+    def test_the_watcher_marks_its_registry_ended_on_exit(self):
+        import signal
+        self._hook("sess-three", spool_through=0)
+        proc = self._watch("sess-three")
+        self.assertTrue(self._wait(lambda: self._registry("sess-three")["status"] == "armed"))
+        proc.send_signal(signal.SIGTERM)
+        self.assertTrue(self._wait(lambda: self._registry("sess-three")["status"] == "ended"))
+        self.assertEqual("ended", self.ss.registry_state(self._registry("sess-three")))
+        self.assertFalse((self.state / "session.watch.lock.d").exists())
+
+    def test_without_a_registry_the_watcher_refuses_and_says_why(self):
+        import subprocess as sp
+        env = dict(os.environ, CLAUDE_CODE_SESSION_ID="nobody")
+        run = sp.run(["bash", str(self.WATCH), str(self.state), "--from-hook"],
+                     capture_output=True, text=True, timeout=10, env=env)
+        self.assertEqual(1, run.returncode)
+        self.assertIn("no registry to arm from", run.stdout)
+        self.assertFalse(self.offset.exists(), "nothing armed, so nothing acknowledged")
+
+    def test_a_retired_watch_re_arms_from_where_it_stopped(self):
+        """
+        Claude Code retires a Monitor after 30 minutes; the agent runs the same
+        --from-hook command again. The registry is `ended` by then, and it has
+        to answer with the cursor the watcher reached, not refuse.
+        """
+        import signal
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-re", spool_through=0)
+        first = self._watch("sess-re")
+        self.assertTrue(self._wait(lambda: self._registry("sess-re")["status"] == "armed"))
+        self.assertTrue(self._wait(lambda: first.stdout.readline() == "a\n", timeout=8))
+        self.assertTrue(self._wait(lambda: self.offset.exists() and self.offset.read_text().strip() == "4"),
+                        "both lines acknowledged before the retirement")
+        first.send_signal(signal.SIGTERM)
+        self.assertTrue(self._wait(lambda: self._registry("sess-re")["status"] == "ended"))
+        self.assertEqual(4, self._registry("sess-re")["offset"], "the cursor after both lines")
+        self.spool.write_text("a\nb\nc\n", encoding="utf-8")
+        second = self._watch("sess-re")
+        if not self._wait(lambda: self._registry("sess-re")["status"] == "armed"):
+            second.send_signal(signal.SIGTERM); second.wait()
+            self.fail("second watcher did not arm: " + second.stdout.read() + second.stderr.read())
+        record = self._registry("sess-re")
+        self.assertEqual(second.pid, record["watcher_pid"])
+        self.assertIsNone(record["ended_at"])
+        self.assertEqual("c\n", second.stdout.readline(), "resumes past what the first showed")
+
+    def test_the_heartbeat_carries_the_cursor_so_an_orphan_re_arms_close_to_where_it_died(self):
+        """
+        Xochitl's finding on #202: the beat ignored the cursor, so a watcher
+        killed hard left the registry at the hook's offset and a re-arm
+        replayed everything it had already shown.
+        """
+        import signal
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-orph", spool_through=0)
+        proc = self._watch("sess-orph")
+        self.assertTrue(self._wait(lambda: self._registry("sess-orph")["status"] == "armed"))
+        self.assertTrue(self._wait(lambda: self.offset.exists() and self.offset.read_text().strip() == "4"))
+        self.assertTrue(self._wait(lambda: self._registry("sess-orph")["offset"] == 4, timeout=10),
+                        "the per-line beat wrote the cursor")
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.wait()
+        record = self._registry("sess-orph")
+        self.assertEqual("orphan", self.ss.registry_state(record))
+        self.assertEqual(4, record["offset"])
+        self.spool.write_text("a\nb\nc\n", encoding="utf-8")
+        # The lock directory the hard kill left behind is the watcher's own
+        # stale-holder case; it takes it over rather than needing help.
+        second = self._watch("sess-orph")
+        self.assertTrue(self._wait(lambda: self._registry("sess-orph")["status"] == "armed"))
+        first_line = second.stdout.readline()
+        self.assertIn("is dead; taking over", first_line, "the stale lock is the watcher's to clear")
+        self.assertEqual("c\n", second.stdout.readline(), "resumes at the beat's cursor, not the hook's")
+
+    def test_two_sessions_yield_exactly_one_watch_and_no_stranded_offset(self):
+        """
+        The acceptance case: one arms, the other is told there is an owner, and
+        the loser's registry does not sit pending with an offset nobody will use.
+        """
+        self.spool.write_text("", encoding="utf-8")
+        self._hook("sess-a", spool_through=0)
+        self._hook("sess-b", spool_through=0)
+        first = self._watch("sess-a")
+        self.assertTrue(self._wait(lambda: (self.state / "session.watch.lock.d").exists()))
+        self.assertTrue(self._wait(lambda: self._registry("sess-a")["status"] == "armed"))
+        import subprocess as sp
+        env = dict(os.environ, CLAUDE_CODE_SESSION_ID="sess-b")
+        second = sp.run(["bash", str(self.WATCH), str(self.state), "--from-hook"],
+                        capture_output=True, text=True, timeout=10, env=env)
+        self.assertEqual(0, second.returncode)
+        self.assertIn("already watching", second.stdout)
+        self.assertEqual("yielded", self._registry("sess-b")["status"])
+        self.assertEqual([], [r for r in self.ss.list_registries() if r[2] == "pending"])
+        self.assertEqual("sess-a", self.ss.live_watch()["session_id"])
+
+    def test_a_killed_watcher_is_an_orphan_not_a_live_one(self):
+        import signal
+        self._hook("sess-k", spool_through=0)
+        proc = self._watch("sess-k")
+        self.assertTrue(self._wait(lambda: self._registry("sess-k")["status"] == "armed"))
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.wait()
+        self.assertEqual("orphan", self.ss.registry_state(self._registry("sess-k")))
+        self.assertIsNone(self.ss.live_watch())
+
+    def test_a_killed_watcher_rearms_from_the_last_shown_line(self):
+        import signal
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-k-re", spool_through=0)
+        first = self._watch("sess-k-re")
+        self.assertTrue(self._wait(lambda: self._registry("sess-k-re")["status"] == "armed"))
+        self.assertTrue(self._wait(lambda: first.stdout.readline() == "a\n", timeout=8))
+        self.assertTrue(self._wait(lambda: self._registry("sess-k-re").get("offset") == 4),
+                        "the registry tracks the cursor before cleanup can run")
+        os.killpg(os.getpgid(first.pid), signal.SIGKILL)
+        first.wait()
+        self.assertEqual("orphan", self.ss.registry_state(self._registry("sess-k-re")))
+        # This unit harness is the fake session parent, so the stale lock owner is
+        # still usable even though the watcher is dead. Remove the lock here; this
+        # test is about the orphan registry cursor used after takeover.
+        import shutil
+        shutil.rmtree(self.state / "session.watch.lock.d")
+        self.spool.write_text("a\nb\nc\n", encoding="utf-8")
+        second = self._watch("sess-k-re")
+        self.assertTrue(self._wait(lambda: self._registry("sess-k-re")["status"] == "armed"))
+        self.assertEqual("c\n", second.stdout.readline(), "orphan re-arm resumes past shown mail")
+
+    def test_an_expired_registry_rearms_from_the_recorded_cursor(self):
+        self.spool.write_text("a\nb\nc\n", encoding="utf-8")
+        self.ss.write_registry("sess-exp", 4)
+        self.ss.update_registry("sess-exp", status="armed", watcher_pid=os.getpid(),
+                                armed_at="2000-01-01T00:00:00Z",
+                                expires_at="2000-01-01T00:30:00Z",
+                                heartbeat_at="2000-01-01T00:29:00Z")
+        self.assertEqual("expired", self.ss.registry_state(self._registry("sess-exp")))
+        proc = self._watch("sess-exp")
+        self.assertTrue(self._wait(lambda: self._registry("sess-exp")["status"] == "armed"))
+        self.assertEqual("c\n", proc.stdout.readline(), "expired re-arm resumes past shown mail")
+
+    def test_an_expired_registry_is_expired_even_with_a_live_pid(self):
+        record = {"status": "armed", "watcher_pid": os.getpid(),
+                  "armed_at": "2000-01-01T00:00:00Z", "expires_at": "2000-01-01T00:30:00Z",
+                  "heartbeat_at": "2000-01-01T00:29:00Z"}
+        self.assertEqual("expired", self.ss.registry_state(record))
+        record["expires_at"] = "2999-01-01T00:00:00Z"
+        self.assertEqual("expired", self.ss.registry_state(record), "a stale heartbeat expires it too")
+        record["heartbeat_at"] = self.ss._utc_now()
+        self.assertEqual("live", self.ss.registry_state(record))
+
+    def test_prompt_submit_is_silent_when_nothing_is_unseen(self):
+        self.spool.write_text("[mail] x\n", encoding="utf-8")
+        self.offset.write_text("9", encoding="utf-8")
+        self.assertIsNone(self.ss.prompt_submit({"session_id": "s"}))
+
+    def test_prompt_submit_is_silent_when_another_session_covers_the_spool(self):
+        self.spool.write_text("[mail] x\n[mail] y\n", encoding="utf-8")
+        self.offset.write_text("0", encoding="utf-8")
+        self._hook("sess-cover", spool_through=0)
+        self._watch("sess-cover")
+        self.assertTrue(self._wait(lambda: self.ss.live_watch() is not None))
+        self.assertIsNone(self.ss.prompt_submit({"session_id": "other"}))
+
+    def test_prompt_submit_speaks_when_mail_waits_and_nobody_watches(self):
+        self.spool.write_text("[mail] x\n[mail] y\n", encoding="utf-8")
+        self.offset.write_text("9", encoding="utf-8")
+        # An orphan registry: a Monitor that was killed with mail arriving after.
+        self.ss.write_registry("sess-dead", 9)
+        self.ss.update_registry("sess-dead", status="armed", watcher_pid=999999999,
+                                armed_at="2000-01-01T00:00:00Z", expires_at="2999-01-01T00:00:00Z")
+        context = self.ss.prompt_submit({"session_id": "sess-dead"})
+        self.assertIsNotNone(context)
+        self.assertIn("1 mail notification(s)", context)
+        self.assertIn("--from-hook", context)
+
+    def test_prompt_submit_command_emits_the_hook_payload_only_when_needed(self):
+        import contextlib, io
+        self.spool.write_text("[mail] x\n", encoding="utf-8")
+        self.offset.write_text("0", encoding="utf-8")
+        with mock.patch.object(self.ss, "read_hook_input", lambda: {"session_id": "s"}):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.ss.prompt_submit_command()
+            payload = self.json.loads(buf.getvalue())
+            self.assertEqual("UserPromptSubmit", payload["hookSpecificOutput"]["hookEventName"])
+            self.offset.write_text("9", encoding="utf-8")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.ss.prompt_submit_command()
+            self.assertEqual("", buf.getvalue(), "nothing to say means no output at all")
+
+
+class PromptHookRegistration(unittest.TestCase):
+    """claude_hook.py registers both hooks and reports each (#170)."""
+
+    def setUp(self):
+        import importlib
+        sys.path.insert(0, str(ROOT / "scripts"))
+        self.ch = importlib.import_module("claude_hook")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.settings = pathlib.Path(self.tmp.name) / "settings.json"
+
+    def test_both_hooks_are_registered_on_a_fresh_file(self):
+        import json
+        self.ch.install(self.settings)
+        data = json.loads(self.settings.read_text())
+        self.assertEqual(["SessionStart", "UserPromptSubmit"], sorted(data["hooks"]))
+        self.assertIn("--prompt-submit", data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"])
+        self.assertEqual([], self.ch.missing_events(data))
+
+    def test_an_install_from_before_gets_only_the_missing_hook(self):
+        import json
+        self.settings.write_text(json.dumps(
+            {"hooks": {"SessionStart": [{"hooks": [self.ch.fragment("SessionStart")]}]}}))
+        self.assertEqual(["UserPromptSubmit"], self.ch.missing_events(json.loads(self.settings.read_text())))
+        self.ch.install(self.settings)
+        data = json.loads(self.settings.read_text())
+        self.assertEqual(1, len(data["hooks"]["SessionStart"]), "the existing one is not duplicated")
+        self.assertEqual(1, len(data["hooks"]["UserPromptSubmit"]))
 
 
 if __name__ == "__main__":

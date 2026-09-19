@@ -4,11 +4,20 @@ paynani CLI.
 
     paynani onboard [--port PORT]
     paynani set KEY [VALUE] [--skip-check]
+    paynani status [--json]
+    paynani event show EVENT_ID [--body]
+    paynani event list [--limit N]
+    paynani event mark EVENT_ID STATE
     paynani roster list
+    paynani roster explain --from ADDRESS [--header NAME=VALUE]
     paynani roster migrate --plan|--apply [--yes]
     paynani roster apply --file CONTACTS.json [--dry-run] [--yes]
     paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--yes]
     paynani roster remove ADDRESS [--yes]
+    paynani paths [--json]
+    paynani doctor [--json]
+    paynani support-bundle --output DIR
+    paynani openclaw probe --dry-run
 
 `onboard` starts the mailbox onboarding flow: a local, loopback-only web
 server prints a one-time link, a human fills in the seven mailbox settings,
@@ -30,7 +39,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from paynani_lib import i18n, onboard, roster_cli, set_cli  # noqa: E402
+from paynani_lib import (  # noqa: E402
+    diagnostics, event_cli, i18n, onboard, openclaw_cli, roster_cli, set_cli,
+    status_cli,
+)
 
 DEFAULT_PORT = 8765
 
@@ -52,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     set_parser = subparsers.add_parser(
         "set", help="Set one .env key, with a live IMAP/SMTP check by default."
     )
-    set_parser.add_argument("key", help="One of the seven keys .env owns, e.g. AGENT_EMAIL_PASSWORD.")
+    set_parser.add_argument("key", help="One supported .env key, e.g. AGENT_EMAIL_PASSWORD or PAYNANI_SIGNATURE_FILE.")
     set_parser.add_argument("value", nargs="?", help="New value. Omit to be prompted (hidden for the password).")
     set_parser.add_argument(
         "--skip-check",
@@ -64,6 +76,15 @@ def main(argv: list[str] | None = None) -> int:
     roster_sub = roster_parser.add_subparsers(dest="roster_command", required=True)
 
     roster_sub.add_parser("list", help="Print the current contacts.")
+
+    roster_explain = roster_sub.add_parser(
+        "explain", help="Explain whether a From/header combination matches the roster."
+    )
+    roster_explain.add_argument("--from", dest="from_address", required=True)
+    roster_explain.add_argument(
+        "--header", action="append", default=[], metavar="NAME=VALUE",
+        help="Add a provider header; may be repeated.",
+    )
 
     roster_migrate = roster_sub.add_parser("migrate", help="Plan or apply legacy roster schema migration.")
     migrate_mode = roster_migrate.add_mutually_exclusive_group(required=True)
@@ -77,7 +98,6 @@ def main(argv: list[str] | None = None) -> int:
     roster_apply.add_argument("--file", required=True, help="JSON file with a contacts array, or a top-level array.")
     roster_apply.add_argument("--dry-run", action="store_true", help="Validate and print the logical diff without writing.")
     roster_apply.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
-
     roster_add = roster_sub.add_parser("add", help="Add a contact.")
     roster_add.add_argument("name")
     roster_add.add_argument("address")
@@ -89,6 +109,40 @@ def main(argv: list[str] | None = None) -> int:
     roster_remove.add_argument("address")
     roster_remove.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
 
+    event_parser = subparsers.add_parser("event", help="Inspect and update event lifecycle state.")
+    event_sub = event_parser.add_subparsers(dest="event_command", required=True)
+    event_show = event_sub.add_parser("show", help="Show a safe envelope; fetch body only with --body.")
+    event_show.add_argument("event_id")
+    event_show.add_argument("--body", action="store_true", help="Fetch the exact IMAP body after roster verification.")
+    event_list = event_sub.add_parser("list", help="List recent canonical events and lifecycle state.")
+    event_list.add_argument("--limit", type=int, default=20)
+    event_mark = event_sub.add_parser("mark", help="Append a handled/replied/closed transition.")
+    event_mark.add_argument("event_id")
+    event_mark.add_argument("state", choices=("handled", "replied", "closed"))
+    event_mark.add_argument("--runtime")
+    event_mark.add_argument("--detail")
+
+    status_parser = subparsers.add_parser("status", help="Show event lifecycle and Codex delivery status.")
+    status_parser.add_argument("--json", action="store_true")
+
+    paths_parser = subparsers.add_parser("paths", help="Print resolved paynani paths.")
+    paths_parser.add_argument("--json", action="store_true", help="machine-readable output")
+
+    doctor_parser = subparsers.add_parser("doctor", help="Diagnose this install with ok/warning/blocked/unknown statuses.")
+    doctor_parser.add_argument("--json", action="store_true", help="machine-readable output")
+
+    bundle_parser = subparsers.add_parser("support-bundle", help="Write a redacted support bundle.")
+    bundle_parser.add_argument("--output", required=True, help="Directory to create or update with redacted diagnostics.")
+
+    openclaw_parser = subparsers.add_parser("openclaw", help="OpenClaw-specific utilities.")
+    openclaw_sub = openclaw_parser.add_subparsers(dest="openclaw_command", required=True)
+    openclaw_probe = openclaw_sub.add_parser("probe", help="Send a synthetic OpenClaw route probe.")
+    openclaw_probe.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Use a synthetic probe event, not mail or the paynani journal.",
+    )
+
     args = parser.parse_args(argv)
 
     # `set` and `roster` are terminal commands whose own strings are English,
@@ -97,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     # a message from validate.py reached the terminal in Spanish inside an
     # English sentence. onboard is untouched here: server.py sets the
     # language itself on every request, before this default could matter.
-    if args.command in ("set", "roster"):
+    if args.command in ("set", "roster", "event", "status"):
         i18n.set_current("en-US")
 
     if args.command == "onboard":
@@ -115,6 +169,28 @@ def main(argv: list[str] | None = None) -> int:
             return roster_cli.run_add(args)
         if args.roster_command == "remove":
             return roster_cli.run_remove(args)
+        if args.roster_command == "explain":
+            return roster_cli.run_explain(args)
+    if args.command == "event":
+        if args.event_command == "show":
+            return event_cli.run_show(args)
+        if args.event_command == "list":
+            return event_cli.run_list(args)
+        if args.event_command == "mark":
+            return event_cli.run_mark(args)
+    if args.command == "status":
+        return status_cli.run(args)
+    if args.command == "paths":
+        return diagnostics.print_paths(args.json)
+    if args.command == "doctor":
+        return diagnostics.print_doctor(args.json)
+    if args.command == "support-bundle":
+        out = diagnostics.support_bundle(args.output)
+        print(f"wrote redacted support bundle to {out}")
+        return 0
+    if args.command == "openclaw":
+        if args.openclaw_command == "probe":
+            return openclaw_cli.run_probe(args)
 
     parser.print_help()
     return 64

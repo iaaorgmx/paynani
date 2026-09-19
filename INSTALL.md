@@ -139,6 +139,18 @@ like style and are not.
 Two things can make the whole design inapplicable. Find out now, not after an
 hour of setup.
 
+### 1.0 Minimum versions
+
+`scripts/paynani doctor` checks these and names what it found; run it after
+the install to confirm rather than trusting this table blind.
+
+| Dependency | Minimum | Why |
+|---|---|---|
+| Python | 3.10 | Union-type (`X \| None`) and builtin generic (`list[str]`) annotations, used throughout, are 3.10 syntax. **Exception:** `scripts/failure_diagnostics.py` is deliberately kept 3.9-compatible, because it is the one module that has to run on the host it is diagnosing, including the Python 3.9 Apple still ships. Its own docstring says so; do not "fix" it to match this floor. |
+| Bash | 3.2 | The version macOS ships and does not update. Nothing here requires a newer one on purpose. |
+| Himalaya | v1.x or v2.x, either recognized schema | There is no single minimum version: the two majors are different config schemas, not points on a scale, and INSTALL.md #4 documents both against a real binary. v2.x is what the current fleet runs; v1.x is verified here but not fleet-tested. 0.x and below are not supported. |
+| Bun (OpenCode only) | Bundled with OpenCode itself | The plugin runs inside OpenCode's own bundled Bun; nothing here calls a separate one. What is pinned instead is OpenCode: field-tested at **1.18.31** ([#157](https://github.com/iaaorgmx/paynani/issues/157), Balam's host). An older release is a warning, not a block -- nobody has reproduced a failure below it, only never tested one. |
+
 ### 1.1 Does this host have a systemd user session?
 
 ```bash
@@ -308,16 +320,24 @@ Do not guess any of them, and do not accept them from anywhere except your human
    informational: being on the list is the whole permission.
    Start with your human.
 
-   **If your team coordinates somewhere that mails on people's behalf** (GitHub,
-   Jira, Linear), ask your human whether to declare it as a *notifier*, in the
-   second table of the same file. It takes three values: the address the platform
-   sends from, the header that names the author, and which column of the roster
-   to compare that header against. Without it, a colleague's comment arrives as a
-   notice rather than as work, which is a quiet way for a whole coordination
-   channel to stop reaching the agent. `roster.md.example` carries the shape.
+   **If your team coordinates on GitHub**, add a `GitHub` column to the table
+   and record each person's handle in it (`scripts/paynani roster add ...
+   --github <handle>`). That column is the declaration: mail from
+   `notifications@github.com` whose `X-GitHub-Sender` matches a recorded handle
+   counts as that person's mail. Nothing else to declare, and an empty cell
+   matches nobody. Before #188 this also needed a row in the `## Notifiers`
+   table, and on nine of ten hosts that row was never written, so a whole
+   coordination channel arrived as notices rather than as work.
+
+   **For any other platform that mails on people's behalf** (Jira, Linear), ask
+   your human whether to declare it as a *notifier*, in the second table of the
+   same file. It takes three values: the address the platform sends from, the
+   header that names the author, and which column of the roster to compare that
+   header against. `roster.md.example` carries the shape.
 
    Declaring one is a human decision for the same reason a row is: it widens who
-   the agent takes work from.
+   the agent takes work from. Recording a GitHub handle is that same decision,
+   made once.
 
    **Ask each of them two questions, not one:** where you should write to them,
    and which addresses their own mail arrives from. Those are often the same
@@ -494,6 +514,19 @@ scripts/send.sh --check "$(awk -F'|' '
 
 A `From:` line carrying your agent's address means it found them. `no sender
 address in ...` means it did not.
+
+To add a plain-text signature to every `scripts/send.sh` reply, point Paynani at
+a readable file with the CLI instead of editing `.env` by hand:
+
+```bash
+scripts/paynani set PAYNANI_SIGNATURE_FILE /path/signature.txt
+```
+
+To send without a signature again:
+
+```bash
+scripts/paynani set PAYNANI_SIGNATURE_FILE ""
+```
 
 ### 3.1 If the listener exits complaining about the old schema
 
@@ -760,7 +793,9 @@ runtime's. Two things produce that line and it does not guess between them: the
 agent was told and did not reply, or nothing was attached to be told. If it is
 the first, the standing rule under *"`roster.md` decides what a message is"* in
 `AGENTS.md` never made it into the agent's own persistent instructions, which is
-where it has to live.
+where it has to live. On OpenClaw that has a command, `scripts/openclaw_rules.py
+--install`, and an `instructions` row of its own in the report; see *"OpenClaw"*
+below.
 
 **Where to put the clone.** The clone *is* the install: credentials, generated
 config, route secrets, the roster and the whole state tree live inside it, so
@@ -832,9 +867,11 @@ has already been done and it is a dead end.
 
 The working pattern is the inverse: the OpenClaw adapter **pushes** into
 OpenClaw. Mail goes in as a live notification with `openclaw system event --mode
-now`; roster mail carries the `roster` tag in that rendered line, but the
-OpenClaw adapter does not start an agent run from incoming mail. It is an active
-producer, not a passive stream.
+now`; roster mail carries the `roster` tag in that rendered line and a second
+line saying what to do with it, but the OpenClaw adapter does not start an agent
+run from incoming mail. It is an active producer, not a passive stream. What the
+agent does with the line is decided by its own instructions; *"OpenClaw"* below
+is the step that puts them there.
 
 **Nothing here invokes `harness/session_start.py`, and nothing should.** That hook
 is Claude Code's, and the marked block inside it is Claude Code's payload format.
@@ -846,6 +883,49 @@ two runtimes use instead"*.
 Earlier versions of this section said the payload "may need adapting to your
 harness version", which implied a mechanism that does not exist on this runtime
 and sent at least one operator looking for what was calling it.
+
+### OpenClaw
+
+The dispatcher hands OpenClaw one line per message, and OpenClaw shows it to the
+agent as a `System:` line on its next heartbeat. That heartbeat is the agent run;
+there is no separate one. So whether roster mail gets answered comes down to
+whether the agent, reading that line, knows that `, roster]` means *read it, do
+it, reply*. That knowledge has to be in OpenClaw's own persistent instructions,
+`~/.openclaw/workspace/AGENTS.md`, because a context window loses everything
+else.
+
+Until 0.7.0 the copying was left to the agent, as a sentence in this
+repository's `AGENTS.md`. On a host where it never happened, every row of
+`healthcheck.py` was green, every event was accepted, and no mail was answered
+until a person looked ([#186](https://github.com/iaaorgmx/paynani/issues/186)).
+On a host where it had, the same OpenClaw and paynani versions answered in under
+three minutes with nobody involved. Put the rule in place explicitly:
+
+```bash
+scripts/openclaw_rules.py --print       # show the block, change nothing
+scripts/openclaw_rules.py --install     # write it into ~/.openclaw/workspace/AGENTS.md
+scripts/openclaw_rules.py --check       # exits 0 when the current block is in place
+scripts/openclaw_rules.py --uninstall   # remove the block, leaving the rest of the file
+```
+
+The file stays the agent's. The script owns exactly the block between
+`<!-- paynani:start -->` and `<!-- paynani:end -->`: everything outside it is
+preserved byte for byte, the block is replaced in place when its wording
+changes in a new version, and the first edit of an existing file leaves an
+`AGENTS.md.paynani.bak` beside it. `--target <path>` acts on another file, for a
+workspace that is not at the default location.
+
+This is not an installer-owned artifact, which is why `scripts/install.sh` names
+the step (`openclaw_rules_next_step=`) rather than performing it, exactly as it
+does for the OpenCode plugin, and why its `--uninstall` names the removal rather
+than doing it. `scripts/healthcheck.py` reports the state as an `instructions`
+row and warns, with the command, when the block is absent or out of date.
+
+Roster mail also arrives with the instruction attached: under the rendered line
+the adapter adds one more, naming the exact `himalaya -a paynani message read
+<uid>` command and `scripts/send.sh`. The body of the message is never in the
+notification. That second line helps an agent whose instructions were edited by
+hand; it does not replace them.
 
 ### Claude Code
 
@@ -862,41 +942,56 @@ Two consequences for the install:
 only by the opt-in agent mode below, so the installer does not demand it and a
 host without it on `PATH` is fine.
 
-**The session-start hook has to be registered in Claude Code's own settings**,
-and that file is yours rather than this project's. It holds configuration this
+**Two hooks have to be registered in Claude Code's own settings**, and that
+file is yours rather than this project's. It holds configuration this
 repository knows nothing about, so the installer never converges it and never
-records it in the ownership manifest. Register it explicitly:
+records it in the ownership manifest. Register them explicitly:
 
 ```bash
-scripts/claude_hook.py --print     # show the fragment, change nothing
-scripts/claude_hook.py --install   # merge it in, backing up first
-scripts/claude_hook.py --check     # exits 0 when registered
+scripts/claude_hook.py --print     # show the fragments, change nothing
+scripts/claude_hook.py --install   # merge in whichever is missing, backing up first
+scripts/claude_hook.py --check     # exits 0 when both are registered
 ```
 
-`--install` **appends** to any `SessionStart` list already there rather than
-replacing it, because Claude Code runs every hook registered for the event and
-replacing the list would silently disable whatever your host already does at
-startup. Running it twice does not duplicate the entry. If the file is not valid
-JSON it refuses and changes nothing, rather than rewriting a file it could not
-read.
+`--install` **appends** to any `SessionStart` or `UserPromptSubmit` list
+already there rather than replacing it, because Claude Code runs every hook
+registered for an event and replacing the list would silently disable whatever
+your host already does. Running it twice does not duplicate an entry, and an
+install from before #170 gets only the hook it lacks. If the file is not
+valid JSON it refuses and changes nothing, rather than rewriting a file it
+could not read.
 
-**What the hook then asks of the agent.** At each session start it replays what
-arrived while nothing was watching and prints the exact watch command, including
-a byte offset:
+**What the `SessionStart` hook then asks of the agent.** At each session start
+it replays what arrived while nothing was watching, writes this session's
+watch registry, `state/sessions/<session-id>/watch.json`, with the byte offset
+it replayed through, and prints the watch command:
 
 ```
-bash <clone>/harness/session_watch.sh <state_dir> <offset>
+bash <clone>/harness/session_watch.sh <state_dir> --from-hook
 ```
 
-The agent must arm that as a persistent Monitor. The offset is not optional:
-the hook replayed the spool through exactly that byte, so starting anywhere else
-repeats messages or steps over ones nobody has seen. **Arming is also what
-acknowledges the replay**: an agent that skips it sees the same messages again
-next session and receives no new mail for the rest of this one.
+The agent must arm that as a persistent Monitor. There is no number in the
+command on purpose (#170): the offset used to be printed for the agent to
+copy, and one digit wrong repeated mail or skipped it. `--from-hook` reads it
+from the registry under the session id Claude Code puts in
+`CLAUDE_CODE_SESSION_ID`. **Arming is also what acknowledges the replay**: an
+agent that skips it sees the same messages again next session and receives
+no new mail for the rest of this one. When Claude Code retires the Monitor
+after 30 minutes, the agent re-arms it with the same command.
 
-`session_watch.sh` takes an exclusive lock, so a second session on the same host
-refuses to arm rather than racing the first on the offset file. One session per
-host is the supported arrangement.
+The watcher keeps the registry while it lives: `armed` with its pid and an
+expiry, a heartbeat once a minute, `ended` on exit, `yielded` when another
+session already holds the watch. `session_watch.sh` takes an exclusive lock,
+so a second session on the same host refuses to arm rather than racing the
+first on the offset file, and its registry says so. One session per host is
+the supported arrangement.
+
+**What the `UserPromptSubmit` hook does.** Nothing, almost always. It adds one
+line to a turn only when bytes are waiting in the spool past the offset and no
+live watch will show them, which is the state a retired Monitor leaves behind
+when mail keeps arriving. The line says how many notifications are unseen and
+gives the same `--from-hook` command. If another session's watch covers the
+spool, it stays quiet.
 
 **Optional: let mail reach an agent with no session open.** Setting
 `PAYNANI_CLAUDE_MODE=agent` in `runtime.env` starts a headless `claude -p`
@@ -906,10 +1001,12 @@ The spool write happens either way, so enabling or disabling it can never lose
 an event.
 
 **Verifying it.** `scripts/healthcheck.py` reports how many spool bytes no
-session has picked up yet. Read that as information, not as a fault: unread bytes
-with no session open is this runtime's normal resting state. Whether a session
-has armed a watch is not observable from outside one, and the healthcheck says so
-rather than guessing.
+session has picked up yet, and a `watch` row read from the registries: armed
+by which session since when and until when, or that the last one expired or
+was killed without re-arming, or that no session has armed one. Unread bytes
+with no session open is this runtime's normal resting state and is reported
+as such; unread bytes with a watch that expired is a warning, with the fix in
+it, and never a problem, because the mail is safe in the spool.
 
 ### OpenAI Codex
 
@@ -1106,6 +1203,10 @@ Do not report the install complete until every check in this section passes.
 None of them needs a person to send mail; the ones that do are in §7.1, and they
 are optional.
 
+[`STATUS_MATRIX.md`](STATUS_MATRIX.md) maps what `scripts/healthcheck.py`
+prints, further down in this section, to the situation it describes -- read it
+before treating a line you don't recognise as a failure.
+
 ```bash
 # 0. Which version you just installed, and whether it is the current one.
 #    Exit 2 means a newer release exists; exit 1 means the check could not
@@ -1135,6 +1236,11 @@ himalaya envelope list -a paynani -s 3
 grep -i "openclaw not found" state/watch.err.log 2>/dev/null \
   || journalctl --user -u paynani-dispatch.service 2>/dev/null | grep -i "openclaw not found" \
   || echo "watcher: openclaw resolved"
+
+# 4c. On OpenClaw only: the agent has been told what the roster tag means.
+#     Exit 1 here is the one state where everything else passes and no roster
+#     mail is ever answered (#186). The fix is the command it prints.
+scripts/openclaw_rules.py --check
 
 # 6. Sending behaves: who it will write to, and what Himalaya is handed.
 #    Includes substring/prefix attacks on the allowlist and the From: header
@@ -1182,6 +1288,12 @@ status, which is the only thing that reflects what actually passed.
 These need a person to send mail, so they are never a condition for reporting
 the install complete. Report it complete first (with the list from `AGENTS.md`
 step 9), then offer them. Do not wait for them.
+
+[`FIELD_TEST.md`](FIELD_TEST.md) is a different, optional exercise: a
+reproducible per-runtime checklist -- state to provoke, exact command, exact
+expected output -- for field-verifying a runtime's mail-delivery mechanism
+itself, not just that mail arrives. Run it when debugging a runtime-specific
+delivery question, not as part of a routine install.
 
 - **Offer the tests in [the README's Step 3](README.md#paso-3-pruebas), not a
   list of your own.** They are what your human was told to expect.

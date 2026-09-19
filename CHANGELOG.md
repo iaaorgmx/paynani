@@ -2,6 +2,150 @@
 
 ## Sin publicar
 
+- `scripts/version.sh --apply [REF]` ejecuta la parte 2 de #167: congela el
+  commit del plan, comprueba que el ref remoto no cambió antes del fast-forward,
+  aparta overlays con patch binario y stash, ejecuta sólo instalador, registros
+  y reinicios calculados, restaura el overlay y corre la suite. Rehúsa sin plan,
+  ante archivos `unknown`, copias instaladas modificadas o runtime desconocido.
+  El listener guarda en `idle.json` la versión que cargó al arrancar y el apply
+  termina sólo si coinciden versión en disco y proceso, aparece un nuevo
+  `resuming from uid N` y `healthcheck.py` sale verde.
+- Claude Code: el vigía se rearma con el mismo `--from-hook` después de que
+  Claude Code retira el Monitor. El registro contestaba sólo en `pending`, y
+  a los 30 minutos ya estaba en `ended`, así que el rearme rehusaba; ahora
+  devuelve el cursor al que llegó el vigía anterior, que el latido guarda
+  tras cada línea mostrada (así un SIGKILL tampoco repite nada). Un lock
+  cuyo vigía murió con la sesión viva se recupera solo. `healthcheck.py` nombra
+  ese estado («ended at ... (the Monitor was retired) without re-arming»)
+  en vez de decir que ninguna sesión vigiló, y avisa si hay correo sin ver. Y
+  los escritores del fifo cierran el descriptor del lock: un `sleep` huérfano
+  del ticker lo retenía hasta dos segundos y el siguiente vigía leía «a
+  watcher from a previous version still holds this spool». Visto en vivo el
+  2026-09-18 a las 07:15Z, en el paso 4 de `FIELD_TEST.md`.
+- **Claude Code: el vigía se arma sin copiar números y su estado se ve desde
+  fuera** (#170). El hook de `SessionStart` escribe
+  `state/sessions/<session-id>/watch.json` con el offset que replicó (el id
+  viene del JSON que Claude Code le da al hook; nunca se inventa) y el comando
+  que imprime es `session_watch.sh <state> --from-hook`, que lee ese registro
+  por `CLAUDE_CODE_SESSION_ID`. El vigía mantiene el registro mientras vive
+  (`armed` con pid y vencimiento, latido por minuto, `ended` al salir,
+  `yielded` si otra sesión ya vigila) y `healthcheck.py` gana la fila `watch`:
+  quién vigila desde cuándo y hasta cuándo, o que el último vigía venció o fue
+  matado sin rearmar (aviso si hay correo sin ver). Un hook nuevo de
+  `UserPromptSubmit` agrega una línea al turno sólo cuando hay correo en el
+  spool que ningún vigía vivo va a mostrar, con el comando para rearmar.
+  `scripts/claude_hook.py --install` registra el que falte. La forma con
+  offset numérico sigue funcionando para invocaciones a mano.
+- `scripts/ci_streak.sh` (#174): cuántas corridas seguidas en verde lleva
+  `main` para volver requerido `suite-macos`, con la regla del CHANGELOG de
+  0.7.0 aplicada igual cada vez: un re-run (`attempt > 1`) o una falla
+  reinician la cuenta y se nombran con su commit; una corrida en curso no
+  cuenta; sale 0 sólo con las diez seguidas y no antes del 2026-09-30.
+  `--json` para scripts.
+- `scripts/version.sh --plan [REF]` y `scripts/upgrade_plan.py`: qué hay que
+  reiniciar entre dos versiones, calculado a partir del `git diff` entre los
+  tags, del manifiesto del instalador y de una tabla que dice qué proceso o
+  copia carga cada archivo (#167, parte 1). Cada archivo cambiado recibe un
+  verbo: `restart`, `reinstall-and-restart`, `restart-runtime`,
+  `next-session`, `none` o `unknown`, y el plan termina con los comandos en
+  orden para el runtime y el sistema de este host: el instalador si cambió una
+  copia suya, el paso de registro que el instalador nombra y no ejecuta
+  (`opencode_plugin.py`, `claude_hook.py`, `codex_hook.py`,
+  `openclaw_rules.py --install`), los reinicios de servicios y el del harness.
+  Sin un tag o sin `install.manifest` el plan dice que no puede calcularse y
+  remite a `UPGRADE.md`; nunca convierte datos ausentes en «nada que
+  reiniciar». Lista además los overlays locales (archivos rastreados
+  modificados en el clon), dice cuáles también cambian con la actualización y
+  da los comandos para dejar registro y apartarlos antes del pull. El reporte
+  completo de `version.sh` imprime el plan cuando hay una versión más nueva.
+  `UPGRADE.md` §2 lo incorpora.
+- Claude Code: el vigía de sesión conserva el FIFO hasta cerrar, para que `tail`
+  no pueda escribir en un archivo regular si el ticker abre primero. Incluye una
+  prueba determinista de esa carrera (#179).
+
+### Si actualizas
+
+Rearma el vigía en la siguiente sesión de Claude Code; no hace falta migrar
+estado ni tocar credenciales.
+
+## 0.7.1 (2026-09-18)
+
+**Dos defectos de campo del mismo día, y las herramientas de diagnóstico e
+inspección que ya estaban listas.** 23 commits desde 0.7.0 (PRs #176, #177,
+#180, #187 y #189).
+
+- **En OpenClaw, el correo del roster no se contestaba** (#186). Un agente en
+  OpenClaw 2026.9.4 recibió correo del roster, paynani lo entregó y OpenClaw
+  aceptó el evento, y nadie contestó hasta que una persona miró. La regla que
+  convierte la línea `System:` en una respuesta tenía que copiarla el agente a
+  sus instrucciones persistentes, y nada verificaba que lo hubiera hecho. Ahora
+  `scripts/openclaw_rules.py --install` la escribe entre marcadores en
+  `~/.openclaw/workspace/AGENTS.md`, `--check` y `--uninstall` la revisan y la
+  quitan, `scripts/healthcheck.py` la reporta en la fila `instructions` y el
+  instalador nombra el paso (`openclaw_rules_next_step=`). Además, el evento
+  que llega a OpenClaw con `roster_match` trae una segunda línea con el comando
+  exacto de Himalaya para leer el correo y `scripts/send.sh` para contestar,
+  sin cuerpo. Probado en campo por Xochitl: respuesta sola en menos de tres
+  minutos.
+- **Las notificaciones de GitHub llegaban sin etiqueta roster** en nueve de
+  diez hosts (#188): los rosters tenían la columna `GitHub` con los handles y
+  no la fila de `## Notifiers` que activaba el cotejo de `X-GitHub-Sender`. La
+  columna `GitHub` ahora declara ese notificador por sí sola; una fila
+  explícita gana y no se duplica, una celda vacía no coteja a nadie y sin
+  columna nada cambia. `healthcheck.py` dice qué notificadores están activos y
+  de dónde salen. Ningún `roster.md` hay que tocar.
+- **`paynani doctor`, `paynani paths` y `paynani support-bundle`** (#168, parte
+  1, PR #177). `doctor` diagnostica con cuatro estados (`ok`, `warning`,
+  `blocked`, `unknown`) y un `next_command` por check, lee la matriz de
+  capacidades del runtime y reporta `unknown` para lo que el harness no expone;
+  el esquema JSON de su salida está en `examples/doctor.schema.json`.
+  `support-bundle` escribe un paquete redactado: la lista de claves del `.env`
+  con su modo, nunca sus valores.
+- **Matriz de capacidades por runtime** (#169, PR #176):
+  `harness/capabilities.py` es la fuente única de qué observa cada harness, y
+  genera `HARNESS_CAPABILITIES.md` y la tabla de `DESIGN.md`.
+- **Ledger de vida del evento** (#171, PR #180). Append-only por evento, con
+  estados observado, despachado, presentado, atendido, respondido, cerrado o
+  suprimido. Conserva el sobre seguro y las identidades de proveedor, nunca el
+  cuerpo.
+- `scripts/paynani event show/list/mark`, `scripts/paynani status` y
+  `scripts/paynani roster explain` hacen observable el recorrido, verifican el
+  UID exacto antes de recuperar correo y explican las decisiones del roster.
+- Los duplicados del mismo `event_id`, `Message-ID` o identificador estable del
+  proveedor se suprimen de forma explícita y apuntan al evento canónico.
+- El estado de Codex distingue sesión registrada, último `codex queue`, caída
+  al spool y replay; una CLI sin el contrato opcional de `codex queue` se
+  reporta como `unsupported`, no como una instalación rota.
+
+### Si actualizas desde 0.7.0
+
+`git pull` y seguir `UPGRADE.md`. Cambiaron el escucha (`roster.py`,
+`idle_listener.py`), el dispatcher (`dispatch.py`, `event.py`, los adaptadores)
+y el hook de sesión (`session_start.py`), así que en todos los hosts:
+
+```bash
+git pull
+scripts/install.sh --runtime <runtime> --upgrade
+systemctl --user restart paynani-idle.service paynani-dispatch.service
+# macOS: launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"
+#        launchctl kickstart -k "gui/$(id -u)/com.paynani.dispatch"
+scripts/healthcheck.py
+```
+
+En **OpenClaw**, además, `scripts/openclaw_rules.py --install` y `--check` con
+exit 0. En **Claude Code** y **Codex**, reinicia las sesiones abiertas para que
+carguen el hook nuevo. Nadie tiene que tocar `roster.md`: la columna `GitHub`
+basta.
+
+### Pendientes conocidos
+
+- **`suite-macos` todavía no es un check requerido.** Pasa a requerido con 10
+  corridas seguidas en verde en `main`, sin re-runs, y no antes del 2026-09-30.
+  Al preparar esta versión la cuenta va en 11 (desde el re-run de #151 el
+  2026-09-17); manda la fecha.
+- **#168 sigue abierto** con tres requisitos por entregar: `draining` medido,
+  entorno persistente vs vivo de `systemd --user` y telemetría de reconexión
+  IMAP.
 - `paynani roster migrate --plan` muestra la migracion de la columna heredada
   `Username` a `GitHub` sin escribir.
 - `paynani roster migrate --apply [--yes]` aplica la migracion de forma

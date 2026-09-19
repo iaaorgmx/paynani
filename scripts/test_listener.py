@@ -15,8 +15,9 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import roster as roster_mod
-from idle_listener import (KEEPALIVE_OPTIONS, decode_hdr, describe, keepalive,
-                           resolve_keepalive_option, save_state)
+from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_VERSION, decode_hdr,
+                           describe, keepalive, resolve_keepalive_option,
+                           save_state)
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 from failure_diagnostics import print_diagnostics
@@ -180,9 +181,71 @@ def main():
         check(listed("Julian Flores <jjulianfe@gmail.com>"),
               "and a person on the list is unaffected by any of it")
 
-        # A roster with no notifier section must behave exactly as before.
+        # A roster with no notifier section and no GitHub column behaves as before.
         check(notifiers(roster) == [],
-              "a roster with no notifier section declares none")
+              "a roster with no notifier section and no GitHub column declares none")
+
+        # --- the GitHub column is the declaration (#188) ---------------------
+        # Nine of ten hosts had handles in a GitHub column and no `## Notifiers`
+        # row, so every GitHub notification, the team's channel, arrived untagged.
+        # A handle in that column has no other purpose; recording it is the
+        # decision, and the notifier follows from it.
+        column_only = pathlib.Path(tmp) / "column_only.md"
+        column_only.write_text(
+            "| Name | Email | Type | GitHub |\n"
+            "|---|---|---|---|\n"
+            "| Metis Claude-Tob | metis.claude.tob@gmail.com | AI Agent | metisclaudetob |\n"
+            "| Zeus Claude-Tob | zeus.claude.tob@gmail.com | AI Agent |  |\n",
+            encoding="utf-8")
+        c_list = notifiers(column_only)
+        check(len(c_list) == 1 and c_list[0]["address"] == "notifications@github.com"
+              and c_list[0]["header"] == "X-GitHub-Sender" and c_list[0]["column"] == "github",
+              "a GitHub column with no Notifiers section declares GitHub's notifier")
+        check(c_list[0].get("implied_by") == "github column",
+              "and says where it came from")
+        check(notifier_headers(c_list) == ["X-GitHub-Sender"],
+              "so the listener asks the server for the header")
+        c_allowed, c_entries = roster_addresses(column_only), roster_entries(column_only)
+        check(sender_is_listed(message("Metis <notifications@github.com>",
+                                       **{"X-GitHub-Sender": "metisclaudetob"}),
+                               c_allowed, c_entries, c_list),
+              "Xochitl's case: a GitHub notification from a recorded handle is roster mail")
+        check(not sender_is_listed(message("notifications@github.com",
+                                           **{"X-GitHub-Sender": "zeusclaudetob"}),
+                                   c_allowed, c_entries, c_list),
+              "an empty GitHub cell matches nobody")
+        check(not sender_is_listed(message("notifications@github.com",
+                                           **{"X-GitHub-Sender": "a-stranger"}),
+                                   c_allowed, c_entries, c_list),
+              "an unrecorded handle still grants nothing")
+        check("notifications@github.com" not in c_allowed,
+              "the implied notifier is not a send destination either")
+        check(len(n_list) == 1, "an explicit GitHub row is not duplicated by the column")
+        check("implied_by" not in n_list[0], "and the explicit row is the one kept")
+
+        # The column is the declaration; a Notifiers section that declares
+        # something else does not switch GitHub off, and no column implies nothing.
+        other = pathlib.Path(tmp) / "other.md"
+        other.write_text(
+            "| Name | Email | GitHub |\n|---|---|---|\n| Ana | ana@example.org | ana-gh |\n\n"
+            "## Notifiers\n\n| Address | Header | Column |\n|---|---|---|\n"
+            "| jira@example.org | X-Jira-Author | Name |\n", encoding="utf-8")
+        check([n["address"] for n in notifiers(other)]
+              == ["jira@example.org", "notifications@github.com"],
+              "a Notifiers table for another platform adds to the GitHub column, not instead of it")
+        no_column = pathlib.Path(tmp) / "no_column.md"
+        no_column.write_text("| Name | Email | Type |\n|---|---|---|\n| Ana | ana@example.org | Human |\n",
+                             encoding="utf-8")
+        check(notifiers(no_column) == [], "no GitHub column implies no notifier")
+        check(not sender_is_listed(message("notifications@github.com",
+                                           **{"X-GitHub-Sender": "ana-gh"}),
+                                   roster_addresses(no_column), roster_entries(no_column),
+                                   notifiers(no_column)),
+              "and GitHub mail to such a roster stays untagged")
+        spelled = pathlib.Path(tmp) / "spelled.md"
+        spelled.write_text("| Nombre | Correo | github |\n|---|---|---|\n| Ana | ana@example.org | ana-gh |\n",
+                           encoding="utf-8")
+        check(len(notifiers(spelled)) == 1, "the column name is matched case-insensitively")
         check(not sender_is_listed(message("evil-jjulianfe@gmail.com"), allowed),
               "substring of a listed address must not match")
         check(not sender_is_listed(message("jjulianfe@gmail.com.attacker.net"), allowed),
@@ -251,6 +314,8 @@ def main():
               "listener state still records mailbox, uidvalidity and uid")
         check("heartbeat_at" in state and state["heartbeat_at"].endswith("Z"),
               "listener state records a UTC heartbeat")
+        check(state.get("version") == PROCESS_VERSION,
+              "listener state records the version loaded by this process")
 
     # --- keepalive, the thing that makes a dead connection announce itself ----
     #

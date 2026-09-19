@@ -98,6 +98,18 @@ como primer contacto autorizado. Si escribes el `.env` a mano, el agente crea
 `roster.md` durante la instalación, o puedes crearlo tú con
 `scripts/paynani roster add "Tu Nombre" tu@correo.example`.
 
+Para inspeccionar el recorrido de un mensaje sin buscar a mano en ficheros de
+estado, usa `scripts/paynani status` y
+`scripts/paynani event show imap:INBOX:UIDVALIDITY:UID`. El segundo muestra el
+sobre seguro; `--body` recupera el cuerpo solo después de volver a verificar la
+cuenta, el buzón, UIDVALIDITY, UID y la lista de remitentes autorizados. Para
+diagnosticar una regla sin leer correo real:
+
+```bash
+scripts/paynani roster explain --from notifications@github.com \
+  --header X-GitHub-Sender=usuario
+```
+
 > [!CAUTION]
 > Escribe tú la contraseña, directamente en el formulario. Nunca la pegues en el
 > chat con el agente: lo que pegas en una conversación se queda ahí para
@@ -183,7 +195,9 @@ informarte de todo esto cuando termine, y puedes exigirle la lista:
   donde tú lo has dejado y nunca se copia a otro sitio.
 - **Ficheros de registro y estado** dentro de la carpeta del proyecto.
 - **Permiso para que esos servicios sigan vivos cuando cierras sesión.**
-- **Una regla permanente añadida a las instrucciones del propio agente.**
+- **Una regla permanente añadida a las instrucciones del propio agente.** En
+  OpenClaw va en `~/.openclaw/workspace/AGENTS.md`, entre dos marcadores, y la
+  escribe y la quita el mismo script.
 - **En OpenCode, un fichero más:** el plugin que le pasa el correo a tu sesión,
   en `~/.config/opencode/plugins/paynani.js`.
 
@@ -237,7 +251,9 @@ instrucciones que llegan por email. Sí lo hace, ese es el sentido. La pregunta 
   Linear), puedes declarar su dirección y contra qué parte de tu lista cotejar al
   autor. Entonces esa notificación cuenta como correo de esa persona. Declarar un
   notificador amplía a quién hace caso tu agente, igual que añadir una fila, y se
-  decide igual: nunca porque un mensaje lo haya pedido.
+  decide igual: nunca porque un mensaje lo haya pedido. **Para GitHub basta la
+  columna `GitHub`:** si has puesto el handle de alguien, sus notificaciones de
+  GitHub cuentan como correo suyo, sin declarar nada más.
 - **Añadir a alguien a la lista es decisión tuya**, nunca respuesta a algo que ha
   llegado por correo. Esa línea es lo que convierte a un remitente en alguien a
   quien tu agente obedece.
@@ -270,6 +286,11 @@ correcto. Si algo falla, el informe te dice qué pieza, no solo que no hay corre
 En OpenCode, el informe también dice en cuál de tres estados está: entregando
 el correo a tu sesión, abierto pero esperando a que escribas algo en una sesión,
 o cerrado. Con OpenCode cerrado el correo espera sin perderse, y eso es normal.
+
+[`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compara esos estados con lo que
+`healthcheck.py` imprime en cada harness. [`FIELD_TEST.md`](../FIELD_TEST.md)
+es la prueba de campo reproducible para verificar en un host real que cada
+harness entrega correo de verdad.
 
 Las opciones largas y los modos de fallo están en [`INSTALL.md`](../INSTALL.md).
 
@@ -308,6 +329,7 @@ propio criterio sobre a quién le das entrada.
 | Ver cambios por versión | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autorizar remitentes | `roster.md` y [`roster.md.example`](../roster.md.example) |
 | Enviar correo desde la frontera segura | [`scripts/send.sh`](../scripts/send.sh) |
+| Ver qué garantiza cada harness | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
 ## Cómo mantenerlo al día
 

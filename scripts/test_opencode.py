@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from adapters import claudecode, codex, opencode
+import ledger
 
 
 def envelope(text="[mail 09:00:00, sent 08:59:00, roster] Someone - Subject", **kw):
@@ -132,7 +133,8 @@ class SessionStartModes(unittest.TestCase):
         self.lock = self.state / "opencode.watch.lock.d"
         for attr, value in (("OPENCODE_SPOOL", self.spool), ("OPENCODE_OFFSET", self.offset),
                             ("OPENCODE_LOCK", self.lock),
-                            ("JOURNAL", self.state / "events.jsonl")):
+                            ("JOURNAL", self.state / "events.jsonl"),
+                            ("LIFECYCLE", self.state / "lifecycle.jsonl")):
             patcher = mock.patch.object(ss, attr, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -206,6 +208,22 @@ class SessionStartModes(unittest.TestCase):
         code, payload = self.run_mode("--opencode-ack", "0")
         self.assertEqual((code, payload), (0, {"offset": size}))
         self.assertEqual(self.offset.read_text(encoding="utf-8"), str(size))
+
+    def test_ack_records_newly_presented_events_once(self):
+        self.spool_event("imap:INBOX:42:7")
+        _, pending = self.run_mode("--opencode-pending")
+        self.run_mode("--opencode-ack", str(pending["through"]))
+        history = ledger.history(self.state / "lifecycle.jsonl", "imap:INBOX:42:7")
+        self.assertEqual(
+            [(row["state"], row["runtime"]) for row in history],
+            [("presented", "opencode")],
+        )
+
+        self.run_mode("--opencode-ack", str(pending["through"]))
+        self.assertEqual(
+            len(ledger.history(self.state / "lifecycle.jsonl", "imap:INBOX:42:7")),
+            1,
+        )
 
     def test_ack_refuses_an_offset_past_the_spool_or_garbage(self):
         self.spool_event()

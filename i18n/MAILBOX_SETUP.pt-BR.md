@@ -138,6 +138,10 @@ faltando ou saindo errado.
 pode ler na hora que precisar. Se ele pedir para você colar a senha no chat,
 recuse, isso não é passo de nenhuma destas instruções.
 
+**Assinatura opcional de saída.** Se você quiser que `scripts/send.sh` adicione
+uma assinatura de texto simples a cada resposta, defina
+`PAYNANI_SIGNATURE_FILE=/caminho/assinatura.txt` neste mesmo arquivo.
+
 **A sua linha na lista de contatos autorizados.** O formulário do
 `scripts/paynani onboard` pede, além destes sete dados da caixa, o seu nome e o
 seu e-mail, e ao salvar adiciona você ao `roster.md`, criando a lista se ela

@@ -29,6 +29,10 @@ ENV_FIELDS = [
     "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST",
     "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT",
 ]
+OPTIONAL_ENV_FIELDS = [
+    "PAYNANI_SIGNATURE_FILE",
+]
+WRITABLE_ENV_FIELDS = ENV_FIELDS + OPTIONAL_ENV_FIELDS
 
 _KEY_VALUE_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
 
@@ -95,12 +99,12 @@ def render_env(values: dict) -> str:
     """
     The file to write.
 
-    Only the seven keys this form owns are touched. A real installation keeps
-    more than mail settings in here, tokens for other services among them,
-    and this tool has no idea what any of it is. So an existing file is
-    edited in place, line by line: comments, blank lines, key order and
-    unknown keys all survive. Only an absent or empty file gets the generated
-    header.
+    Only the mailbox keys this form owns are touched, plus optional paynani
+    keys that are present or explicitly set. A real installation keeps more
+    than mail settings in here, tokens for other services among them, and this
+    tool has no idea what any of it is. So an existing file is edited in place,
+    line by line: comments, blank lines, key order and unknown keys all
+    survive. Only an absent or empty file gets the generated header.
     """
     path = env_path()
     try:
@@ -142,13 +146,23 @@ def render_env(values: dict) -> str:
     seen: set[str] = set()
     for i, line in enumerate(lines):
         m = _KEY_VALUE_RE.match(line)
-        if not m or m.group(1) not in ENV_FIELDS:
+        if not m or m.group(1) not in WRITABLE_ENV_FIELDS:
             continue
-        lines[i] = f"{m.group(1)}={sanitise_value(values.get(m.group(1), ''))}"
-        seen.add(m.group(1))
+        key = m.group(1)
+        value = sanitise_value(values.get(key, ""))
+        if key in OPTIONAL_ENV_FIELDS and value == "":
+            lines[i] = None
+        else:
+            lines[i] = f"{key}={value}"
+        seen.add(key)
+    lines = [line for line in lines if line is not None]
     for key in ENV_FIELDS:
         if key not in seen:
             lines.append(f"{key}={sanitise_value(values.get(key, ''))}")
+    for key in OPTIONAL_ENV_FIELDS:
+        value = sanitise_value(values.get(key, ""))
+        if key not in seen and value != "":
+            lines.append(f"{key}={value}")
     return newline.join(lines) + newline
 
 

@@ -38,6 +38,7 @@ sys.path.insert(0, str(REPO / "harness"))
 
 from paynani_lib import envfile, guard, i18n, validate  # noqa: E402
 from paynani_lib import roster_cli, set_cli  # noqa: E402
+from paynani_lib import server as server_mod  # noqa: E402
 from paynani_lib.i18n_data import CATALOGUES  # noqa: E402
 from paynani_lib.server import make_handler  # noqa: E402
 import roster as roster_mod  # noqa: E402  (scripts/roster.py; REPO/scripts is already on sys.path above)
@@ -89,6 +90,60 @@ VALID = {
     "ROSTER_NAME": "Test Human",
     "ROSTER_EMAIL": "human@example.com",
 }
+
+old_runtime = os.environ.get("PAYNANI_RUNTIME")
+os.environ["PAYNANI_RUNTIME"] = "opencode"
+try:
+    saved_page = server_mod._page(
+        lang="es-MX",
+        saved="/tmp/paynani/.env",
+        notice=None,
+        report=None,
+        errors={},
+        values=VALID,
+        has_password=True,
+        csrf="csrf",
+    )
+    check("onboard saved page: OpenCode tells the human to write listo", "OpenCode no le avisa" in saved_page)
+    check("onboard saved page: OpenCode tells the human to restart OpenCode", "vuelve a abrir OpenCode" in saved_page)
+finally:
+    if old_runtime is None:
+        os.environ.pop("PAYNANI_RUNTIME", None)
+    else:
+        os.environ["PAYNANI_RUNTIME"] = old_runtime
+
+old_runtime = os.environ.pop("PAYNANI_RUNTIME", None)
+old_runtime_env = server_mod.RUNTIME_ENV
+old_available = server_mod.dispatch.available
+old_import_module = server_mod.importlib.import_module
+class _DetectedRuntime:
+    @staticmethod
+    def detect():
+        return True
+try:
+    server_mod.RUNTIME_ENV = Path(tempfile.mkdtemp(prefix="paynani-test-runtime-")) / "missing.env"
+    server_mod.dispatch.available = lambda: ["opencode"]
+    server_mod.importlib.import_module = lambda name: _DetectedRuntime
+    saved_page = server_mod._page(
+        lang="es-MX",
+        saved="/tmp/paynani/.env",
+        notice=None,
+        report=None,
+        errors={},
+        values=VALID,
+        has_password=True,
+        csrf="csrf",
+    )
+    check(
+        "onboard saved page: without runtime.env one detected harness selects OpenCode",
+        "OpenCode no le avisa" in saved_page,
+    )
+finally:
+    server_mod.RUNTIME_ENV = old_runtime_env
+    server_mod.dispatch.available = old_available
+    server_mod.importlib.import_module = old_import_module
+    if old_runtime is not None:
+        os.environ["PAYNANI_RUNTIME"] = old_runtime
 
 
 def with_override(**kw):
@@ -327,6 +382,7 @@ e2e_state.mkdir()
 e2e_env = e2e_dir / ".env"
 os.environ["PAYNANI_ENV"] = str(e2e_env)
 os.environ["PAYNANI_STATE"] = str(e2e_state)
+os.environ["PAYNANI_RUNTIME"] = "opencode"
 
 token = "e2e-test-token"
 guard.token_path(e2e_state).write_text(token + "\n", encoding="utf-8")
@@ -439,6 +495,11 @@ try:
     page = r.read().decode()
     check("e2e: both probes passing writes the file and shows the saved screen", r.status == 200 and e2e_env.exists())
     check("e2e: the saved screen never contains the password", VALID["AGENT_EMAIL_PASSWORD"] not in page)
+    check("e2e: the saved screen shows the recalculated checklist", i18n.t("saved.checklist_h2") in page)
+    check("e2e: the checklist names the OpenCode plugin command", "scripts/opencode_plugin.py --install" in page)
+    check("e2e: the saved screen shows a copy-safe summary", 'id="support-summary"' in page)
+    check("e2e: the copy-safe summary masks the account", "a****@example.com" in page)
+    check("e2e: the copy-safe summary omits the password", VALID["AGENT_EMAIL_PASSWORD"] not in page)
     check(
         "e2e: the saved .env has the submitted account",
         f"AGENT_EMAIL_ACCOUNT={VALID['AGENT_EMAIL_ACCOUNT']}" in e2e_env.read_text(encoding="utf-8"),
@@ -522,6 +583,7 @@ finally:
     thread.join(timeout=5)
     os.environ.pop("PAYNANI_ENV", None)
     os.environ.pop("PAYNANI_STATE", None)
+    os.environ.pop("PAYNANI_RUNTIME", None)
     roster_cli.roster_file = real_e2e_roster_file
     roster_cli._run_regression_tests = real_e2e_run_tests
     shutil.rmtree(e2e_dir, ignore_errors=True)
@@ -692,6 +754,45 @@ try:
     check(
         "set_cli: nothing is written when a neighbour field blocks the check",
         "AGENT_EMAIL_ACCOUNT=new@example.com" not in set_env.read_text(encoding="utf-8"),
+    )
+
+    signature = set_dir / "signature.txt"
+    signature.write_text("Paynani Test Agent\n", encoding="utf-8")
+    r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value=str(signature), skip_check=False))
+    check("set_cli: PAYNANI_SIGNATURE_FILE writes a readable path", r == 0)
+    check(
+        "set_cli: PAYNANI_SIGNATURE_FILE is on disk",
+        f"PAYNANI_SIGNATURE_FILE={signature}" in set_env.read_text(encoding="utf-8"),
+    )
+
+    missing_signature = set_dir / "missing-signature.txt"
+    before_missing_signature = set_env.read_text(encoding="utf-8")
+    r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value=str(missing_signature), skip_check=True))
+    check("set_cli: PAYNANI_SIGNATURE_FILE rejects a missing path", r == 1)
+    check(
+        "set_cli: PAYNANI_SIGNATURE_FILE missing path writes nothing",
+        set_env.read_text(encoding="utf-8") == before_missing_signature,
+    )
+
+    unreadable_signature = set_dir / "unreadable-signature.txt"
+    unreadable_signature.write_text("secret-ish\n", encoding="utf-8")
+    unreadable_signature.chmod(0)
+    before_unreadable_signature = set_env.read_text(encoding="utf-8")
+    try:
+        r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value=str(unreadable_signature), skip_check=True))
+        check("set_cli: PAYNANI_SIGNATURE_FILE rejects an unreadable path", r == 1)
+        check(
+            "set_cli: PAYNANI_SIGNATURE_FILE unreadable path writes nothing",
+            set_env.read_text(encoding="utf-8") == before_unreadable_signature,
+        )
+    finally:
+        unreadable_signature.chmod(0o600)
+
+    r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value="", skip_check=False))
+    check("set_cli: PAYNANI_SIGNATURE_FILE empty value removes the key", r == 0)
+    check(
+        "set_cli: PAYNANI_SIGNATURE_FILE is absent after empty value",
+        "PAYNANI_SIGNATURE_FILE" not in set_env.read_text(encoding="utf-8"),
     )
 finally:
     os.environ.pop("PAYNANI_ENV", None)

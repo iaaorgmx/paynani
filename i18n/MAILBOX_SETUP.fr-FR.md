@@ -146,6 +146,10 @@ fichier et peut le lire au moment voulu. S'il vous demande de coller le mot de
 passe dans la conversation, refusez, cela ne fait partie d'aucune de ces
 instructions.
 
+**Signature sortante facultative.** Si vous voulez que `scripts/send.sh` ajoute
+une signature en texte brut a chaque reponse, definissez
+`PAYNANI_SIGNATURE_FILE=/chemin/signature.txt` dans ce meme fichier.
+
 **Votre ligne dans la liste des contacts autorisés.** Le formulaire de
 `scripts/paynani onboard` demande, en plus de ces sept réglages de la boîte,
 votre nom et votre adresse, et à l'enregistrement il vous ajoute à `roster.md`,

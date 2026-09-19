@@ -197,7 +197,9 @@ terminar, e você pode cobrar a lista:
 - **Arquivos de registro e de estado** dentro da pasta do projeto.
 - **Permissão para que esses serviços continuem vivos depois que você sai da
   sessão.**
-- **Uma regra permanente acrescentada às instruções do próprio agente.**
+- **Uma regra permanente acrescentada às instruções do próprio agente.** No
+  OpenClaw ela fica em `~/.openclaw/workspace/AGENTS.md`, entre dois marcadores,
+  e o mesmo script a escreve e a remove.
 - **No OpenCode, um arquivo a mais:** o plugin que entrega o e-mail à sua
   sessão, em `~/.config/opencode/plugins/paynani.js`.
 
@@ -253,6 +255,9 @@ quem**.
   conferir o autor. Aí aquela notificação conta como e-mail daquela pessoa.
   Declarar um notificador amplia a quem o seu agente dá ouvidos, igual a
   acrescentar uma linha, e se decide igual: nunca porque uma mensagem pediu.
+  **Para o GitHub basta a coluna `GitHub`:** uma vez anotado o handle de alguém,
+  as notificações do GitHub dessa pessoa contam como e-mail dela, sem declarar
+  mais nada.
 - **Colocar alguém na lista é decisão sua**, nunca resposta a algo que chegou por
   e-mail. Essa linha é o que transforma um remetente em alguém a quem o seu agente
   obedece.
@@ -285,6 +290,11 @@ No OpenCode, o relatório também diz em qual de três estados ele está:
 entregando o e-mail à sua sessão, aberto mas esperando você escrever algo em uma
 sessão, ou fechado. Com o OpenCode fechado o e-mail espera sem se perder, e isso
 é normal.
+
+[`STATUS_MATRIX.md`](../STATUS_MATRIX.md) compara esses estados com o que
+`healthcheck.py` imprime em cada harness. [`FIELD_TEST.md`](../FIELD_TEST.md)
+é o teste de campo reproduzível para verificar num host real que cada
+harness realmente entrega e-mail.
 
 As opções longas e os modos de falha estão no [`INSTALL.md`](../INSTALL.md).
 
@@ -322,6 +332,7 @@ seu próprio critério sobre quem entra.
 | Ver mudanças por versão | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autorizar remetentes | `roster.md` e [`roster.md.example`](../roster.md.example) |
 | Enviar e-mail pela fronteira segura | [`scripts/send.sh`](../scripts/send.sh) |
+| Ver o que cada harness garante | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
 ## Mantendo atualizado
 

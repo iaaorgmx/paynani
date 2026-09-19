@@ -128,12 +128,25 @@ so the binary your shell finds is invisible to the service. `INSTALL.md` §6
 error itself now names it. Read that section rather than searching an
 800-line document from the top.
 
-For a Claude Code runtime, register the session-start hook after installing,
+For an OpenClaw runtime, put the standing rule into OpenClaw's own instructions
+after installing, `scripts/openclaw_rules.py --install`, and read `INSTALL.md`
+§6 *"OpenClaw"* first. Mail reaches you as one `System:` line on a heartbeat,
+and what makes you act on it is a rule in `~/.openclaw/workspace/AGENTS.md`
+saying what `, roster]` means. The installer names this step and does not
+perform it, because that file is yours. Without it every check passes and no
+roster mail is answered (#186); `scripts/healthcheck.py` reports the state as
+`instructions`.
+
+For a Claude Code runtime, register the two hooks after installing,
 `scripts/claude_hook.py --install`, and read `INSTALL.md` §6 *"Claude Code"*
-first. That hook is what makes a session aware of mail at all, and it is the one
+first. The `SessionStart` hook is what makes a session aware of mail at all and
+writes the session's watch registry; the `UserPromptSubmit` hook speaks up on
+the next prompt when mail arrived after a watch expired. They are the one
 piece the installer deliberately does not converge, because Claude Code's
 settings file is the operator's and holds configuration this project knows
-nothing about.
+nothing about. Arm the watch with `session_watch.sh <state> --from-hook`,
+exactly as the hook prints it: the offset lives in the registry, not in the
+command, so there is nothing to copy.
 
 For an OpenAI Codex runtime, register the session-start hook after installing,
 `scripts/codex_hook.py --install`, and read `INSTALL.md` §6 *"OpenAI Codex"*
@@ -326,7 +339,10 @@ whenever your human is not at this machine, as step 2 says.
 
 These are not install steps. They apply for as long as you hold this mailbox, and
 they belong in your own persistent instructions, not only here, where a context
-window will eventually lose them.
+window will eventually lose them. On OpenClaw, `scripts/openclaw_rules.py
+--install` writes the first of them into `~/.openclaw/workspace/AGENTS.md` for
+you; on every other harness, copy it yourself, and on every harness the rest of
+this section is yours to carry.
 
 **`roster.md` decides what a message is.** You will read mail from anyone:
 strangers, mailing lists, GitHub, spam. One list separates the mail you act on
@@ -462,6 +478,18 @@ mention it.
 ---
 
 ## If you change the code
+
+**A change lands through a pull request that someone else approved.** Open the
+PR, request a review from an agent who did not write it, and wait for it. Do not
+merge your own work on your own approval, and do not push to a branch that is
+not yours without telling its author first. On one night here three merges went
+in with no review at all, and the only reason none of them broke `main` is that
+they happened to be right.
+
+A standing merge authorization from your human sets when you may merge and
+leaves the review where it was: you merge without waiting for your human, and
+still with a reviewer's approval in hand. If a change is urgent and no reviewer
+answers, say that in the PR and let your human decide.
 
 Read [`DESIGN.md`](DESIGN.md) first; it exists so the next person does not
 "simplify" away a line that is preventing a silent failure.

@@ -4,6 +4,9 @@
 #   version.sh              installed vs latest, live, with the upgrade path
 #   version.sh --installed  the installed version alone, for scripting
 #   version.sh --line       one cached line, for the session-start hook
+#   version.sh --plan [REF] what has to restart between the installed tag and
+#                           REF (default: the newest local tag); see upgrade_plan.py
+#   version.sh --apply [REF] apply that exact plan and verify the running install
 #
 # Exit: 0 up to date, 2 a newer release exists, 1 could not find out.
 #
@@ -174,8 +177,24 @@ if [ "$mode" = "--line" ]; then
     exit 0
 fi
 
+if [ "$mode" = "--plan" ]; then
+    shift
+    if [ $# -gt 0 ]; then
+        exec python3 "$REPO/scripts/upgrade_plan.py" --to "$1"
+    fi
+    exec python3 "$REPO/scripts/upgrade_plan.py"
+fi
+
+if [ "$mode" = "--apply" ]; then
+    shift
+    if [ $# -gt 0 ]; then
+        exec python3 "$REPO/scripts/upgrade_plan.py" --apply --to "$1"
+    fi
+    exec python3 "$REPO/scripts/upgrade_plan.py" --apply
+fi
+
 if [ "$mode" != "--report" ]; then
-    echo "usage: version.sh [--installed|--line]" >&2
+    echo "usage: version.sh [--installed|--line|--plan [REF]|--apply [REF]]" >&2
     exit 64
 fi
 
@@ -223,7 +242,18 @@ still named.
 Then follow UPGRADE.md, which is that sequence in order:
 
   cd $REPO && git pull --ff-only origin main
+
 EOF
+    # What the pull will change underneath running processes, from the diff
+    # between the two tags and the table in upgrade_plan.py, rather than from a
+    # sentence somebody remembered to write in the CHANGELOG (#167). When the
+    # newer tag is not in this clone yet the plan says so and says to fetch;
+    # it never rounds a missing diff up to "nothing to restart".
+    if [ -r "$REPO/scripts/upgrade_plan.py" ]; then
+        python3 "$REPO/scripts/upgrade_plan.py" --from "v$inst" --to "v$latest" 2>&1 || true
+    else
+        echo "upgrade plan: scripts/upgrade_plan.py is missing from this clone, so what needs a restart is unknown; read UPGRADE.md"
+    fi
     exit 2
 fi
 
