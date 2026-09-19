@@ -1,6 +1,6 @@
 """
-`paynani set KEY [VALUE]` — change one of the seven .env keys without running
-the whole onboarding flow.
+`paynani set KEY [VALUE]` — change one supported .env key without running the
+whole onboarding flow.
 
 Reuses envfile.py's read/render/write pipeline exactly as onboard's server
 does, so a value set here has the same guarantees a value saved through the
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import getpass
 import sys
+from pathlib import Path
 
 from . import envfile, validate
 from .probe import probe_imap, probe_smtp
@@ -32,6 +33,7 @@ PROBE_KEYS = {
     "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST": ("smtp",),
     "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT": ("smtp",),
     "AGENT_EMAIL_FROM_NAME": (),
+    "PAYNANI_SIGNATURE_FILE": (),
 }
 
 # Every field a given probe reads, beyond the key actually being changed. A
@@ -64,10 +66,10 @@ def _print_steps(label: str, steps: list) -> None:
 
 def run(args) -> int:
     key = args.key
-    if key not in envfile.ENV_FIELDS:
+    if key not in envfile.WRITABLE_ENV_FIELDS:
         print(f"Unknown key {key!r}.", file=sys.stderr)
-        print(f"paynani set only writes: {', '.join(envfile.ENV_FIELDS)}", file=sys.stderr)
-        print("Anything else is not this form's to touch — edit .env by hand.", file=sys.stderr)
+        print(f"paynani set only writes: {', '.join(envfile.WRITABLE_ENV_FIELDS)}", file=sys.stderr)
+        print("Anything else is not this command's to touch.", file=sys.stderr)
         return 64
 
     if key == "AGENT_EMAIL_PASSWORD" and args.value is not None:
@@ -89,6 +91,18 @@ def run(args) -> int:
     stored = envfile.read_env()
     merged = dict(stored)
     merged[key] = value.strip()
+
+    if key == "PAYNANI_SIGNATURE_FILE" and merged[key] != "":
+        signature = Path(merged[key]).expanduser()
+        if not signature.is_file():
+            print(f"Not saved: signature file {merged[key]} does not exist.", file=sys.stderr)
+            return 1
+        try:
+            with signature.open("r", encoding="utf-8"):
+                pass
+        except OSError as exc:
+            print(f"Not saved: signature file {merged[key]} is not readable: {exc}", file=sys.stderr)
+            return 1
 
     field_errors = validate.validate(merged)
     if key in field_errors:
