@@ -106,7 +106,7 @@ done
 to=${1:?usage: send.sh [--check|--dry-run] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
-to_list=("$to" "${to_flags[@]}")
+to_list=("$to" ${to_flags[@]+"${to_flags[@]}"})
 
 [ -f "$bodyfile" ] || { echo "no such body file: $bodyfile" >&2; exit 1; }
 if [ -n "$htmlfile" ] && { [ ! -f "$htmlfile" ] || [ ! -r "$htmlfile" ]; }; then
@@ -156,16 +156,20 @@ fi
 # asked to act on, so strip rather than trust. Everything after the first line
 # of a header is not a header.
 for _paynani_i in "${!to_list[@]}"; do
-    to_list[$_paynani_i]=$(printf '%s' "${to_list[$_paynani_i]}" | tr -d '\r\n')
+    to_list[$_paynani_i]=$(printf '%s' "${to_list[$_paynani_i]}" | tr -d '\015\012')
 done
-for _paynani_i in "${!cc_list[@]}"; do
-    cc_list[$_paynani_i]=$(printf '%s' "${cc_list[$_paynani_i]}" | tr -d '\r\n')
-done
-for _paynani_i in "${!bcc_list[@]}"; do
-    bcc_list[$_paynani_i]=$(printf '%s' "${bcc_list[$_paynani_i]}" | tr -d '\r\n')
-done
+if [ ${#cc_list[@]} -gt 0 ]; then
+    for _paynani_i in "${!cc_list[@]}"; do
+        cc_list[$_paynani_i]=$(printf '%s' "${cc_list[$_paynani_i]}" | tr -d '\015\012')
+    done
+fi
+if [ ${#bcc_list[@]} -gt 0 ]; then
+    for _paynani_i in "${!bcc_list[@]}"; do
+        bcc_list[$_paynani_i]=$(printf '%s' "${bcc_list[$_paynani_i]}" | tr -d '\015\012')
+    done
+fi
 to=${to_list[0]}
-subject=$(printf '%s' "$subject" | tr -d '\r\n')
+subject=$(printf '%s' "$subject" | tr -d '\015\012')
 
 if [ ! -f "$ROSTER" ]; then
     echo "no roster at $ROSTER — refusing to send" >&2
@@ -260,12 +264,12 @@ if [ "${#to_list[@]}" -eq 0 ]; then
 fi
 
 check_roster_list "to" "${to_list[@]}"
-check_roster_list "cc" "${cc_list[@]}"
-check_roster_list "bcc" "${bcc_list[@]}"
+check_roster_list "cc" ${cc_list[@]+"${cc_list[@]}"}
+check_roster_list "bcc" ${bcc_list[@]+"${bcc_list[@]}"}
 
 to_header=$(join_by_comma "${to_list[@]}")
-cc_header=$(join_by_comma "${cc_list[@]}")
-bcc_log=$(join_by_comma "${bcc_list[@]}")
+cc_header=$(join_by_comma ${cc_list[@]+"${cc_list[@]}"})
+bcc_log=$(join_by_comma ${bcc_list[@]+"${bcc_list[@]}"})
 
 # Keep the roster evidence for the redacted dry-run report. The command exits
 # before any SMTP path, but only after the same allowlist checks a live send uses.
@@ -274,11 +278,11 @@ for _paynani_addr in "${to_list[@]}"; do
     to_roster_rows+=("$(roster_row_for "$_paynani_addr")")
 done
 cc_roster_rows=()
-for _paynani_addr in "${cc_list[@]}"; do
+for _paynani_addr in ${cc_list[@]+"${cc_list[@]}"}; do
     cc_roster_rows+=("$(roster_row_for "$_paynani_addr")")
 done
 bcc_roster_rows=()
-for _paynani_addr in "${bcc_list[@]}"; do
+for _paynani_addr in ${bcc_list[@]+"${bcc_list[@]}"}; do
     bcc_roster_rows+=("$(roster_row_for "$_paynani_addr")")
 done
 
@@ -310,11 +314,11 @@ from_addr=$(printf '%s' "$from_addr" | tr -d '[:space:]')
 
 from_name=$(env_value PAYNANI_FROM_NAME)
 [ -n "$from_name" ] || from_name=$(env_value AGENT_EMAIL_FROM_NAME)
-from_name=$(printf '%s' "$from_name" | tr -d '\r\n')
+from_name=$(printf '%s' "$from_name" | tr -d '\015\012')
 
 signature_file=$(env_value PAYNANI_SIGNATURE_FILE)
 [ -n "$signature_file" ] || signature_file=$(env_value AGENT_EMAIL_SIGNATURE_FILE)
-signature_file=$(printf '%s' "$signature_file" | tr -d '\r\n')
+signature_file=$(printf '%s' "$signature_file" | tr -d '\015\012')
 
 if [ -n "$signature_file" ] && { [ ! -f "$signature_file" ] || [ ! -r "$signature_file" ]; }; then
     echo "signature file $signature_file is not readable - refusing to send" >&2
@@ -431,7 +435,7 @@ percent_encode() {
 
 attachment_part() {
     _paynani_path=$1
-    _paynani_name=$(basename "$_paynani_path" | tr -d '\r\n')
+    _paynani_name=$(basename "$_paynani_path" | tr -d '\015\012')
 
     # file(1) reads bytes and cannot know what the sender meant by them. On an
     # SVG that opens with a comment rather than `<?xml` or `<svg` it answers
@@ -606,7 +610,7 @@ if [ -n "$dry_run" ]; then
     done
     if [ ${#cc_list[@]} -gt 0 ]; then
         _paynani_i=0
-        for _paynani_addr in "${cc_list[@]}"; do
+        for _paynani_addr in ${cc_list[@]+"${cc_list[@]}"}; do
             printf 'Cc: %s (roster row: %s)\n' "$_paynani_addr" "${cc_roster_rows[$_paynani_i]}"
             _paynani_i=$(( _paynani_i + 1 ))
         done
@@ -615,7 +619,7 @@ if [ -n "$dry_run" ]; then
     fi
     if [ ${#bcc_list[@]} -gt 0 ]; then
         _paynani_i=0
-        for _paynani_addr in "${bcc_list[@]}"; do
+        for _paynani_addr in ${bcc_list[@]+"${bcc_list[@]}"}; do
             printf 'Bcc: %s (roster row: %s)\n' "$_paynani_addr" "${bcc_roster_rows[$_paynani_i]}"
             _paynani_i=$(( _paynani_i + 1 ))
         done
@@ -639,7 +643,7 @@ if [ -n "$dry_run" ]; then
     printf 'Attachments: %s file(s)\n' "${#attachments[@]}"
     _paynani_i=0
     for _paynani_file in ${attachments[@]+"${attachments[@]}"}; do
-        printf 'Attachment: %s (%s bytes)\n' "$(basename "$_paynani_file" | tr -d '\r\n')" "${attachment_sizes[$_paynani_i]}"
+        printf 'Attachment: %s (%s bytes)\n' "$(basename "$_paynani_file" | tr -d '\015\012')" "${attachment_sizes[$_paynani_i]}"
         _paynani_i=$(( _paynani_i + 1 ))
     done
     printf 'Attachment bytes total: %s\n' "$attach_bytes"
@@ -662,10 +666,10 @@ himalaya_args=(smtp send -a "$ACCOUNT" --mail-from "$from_addr")
 for _paynani_addr in "${to_list[@]}"; do
     himalaya_args+=(--rcpt-to "$_paynani_addr")
 done
-for _paynani_addr in "${cc_list[@]}"; do
+for _paynani_addr in ${cc_list[@]+"${cc_list[@]}"}; do
     himalaya_args+=(--rcpt-to "$_paynani_addr")
 done
-for _paynani_addr in "${bcc_list[@]}"; do
+for _paynani_addr in ${bcc_list[@]+"${bcc_list[@]}"}; do
     himalaya_args+=(--rcpt-to "$_paynani_addr")
 done
 build_message | himalaya "${himalaya_args[@]}"
