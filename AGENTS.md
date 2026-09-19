@@ -510,6 +510,15 @@ leaves the review where it was: you merge without waiting for your human, and
 still with a reviewer's approval in hand. If a change is urgent and no reviewer
 answers, say that in the PR and let your human decide.
 
+**Two things the pull request itself has to carry.** `Closes #123`, in English,
+in the body, even where the rest of the repository writes in another language:
+that phrase is what closes the issue, and three issues stayed open here on one
+night because their pull requests described the work instead of naming it. And
+a `CHANGELOG.md` entry whenever behaviour changes, written while you still
+remember what was hard about it. Thirty pull requests went into one release
+without touching the changelog, so it fell to whoever cut the release to write
+it from other people's work at midnight, and thirteen of them were missed.
+
 Read [`DESIGN.md`](DESIGN.md) first; it exists so the next person does not
 "simplify" away a line that is preventing a silent failure.
 
