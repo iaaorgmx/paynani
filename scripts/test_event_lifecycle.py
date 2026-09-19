@@ -114,7 +114,28 @@ with tempfile.TemporaryDirectory() as raw:
     check("event show verifies the exact roster envelope", code == 0 and "\"envelope_verified\": true" in shown.getvalue())
     check("event show without --body fetches headers only",
           header_conn.queries == ["(BODY.PEEK[HEADER])"] and "private body" not in shown.getvalue())
+    shown_data = event_cli.json.loads(shown.getvalue())
+    check("event show without --body uses the reverified recipient role",
+          shown_data["recipient_role"] == "to")
 
+    recorded_authorized = dict(authorized)
+    recorded_authorized["recipient_role"] = "cc"
+    journal.write_text("")
+    event.append(journal, recorded_authorized)
+    header_conn = FakeImap()
+    event_cli.idle_listener.connect = lambda env: header_conn
+    shown = io.StringIO()
+    with contextlib.redirect_stdout(shown):
+        code = event_cli.run_show(SimpleNamespace(event_id=authorized["event_id"], body=False))
+    shown_data = event_cli.json.loads(shown.getvalue())
+    check("event show without --body reports recipient-role disagreement",
+          code == 0
+          and shown_data["recipient_role"] == "to"
+          and shown_data["recipient_role_recorded"] == "cc"
+          and shown_data["recipient_role_disagreement"] is True)
+
+    journal.write_text("")
+    event.append(journal, authorized)
     body_conn = FakeImap()
     event_cli.idle_listener.connect = lambda env: body_conn
     shown = io.StringIO()

@@ -208,6 +208,9 @@ def run_show(args) -> int:
     output["envelope_verified"] = bool(verified)
     output["lifecycle"] = ledger.history(state_dir() / "lifecycle.jsonl", args.event_id)
     if not args.body:
+        if verified is not None:
+            role, recorded = _recipient_role(record, verified)
+            output.update(_with_recorded_role_disagreement({"recipient_role": role}, recorded))
         print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
         return 0
     if not record.get("roster_match"):
