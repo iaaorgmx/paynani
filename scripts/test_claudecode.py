@@ -1156,6 +1156,28 @@ class WatchRegistry(unittest.TestCase):
         self.assertIsNotNone(record["expires_at"])
         self.assertEqual("live", self.ss.registry_state(record))
 
+    def test_a_numeric_offset_still_arms_the_registry_when_a_session_id_is_set(self):
+        """
+        #215: re-arming mid-session with the byte offset from state/session.offset
+        (not --from-hook, the only way to resume without replaying the whole
+        spool) left `session_id` empty in the bash script, so `registry()`
+        returned before writing anything. The watcher kept delivering mail while
+        healthcheck.py reported none armed -- a health report that contradicted
+        the fact.
+        """
+        import subprocess as sp
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-numeric", spool_through=4)
+        env = dict(os.environ, CLAUDE_CODE_SESSION_ID="sess-numeric")
+        proc = sp.Popen(["bash", str(self.WATCH), str(self.state), "4"],
+                        stdout=sp.PIPE, stderr=sp.PIPE, text=True, env=env,
+                        start_new_session=True)
+        self.procs.append(proc)
+        self.assertTrue(self._wait(lambda: self._registry("sess-numeric")["status"] == "armed"))
+        record = self._registry("sess-numeric")
+        self.assertEqual(proc.pid, record["watcher_pid"])
+        self.assertIsNotNone(record["expires_at"])
+
     def test_the_watcher_marks_its_registry_ended_on_exit(self):
         import signal
         self._hook("sess-three", spool_through=0)
