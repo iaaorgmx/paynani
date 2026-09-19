@@ -4,8 +4,9 @@
 
 **Correo con copia oculta, el roster migrado, y dos defectos de documentación
 que sólo aparecieron cuando dos hosts distintos corrieron la misma prueba.**
-Desde 0.7.1: PRs #201, #202, #203, #205, #206, #207, #208, #210, #211, #212,
-#213, #217, #218, #223, #224, #229 y #235.
+Desde 0.7.1, 30 PRs: #182, #184, #185, #191, #192, #193, #194, #195, #196,
+#197, #198, #199, #200, #201, #202, #203, #205, #206, #207, #208, #210, #211,
+#212, #213, #217, #218, #223, #224, #229 y #235.
 
 - **`scripts/send.sh` manda con copia oculta, y `--to`, `--cc` y `--bcc` se
   repiten** (#220, PR #229). El envío pasa a `himalaya smtp send` con el sobre
@@ -58,6 +59,21 @@ Desde 0.7.1: PRs #201, #202, #203, #205, #206, #207, #208, #210, #211, #212,
 - `paynani doctor` reporta la telemetría IMAP de reconexión (#207) y las
   observaciones declaradas por cada runtime (#210); `paynani onboard` completa
   su lista de verificación y su resumen sin secretos (#208).
+- `paynani doctor` comprueba además sus dependencias, `python`, `himalaya` y el
+  CLI del runtime (PR #198), mide el drenado de la cola y el entorno real del
+  servicio (PR #192), y `paynani onboard` termina con una pantalla que nombra
+  los pasos que faltan según el runtime (PR #196).
+- **`STATUS_MATRIX.md`**: qué estado puede observar cada harness y cuál no,
+  incluidos los notificadores y la regla permanente de OpenClaw (PRs #197 y
+  #200). `HARNESS_CAPABILITIES.md` queda enlazado desde la documentación y las
+  traducciones se verifican contra la estructura del original (PR #191).
+- `scripts/send.sh --dry-run` imprime un resumen redactado de la entrega, con
+  destinatarios, filas del roster que los autorizan y forma MIME, y no manda
+  nada (PR #194). Es la base sobre la que esta versión agregó el sobre
+  explícito y el backend de salida.
+- `scripts/paynani openclaw probe --dry-run` acepta una sonda sintética sin
+  tocar IMAP ni el diario, y `healthcheck.py` la reporta aparte del correo real
+  (PR #195).
 - `scripts/test_hermes_install.py` ignora `state/` al clonar el repo en sus
   cajas de arena (#216, PR #224): el FIFO de un vigía vivo, que es el estado
   normal de un host sano, hacía fallar la prueba. De paso, un clon de prueba ya
@@ -85,7 +101,7 @@ Desde 0.7.1: PRs #201, #202, #203, #205, #206, #207, #208, #210, #211, #212,
   watcher from a previous version still holds this spool». Visto en vivo el
   2026-09-18 a las 07:15Z, en el paso 4 de `FIELD_TEST.md`.
 - **Claude Code: el vigía se arma sin copiar números y su estado se ve desde
-  fuera** (#170). El hook de `SessionStart` escribe
+  fuera** (#170, PR #199). El hook de `SessionStart` escribe
   `state/sessions/<session-id>/watch.json` con el offset que replicó (el id
   viene del JSON que Claude Code le da al hook; nunca se inventa) y el comando
   que imprime es `session_watch.sh <state> --from-hook`, que lee ese registro
@@ -98,7 +114,7 @@ Desde 0.7.1: PRs #201, #202, #203, #205, #206, #207, #208, #210, #211, #212,
   spool que ningún vigía vivo va a mostrar, con el comando para rearmar.
   `scripts/claude_hook.py --install` registra el que falte. La forma con
   offset numérico sigue funcionando para invocaciones a mano.
-- `scripts/ci_streak.sh` (#174): cuántas corridas seguidas en verde lleva
+- `scripts/ci_streak.sh` (#174, PR #193): cuántas corridas seguidas en verde lleva
   `main` para volver requerido `suite-macos`, con la regla del CHANGELOG de
   0.7.0 aplicada igual cada vez: un re-run (`attempt > 1`) o una falla
   reinician la cuenta y se nombran con su commit; una corrida en curso no
@@ -118,12 +134,12 @@ Desde 0.7.1: PRs #201, #202, #203, #205, #206, #207, #208, #210, #211, #212,
   remite a `UPGRADE.md`; nunca convierte datos ausentes en «nada que
   reiniciar». Lista además los overlays locales (archivos rastreados
   modificados en el clon), dice cuáles también cambian con la actualización y
-  da los comandos para dejar registro y apartarlos antes del pull. El reporte
+  da los comandos para dejar registro y apartarlos antes del pull (PR #185). El reporte
   completo de `version.sh` imprime el plan cuando hay una versión más nueva.
   `UPGRADE.md` §2 lo incorpora.
 - Claude Code: el vigía de sesión conserva el FIFO hasta cerrar, para que `tail`
   no pueda escribir en un archivo regular si el ticker abre primero. Incluye una
-  prueba determinista de esa carrera (#179).
+  prueba determinista de esa carrera (#179, PR #182).
 
 ### Si actualizas desde 0.7.1
 
