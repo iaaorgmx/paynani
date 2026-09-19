@@ -94,6 +94,7 @@ STALE_QUEUE = float(os.environ.get("HEALTH_STALE_QUEUE", 15 * 60))
 # deliberately wider than the listener's five-minute IDLE refresh, so one slow
 # turn is not a fault but a dead process is still visible inside a session.
 STALE_LISTENER_HEARTBEAT = 15 * 60
+RECONNECT_WARN_PER_HOUR = 5
 
 # How long roster mail may sit answered by nothing before that is worth saying
 # out loud. An agent reads the message, does what it asks and then replies, and
@@ -197,7 +198,9 @@ def listener_facts():
            "imap_last_disconnect_error": None,
            "imap_last_recovered_at": None,
            "imap_last_recovered_age_seconds": None,
-            "imap_reconnect_attempts": 0,
+           "imap_reconnect_attempts": 0,
+           "imap_reconnect_window": [],
+           "imap_reconnects_last_hour": 0,
             "imap_current_backoff_seconds": 0,
             "python": None}
     try:
@@ -221,6 +224,9 @@ def listener_facts():
         if recovered is not None:
             out["imap_last_recovered_age_seconds"] = max(0, int(time.time() - recovered))
         out["imap_reconnect_attempts"] = int(state.get("imap_reconnect_attempts") or 0)
+        window = _recent_reconnect_window(state.get("imap_reconnect_window") or [])
+        out["imap_reconnect_window"] = window
+        out["imap_reconnects_last_hour"] = len(window)
         out["imap_current_backoff_seconds"] = int(state.get("imap_current_backoff_seconds") or 0)
     except (OSError, ValueError):
         pass
@@ -326,6 +332,19 @@ def _stamp_seconds(stamp):
         return calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
     except (ValueError, TypeError, OverflowError):
         return None
+
+
+def _recent_reconnect_window(window, now=None):
+    """Reconnect timestamps still inside the last hour."""
+    if not isinstance(window, list):
+        return []
+    now = time.time() if now is None else now
+    recent = []
+    for stamp in window:
+        seconds = _stamp_seconds(stamp)
+        if seconds is not None and now - seconds <= 3600:
+            recent.append(stamp)
+    return recent
 
 
 def _send_records():
@@ -868,6 +887,10 @@ def assess(facts):
     if listener["last_uid"] is None:
         warnings.append("the listener has no recorded position yet, so it has not "
                         "completed a first pass over the mailbox")
+    if listener.get("imap_reconnects_last_hour", 0) > RECONNECT_WARN_PER_HOUR:
+        warnings.append(
+            f"{listener['imap_reconnects_last_hour']} IMAP reconnects in the last hour, "
+            f"above the threshold of {RECONNECT_WARN_PER_HOUR}")
 
     if facts["dispatcher_unit"] == "unknown":
         warnings.append("the dispatcher unit cannot be queried on this host "
@@ -1121,6 +1144,10 @@ def render(facts, problems, warnings):
     out.append(f"listener     {listener['unit']}"
                + (f", {listener['mailbox']} at uid {listener['last_uid']}"
                   if listener["last_uid"] is not None else ", no position recorded yet"))
+    if listener.get("imap_reconnects_last_hour", 0) > RECONNECT_WARN_PER_HOUR:
+        out.append(f"             warning: {listener['imap_reconnects_last_hour']} IMAP "
+                   f"reconnects in the last hour, above the threshold of "
+                   f"{RECONNECT_WARN_PER_HOUR}")
     if listener["last_error"]:
         out.append(f"             last diagnostic: {listener['last_error']}")
     out.append(f"dispatcher   {facts['dispatcher_unit']}")

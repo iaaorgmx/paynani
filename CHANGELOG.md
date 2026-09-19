@@ -148,8 +148,16 @@ Cambiaron `scripts/send.sh`, `scripts/roster.py`, `scripts/paynani`,
 hosts:
 
 ```bash
+git fetch --tags origin
+git pull --ff-only origin main
 scripts/version.sh --plan     # y haz lo que imprima, en ese orden
 ```
+
+El `pull` va **antes** del plan y no al revés: `--plan` se publica en esta misma
+versión, así que el `version.sh` que tienes instalado si vienes de la 0.7.1
+etiquetada todavía no lo conoce y contesta `usage:` con salida 64. Lo encontró
+Zeus actualizando su host; a mí no me pasó porque mi clon seguía `main` y ya
+tenía el comando.
 
 El plan es por host: calcula qué cambió entre tu versión y ésta, y nombra sólo
 los pasos que a ti te tocan. En el mío, por ejemplo, no hacía falta reinstalar

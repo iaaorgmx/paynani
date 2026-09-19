@@ -17,7 +17,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import roster as roster_mod
 from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_VERSION, Listed,
                            decode_hdr, describe, fetch_since, keepalive,
-                           resolve_keepalive_option, save_state)
+                           record_imap_reconnect, resolve_keepalive_option,
+                           save_state)
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 from failure_diagnostics import print_diagnostics
@@ -397,6 +398,23 @@ def main():
         check(state.get("python", {}).get("supported") is True
               and state.get("python", {}).get("executable"),
               "listener state records the service Python interpreter")
+
+        telemetry = {}
+        record_imap_reconnect(telemetry, "2026-09-19T04:00:00Z")
+        check(telemetry["imap_reconnect_window"] == ["2026-09-19T04:00:00Z"]
+              and telemetry["imap_reconnects_last_hour"] == 1,
+              "one IMAP reconnect adds exactly one timestamp to the hourly window")
+        telemetry = {"imap_reconnect_window": [
+            "2026-09-19T02:59:59Z",
+            "2026-09-19T03:00:01Z",
+        ]}
+        record_imap_reconnect(telemetry, "2026-09-19T04:00:01Z")
+        check(telemetry["imap_reconnect_window"] == [
+            "2026-09-19T03:00:01Z",
+            "2026-09-19T04:00:01Z",
+        ], "IMAP reconnect timestamps older than 3600 seconds are pruned")
+        check(telemetry["imap_reconnects_last_hour"] == 2,
+              "hourly reconnect count follows the pruned window length")
 
     # --- keepalive, the thing that makes a dead connection announce itself ----
     #
