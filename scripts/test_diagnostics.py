@@ -232,6 +232,17 @@ old_python["dependencies"]["python"] = {"found": "3.9.6", "minimum": "3.10", "su
 py_check = next(c for c in doctor_with(old_python)["checks"] if c["name"] == "python")
 check("python below 3.10 is blocked and names the version found", py_check["status"] == "blocked" and "3.9.6" in py_check["summary"] and "3.10" in py_check["summary"])
 
+old_service_python = base_facts()
+old_service_python["dependencies"]["python"] = {
+    "minimum": "3.10",
+    "listener": {"found": "3.9.6", "executable": "/old/python3",
+                 "minimum": "3.10", "supported": False},
+    "dispatcher": {"found": "3.12.3", "executable": "/new/python3",
+                   "minimum": "3.10", "supported": True},
+}
+py_check = next(c for c in doctor_with(old_service_python)["checks"] if c["name"] == "python")
+check("doctor blocks on the service Python interpreter", py_check["status"] == "blocked" and "/old/python3" in py_check["summary"])
+
 ok_python = doctor_with(base_facts())
 check("python at or above 3.10 is ok", next(c for c in ok_python["checks"] if c["name"] == "python")["status"] == "ok")
 

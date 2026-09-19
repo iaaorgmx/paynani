@@ -68,6 +68,7 @@ class Fixture:
         hc.JOURNAL = self.dir / "events.jsonl"
         hc.CURSOR = self.dir / "dispatch.offset"
         hc.DISPATCH_ERR = self.dir / "dispatch.err.log"
+        hc.DISPATCH_STATE = self.dir / "dispatch.json"
         hc.IDLE_ERR = self.dir / "idle.err.log"
         hc.DELIVERY = self.dir / "delivery.json"
         hc.SENT_LOG = self.dir / "sent.log"
@@ -77,6 +78,13 @@ class Fixture:
             "uidvalidity": "42",
             "last_uid": 117,
             "heartbeat_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "python": {"found": "3.12.3", "executable": "/usr/bin/python3",
+                       "minimum": "3.10", "supported": True},
+        }))
+        hc.DISPATCH_STATE.write_text(json.dumps({
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "python": {"found": "3.12.3", "executable": "/usr/bin/python3",
+                       "minimum": "3.10", "supported": True},
         }))
 
         env = self.dir / "env"
@@ -209,7 +217,7 @@ class Fixture:
     def run(self):
         facts = {
             "listener": hc.listener_facts(),
-            "dispatcher_unit": hc.unit_state(hc.DISPATCH_UNIT),
+            "dispatcher": hc.dispatcher_facts(),
             "queue": hc.queue_facts(),
             "runtime": hc.runtime_facts(),
             "delivery": hc.delivery_facts(),
@@ -218,6 +226,8 @@ class Fixture:
             "himalaya": hc.himalaya_facts(),
             "git": hc.git_facts(),
         }
+        facts["dispatcher_unit"] = facts["dispatcher"]["unit"]
+        facts["python"] = hc.python_facts(facts["listener"], facts["dispatcher"])
         facts["spool"] = self.spool_facts
         facts["instructions"] = hc.instructions_facts(self.runtime)
         facts["reply"] = hc.reply_facts(facts["queue"]["cursor"])
@@ -244,6 +254,18 @@ code, text = f.exit_code()
 check("a working install exits 0", 0, code)
 check("and does not claim a quiet mailbox proves anything", True,
       "not that the mailbox is quiet" in text)
+check("and reports the service Python interpreters", True,
+      "python       listener 3.12.3 at /usr/bin/python3; dispatcher 3.12.3 at /usr/bin/python3" in text)
+
+f = Fixture()
+state = json.loads(hc.LISTENER_STATE.read_text())
+state["python"] = {"found": "3.9.6", "executable": "/old/python3",
+                   "minimum": "3.10", "supported": False}
+hc.LISTENER_STATE.write_text(json.dumps(state))
+code, text = f.exit_code()
+check("a listener below the Python floor is a failure", 1, code)
+check("and names the service interpreter", True,
+      "the listener is running Python 3.9.6 at /old/python3; minimum is 3.10" in text)
 
 # --- the failures that look like nothing -------------------------------------
 

@@ -22,10 +22,13 @@ import argparse, calendar, datetime, email, email.utils, imaplib, json, os, path
 import select, signal, socket, ssl, sys, time
 from email.header import decode_header, make_header
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "harness"))
+import python_floor  # noqa: E402
+PYTHON_FACTS = python_floor.enforce()
+
 from roster import (DEFAULT_ROSTER, notifier_headers, notifiers,
                     roster_addresses, roster_entries, sender_is_listed)
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "harness"))
 import event as ev
 import ledger
 from paths import env_file, state_dir
@@ -444,6 +447,7 @@ def save_state(path, mailbox, validity, last_uid, telemetry=None):
         "last_uid": last_uid,
         "heartbeat_at": timestamp(),
         "version": PROCESS_VERSION,
+        "python": PYTHON_FACTS,
     }
     if telemetry:
         state.update({k: v for k, v in telemetry.items() if v is not None})

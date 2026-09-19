@@ -316,6 +316,9 @@ def main():
               "listener state records a UTC heartbeat")
         check(state.get("version") == PROCESS_VERSION,
               "listener state records the version loaded by this process")
+        check(state.get("python", {}).get("supported") is True
+              and state.get("python", {}).get("executable"),
+              "listener state records the service Python interpreter")
 
         telemetry = {}
         record_imap_reconnect(telemetry, "2026-09-19T04:00:00Z")

@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import event as ev            # noqa: E402
 import dispatch as dsp        # noqa: E402
+import python_floor           # noqa: E402
 from adapters import ACCEPTED, CONFIG   # noqa: E402
 from paths import (env_file, harness_env_files, install_root,   # noqa: E402
                    recorded_env, repo_root, roster, runtime_env, state_dir)
@@ -54,6 +55,7 @@ JOURNAL = STATE_DIR / "events.jsonl"
 CURSOR = STATE_DIR / "dispatch.offset"
 DISPATCH_ERR = STATE_DIR / "dispatch.err.log"
 DELIVERY = STATE_DIR / "delivery.json"
+DISPATCH_STATE = STATE_DIR / "dispatch.json"
 IDLE_ERR = STATE_DIR / "idle.err.log"
 SENT_LOG = STATE_DIR / "sent.log"
 OPENCLAW_PROBE = STATE_DIR / "openclaw.probe.json"
@@ -199,7 +201,8 @@ def listener_facts():
            "imap_reconnect_attempts": 0,
            "imap_reconnect_window": [],
            "imap_reconnects_last_hour": 0,
-           "imap_current_backoff_seconds": 0}
+            "imap_current_backoff_seconds": 0,
+            "python": None}
     try:
         state = json.loads(LISTENER_STATE.read_text())
         out["mailbox"] = state.get("mailbox")
@@ -207,6 +210,7 @@ def listener_facts():
         out["uidvalidity"] = state.get("uidvalidity")
         out["heartbeat_at"] = state.get("heartbeat_at")
         out["version"] = state.get("version")
+        out["python"] = state.get("python")
         heartbeat = _stamp_seconds(out["heartbeat_at"])
         if heartbeat is not None:
             out["heartbeat_age_seconds"] = max(0, int(time.time() - heartbeat))
@@ -236,6 +240,28 @@ def listener_facts():
     except OSError:
         pass
     return out
+
+
+def dispatcher_facts():
+    out = {"unit": unit_state(DISPATCH_UNIT), "python": None, "started_at": None}
+    try:
+        state = json.loads(DISPATCH_STATE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return out
+    out["started_at"] = state.get("started_at")
+    out["python"] = state.get("python")
+    return out
+
+
+def python_facts(listener=None, dispatcher=None):
+    listener = listener if listener is not None else listener_facts()
+    dispatcher = dispatcher if dispatcher is not None else dispatcher_facts()
+    return {
+        "minimum": python_floor.MINIMUM,
+        "healthcheck": python_floor.facts(),
+        "listener": listener.get("python"),
+        "dispatcher": dispatcher.get("python"),
+    }
 
 
 def queue_facts():
@@ -873,6 +899,17 @@ def assess(facts):
         problems.append(f"the dispatcher is {facts['dispatcher_unit']}: mail is being "
                         "journalled but nothing is delivering it")
 
+    py = facts.get("python") or {}
+    for service in ("listener", "dispatcher"):
+        service_py = py.get(service)
+        if service_py is None:
+            warnings.append(f"the {service} has not reported its Python interpreter yet")
+        elif service_py.get("supported") is False:
+            problems.append(
+                f"the {service} is running Python {service_py.get('found')} at "
+                f"{service_py.get('executable')}; minimum is {service_py.get('minimum')}"
+            )
+
     if runtime["selected"] is None:
         detail = (runtime["detail"] or "unknown reason").rstrip()
         if not runtime["runtime_env"]:
@@ -1114,6 +1151,16 @@ def render(facts, problems, warnings):
     if listener["last_error"]:
         out.append(f"             last diagnostic: {listener['last_error']}")
     out.append(f"dispatcher   {facts['dispatcher_unit']}")
+    py = facts.get("python") or {}
+    pieces = []
+    for service in ("listener", "dispatcher"):
+        service_py = py.get(service)
+        if service_py:
+            pieces.append(f"{service} {service_py.get('found')} at {service_py.get('executable')}")
+        else:
+            pieces.append(f"{service} unknown")
+    out.append("python       " + "; ".join(pieces))
+    out.append(f"             minimum {py.get('minimum', python_floor.MINIMUM)}")
     delivery = facts["delivery"]
     accepted = delivery["last_accepted"]
     if accepted:
@@ -1214,7 +1261,7 @@ def main(argv=None):
 
     facts = {
         "listener": listener_facts(),
-        "dispatcher_unit": unit_state(DISPATCH_UNIT),
+        "dispatcher": dispatcher_facts(),
         "queue": queue_facts(),
         "runtime": runtime_facts(),
         "delivery": delivery_facts(),
@@ -1223,6 +1270,8 @@ def main(argv=None):
         "himalaya": himalaya_facts(),
         "git": git_facts(),
     }
+    facts["dispatcher_unit"] = facts["dispatcher"]["unit"]
+    facts["python"] = python_facts(facts["listener"], facts["dispatcher"])
     facts["spool"] = spool_facts(facts["runtime"].get("selected"))
     facts["instructions"] = instructions_facts(facts["runtime"].get("selected"))
     facts["openclaw_probe"] = openclaw_probe_facts(facts["runtime"].get("selected"))
