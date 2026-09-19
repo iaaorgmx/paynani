@@ -219,7 +219,7 @@ def describe(sender, subject, date, trusted=False):
     return parts(sender, subject, date, trusted)["notification_text"]
 
 
-def parts(sender, subject, date, trusted=False, message_id="", provider_id=""):
+def parts(sender, subject, date, trusted=False, message_id="", provider_id="", recipient_role="to"):
     """
     One message, rendered and structured at the same time.
 
@@ -245,6 +245,14 @@ def parts(sender, subject, date, trusted=False, message_id="", provider_id=""):
     # mail in the log, and so its absence is visible rather than merely implied.
     if trusted:
         when += ", roster"
+    # `to` is the known shape and stays silent (#221's PRD: "con to la línea no
+    # cambia"). `cc` and `undisclosed` are the two roles a message can carry
+    # without being an instruction to whoever received it, and both need to
+    # show in the line a human or another agent greps -- a role that changes
+    # behaviour but not the log is exactly the silent failure DESIGN.md rules
+    # out.
+    if recipient_role in ("cc", "undisclosed"):
+        when += f", {recipient_role}"
 
     m = GH_SUBJECT.match(subject or "")
     if m:
@@ -262,7 +270,28 @@ def parts(sender, subject, date, trusted=False, message_id="", provider_id=""):
         "roster_match": bool(trusted),
         "message_id": (message_id or "").strip(),
         "provider_id": (provider_id or "").strip(),
+        "recipient_role": recipient_role,
     }
+
+
+def recipient_role_for(msg, account):
+    """
+    `to`, `cc` or `undisclosed`, by comparing `account` against the addresses
+    this message actually names -- not whether it was addressed to us by
+    display name, which display names cannot guarantee.
+
+    `undisclosed` covers BCC and mailing lists alike: both leave us out of
+    every header the message carries, and neither is an instruction the way a
+    direct `To` is.
+    """
+    target = (account or "").strip().lower()
+    to_addrs = {addr.lower() for _, addr in email.utils.getaddresses(msg.get_all("To", []))}
+    if target in to_addrs:
+        return "to"
+    cc_addrs = {addr.lower() for _, addr in email.utils.getaddresses(msg.get_all("Cc", []))}
+    if target in cc_addrs:
+        return "cc"
+    return "undisclosed"
 
 
 def provider_identifier(message_id):
@@ -451,7 +480,7 @@ def newest_uid(conn):
     return max(int(u) for u in data[0].split())
 
 
-def fetch_since(conn, last_uid, listed):
+def fetch_since(conn, last_uid, listed, account):
     """[(uid, parts)] for every message with UID > last_uid.
 
     Headers only — BODY.PEEK. The listener never downloads a body and never
@@ -462,6 +491,10 @@ def fetch_since(conn, last_uid, listed):
     the roster is what declares them, so the field list is built from the roster
     rather than written here. Asking for a header nobody declared would be free,
     but asking for none of them would silently make every notifier fail to match.
+
+    `account` is this mailbox's own address, needed to work out `recipient_role`
+    (#221): TO and CC are fetched alongside the rest precisely so that can be
+    answered without a second round trip.
     """
     typ, data = conn.uid("search", None, f"UID {last_uid + 1}:*")
     if typ != "OK" or not data or not data[0]:
@@ -470,7 +503,7 @@ def fetch_since(conn, last_uid, listed):
     uids = sorted(u for u in (int(x) for x in data[0].split()) if u > last_uid)
     out = []
     for uid in uids:
-        fields_wanted = " ".join(["FROM", "SUBJECT", "DATE", "MESSAGE-ID"]
+        fields_wanted = " ".join(["FROM", "TO", "CC", "SUBJECT", "DATE", "MESSAGE-ID"]
                                  + [h.upper() for h in notifier_headers(listed.notifiers)])
         typ, payload = conn.uid("fetch", str(uid),
                                 f"(BODY.PEEK[HEADER.FIELDS ({fields_wanted})])")
@@ -483,7 +516,8 @@ def fetch_since(conn, last_uid, listed):
                                msg.get("Date", ""),
                                sender_is_listed(msg, listed.allowed,
                                                 listed.entries, listed.notifiers),
-                               message_id, provider_identifier(message_id))))
+                               message_id, provider_identifier(message_id),
+                               recipient_role_for(msg, account))))
     return out
 
 
@@ -589,7 +623,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
 
             # Anything that landed while this process was not running: a reboot, a
             # dropped connection, a machine that was off overnight.
-            pending = fetch_since(conn, last_uid, Listed(roster_path))
+            pending = fetch_since(conn, last_uid, Listed(roster_path), account)
             if len(pending) > 1:
                 emit(f"[mail] catching up — {len(pending)} messages arrived while offline")
             for uid, fields in pending:
@@ -617,7 +651,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                 found = False
                 # Re-read the roster every batch. Adding someone takes effect on
                 # their next message, with no restart and no lost notification.
-                for uid, fields in fetch_since(conn, last_uid, Listed(roster_path)):
+                for uid, fields in fetch_since(conn, last_uid, Listed(roster_path), account):
                     record(journal_path, ev.mail_event(
                         account=account, mailbox=mailbox, uidvalidity=validity, uid=uid, **fields))
                     last_uid = uid

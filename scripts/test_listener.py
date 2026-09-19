@@ -14,9 +14,9 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_VERSION, decode_hdr,
-                           describe, keepalive, resolve_keepalive_option,
-                           save_state)
+from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_VERSION, Listed,
+                           decode_hdr, describe, fetch_since, keepalive,
+                           resolve_keepalive_option, save_state)
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 from failure_diagnostics import print_diagnostics
@@ -34,6 +34,44 @@ def check(condition, label):
     if not condition:
         print_diagnostics()
         raise AssertionError(label)
+
+
+class FakeConn:
+    """
+    Just enough of imaplib's `.uid()` for fetch_since (#221): a search that
+    returns every UID it holds, and a fetch that hands back one message's raw
+    header bytes. No socket, no server -- fetch_since only ever calls `.uid()`,
+    so that is the entire surface worth faking.
+    """
+
+    def __init__(self, messages):
+        self.messages = messages   # {uid: email.message.Message}
+
+    def uid(self, command, *args):
+        if command == "search":
+            uids = sorted(self.messages)
+            return "OK", [" ".join(str(u) for u in uids).encode()]
+        if command == "fetch":
+            uid = int(args[0])
+            msg = self.messages.get(uid)
+            if msg is None:
+                return "NO", [None]
+            return "OK", [(b"1 (BODY[HEADER.FIELDS ()] {0})", msg.as_bytes())]
+        raise AssertionError(f"FakeConn does not implement uid({command!r})")
+
+
+def envelope(from_addr="Someone <someone@example.org>", subject="Asunto",
+            to=None, cc=None, date=None):
+    msg = email.message.EmailMessage()
+    msg["From"] = from_addr
+    msg["Subject"] = subject
+    msg["Date"] = date or "Fri, 19 Sep 2026 04:00:00 +0000"
+    msg["Message-Id"] = "<x@example.org>"
+    if to:
+        msg["To"] = to
+    if cc:
+        msg["Cc"] = cc
+    return msg
 
 
 def main():
@@ -247,6 +285,46 @@ def main():
         commented = tmp / "commented.txt"
         commented.write_text("# Julian Flores | jjulianfe@gmail.com\n", encoding="utf-8")
         check(roster_addresses(commented) == set(), "commented-out entry is not an entry")
+
+        # --- recipient role (#221): To/Cc/undisclosed, via a fake IMAP fetch -
+        account = "iris.claude.tob@agenteiamail.com"
+        listed = Listed(roster)
+
+        [(_, to_fields)] = fetch_since(FakeConn({1: envelope(to=account)}), 0, listed, account)
+        check(to_fields["recipient_role"] == "to",
+              f"the account in To gives 'to', got {to_fields['recipient_role']!r}")
+        control = describe("Someone <someone@example.org>", "Asunto",
+                           "Fri, 19 Sep 2026 04:00:00 +0000", trusted=False)
+        check(to_fields["notification_text"] == control,
+              "the 'to' role leaves the notification line exactly as before (#221's PRD)")
+
+        [(_, cc_fields)] = fetch_since(
+            FakeConn({1: envelope(to="other@example.org", cc=account)}), 0, listed, account)
+        check(cc_fields["recipient_role"] == "cc",
+              f"the account only in Cc gives 'cc', got {cc_fields['recipient_role']!r}")
+        check(", cc]" in cc_fields["notification_text"],
+              f"the cc role must show in the line: {cc_fields['notification_text']!r}")
+
+        [(_, undisclosed_fields)] = fetch_since(
+            FakeConn({1: envelope(to="other@example.org")}), 0, listed, account)
+        check(undisclosed_fields["recipient_role"] == "undisclosed",
+              f"the account in neither header gives 'undisclosed', got {undisclosed_fields['recipient_role']!r}")
+        check(", undisclosed]" in undisclosed_fields["notification_text"],
+              f"the undisclosed role must show in the line: {undisclosed_fields['notification_text']!r}")
+
+        [(_, bcc_fields)] = fetch_since(FakeConn({1: envelope()}), 0, listed, account)
+        check(bcc_fields["recipient_role"] == "undisclosed",
+              "no To and no Cc at all (BCC or a list) is undisclosed too")
+
+        [(_, three_to_fields)] = fetch_since(
+            FakeConn({1: envelope(to=f"a@example.org, {account}, b@example.org")}), 0, listed, account)
+        check(three_to_fields["recipient_role"] == "to",
+              "one of several direct To addresses is still 'to'")
+
+        [(_, ci_fields)] = fetch_since(
+            FakeConn({1: envelope(to=f'"Metis" <{account.upper()}>')}), 0, listed, account)
+        check(ci_fields["recipient_role"] == "to",
+              "matching ignores case and a display name ahead of the address")
 
         # --- the emitted line -----------------------------------------------
         trusted = describe("Julian Flores <jjulianfe@gmail.com>", "Prueba #3", "", trusted=True)
