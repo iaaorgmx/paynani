@@ -86,6 +86,13 @@ export PATH="$fakebin:$PATH"
 envfile="$tmp/env"
 printf '\xef\xbb\xbfPAYNANI_EMAIL=agent@example.com\r\nPAYNANI_PASSWORD=not-read-here\r\n' >"$envfile"
 export ENV_FILE="$envfile"
+himalaya_config="$tmp/himalaya-config.toml"
+cat >"$himalaya_config" <<'EOF'
+[accounts.paynani]
+[accounts.paynani.smtp]
+server = "smtps://example.invalid:465"
+EOF
+export HIMALAYA_CONFIG="$himalaya_config"
 
 cat >"$roster" <<'EOF'
 # Comment that should never match.
@@ -290,6 +297,41 @@ assert "no --cc means no Cc: header"      '! grep -q "^Cc:" "$CAPTURE"'
 send_ok --cc "$(printf 'second_contact@example.org\nBcc: evil@example.com')" "jjulianfe@gmail.com" "subject" "$body"
 assert "no header injection via --cc"     '! grep -qi "^Bcc:" "$CAPTURE"'
 
+
+: >"$CAPTURE"
+send_ok --to "second_contact@example.org" --cc "second_contact@example.org" --cc "bare-address-still-works@example.com" --bcc "reordered@example.net" "jjulianfe@gmail.com" "multi recipients" "$body"
+assert "--to/--cc repeat and Bcc stays out of DATA" 'grep -qx "To: jjulianfe@gmail.com, second_contact@example.org" "$CAPTURE" && grep -qx "Cc: second_contact@example.org, bare-address-still-works@example.com" "$CAPTURE" && ! grep -qi "^Bcc:" "$CAPTURE"'
+
+: >"$CAPTURE"
+"$SEND" --bcc "stranger@example.com" "jjulianfe@gmail.com" "bad bcc" "$body" >/dev/null 2>&1 && bccrc=0 || bccrc=$?
+assert "--bcc to an unlisted address is refused" '[ "${bccrc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'
+
+: >"$CAPTURE"
+dry_bcc=$("$SEND" --dry-run --bcc "second_contact@example.org" "jjulianfe@gmail.com" "dry bcc" "$body" 2>/dev/null)
+assert "--dry-run reports envelope recipients including Bcc" 'printf "%s" "$dry_bcc" | grep -q "Bcc envelope: second_contact@example.org" && printf "%s" "$dry_bcc" | grep -q "Envelope recipients: jjulianfe@gmail.com, second_contact@example.org"'
+
+bad_backend_config="$tmp/himalaya-jmap.toml"
+cat >"$bad_backend_config" <<'EOF'
+[accounts.paynani]
+message.send.backend.type = "jmap"
+EOF
+: >"$CAPTURE"
+HIMALAYA_CONFIG="$bad_backend_config" "$SEND" "jjulianfe@gmail.com" "bad backend" "$body" >/dev/null 2>"$tmp/bad-backend.err" && brc=0 || brc=$?
+assert "non-SMTP outgoing backend is refused before send" '[ "${brc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ] && grep -qx "outgoing backend is jmap, not SMTP; refusing to send" "$tmp/bad-backend.err"'
+
+bad_backend_dry=$tmp/bad-backend-dry.err
+HIMALAYA_CONFIG="$bad_backend_config" "$SEND" --dry-run "jjulianfe@gmail.com" "bad backend dry" "$body" >/dev/null 2>"$bad_backend_dry" && bdrc=0 || bdrc=$?
+assert "--dry-run refuses non-SMTP backend" '[ "${bdrc:-0}" -eq 2 ] && grep -qx "outgoing backend is jmap, not SMTP; refusing to send" "$bad_backend_dry"'
+
+no_backend_config="$tmp/himalaya-no-backend.toml"
+cat >"$no_backend_config" <<'EOF'
+[accounts.paynani]
+[accounts.paynani.imap]
+server = "imaps://example.invalid:993"
+EOF
+HIMALAYA_CONFIG="$no_backend_config" "$SEND" --check "jjulianfe@gmail.com" "no backend" "$body" >/dev/null 2>"$tmp/no-backend.err" && nbrc=0 || nbrc=$?
+assert "missing outgoing backend is refused distinctly" '[ "${nbrc:-0}" -eq 2 ] && grep -qx "outgoing backend is not declared; refusing to send" "$tmp/no-backend.err"'
+
 # --check is how an install proves send.sh can find its credentials. The roster
 # tests cannot: the gate runs first, so a refusal exits before the env is read.
 : >"$CAPTURE"
@@ -301,6 +343,7 @@ assert "--check still obeys the roster" '! "$SEND" --check "stranger@example.com
 : >"$CAPTURE"
 dry_plain=$("$SEND" --dry-run --cc "second_contact@example.org" "jjulianfe@gmail.com" "dry run" "$body" 2>/dev/null)
 assert "--dry-run reports recipients and roster rows" 'printf "%s" "$dry_plain" | grep -q "To: jjulianfe@gmail.com (roster row: Julian Flores | jjulianfe@gmail.com | Human)" && printf "%s" "$dry_plain" | grep -q "Cc: second_contact@example.org (roster row: Second Contact | second_contact@example.org | AI Agent)"'
+assert "--dry-run reports outgoing backend" 'printf "%s" "$dry_plain" | grep -qx "Outgoing backend: smtp"'
 assert "--dry-run reports plain MIME shape" 'printf "%s" "$dry_plain" | grep -q "MIME shape: single-part (text/plain)" && printf "%s" "$dry_plain" | grep -q "Attachments: 0 file" && printf "%s" "$dry_plain" | grep -q "Attachment bytes total: 0"'
 assert "--dry-run reports no signature" 'printf "%s" "$dry_plain" | grep -qx "Signature: no"'
 assert "--dry-run uses ASCII status line" 'printf "%s" "$dry_plain" | grep -q "^dry-run: nothing sent$"'
@@ -398,6 +441,11 @@ PAYNANI_STATE="$sent_state" send_ok --cc "second_contact@example.org" "jjulianfe
 assert "the record names the cc"        'grep -q "cc=second_contact@example.org" "$sent_log"'
 assert "message-id stays last with a cc" \
     '[ "$(sed -n "s/.*message-id=//p" "$sent_log")" = "$(grep -m1 "^Message-ID: " "$CAPTURE" | sed "s/^Message-ID: //")" ]'
+
+
+rm -rf "$sent_state"
+PAYNANI_STATE="$sent_state" send_ok --bcc "second_contact@example.org" "jjulianfe@gmail.com" "with bcc" "$body"
+assert "the record names the bcc"       'grep -q "bcc=second_contact@example.org" "$sent_log" && ! grep -qi "^Bcc:" "$CAPTURE"'
 
 # --- HTML alternatives ---------------------------------------------------------
 #
