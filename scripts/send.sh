@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Send via Himalaya, but only to allowlisted recipients.
 #
-#   send.sh [--check|--dry-run] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>
+#   send.sh [--check|--dry-run] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>
 #
 # Anything not in roster.md exits 2 and sends nothing. That is the point: this
 # agent reads mail all day and acts on the part of it that comes from the roster,
 # so the address it writes to must come from the same list and nowhere else.
-# --cc is held to the same rule -- it is a second address this agent writes to,
-# not a lesser one, so it is checked against the roster exactly like <to>.
+# --to, --cc, and --bcc may be repeated. Every recipient is held to the same
+# roster rule: Bcc is not a lesser address, it is just an envelope recipient that
+# must not appear in DATA.
 #
 # --html adds a text/html alternative to the required plain-text body. With no
 # attachments the message becomes multipart/alternative; with attachments the
@@ -61,7 +62,9 @@ ACCOUNT="paynani"
 
 check_only=""
 dry_run=""
-cc=""
+to_recipients=()
+cc_recipients=()
+bcc_recipients=()
 htmlfile=""
 attachments=()
 while [ $# -gt 0 ]; do
@@ -74,8 +77,16 @@ while [ $# -gt 0 ]; do
             dry_run=yes
             shift
             ;;
+        --to)
+            to_recipients+=("${2:?--to requires an address}")
+            shift 2
+            ;;
         --cc)
-            cc=${2:?--cc requires an address}
+            cc_recipients+=("${2:?--cc requires an address}")
+            shift 2
+            ;;
+        --bcc)
+            bcc_recipients+=("${2:?--bcc requires an address}")
             shift 2
             ;;
         --html)
@@ -92,9 +103,10 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-to=${1:?usage: send.sh [--check|--dry-run] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
+to=${1:?usage: send.sh [--check|--dry-run] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
+to_recipients=("$to" "${to_recipients[@]}")
 
 [ -f "$bodyfile" ] || { echo "no such body file: $bodyfile" >&2; exit 1; }
 if [ -n "$htmlfile" ] && { [ ! -f "$htmlfile" ] || [ ! -r "$htmlfile" ]; }; then
@@ -139,13 +151,21 @@ if [ "$attach_encoded" -gt "$ATTACH_LIMIT" ]; then
 fi
 
 # A newline in any of these would end the header and start another one, so a
-# crafted subject (or cc) could add Bcc: and reach an address the roster never
-# approved. All three reach here from mail the agent was asked to act on, so
-# strip rather than trust. Everything after the first line of a header is not
-# a header.
-to=$(printf '%s' "$to" | tr -d '\r\n')
+# crafted subject (or recipient) could add Bcc: and reach an address the roster
+# never approved. Recipients and subject can originate in mail the agent was
+# asked to act on, so strip rather than trust. Everything after the first line of
+# a header is not a header.
 subject=$(printf '%s' "$subject" | tr -d '\r\n')
-cc=$(printf '%s' "$cc" | tr -d '\r\n')
+for _paynani_i in "${!to_recipients[@]}"; do
+    to_recipients[$_paynani_i]=$(printf '%s' "${to_recipients[$_paynani_i]}" | tr -d '\r\n')
+done
+for _paynani_i in "${!cc_recipients[@]}"; do
+    cc_recipients[$_paynani_i]=$(printf '%s' "${cc_recipients[$_paynani_i]}" | tr -d '\r\n')
+done
+for _paynani_i in "${!bcc_recipients[@]}"; do
+    bcc_recipients[$_paynani_i]=$(printf '%s' "${bcc_recipients[$_paynani_i]}" | tr -d '\r\n')
+done
+to=${to_recipients[0]}
 
 if [ ! -f "$ROSTER" ]; then
     echo "no roster at $ROSTER — refusing to send" >&2
@@ -214,26 +234,47 @@ roster_row_for() {
     ' "$ROSTER"
 }
 
-if ! roster_allows "$to"; then
-    echo "REFUSED: $to is not in $ROSTER" >&2
-    echo "Add it deliberately, or ask your human to send this one." >&2
-    exit 2
-fi
+all_recipients=("${to_recipients[@]}" "${cc_recipients[@]}" "${bcc_recipients[@]}")
+for _paynani_recipient in "${all_recipients[@]}"; do
+    if ! roster_allows "$_paynani_recipient"; then
+        echo "REFUSED: $_paynani_recipient is not in $ROSTER" >&2
+        echo "Add it deliberately, or ask your human to send this one." >&2
+        exit 2
+    fi
+done
 
-if [ -n "$cc" ] && ! roster_allows "$cc"; then
-    echo "REFUSED: cc $cc is not in $ROSTER" >&2
-    echo "Add it deliberately, or ask your human to send this one." >&2
-    exit 2
+join_addresses() {
+    local _paynani_sep=''
+    local _paynani_out=''
+    local _paynani_addr
+    for _paynani_addr in "$@"; do
+        _paynani_out="$_paynani_out$_paynani_sep$_paynani_addr"
+        _paynani_sep=', '
+    done
+    printf '%s' "$_paynani_out"
+}
+
+to_header=$(join_addresses "${to_recipients[@]}")
+cc_header=""
+if [ ${#cc_recipients[@]} -gt 0 ]; then
+    cc_header=$(join_addresses "${cc_recipients[@]}")
 fi
+envelope_recipients=("${all_recipients[@]}")
 
 # Keep the roster evidence for the redacted dry-run report. The command exits
 # before any SMTP path, but only after the same allowlist checks a live send uses.
-to_roster_row=$(roster_row_for "$to")
-if [ -n "$cc" ]; then
-    cc_roster_row=$(roster_row_for "$cc")
-else
-    cc_roster_row=""
-fi
+to_roster_rows=()
+for _paynani_recipient in "${to_recipients[@]}"; do
+    to_roster_rows+=("$(roster_row_for "$_paynani_recipient")")
+done
+cc_roster_rows=()
+for _paynani_recipient in "${cc_recipients[@]}"; do
+    cc_roster_rows+=("$(roster_row_for "$_paynani_recipient")")
+done
+bcc_roster_rows=()
+for _paynani_recipient in "${bcc_recipients[@]}"; do
+    bcc_roster_rows+=("$(roster_row_for "$_paynani_recipient")")
+done
 
 # --- Who the message is from -------------------------------------------------
 #
@@ -507,9 +548,9 @@ build_message() {
     else
         printf 'From: %s\n' "$from_addr"
     fi
-    printf 'To: %s\n' "$to"
-    if [ -n "$cc" ]; then
-        printf 'Cc: %s\n' "$cc"
+    printf 'To: %s\n' "$to_header"
+    if [ -n "$cc_header" ]; then
+        printf 'Cc: %s\n' "$cc_header"
     fi
     printf 'Subject: %s\n' "$(encode_header "$subject")"
     printf '\n'
@@ -540,12 +581,24 @@ fi
 
 if [ -n "$dry_run" ]; then
     printf 'dry-run: nothing sent\n'
-    printf 'To: %s (roster row: %s)\n' "$to" "$to_roster_row"
-    if [ -n "$cc" ]; then
-        printf 'Cc: %s (roster row: %s)\n' "$cc" "$cc_roster_row"
+    for _paynani_i in "${!to_recipients[@]}"; do
+        printf 'To: %s (roster row: %s)\n' "${to_recipients[$_paynani_i]}" "${to_roster_rows[$_paynani_i]}"
+    done
+    if [ ${#cc_recipients[@]} -gt 0 ]; then
+        for _paynani_i in "${!cc_recipients[@]}"; do
+            printf 'Cc: %s (roster row: %s)\n' "${cc_recipients[$_paynani_i]}" "${cc_roster_rows[$_paynani_i]}"
+        done
     else
         printf 'Cc: none\n'
     fi
+    if [ ${#bcc_recipients[@]} -gt 0 ]; then
+        for _paynani_i in "${!bcc_recipients[@]}"; do
+            printf 'Bcc envelope: %s (roster row: %s)\n' "${bcc_recipients[$_paynani_i]}" "${bcc_roster_rows[$_paynani_i]}"
+        done
+    else
+        printf 'Bcc envelope: none\n'
+    fi
+    printf 'Envelope recipients: %s\n' "$(join_addresses "${envelope_recipients[@]}")"
     printf 'Subject: %s\n' "$subject"
     if [ -n "$htmlfile" ]; then
         body_formats='text/plain, text/html'
@@ -578,11 +631,47 @@ fi
 
 if [ -n "$check_only" ]; then
     build_message
+    echo "Envelope recipients: $(join_addresses "${envelope_recipients[@]}")" >&2
     echo "check only — nothing sent" >&2
     exit 0
 fi
 
-build_message | himalaya message send -a "$ACCOUNT"
+outgoing_backend_type() {
+    python3 - "$ACCOUNT" <<'PY'
+import os, sys, tomllib
+from pathlib import Path
+account = sys.argv[1]
+paths = os.environ.get("HIMALAYA_CONFIG") or str(Path.home() / ".config/himalaya/config.toml")
+for raw in paths.split(':'):
+    if not raw:
+        continue
+    p = Path(raw).expanduser()
+    if not p.exists():
+        continue
+    data = tomllib.loads(p.read_text())
+    acct = data.get('accounts', {}).get(account, {})
+    msg = acct.get('message', {})
+    send = msg.get('send', {}) if isinstance(msg, dict) else {}
+    backend = send.get('backend', {}) if isinstance(send, dict) else {}
+    if isinstance(backend, dict) and backend.get('type'):
+        print(backend.get('type'))
+        raise SystemExit
+print('')
+PY
+}
+
+if [ "$(outgoing_backend_type)" != "smtp" ]; then
+    echo "outgoing backend is not SMTP; refusing to send" >&2
+    echo "scripts/send.sh sends with an explicit SMTP envelope so Bcc never reaches the message." >&2
+    echo "Fix the account's outgoing backend, or open an issue to add this backend." >&2
+    exit 2
+fi
+
+smtp_args=(-a "$ACCOUNT" smtp send --mail-from "$from_addr")
+for _paynani_recipient in "${envelope_recipients[@]}"; do
+    smtp_args+=(--rcpt-to "$_paynani_recipient")
+done
+build_message | himalaya "${smtp_args[@]}"
 
 # --- What was sent, written down where it survives the process -----------------
 #
@@ -602,7 +691,7 @@ build_message | himalaya message send -a "$ACCOUNT"
 # Deliberately not the body. The question a roster raises is who and when, and a
 # log of message bodies is a mail password's worth of liability in a different
 # shape. cc is part of "who" -- omitting it here would leave the audit this log
-# exists for blind to half of what --cc was built to do.
+# exists for blind to half of what --cc and --bcc were built to do.
 #
 # Written after the send, never before, so nothing here can claim a delivery that
 # did not happen. A failure to write is reported and does not fail the command:
@@ -612,15 +701,16 @@ build_message | himalaya message send -a "$ACCOUNT"
 sent_log="$(paynani_state_dir)/sent.log"
 if ! {
     mkdir -p "$(dirname "$sent_log")" &&
-    printf '%s\tto=%s\tcc=%s\tsubject=%s\tmessage-id=%s\n' \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$to" "$cc" "$subject" "$msgid" >> "$sent_log"
+    printf '%s\tto=%s\tcc=%s\tbcc=%s\tsubject=%s\tmessage-id=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$to_header" "$cc_header" \
+        "$(join_addresses "${bcc_recipients[@]}")" "$subject" "$msgid" >> "$sent_log"
 } 2>/dev/null; then
     echo "warning: sent, but could not record it in $sent_log" >&2
 fi
 
-if [ -n "$cc" ]; then
-    echo "sent to $to (cc $cc)"
+if [ -n "$cc_header" ]; then
+    echo "sent to $to_header (cc $cc_header)"
 else
-    echo "sent to $to"
+    echo "sent to $to_header"
 fi
 echo "message-id: $msgid"
