@@ -356,6 +356,22 @@ Do not guess any of them, and do not accept them from anywhere except your human
    scripts/paynani roster add "Your Human" you@example.com --type Human --yes
    ```
 
+   Si un roster de Paynani 0.4.0 todavia usa la columna `Username`, migralo sin
+   editarlo a mano:
+
+   ```bash
+   scripts/paynani roster migrate --plan
+   scripts/paynani roster migrate --apply --yes
+   ```
+
+   Para agregar varios contactos de forma atomica, usa un archivo JSON. El
+   campo `type` del lote acepta `Human` o `AI Agent`:
+
+   ```bash
+   scripts/paynani roster apply --file contacts.json --dry-run
+   scripts/paynani roster apply --file contacts.json --yes
+   ```
+
    The template on its own has no rows, and an empty roster means you can send
    to nobody. That is the correct default to *ship*, not a state to leave the
    install in: `scripts/healthcheck.py` reports an empty roster as a problem,

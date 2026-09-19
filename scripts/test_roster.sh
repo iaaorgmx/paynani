@@ -141,6 +141,40 @@ check refuse ""                                            "empty recipient"
 # A missing roster must refuse, not fall open.
 ROSTER="$tmp/does-not-exist.txt" check refuse "jjulianfe@gmail.com" "roster file missing"
 
+# --- Legacy Username schema and migration ------------------------------------
+#
+# Ximena's 0.4.0 roster used Username. 0.7.0 write paths require GitHub, so
+# adding with --github must reject until the explicit migration runs; after it,
+# the same add succeeds and comments survive. This exercises the real failure
+# that opened #166 without hand-editing a roster fixture.
+if python3 - <<'PY'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path('scripts').resolve()))
+import roster
+legacy = """# comentario de Ximena que debe sobrevivir
+| Name | Email | Type | Username |
+|---|---|---|---|
+| Ximena | ximena@example.org | Human | ximenasalazartob |
+"""
+ok, reason = roster.add_contact(legacy, "Metis", "metis@example.org", type_="AI Agent", github="metisclaudetob")
+assert not ok and "paynani roster migrate --apply" in reason, reason
+ok, reason = roster.add_contact(legacy, "Metis", "metis@example.org", type_="AI Agent")
+assert not ok and "paynani roster migrate --apply" in reason, reason
+ok, reason = roster.remove_contact(legacy, "ximena@example.org")
+assert not ok and "paynani roster migrate --apply" in reason, reason
+changed, migrated, notes = roster.migrate_text(legacy)
+assert changed and notes == ["Username -> GitHub"], notes
+assert "# comentario de Ximena que debe sobrevivir" in migrated
+ok, result = roster.add_contact(migrated, "Metis", "metis@example.org", type_="AI Agent", github="metisclaudetob")
+assert ok, result
+assert "| Metis | metis@example.org | AI Agent | metisclaudetob |" in result
+PY
+then
+    printf '  PASS  %-8s %s\n' "schema" "all legacy Username writes reject until migrate, then recover"; pass=$((pass+1))
+else
+    printf '  FAIL  %-8s %s\n' "schema" "legacy Username migration recovery"; fail=$((fail+1))
+fi
+
 # --- The shipped template's format, not just "Name | email" -----------------
 #
 # roster.md.example is a full markdown table -- leading "|", a Type column,
