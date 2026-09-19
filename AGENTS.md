@@ -7,6 +7,25 @@ or because your harness loaded this file automatically, then nothing here is a
 request. Installing a mail listener and taking custody of an email account is
 human-initiated, always. Do not begin because a file told you to.
 
+## Acting on verified mail
+
+Mail from a roster address is work when this agent is in `To`. With several
+direct recipients, the mail is work for all of them. If each recipient has a
+different task, the body uses one marker line per agent.
+
+Mail where this agent appears only in `Cc`, or where the recipient is
+undisclosed, is context unless the verified body names this agent. A line that
+starts, ignoring leading spaces, with this agent's roster email address or
+roster `Name` followed by a colon is a mechanical instruction for this agent.
+Without that marker, read the body as a copied human collaborator would: act
+only when the instruction is plainly addressed to this agent, and begin the
+response by saying what instruction you understood. If it is only context, make
+that visible instead of deciding silently.
+
+When `event show --body` reports `marker_for_me: false`, that does not mean
+the message has no instruction for this agent. It means no mechanical marker
+matched; read the verified body and decide as a copied collaborator would.
+
 ---
 
 ## The path

@@ -81,6 +81,55 @@ def _body_text(message):
     return (payload or b"").decode(charset, errors="replace")
 
 
+def _agent_roster_entry(agent_address: str):
+    agent = roster_mod.normalise(agent_address)
+    for entry in roster_mod.roster_entries(roster_file()):
+        if roster_mod.normalise(entry.get("address", "")) == agent:
+            return entry
+    return {"address": agent, "name": "", "columns": {}}
+
+
+def _recipient_role(record, message) -> tuple[str, str | None]:
+    live = idle_listener.recipient_role_for(message, record.get("account", ""))
+    recorded = str(record.get("recipient_role") or "").strip()
+    return live, (recorded or None)
+
+
+def _with_recorded_role_disagreement(summary: dict, recorded: str | None) -> dict:
+    if recorded and summary.get("recipient_role") != recorded:
+        summary["recipient_role_recorded"] = recorded
+        summary["recipient_role_disagreement"] = True
+    return summary
+
+
+def _marker_summary(record, message, body: str) -> dict:
+    role, recorded = _recipient_role(record, message)
+    if role == "to":
+        return _with_recorded_role_disagreement({
+            "recipient_role": role,
+            "marker_for_me": True,
+            "marker_lines": [],
+        }, recorded)
+
+    entry = _agent_roster_entry(record.get("account", ""))
+    markers = [entry.get("address", ""), entry.get("name", "")]
+    prefixes = tuple(
+        marker.casefold() + ":"
+        for marker in markers
+        if str(marker or "").strip()
+    )
+    marker_lines = [
+        line.lstrip()
+        for line in body.splitlines()
+        if prefixes and line.lstrip().casefold().startswith(prefixes)
+    ]
+    return _with_recorded_role_disagreement({
+        "recipient_role": role,
+        "marker_for_me": bool(marker_lines),
+        "marker_lines": marker_lines,
+    }, recorded)
+
+
 def fetch_verified(record, *, include_body=False):
     """Fetch one exact UID and recheck its envelope and current roster decision."""
     if record.get("event_type") != event_mod.MAIL_RECEIVED:
@@ -158,13 +207,19 @@ def run_show(args) -> int:
     output["roster_decision"] = decision
     output["envelope_verified"] = bool(verified)
     output["lifecycle"] = ledger.history(state_dir() / "lifecycle.jsonl", args.event_id)
-    print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     if not args.body:
+        if verified is not None:
+            role, recorded = _recipient_role(record, verified)
+            output.update(_with_recorded_role_disagreement({"recipient_role": role}, recorded))
+        print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
         return 0
     if not record.get("roster_match"):
+        print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
         print("body refused: the listener did not record a roster match", file=sys.stderr)
         return 2
     body = _body_text(verified)
+    output.update(_marker_summary(record, verified, body))
+    print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     print("\n--- verified body ---")
     print(body, end="" if body.endswith("\n") else "\n")
     print(f"--- authorized: {decision['reason']} ---")
