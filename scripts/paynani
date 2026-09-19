@@ -10,6 +10,8 @@ paynani CLI.
     paynani event mark EVENT_ID STATE
     paynani roster list
     paynani roster explain --from ADDRESS [--header NAME=VALUE]
+    paynani roster migrate --plan|--apply [--yes]
+    paynani roster apply --file CONTACTS.json [--dry-run] [--yes]
     paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--yes]
     paynani roster remove ADDRESS [--yes]
     paynani paths [--json]
@@ -84,6 +86,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Add a provider header; may be repeated.",
     )
 
+    roster_migrate = roster_sub.add_parser("migrate", help="Plan or apply legacy roster schema migration.")
+    migrate_mode = roster_migrate.add_mutually_exclusive_group(required=True)
+    migrate_mode.add_argument("--plan", action="store_true", help="Show what would change.")
+    migrate_mode.add_argument("--apply", action="store_true", help="Write the migration after tests pass.")
+    roster_migrate.add_argument(
+        "--yes", action="store_true", help="Write without an interactive confirmation."
+    )
+
+    roster_apply = roster_sub.add_parser("apply", help="Apply a JSON batch of contacts atomically.")
+    roster_apply.add_argument("--file", required=True, help="JSON file with a contacts array, or a top-level array.")
+    roster_apply.add_argument("--dry-run", action="store_true", help="Validate and print the logical diff without writing.")
+    roster_apply.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
     roster_add = roster_sub.add_parser("add", help="Add a contact.")
     roster_add.add_argument("name")
     roster_add.add_argument("address")
@@ -147,6 +161,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "roster":
         if args.roster_command == "list":
             return roster_cli.run_list(args)
+        if args.roster_command == "migrate":
+            return roster_cli.run_migrate(args)
+        if args.roster_command == "apply":
+            return roster_cli.run_apply(args)
         if args.roster_command == "add":
             return roster_cli.run_add(args)
         if args.roster_command == "remove":
