@@ -6,6 +6,7 @@ set -uo pipefail
 umask 077
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHON=${PYTHON:-python3}
 pass=0
 fail=0
 
@@ -105,7 +106,7 @@ rm -rf "$clone/state" "$clone/.env" "$clone/runtime.env" "$clone/install.manifes
 find "$clone" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 INSTALL="$clone/scripts/install.sh"
 state_tree="$clone/state"
-before=$(python3 -c 'from pathlib import Path; print(sorted(str(p) for p in Path("'$sandbox'").rglob("*")))')
+before=$("$PYTHON" -c 'from pathlib import Path; print(sorted(str(p) for p in Path("'$sandbox'").rglob("*")))')
 
 cat >"$fixture_bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
@@ -905,7 +906,7 @@ FAKE_SYSTEMD=no FAKE_LINGER=no check_status \
 }
 mv "$fixture_bin/openclaw.off" "$fixture_bin/openclaw"
 
-after=$(python3 -c 'from pathlib import Path; print(sorted(str(p) for p in Path("'$sandbox'").rglob("*")))')
+after=$("$PYTHON" -c 'from pathlib import Path; print(sorted(str(p) for p in Path("'$sandbox'").rglob("*")))')
 if [[ "$before" == "$after" ]]; then
     printf 'ok   skeleton leaves HOME untouched
 '

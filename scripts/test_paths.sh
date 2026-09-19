@@ -15,6 +15,7 @@
 set -uo pipefail
 
 SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHON=${PYTHON:-python3}
 
 # The resolvers are exercised from a throwaway copy of the clone, not from the
 # clone itself. Two of them now read `runtime.env`, which lives in the install,
@@ -63,7 +64,7 @@ matches() {  # value, shell-pattern
     case "$1" in $2) echo yes ;; *) echo no ;; esac
 }
 
-py() { HOME="$1" PAYNANI_ENV="${2:-}" python3 "$ROOT/harness/paths.py" "${3:-env}"; }
+py() { HOME="$1" PAYNANI_ENV="${2:-}" "$PYTHON" "$ROOT/harness/paths.py" "${3:-env}"; }
 sh_() (
     HOME="$1"
     PAYNANI_ENV="${2:-}"
@@ -140,9 +141,9 @@ rm -rf "$home"
 # ---------------------------------------------------------------------------
 home=$(tmpdir)
 check "PAYNANI_STATE alone moves state and leaves credentials" "$ROOT/.env" \
-    "$(HOME="$home" PAYNANI_STATE=/srv/state python3 "$ROOT/harness/paths.py" env)"
+    "$(HOME="$home" PAYNANI_STATE=/srv/state "$PYTHON" "$ROOT/harness/paths.py" env)"
 check "PAYNANI_STATE alone is honoured for state" "/srv/state" \
-    "$(HOME="$home" PAYNANI_STATE=/srv/state python3 "$ROOT/harness/paths.py" state)"
+    "$(HOME="$home" PAYNANI_STATE=/srv/state "$PYTHON" "$ROOT/harness/paths.py" state)"
 rm -rf "$home"
 
 # ---------------------------------------------------------------------------
@@ -161,7 +162,7 @@ rm -rf "$home"
 # ---------------------------------------------------------------------------
 home=$(tmpdir)
 check "explicit state override: wins on a fresh host" "/srv/paynani-state" \
-    "$(HOME="$home" PAYNANI_STATE=/srv/paynani-state python3 "$ROOT/harness/paths.py" state)"
+    "$(HOME="$home" PAYNANI_STATE=/srv/paynani-state "$PYTHON" "$ROOT/harness/paths.py" state)"
 check "explicit state override: shell agrees" "/srv/paynani-state" \
     "$(HOME="$home" PAYNANI_STATE=/srv/paynani-state bash -c \
         ". '$ROOT/scripts/envpath.sh'; paynani_state_dir")"
@@ -192,7 +193,7 @@ rm -rf "$home"
 # wrong on every other host and failed silently, because the session hook
 # swallows its own errors so a session is never blocked.
 # ---------------------------------------------------------------------------
-found=$(python3 -c "
+found=$("$PYTHON" -c "
 import sys; sys.path.insert(0, '$ROOT/harness')
 import paths; print(paths.repo_root())
 ")
@@ -202,7 +203,7 @@ checkout="$home/elsewhere/paynani"
 mkdir -p "$checkout/harness"
 checkout=$(cd "$checkout" && pwd -P)
 cp "$ROOT/harness/paths.py" "$checkout/harness/paths.py"
-found=$(CHECKOUT="$checkout" python3 - <<'PY'
+found=$(CHECKOUT="$checkout" "$PYTHON" - <<'PY'
 import os
 import sys
 
