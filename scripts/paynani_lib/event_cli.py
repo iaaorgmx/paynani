@@ -96,13 +96,13 @@ def _recipient_role(record, message) -> str:
     return idle_listener.recipient_role_for(message, record.get("account", ""))
 
 
-def _instruction_summary(record, message, body: str) -> dict:
+def _marker_summary(record, message, body: str) -> dict:
     role = _recipient_role(record, message)
     if role == "to":
         return {
             "recipient_role": role,
-            "instruction_for_me": True,
-            "instruction_lines": [],
+            "marker_for_me": True,
+            "marker_lines": [],
         }
 
     entry = _agent_roster_entry(record.get("account", ""))
@@ -112,15 +112,15 @@ def _instruction_summary(record, message, body: str) -> dict:
         for marker in markers
         if str(marker or "").strip()
     )
-    instruction_lines = [
+    marker_lines = [
         line.lstrip()
         for line in body.splitlines()
         if prefixes and line.lstrip().casefold().startswith(prefixes)
     ]
     return {
         "recipient_role": role,
-        "instruction_for_me": bool(instruction_lines),
-        "instruction_lines": instruction_lines,
+        "marker_for_me": bool(marker_lines),
+        "marker_lines": marker_lines,
     }
 
 
@@ -211,7 +211,7 @@ def run_show(args) -> int:
         print("body refused: the listener did not record a roster match", file=sys.stderr)
         return 2
     body = _body_text(verified)
-    output.update(_instruction_summary(record, verified, body))
+    output.update(_marker_summary(record, verified, body))
     print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     print("\n--- verified body ---")
     print(body, end="" if body.endswith("\n") else "\n")

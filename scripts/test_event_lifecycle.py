@@ -127,8 +127,8 @@ with tempfile.TemporaryDirectory() as raw:
     shown_data = event_cli.json.loads(shown_json)
     check("a direct recipient treats the whole verified body as instruction",
           shown_data["recipient_role"] == "to"
-          and shown_data["instruction_for_me"] is True
-          and shown_data["instruction_lines"] == [])
+          and shown_data["marker_for_me"] is True
+          and shown_data["marker_lines"] == [])
 
     roster_path.write_text(
         "| Name | Email | Type | GitHub |\n|---|---|---|---|\n"
@@ -148,26 +148,26 @@ with tempfile.TemporaryDirectory() as raw:
     )
     body = event_cli._body_text(cc_message)
     legacy_record = {"account": "agent@example.com"}
-    summary = event_cli._instruction_summary(legacy_record, cc_message, body)
+    summary = event_cli._marker_summary(legacy_record, cc_message, body)
     check("level 1 matches a roster name followed by a colon",
-          "Ocelotl: run the Codex row" in summary["instruction_lines"])
+          "Ocelotl: run the Codex row" in summary["marker_lines"])
     check("level 1 matches the agent address followed by a colon",
-          "AGENT@EXAMPLE.COM: capture the output" in summary["instruction_lines"])
+          "AGENT@EXAMPLE.COM: capture the output" in summary["marker_lines"])
     check("level 1 ignores another agent's marker",
-          "Ares: this one is not for Ocelotl" not in summary["instruction_lines"])
+          "Ares: this one is not for Ocelotl" not in summary["marker_lines"])
     check("level 1 is case-insensitive",
-          summary["instruction_for_me"] is True and len(summary["instruction_lines"]) == 2)
+          summary["marker_for_me"] is True and len(summary["marker_lines"]) == 2)
 
     no_marker = email.message.EmailMessage()
     no_marker["From"] = "Known <known@example.com>"
     no_marker["Cc"] = "Agent <agent@example.com>"
     no_marker.set_content("Please keep this for context.\n")
-    summary = event_cli._instruction_summary(
+    summary = event_cli._marker_summary(
         legacy_record, no_marker, event_cli._body_text(no_marker))
     check("copy without a level 1 marker is reported as context, not silent action",
-          summary["recipient_role"] == "cc" and summary["instruction_for_me"] is False)
+          summary["recipient_role"] == "cc" and summary["marker_for_me"] is False)
     recorded_record = {"account": "agent@example.com", "recipient_role": "undisclosed"}
-    summary = event_cli._instruction_summary(recorded_record, cc_message, body)
+    summary = event_cli._marker_summary(recorded_record, cc_message, body)
     check("recorded recipient_role is used before deriving from the verified message",
           summary["recipient_role"] == "undisclosed")
     event_cli.env_file = old_env_file

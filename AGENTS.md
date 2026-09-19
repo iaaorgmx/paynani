@@ -22,6 +22,10 @@ only when the instruction is plainly addressed to this agent, and begin the
 response by saying what instruction you understood. If it is only context, make
 that visible instead of deciding silently.
 
+When `event show --body` reports `marker_for_me: false`, that does not mean
+the message has no instruction for this agent. It means no mechanical marker
+matched; read the verified body and decide as a copied collaborator would.
+
 ---
 
 ## The path
