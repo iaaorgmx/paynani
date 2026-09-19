@@ -14,6 +14,7 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import roster as roster_mod
 from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_VERSION, decode_hdr,
                            describe, keepalive, resolve_keepalive_option,
                            save_state)
@@ -158,6 +159,25 @@ def main():
               "and the notifier address alone grants nothing without the header")
         check(not listed("noreply@jira.example.com", **{"X-GitHub-Sender": "julianflores"}),
               "an undeclared sender carrying the header grants nothing")
+        legacy_notifier_roster = pathlib.Path(tmp) / "legacy-notifiers.md"
+        legacy_notifier_roster.write_text(
+            "| Name | Email | Type | Username |\n"
+            "|---|---|---|---|\n"
+            "| Julian Flores | jjulianfe@gmail.com | Human | julianflores |\n"
+            "\n"
+            "## Notifiers\n"
+            "\n"
+            "| Address | Header | Column |\n"
+            "|---|---|---|\n"
+            "| notifications@github.com | X-GitHub-Sender | GitHub |\n",
+            encoding="utf-8")
+        legacy_entries = roster_entries(legacy_notifier_roster)
+        legacy_notifiers = notifiers(legacy_notifier_roster)
+        check(legacy_entries[0]["columns"]["github"] == "julianflores",
+              "Username is a read-only alias for the canonical GitHub column")
+        check(sender_is_listed(message("notifications@github.com", **{"X-GitHub-Sender": "julianflores"}),
+                               roster_addresses(legacy_notifier_roster), legacy_entries, legacy_notifiers),
+              "a GitHub notifier keeps working on a legacy Username roster")
         check(listed("Julian Flores <jjulianfe@gmail.com>"),
               "and a person on the list is unaffected by any of it")
 
@@ -247,6 +267,30 @@ def main():
         commented = tmp / "commented.txt"
         commented.write_text("# Julian Flores | jjulianfe@gmail.com\n", encoding="utf-8")
         check(roster_addresses(commented) == set(), "commented-out entry is not an entry")
+
+        legacy_batch = (
+            "# keep this comment\n"
+            "| Name | Email | Type | Username |\n"
+            "|---|---|---|---|\n"
+            "| Ximena | ximena@example.org | Human | ximenasalazartob |\n"
+        )
+        rows = [
+            {"name": f"Agent {i}", "address": f"agent{i}@example.org", "type": "AI Agent", "github": f"agent{i}"}
+            for i in range(1, 10)
+        ]
+        bad_rows = list(rows)
+        bad_rows[4] = {**bad_rows[4], "github": "bad_login_underscore"}
+        ok, failed_text, why = roster_mod.batch_add_contacts(legacy_batch, bad_rows)
+        check(not ok and failed_text == legacy_batch and "invalid GitHub login" in why[0],
+              "an invalid row rejects the batch without changing the returned text")
+        ok, migrated_batch, notes = roster_mod.batch_add_contacts(legacy_batch, rows)
+        check(ok, f"valid batch accepted: {notes}")
+        check("Username" not in migrated_batch and "| Name | Email | Type | GitHub |" in migrated_batch,
+              "batch apply migrates the legacy header in the same logical plan")
+        check("# keep this comment" in migrated_batch, "migration preserves comments")
+        for row in rows:
+            check(row["address"] in roster_mod._addresses_from_text(migrated_batch),
+                  f"{row['address']} was added")
 
         # --- the emitted line -----------------------------------------------
         trusted = describe("Julian Flores <jjulianfe@gmail.com>", "Prueba #3", "", trusted=True)
