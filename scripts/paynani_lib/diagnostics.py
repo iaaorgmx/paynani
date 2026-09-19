@@ -184,19 +184,16 @@ def _environmentd_values(directory: Path | None = None) -> dict[str, str]:
 
 
 def _service_environment_check(facts: dict) -> dict:
-    if platform.system() == "Darwin":
+    service_environment = (facts.get("dependencies") or {}).get("service_environment") or {}
+    if service_environment.get("supervisor") == "launchd":
         return _check("service_environment", "unknown", "systemd --user is not available on macOS", {"supervisor": "launchd"})
 
-    wanted = ["PATH"]
-    if (facts.get("runtime") or {}).get("selected") == "openclaw":
-        wanted.append("OPENCLAW")
-    run = _safe_run(["systemctl", "--user", "show-environment"], timeout=5)
-    if run.get("returncode") != 0:
-        return _check("service_environment", "unknown", "systemd --user environment cannot be queried from this environment", {"command": run.get("command"), "returncode": run.get("returncode"), "stderr": run.get("stderr", "")})
+    wanted = service_environment.get("checked") or ["PATH"]
+    if service_environment.get("returncode") != 0:
+        return _check("service_environment", "unknown", "systemd --user environment cannot be queried from this environment", {"command": service_environment.get("command"), "returncode": service_environment.get("returncode"), "stderr": service_environment.get("stderr", "")})
 
-    live = _parse_environment_lines(run.get("stdout", ""))
-    declared_all = _environmentd_values()
-    declared = {name: declared_all[name] for name in wanted if name in declared_all}
+    live = service_environment.get("live") or {}
+    declared = service_environment.get("declared") or {}
     if not declared:
         return _check("service_environment", "ok", "no persistent PATH/OPENCLAW declarations need comparison", {"checked": wanted, "declared": []})
 
@@ -329,7 +326,29 @@ def _dependency_facts(selected_runtime, python=None) -> dict:
         himalaya["major"] = None
         himalaya["account_check_ok"] = None
 
-    out = {"python": python, "himalaya": himalaya}
+    service_environment = {"supervisor": "systemd", "checked": ["PATH"]}
+    if selected_runtime == "openclaw":
+        service_environment["checked"].append("OPENCLAW")
+    if platform.system() == "Darwin":
+        service_environment = {"supervisor": "launchd"}
+    else:
+        run = _safe_run(["systemctl", "--user", "show-environment"], timeout=5)
+        service_environment.update({
+            "command": run.get("command"),
+            "returncode": run.get("returncode"),
+            "stderr": run.get("stderr", ""),
+        })
+        if run.get("returncode") == 0:
+            live = _parse_environment_lines(run.get("stdout", ""))
+            declared_all = _environmentd_values()
+            service_environment["live"] = live
+            service_environment["declared"] = {
+                name: declared_all[name]
+                for name in service_environment["checked"]
+                if name in declared_all
+            }
+
+    out = {"python": python, "himalaya": himalaya, "service_environment": service_environment}
     if selected_runtime == "opencode":
         version = _safe_run(["opencode", "--version"])
         opencode = {"runnable": version["returncode"] is not None,

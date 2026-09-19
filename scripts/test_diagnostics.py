@@ -171,11 +171,16 @@ with mock.patch.object(d, "QUEUE_DRAIN_SAMPLE_SECONDS", 0), \
     stalled = d._queue_check(queue_first)
 check("doctor marks a non-draining stale queue blocked", stalled["status"] == "blocked")
 
-with mock.patch.object(d, "platform") as platform_mock, \
-     mock.patch.object(d, "_safe_run", return_value={"command": ["systemctl", "--user", "show-environment"], "returncode": 0, "stdout": "PATH=/usr/bin\nOPENCLAW=/old/bin/openclaw\n", "stderr": ""}), \
-     mock.patch.object(d, "_environmentd_values", return_value={"PATH": "/usr/bin", "OPENCLAW": "/new/bin/openclaw"}):
-    platform_mock.system.return_value = "Linux"
-    service_env = d._service_environment_check(base_facts()["runtime"] and base_facts())
+service_env_facts = base_facts()
+service_env_facts["dependencies"]["service_environment"] = {
+    "supervisor": "systemd",
+    "checked": ["PATH", "OPENCLAW"],
+    "command": ["systemctl", "--user", "show-environment"],
+    "returncode": 0,
+    "live": {"PATH": "/usr/bin", "OPENCLAW": "/old/bin/openclaw"},
+    "declared": {"PATH": "/usr/bin", "OPENCLAW": "/new/bin/openclaw"},
+}
+service_env = d._service_environment_check(service_env_facts)
 check("doctor warns when systemd live environment differs from environment.d", service_env["status"] == "warning" and service_env.get("next_command") == "systemctl --user set-environment OPENCLAW=/new/bin/openclaw")
 
 with mock.patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}, clear=True):
@@ -189,11 +194,16 @@ check("environment.d expands $PATH before emitting fixes", environmentd["PATH"] 
 check("environment.d expands ${PATH} from earlier declarations", environmentd["TOOL"] == "/opt/foo/bin:/usr/bin:/bin/tool")
 check("environment.d expands default and alternate forms", environmentd["CACHE"] == "/tmp/paynani-cache" and environmentd["MARKER"] == "enabled")
 
-with mock.patch.object(d, "platform") as platform_mock, \
-     mock.patch.object(d, "_safe_run", return_value={"command": ["systemctl", "--user", "show-environment"], "returncode": 0, "stdout": "PATH=/usr/bin:/bin\n", "stderr": ""}), \
-     mock.patch.object(d, "_environmentd_values", return_value={"PATH": "/opt/foo/bin:/usr/bin:/bin"}):
-    platform_mock.system.return_value = "Linux"
-    path_fix = d._service_environment_check(base_facts())
+path_fix_facts = base_facts()
+path_fix_facts["dependencies"]["service_environment"] = {
+    "supervisor": "systemd",
+    "checked": ["PATH"],
+    "command": ["systemctl", "--user", "show-environment"],
+    "returncode": 0,
+    "live": {"PATH": "/usr/bin:/bin"},
+    "declared": {"PATH": "/opt/foo/bin:/usr/bin:/bin"},
+}
+path_fix = d._service_environment_check(path_fix_facts)
 check("doctor emits resolved PATH repair command, not literal $PATH", path_fix.get("next_command") == "systemctl --user set-environment PATH=/opt/foo/bin:/usr/bin:/bin")
 
 imap_ok = base_facts()
