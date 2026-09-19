@@ -10,6 +10,8 @@ paynani CLI.
     paynani event mark EVENT_ID STATE
     paynani roster list
     paynani roster explain --from ADDRESS [--header NAME=VALUE]
+    paynani roster migrate --plan|--apply [--yes]
+    paynani roster apply --file CONTACTS.json [--dry-run] [--yes]
     paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--yes]
     paynani roster remove ADDRESS [--yes]
     paynani paths [--json]
@@ -46,6 +48,7 @@ DEFAULT_PORT = 8765
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
     parser = argparse.ArgumentParser(prog="paynani", description="paynani CLI.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -62,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     set_parser = subparsers.add_parser(
         "set", help="Set one .env key, with a live IMAP/SMTP check by default."
     )
-    set_parser.add_argument("key", help="One of the seven keys .env owns, e.g. AGENT_EMAIL_PASSWORD.")
+    set_parser.add_argument("key", help="One supported .env key, e.g. AGENT_EMAIL_PASSWORD or PAYNANI_SIGNATURE_FILE.")
     set_parser.add_argument("value", nargs="?", help="New value. Omit to be prompted (hidden for the password).")
     set_parser.add_argument(
         "--skip-check",
@@ -84,6 +87,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Add a provider header; may be repeated.",
     )
 
+    roster_migrate = roster_sub.add_parser("migrate", help="Plan or apply legacy roster schema migration.")
+    migrate_mode = roster_migrate.add_mutually_exclusive_group(required=True)
+    migrate_mode.add_argument("--plan", action="store_true", help="Show what would change.")
+    migrate_mode.add_argument("--apply", action="store_true", help="Write the migration after tests pass.")
+    roster_migrate.add_argument(
+        "--yes", action="store_true", help="Write without an interactive confirmation."
+    )
+
+    roster_apply = roster_sub.add_parser("apply", help="Apply a JSON batch of contacts atomically.")
+    roster_apply.add_argument("--file", required=True, help="JSON file with a contacts array, or a top-level array.")
+    roster_apply.add_argument("--dry-run", action="store_true", help="Validate and print the logical diff without writing.")
+    roster_apply.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
     roster_add = roster_sub.add_parser("add", help="Add a contact.")
     roster_add.add_argument("name")
     roster_add.add_argument("address")
@@ -129,6 +144,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Use a synthetic probe event, not mail or the paynani journal.",
     )
 
+    if argv == [] or argv == ["help"]:
+        parser.print_help()
+        return 0
+
     args = parser.parse_args(argv)
 
     # `set` and `roster` are terminal commands whose own strings are English,
@@ -147,6 +166,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "roster":
         if args.roster_command == "list":
             return roster_cli.run_list(args)
+        if args.roster_command == "migrate":
+            return roster_cli.run_migrate(args)
+        if args.roster_command == "apply":
+            return roster_cli.run_apply(args)
         if args.roster_command == "add":
             return roster_cli.run_add(args)
         if args.roster_command == "remove":

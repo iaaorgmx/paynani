@@ -19,6 +19,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SEND="$SCRIPT_DIR/send.sh"
+PYTHON=${PYTHON:-python3}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -29,6 +30,8 @@ diagnostic_mime_observed=""
 failure_diagnostics() {
     [ "$diagnostics_printed" -eq 0 ] || return 0
     diagnostics_printed=1
+    # Deliberately use python3: failure_diagnostics.py stays compatible with
+    # Apple's 3.9 so it can explain failures on hosts below the project floor.
     python3 "$SCRIPT_DIR/failure_diagnostics.py" \
         --mime-expected "${diagnostic_mime_expected:-not observed}" \
         --mime-observed "${diagnostic_mime_observed:-not observed}" >&2
@@ -57,7 +60,7 @@ echo "hi" >"$body"
 html="$tmp/body.html"
 printf '<!doctype html><html><body><p>hi</p></body></html>\n' >"$html"
 long_html="$tmp/long-body.html"
-python3 -c 'from pathlib import Path; Path(__import__("sys").argv[1]).write_text("<html><body><p style=\"" + "x" * 1200 + "\">hola</p></body></html>\n", encoding="utf-8")' "$long_html"
+"$PYTHON" -c 'from pathlib import Path; Path(__import__("sys").argv[1]).write_text("<html><body><p style=\"" + "x" * 1200 + "\">hola</p></body></html>\n", encoding="utf-8")' "$long_html"
 signature="$tmp/signature.txt"
 cat >"$signature" <<'EOF'
 Paynani Test Agent
@@ -86,6 +89,13 @@ export PATH="$fakebin:$PATH"
 envfile="$tmp/env"
 printf '\xef\xbb\xbfPAYNANI_EMAIL=agent@example.com\r\nPAYNANI_PASSWORD=not-read-here\r\n' >"$envfile"
 export ENV_FILE="$envfile"
+himalaya_config="$tmp/himalaya-config.toml"
+cat >"$himalaya_config" <<'EOF'
+[accounts.paynani]
+[accounts.paynani.smtp]
+server = "smtps://example.invalid:465"
+EOF
+export HIMALAYA_CONFIG="$himalaya_config"
 
 cat >"$roster" <<'EOF'
 # Comment that should never match.
@@ -140,6 +150,40 @@ check refuse ""                                            "empty recipient"
 
 # A missing roster must refuse, not fall open.
 ROSTER="$tmp/does-not-exist.txt" check refuse "jjulianfe@gmail.com" "roster file missing"
+
+# --- Legacy Username schema and migration ------------------------------------
+#
+# Ximena's 0.4.0 roster used Username. 0.7.0 write paths require GitHub, so
+# adding with --github must reject until the explicit migration runs; after it,
+# the same add succeeds and comments survive. This exercises the real failure
+# that opened #166 without hand-editing a roster fixture.
+if "$PYTHON" - <<'PY'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path('scripts').resolve()))
+import roster
+legacy = """# comentario de Ximena que debe sobrevivir
+| Name | Email | Type | Username |
+|---|---|---|---|
+| Ximena | ximena@example.org | Human | ximenasalazartob |
+"""
+ok, reason = roster.add_contact(legacy, "Metis", "metis@example.org", type_="AI Agent", github="metisclaudetob")
+assert not ok and "paynani roster migrate --apply" in reason, reason
+ok, reason = roster.add_contact(legacy, "Metis", "metis@example.org", type_="AI Agent")
+assert not ok and "paynani roster migrate --apply" in reason, reason
+ok, reason = roster.remove_contact(legacy, "ximena@example.org")
+assert not ok and "paynani roster migrate --apply" in reason, reason
+changed, migrated, notes = roster.migrate_text(legacy)
+assert changed and notes == ["Username -> GitHub"], notes
+assert "# comentario de Ximena que debe sobrevivir" in migrated
+ok, result = roster.add_contact(migrated, "Metis", "metis@example.org", type_="AI Agent", github="metisclaudetob")
+assert ok, result
+assert "| Metis | metis@example.org | AI Agent | metisclaudetob |" in result
+PY
+then
+    printf '  PASS  %-8s %s\n' "schema" "all legacy Username writes reject until migrate, then recover"; pass=$((pass+1))
+else
+    printf '  FAIL  %-8s %s\n' "schema" "legacy Username migration recovery"; fail=$((fail+1))
+fi
 
 # --- The shipped template's format, not just "Name | email" -----------------
 #
@@ -256,6 +300,41 @@ assert "no --cc means no Cc: header"      '! grep -q "^Cc:" "$CAPTURE"'
 send_ok --cc "$(printf 'second_contact@example.org\nBcc: evil@example.com')" "jjulianfe@gmail.com" "subject" "$body"
 assert "no header injection via --cc"     '! grep -qi "^Bcc:" "$CAPTURE"'
 
+
+: >"$CAPTURE"
+send_ok --to "second_contact@example.org" --cc "second_contact@example.org" --cc "bare-address-still-works@example.com" --bcc "reordered@example.net" "jjulianfe@gmail.com" "multi recipients" "$body"
+assert "--to/--cc repeat and Bcc stays out of DATA" 'grep -qx "To: jjulianfe@gmail.com, second_contact@example.org" "$CAPTURE" && grep -qx "Cc: second_contact@example.org, bare-address-still-works@example.com" "$CAPTURE" && ! grep -qi "^Bcc:" "$CAPTURE"'
+
+: >"$CAPTURE"
+"$SEND" --bcc "stranger@example.com" "jjulianfe@gmail.com" "bad bcc" "$body" >/dev/null 2>&1 && bccrc=0 || bccrc=$?
+assert "--bcc to an unlisted address is refused" '[ "${bccrc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'
+
+: >"$CAPTURE"
+dry_bcc=$("$SEND" --dry-run --bcc "second_contact@example.org" "jjulianfe@gmail.com" "dry bcc" "$body" 2>/dev/null)
+assert "--dry-run reports envelope recipients including Bcc" 'printf "%s" "$dry_bcc" | grep -q "Bcc envelope: second_contact@example.org" && printf "%s" "$dry_bcc" | grep -q "Envelope recipients: jjulianfe@gmail.com, second_contact@example.org"'
+
+bad_backend_config="$tmp/himalaya-jmap.toml"
+cat >"$bad_backend_config" <<'EOF'
+[accounts.paynani]
+message.send.backend.type = "jmap"
+EOF
+: >"$CAPTURE"
+HIMALAYA_CONFIG="$bad_backend_config" "$SEND" "jjulianfe@gmail.com" "bad backend" "$body" >/dev/null 2>"$tmp/bad-backend.err" && brc=0 || brc=$?
+assert "non-SMTP outgoing backend is refused before send" '[ "${brc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ] && grep -qx "outgoing backend is jmap, not SMTP; refusing to send" "$tmp/bad-backend.err"'
+
+bad_backend_dry=$tmp/bad-backend-dry.err
+HIMALAYA_CONFIG="$bad_backend_config" "$SEND" --dry-run "jjulianfe@gmail.com" "bad backend dry" "$body" >/dev/null 2>"$bad_backend_dry" && bdrc=0 || bdrc=$?
+assert "--dry-run refuses non-SMTP backend" '[ "${bdrc:-0}" -eq 2 ] && grep -qx "outgoing backend is jmap, not SMTP; refusing to send" "$bad_backend_dry"'
+
+no_backend_config="$tmp/himalaya-no-backend.toml"
+cat >"$no_backend_config" <<'EOF'
+[accounts.paynani]
+[accounts.paynani.imap]
+server = "imaps://example.invalid:993"
+EOF
+HIMALAYA_CONFIG="$no_backend_config" "$SEND" --check "jjulianfe@gmail.com" "no backend" "$body" >/dev/null 2>"$tmp/no-backend.err" && nbrc=0 || nbrc=$?
+assert "missing outgoing backend is refused distinctly" '[ "${nbrc:-0}" -eq 2 ] && grep -qx "outgoing backend is not declared; refusing to send" "$tmp/no-backend.err"'
+
 # --check is how an install proves send.sh can find its credentials. The roster
 # tests cannot: the gate runs first, so a refusal exits before the env is read.
 : >"$CAPTURE"
@@ -267,6 +346,7 @@ assert "--check still obeys the roster" '! "$SEND" --check "stranger@example.com
 : >"$CAPTURE"
 dry_plain=$("$SEND" --dry-run --cc "second_contact@example.org" "jjulianfe@gmail.com" "dry run" "$body" 2>/dev/null)
 assert "--dry-run reports recipients and roster rows" 'printf "%s" "$dry_plain" | grep -q "To: jjulianfe@gmail.com (roster row: Julian Flores | jjulianfe@gmail.com | Human)" && printf "%s" "$dry_plain" | grep -q "Cc: second_contact@example.org (roster row: Second Contact | second_contact@example.org | AI Agent)"'
+assert "--dry-run reports outgoing backend" 'printf "%s" "$dry_plain" | grep -qx "Outgoing backend: smtp"'
 assert "--dry-run reports plain MIME shape" 'printf "%s" "$dry_plain" | grep -q "MIME shape: single-part (text/plain)" && printf "%s" "$dry_plain" | grep -q "Attachments: 0 file" && printf "%s" "$dry_plain" | grep -q "Attachment bytes total: 0"'
 assert "--dry-run reports no signature" 'printf "%s" "$dry_plain" | grep -qx "Signature: no"'
 assert "--dry-run uses ASCII status line" 'printf "%s" "$dry_plain" | grep -q "^dry-run: nothing sent$"'
@@ -365,6 +445,11 @@ assert "the record names the cc"        'grep -q "cc=second_contact@example.org"
 assert "message-id stays last with a cc" \
     '[ "$(sed -n "s/.*message-id=//p" "$sent_log")" = "$(grep -m1 "^Message-ID: " "$CAPTURE" | sed "s/^Message-ID: //")" ]'
 
+
+rm -rf "$sent_state"
+PAYNANI_STATE="$sent_state" send_ok --bcc "second_contact@example.org" "jjulianfe@gmail.com" "with bcc" "$body"
+assert "the record names the bcc"       'grep -q "bcc=second_contact@example.org" "$sent_log" && ! grep -qi "^Bcc:" "$CAPTURE"'
+
 # --- HTML alternatives ---------------------------------------------------------
 #
 # #64: substantive mail needs multipart/alternative, but send.sh is the roster
@@ -375,7 +460,7 @@ send_ok --html "$html" "jjulianfe@gmail.com" "html body" "$body"
 assert "--html makes multipart/alternative" \
     'grep -qE "^Content-Type: multipart/alternative; boundary=\"=_paynani_alt_[0-9a-f]{32}\"\$" "$CAPTURE"'
 assert "--html includes plain and html parts" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 assert m.get_content_type() == \"multipart/alternative\", m.get_content_type()
@@ -390,14 +475,14 @@ assert "--html uses quoted-printable" \
 : >"$CAPTURE"
 send_ok --html "$long_html" "jjulianfe@gmail.com" "long html body" "$body"
 assert "--html keeps long lines inside SMTP limits" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import sys
 data = open(sys.argv[1], \"rb\").read().splitlines()
 too_long = [line for line in data if len(line) > 998]
 assert not too_long, max(map(len, too_long), default=0)
 " "$CAPTURE"'
 assert "--html long body round-trips" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, pathlib, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 html = pathlib.Path(sys.argv[2]).read_text(encoding=\"utf-8\")
@@ -473,7 +558,7 @@ send_ok --html "$html" --attach "$attach_dir/datos.csv" "jjulianfe@gmail.com" "h
 assert "--html with --attach keeps multipart/mixed outside" \
     'grep -qE "^Content-Type: multipart/mixed; boundary=\"=_paynani_[0-9a-f]{32}\"\$" "$CAPTURE"'
 assert "--html with --attach nests alternative first" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 assert m.get_content_type() == \"multipart/mixed\", m.get_content_type()
@@ -489,7 +574,7 @@ assert attachments[0].get_payload(decode=True) == b\"col1,col2\n1,2\n\"
 # The bytes have to come back out. Everything above could pass on a message whose
 # attachment decoded to something else, or to nothing.
 assert "the attachment round-trips" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 parts = [p for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -520,14 +605,14 @@ esac
 diagnostic_mime_expected=$expected_unknown_type
 : >"$CAPTURE"
 send_ok --attach "$attach_dir/dato.bin" "jjulianfe@gmail.com" "bin" "$body"
-diagnostic_mime_observed=$(python3 -c '
+diagnostic_mime_observed=$("$PYTHON" -c '
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], "rb"), policy=email.policy.default)
 parts = [p for p in m.walk() if p.get_content_disposition() == "attachment"]
 print(parts[0].get_content_type() if len(parts) == 1 else "unparseable")
 ' "$CAPTURE" 2>/dev/null || printf 'unparseable')
 assert "an unknown extension falls back to file(1)" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 parts = [p for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -539,7 +624,7 @@ assert parts[0].get_content_type() == sys.argv[2], (parts[0].get_content_type(),
 send_ok --attach "$attach_dir/datos.csv" --attach "$attach_dir/otro.txt" \
     "jjulianfe@gmail.com" "dos adjuntos" "$body"
 assert "--attach repeats, in order" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -553,7 +638,7 @@ cp "$attach_dir/datos.csv" "$attach_dir/reporte señales.csv"
 send_ok --attach "$attach_dir/reporte señales.csv" "jjulianfe@gmail.com" "acentos" "$body"
 assert "an accented filename uses RFC 2231" 'grep -q "filename\*=UTF-8'"''"'" "$CAPTURE"'
 assert "an accented filename round-trips" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -566,7 +651,7 @@ cp "$attach_dir/datos.csv" "$attach_dir/informe café €.csv"
 : >"$CAPTURE"
 send_ok --attach "$attach_dir/informe café €.csv" "jjulianfe@gmail.com" "más acentos" "$body"
 assert "a second UTF-8 filename round-trips" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -597,7 +682,7 @@ assert "a missing attachment sends nothing" '[ ! -s "$CAPTURE" ]'
 # The header and separator rows stay -- they carry the format, and neither holds
 # an "@", so neither contributes an address.
 repo=$(cd "$(dirname "$SEND")/.." && pwd)
-template_addrs=$(python3 -c '
+template_addrs=$("$PYTHON" -c '
 import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1] + "/scripts")

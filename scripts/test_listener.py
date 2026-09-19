@@ -14,9 +14,11 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import roster as roster_mod
 from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_VERSION, Listed,
                            decode_hdr, describe, fetch_since, keepalive,
-                           resolve_keepalive_option, save_state)
+                           record_imap_reconnect, resolve_keepalive_option,
+                           save_state)
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 from failure_diagnostics import print_diagnostics
@@ -196,6 +198,25 @@ def main():
               "and the notifier address alone grants nothing without the header")
         check(not listed("noreply@jira.example.com", **{"X-GitHub-Sender": "julianflores"}),
               "an undeclared sender carrying the header grants nothing")
+        legacy_notifier_roster = pathlib.Path(tmp) / "legacy-notifiers.md"
+        legacy_notifier_roster.write_text(
+            "| Name | Email | Type | Username |\n"
+            "|---|---|---|---|\n"
+            "| Julian Flores | jjulianfe@gmail.com | Human | julianflores |\n"
+            "\n"
+            "## Notifiers\n"
+            "\n"
+            "| Address | Header | Column |\n"
+            "|---|---|---|\n"
+            "| notifications@github.com | X-GitHub-Sender | GitHub |\n",
+            encoding="utf-8")
+        legacy_entries = roster_entries(legacy_notifier_roster)
+        legacy_notifiers = notifiers(legacy_notifier_roster)
+        check(legacy_entries[0]["columns"]["github"] == "julianflores",
+              "Username is a read-only alias for the canonical GitHub column")
+        check(sender_is_listed(message("notifications@github.com", **{"X-GitHub-Sender": "julianflores"}),
+                               roster_addresses(legacy_notifier_roster), legacy_entries, legacy_notifiers),
+              "a GitHub notifier keeps working on a legacy Username roster")
         check(listed("Julian Flores <jjulianfe@gmail.com>"),
               "and a person on the list is unaffected by any of it")
 
@@ -326,6 +347,30 @@ def main():
         check(ci_fields["recipient_role"] == "to",
               "matching ignores case and a display name ahead of the address")
 
+        legacy_batch = (
+            "# keep this comment\n"
+            "| Name | Email | Type | Username |\n"
+            "|---|---|---|---|\n"
+            "| Ximena | ximena@example.org | Human | ximenasalazartob |\n"
+        )
+        rows = [
+            {"name": f"Agent {i}", "address": f"agent{i}@example.org", "type": "AI Agent", "github": f"agent{i}"}
+            for i in range(1, 10)
+        ]
+        bad_rows = list(rows)
+        bad_rows[4] = {**bad_rows[4], "github": "bad_login_underscore"}
+        ok, failed_text, why = roster_mod.batch_add_contacts(legacy_batch, bad_rows)
+        check(not ok and failed_text == legacy_batch and "invalid GitHub login" in why[0],
+              "an invalid row rejects the batch without changing the returned text")
+        ok, migrated_batch, notes = roster_mod.batch_add_contacts(legacy_batch, rows)
+        check(ok, f"valid batch accepted: {notes}")
+        check("Username" not in migrated_batch and "| Name | Email | Type | GitHub |" in migrated_batch,
+              "batch apply migrates the legacy header in the same logical plan")
+        check("# keep this comment" in migrated_batch, "migration preserves comments")
+        for row in rows:
+            check(row["address"] in roster_mod._addresses_from_text(migrated_batch),
+                  f"{row['address']} was added")
+
         # --- the emitted line -----------------------------------------------
         trusted = describe("Julian Flores <jjulianfe@gmail.com>", "Prueba #3", "", trusted=True)
         plain = describe("Stranger <stranger@example.com>", "Prueba #3", "", trusted=False)
@@ -350,6 +395,26 @@ def main():
               "listener state records a UTC heartbeat")
         check(state.get("version") == PROCESS_VERSION,
               "listener state records the version loaded by this process")
+        check(state.get("python", {}).get("supported") is True
+              and state.get("python", {}).get("executable"),
+              "listener state records the service Python interpreter")
+
+        telemetry = {}
+        record_imap_reconnect(telemetry, "2026-09-19T04:00:00Z")
+        check(telemetry["imap_reconnect_window"] == ["2026-09-19T04:00:00Z"]
+              and telemetry["imap_reconnects_last_hour"] == 1,
+              "one IMAP reconnect adds exactly one timestamp to the hourly window")
+        telemetry = {"imap_reconnect_window": [
+            "2026-09-19T02:59:59Z",
+            "2026-09-19T03:00:01Z",
+        ]}
+        record_imap_reconnect(telemetry, "2026-09-19T04:00:01Z")
+        check(telemetry["imap_reconnect_window"] == [
+            "2026-09-19T03:00:01Z",
+            "2026-09-19T04:00:01Z",
+        ], "IMAP reconnect timestamps older than 3600 seconds are pruned")
+        check(telemetry["imap_reconnects_last_hour"] == 2,
+              "hourly reconnect count follows the pruned window length")
 
     # --- keepalive, the thing that makes a dead connection announce itself ----
     #

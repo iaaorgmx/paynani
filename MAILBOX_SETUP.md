@@ -140,8 +140,18 @@ puede leerlo cuando lo necesite. Si te pide que pegues la contraseña en el chat
 dile que no, eso no es un paso de ninguna de estas instrucciones.
 
 **Firma opcional de salida.** Si quieres que `scripts/send.sh` agregue una firma
-de texto plano a cada respuesta, define `PAYNANI_SIGNATURE_FILE=/ruta/firma.txt`
-en este mismo archivo.
+de texto plano a cada respuesta, guarda el archivo y deja que Paynani escriba
+la ruta:
+
+```bash
+scripts/paynani set PAYNANI_SIGNATURE_FILE /ruta/firma.txt
+```
+
+Para volver a enviar sin firma:
+
+```bash
+scripts/paynani set PAYNANI_SIGNATURE_FILE ""
+```
 
 **Tu fila en la lista de contactos autorizados.** El formulario de
 `scripts/paynani onboard` pide, además de estos siete datos del buzón, tu

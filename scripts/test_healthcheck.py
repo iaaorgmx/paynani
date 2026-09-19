@@ -68,6 +68,7 @@ class Fixture:
         hc.JOURNAL = self.dir / "events.jsonl"
         hc.CURSOR = self.dir / "dispatch.offset"
         hc.DISPATCH_ERR = self.dir / "dispatch.err.log"
+        hc.DISPATCH_STATE = self.dir / "dispatch.json"
         hc.IDLE_ERR = self.dir / "idle.err.log"
         hc.DELIVERY = self.dir / "delivery.json"
         hc.SENT_LOG = self.dir / "sent.log"
@@ -77,6 +78,13 @@ class Fixture:
             "uidvalidity": "42",
             "last_uid": 117,
             "heartbeat_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "python": {"found": "3.12.3", "executable": "/usr/bin/python3",
+                       "minimum": "3.10", "supported": True},
+        }))
+        hc.DISPATCH_STATE.write_text(json.dumps({
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "python": {"found": "3.12.3", "executable": "/usr/bin/python3",
+                       "minimum": "3.10", "supported": True},
         }))
 
         env = self.dir / "env"
@@ -180,10 +188,36 @@ class Fixture:
         os.utime(hc.IDLE_ERR, (stamp, stamp))
         return self
 
+    def reconnects_last_hour(self, count):
+        state = json.loads(hc.LISTENER_STATE.read_text())
+        now = time.time()
+        window = [
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - i * 60))
+            for i in range(count)
+        ]
+        state["imap_reconnect_window"] = window
+        state["imap_reconnects_last_hour"] = count
+        state["imap_reconnect_attempts"] = max(count, state.get("imap_reconnect_attempts", 0))
+        hc.LISTENER_STATE.write_text(json.dumps(state))
+        return self
+
+    def stale_reconnect_window(self, count):
+        state = json.loads(hc.LISTENER_STATE.read_text())
+        now = time.time() - 2 * HOUR
+        window = [
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - i * 60))
+            for i in range(count)
+        ]
+        state["imap_reconnect_window"] = window
+        state["imap_reconnects_last_hour"] = count
+        state["imap_reconnect_attempts"] = max(count, state.get("imap_reconnect_attempts", 0))
+        hc.LISTENER_STATE.write_text(json.dumps(state))
+        return self
+
     def run(self):
         facts = {
             "listener": hc.listener_facts(),
-            "dispatcher_unit": hc.unit_state(hc.DISPATCH_UNIT),
+            "dispatcher": hc.dispatcher_facts(),
             "queue": hc.queue_facts(),
             "runtime": hc.runtime_facts(),
             "delivery": hc.delivery_facts(),
@@ -192,6 +226,8 @@ class Fixture:
             "himalaya": hc.himalaya_facts(),
             "git": hc.git_facts(),
         }
+        facts["dispatcher_unit"] = facts["dispatcher"]["unit"]
+        facts["python"] = hc.python_facts(facts["listener"], facts["dispatcher"])
         facts["spool"] = self.spool_facts
         facts["instructions"] = hc.instructions_facts(self.runtime)
         facts["reply"] = hc.reply_facts(facts["queue"]["cursor"])
@@ -218,6 +254,18 @@ code, text = f.exit_code()
 check("a working install exits 0", 0, code)
 check("and does not claim a quiet mailbox proves anything", True,
       "not that the mailbox is quiet" in text)
+check("and reports the service Python interpreters", True,
+      "python       listener 3.12.3 at /usr/bin/python3; dispatcher 3.12.3 at /usr/bin/python3" in text)
+
+f = Fixture()
+state = json.loads(hc.LISTENER_STATE.read_text())
+state["python"] = {"found": "3.9.6", "executable": "/old/python3",
+                   "minimum": "3.10", "supported": False}
+hc.LISTENER_STATE.write_text(json.dumps(state))
+code, text = f.exit_code()
+check("a listener below the Python floor is a failure", 1, code)
+check("and names the service interpreter", True,
+      "the listener is running Python 3.9.6 at /old/python3; minimum is 3.10" in text)
 
 # --- the failures that look like nothing -------------------------------------
 
@@ -658,6 +706,31 @@ facts, _, warnings = f.run()
 check("a quiet mailbox says nothing at all", [], warnings)
 check("and reports no roster mail rather than an unanswered count", None,
       facts["reply"]["unanswered_age_seconds"])
+
+f = Fixture().reconnects_last_hour(5)
+facts, _, warnings = f.run()
+check("five IMAP reconnects in the last hour is still silent", False,
+      any("IMAP reconnects in the last hour" in w for w in warnings))
+check("and the count is exposed for scripts", 5,
+      facts["listener"]["imap_reconnects_last_hour"])
+
+f = Fixture().reconnects_last_hour(6)
+facts, problems, warnings = f.run()
+warning = "6 IMAP reconnects in the last hour, above the threshold of 5"
+check("six IMAP reconnects in the last hour is a warning", True,
+      warning in warnings)
+check("and not a delivery-stopping failure", [], problems)
+code, text = f.exit_code()
+check("the hourly reconnect warning keeps the healthcheck exit code at 0", 0, code)
+check("and the human output hangs the warning under listener", True,
+      f"warning: {warning}" in text)
+
+f = Fixture().stale_reconnect_window(6)
+facts, _, warnings = f.run()
+check("stale IMAP reconnects are pruned before warning", False,
+      any("IMAP reconnects in the last hour" in w for w in warnings))
+check("and stale persisted counts are not trusted", 0,
+      facts["listener"]["imap_reconnects_last_hour"])
 
 f = Fixture().queue(2, age_seconds=6 * HOUR).drain().sent(2)
 facts, _, warnings = f.run()

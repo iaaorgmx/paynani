@@ -32,6 +32,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import python_floor  # noqa: E402
+PYTHON_FACTS = python_floor.enforce()
+
 import event as ev   # noqa: E402
 import ledger   # noqa: E402
 from adapters import ACCEPTED, CONFIG, RETRY   # noqa: E402
@@ -46,6 +49,7 @@ LOCK = STATE_DIR / "dispatch.lock"
 # it, which is the dispatcher's to own because it is the thing that decided the
 # cursor could move.
 STATUS = STATE_DIR / "delivery.json"
+DISPATCH_STATE = STATE_DIR / "dispatch.json"
 LEDGER = STATE_DIR / "lifecycle.jsonl"
 # Compact once the journal is worth compacting, and only from here: the
 # dispatcher is the only process that knows what it has delivered.
@@ -91,6 +95,22 @@ def note(message):
     exists for the failure nothing else can see.
     """
     log(ev.ROUTINE_PREFIX + message)
+
+
+def write_state(path=DISPATCH_STATE):
+    state = {
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "python": PYTHON_FACTS,
+    }
+    path = Path(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(state))
+        os.replace(tmp, path)
+    except OSError as exc:
+        log(f"could not write dispatcher state at {path}: {exc}")
+    return state
 
 
 # What has already been written to each status file, so an answer that has not
@@ -425,6 +445,7 @@ def main(argv=None):
     runtime = select_runtime(args.runtime)
     adapter = load_adapter(runtime)
     claim(LOCK)
+    write_state()
 
     ready = adapter.check()
     if ready.status != ACCEPTED:
