@@ -36,7 +36,7 @@ def _safe_record(record):
         "schema_version", "event_type", "event_id", "source", "account",
         "mailbox", "uidvalidity", "uid", "observed_at", "sent_at", "sender",
         "subject", "roster_match", "authenticated_sender", "message_id",
-        "provider_id", "inspection_command",
+        "provider_id", "recipient_role", "inspection_command",
     )
     return {key: record[key] for key in allowed if key in record}
 
