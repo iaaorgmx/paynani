@@ -19,6 +19,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SEND="$SCRIPT_DIR/send.sh"
+PYTHON=${PYTHON:-python3}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -29,6 +30,8 @@ diagnostic_mime_observed=""
 failure_diagnostics() {
     [ "$diagnostics_printed" -eq 0 ] || return 0
     diagnostics_printed=1
+    # Deliberately use python3: failure_diagnostics.py stays compatible with
+    # Apple's 3.9 so it can explain failures on hosts below the project floor.
     python3 "$SCRIPT_DIR/failure_diagnostics.py" \
         --mime-expected "${diagnostic_mime_expected:-not observed}" \
         --mime-observed "${diagnostic_mime_observed:-not observed}" >&2
@@ -57,7 +60,7 @@ echo "hi" >"$body"
 html="$tmp/body.html"
 printf '<!doctype html><html><body><p>hi</p></body></html>\n' >"$html"
 long_html="$tmp/long-body.html"
-python3 -c 'from pathlib import Path; Path(__import__("sys").argv[1]).write_text("<html><body><p style=\"" + "x" * 1200 + "\">hola</p></body></html>\n", encoding="utf-8")' "$long_html"
+"$PYTHON" -c 'from pathlib import Path; Path(__import__("sys").argv[1]).write_text("<html><body><p style=\"" + "x" * 1200 + "\">hola</p></body></html>\n", encoding="utf-8")' "$long_html"
 signature="$tmp/signature.txt"
 cat >"$signature" <<'EOF'
 Paynani Test Agent
@@ -154,7 +157,7 @@ ROSTER="$tmp/does-not-exist.txt" check refuse "jjulianfe@gmail.com" "roster file
 # adding with --github must reject until the explicit migration runs; after it,
 # the same add succeeds and comments survive. This exercises the real failure
 # that opened #166 without hand-editing a roster fixture.
-if python3 - <<'PY'
+if "$PYTHON" - <<'PY'
 import pathlib, sys
 sys.path.insert(0, str(pathlib.Path('scripts').resolve()))
 import roster
@@ -457,7 +460,7 @@ send_ok --html "$html" "jjulianfe@gmail.com" "html body" "$body"
 assert "--html makes multipart/alternative" \
     'grep -qE "^Content-Type: multipart/alternative; boundary=\"=_paynani_alt_[0-9a-f]{32}\"\$" "$CAPTURE"'
 assert "--html includes plain and html parts" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 assert m.get_content_type() == \"multipart/alternative\", m.get_content_type()
@@ -472,14 +475,14 @@ assert "--html uses quoted-printable" \
 : >"$CAPTURE"
 send_ok --html "$long_html" "jjulianfe@gmail.com" "long html body" "$body"
 assert "--html keeps long lines inside SMTP limits" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import sys
 data = open(sys.argv[1], \"rb\").read().splitlines()
 too_long = [line for line in data if len(line) > 998]
 assert not too_long, max(map(len, too_long), default=0)
 " "$CAPTURE"'
 assert "--html long body round-trips" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, pathlib, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 html = pathlib.Path(sys.argv[2]).read_text(encoding=\"utf-8\")
@@ -555,7 +558,7 @@ send_ok --html "$html" --attach "$attach_dir/datos.csv" "jjulianfe@gmail.com" "h
 assert "--html with --attach keeps multipart/mixed outside" \
     'grep -qE "^Content-Type: multipart/mixed; boundary=\"=_paynani_[0-9a-f]{32}\"\$" "$CAPTURE"'
 assert "--html with --attach nests alternative first" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 assert m.get_content_type() == \"multipart/mixed\", m.get_content_type()
@@ -571,7 +574,7 @@ assert attachments[0].get_payload(decode=True) == b\"col1,col2\n1,2\n\"
 # The bytes have to come back out. Everything above could pass on a message whose
 # attachment decoded to something else, or to nothing.
 assert "the attachment round-trips" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 parts = [p for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -602,14 +605,14 @@ esac
 diagnostic_mime_expected=$expected_unknown_type
 : >"$CAPTURE"
 send_ok --attach "$attach_dir/dato.bin" "jjulianfe@gmail.com" "bin" "$body"
-diagnostic_mime_observed=$(python3 -c '
+diagnostic_mime_observed=$("$PYTHON" -c '
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], "rb"), policy=email.policy.default)
 parts = [p for p in m.walk() if p.get_content_disposition() == "attachment"]
 print(parts[0].get_content_type() if len(parts) == 1 else "unparseable")
 ' "$CAPTURE" 2>/dev/null || printf 'unparseable')
 assert "an unknown extension falls back to file(1)" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 parts = [p for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -621,7 +624,7 @@ assert parts[0].get_content_type() == sys.argv[2], (parts[0].get_content_type(),
 send_ok --attach "$attach_dir/datos.csv" --attach "$attach_dir/otro.txt" \
     "jjulianfe@gmail.com" "dos adjuntos" "$body"
 assert "--attach repeats, in order" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -635,7 +638,7 @@ cp "$attach_dir/datos.csv" "$attach_dir/reporte señales.csv"
 send_ok --attach "$attach_dir/reporte señales.csv" "jjulianfe@gmail.com" "acentos" "$body"
 assert "an accented filename uses RFC 2231" 'grep -q "filename\*=UTF-8'"''"'" "$CAPTURE"'
 assert "an accented filename round-trips" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -648,7 +651,7 @@ cp "$attach_dir/datos.csv" "$attach_dir/informe café €.csv"
 : >"$CAPTURE"
 send_ok --attach "$attach_dir/informe café €.csv" "jjulianfe@gmail.com" "más acentos" "$body"
 assert "a second UTF-8 filename round-trips" \
-    'python3 -c "
+    '"$PYTHON" -c "
 import email, email.policy, sys
 m = email.message_from_binary_file(open(sys.argv[1], \"rb\"), policy=email.policy.default)
 names = [p.get_filename() for p in m.walk() if p.get_content_disposition() == \"attachment\"]
@@ -679,7 +682,7 @@ assert "a missing attachment sends nothing" '[ ! -s "$CAPTURE" ]'
 # The header and separator rows stay -- they carry the format, and neither holds
 # an "@", so neither contributes an address.
 repo=$(cd "$(dirname "$SEND")/.." && pwd)
-template_addrs=$(python3 -c '
+template_addrs=$("$PYTHON" -c '
 import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1] + "/scripts")

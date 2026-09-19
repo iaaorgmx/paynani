@@ -19,6 +19,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 EXTRACT="$ROOT/scripts/roster_extract.sh"
+PYTHON=${PYTHON:-python3}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -26,7 +27,7 @@ pass=0
 fail=0
 
 py_addresses() {  # roster-file
-    python3 -c '
+    "$PYTHON" -c '
 import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[2])
@@ -44,7 +45,7 @@ agree() {  # description, roster-file, an-address-that-must-be-found
     local p s
 
     if ! p=$(py_addresses "$file"); then
-        printf 'FAIL %s: python3 roster.roster_addresses() errored\n' "$desc"
+        printf 'FAIL %s: %s roster.roster_addresses() errored\n' "$desc" "$PYTHON"
         fail=$((fail + 1))
         return
     fi
@@ -194,7 +195,7 @@ agree "a later heading closes the notifier section" "$f" "second@example.net"
 # they drift: healthcheck would look for an account nobody sends with and call
 # an install healthy that cannot send at all.
 sh_account=$(sed -n 's/^ACCOUNT="\(.*\)"$/\1/p' "$ROOT/scripts/send.sh" | head -1)
-py_account=$(python3 -c '
+py_account=$("$PYTHON" -c '
 import sys
 sys.path.insert(0, sys.argv[1])
 import healthcheck
