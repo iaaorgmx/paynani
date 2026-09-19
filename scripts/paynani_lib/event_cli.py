@@ -89,21 +89,27 @@ def _agent_roster_entry(agent_address: str):
     return {"address": agent, "name": "", "columns": {}}
 
 
-def _recipient_role(record, message) -> str:
+def _recipient_role(record, message) -> tuple[str, str | None]:
+    live = idle_listener.recipient_role_for(message, record.get("account", ""))
     recorded = str(record.get("recipient_role") or "").strip()
-    if recorded:
-        return recorded
-    return idle_listener.recipient_role_for(message, record.get("account", ""))
+    return live, (recorded or None)
+
+
+def _with_recorded_role_disagreement(summary: dict, recorded: str | None) -> dict:
+    if recorded and summary.get("recipient_role") != recorded:
+        summary["recipient_role_recorded"] = recorded
+        summary["recipient_role_disagreement"] = True
+    return summary
 
 
 def _marker_summary(record, message, body: str) -> dict:
-    role = _recipient_role(record, message)
+    role, recorded = _recipient_role(record, message)
     if role == "to":
-        return {
+        return _with_recorded_role_disagreement({
             "recipient_role": role,
             "marker_for_me": True,
             "marker_lines": [],
-        }
+        }, recorded)
 
     entry = _agent_roster_entry(record.get("account", ""))
     markers = [entry.get("address", ""), entry.get("name", "")]
@@ -117,11 +123,11 @@ def _marker_summary(record, message, body: str) -> dict:
         for line in body.splitlines()
         if prefixes and line.lstrip().casefold().startswith(prefixes)
     ]
-    return {
+    return _with_recorded_role_disagreement({
         "recipient_role": role,
         "marker_for_me": bool(marker_lines),
         "marker_lines": marker_lines,
-    }
+    }, recorded)
 
 
 def fetch_verified(record, *, include_body=False):
@@ -202,8 +208,6 @@ def run_show(args) -> int:
     output["envelope_verified"] = bool(verified)
     output["lifecycle"] = ledger.history(state_dir() / "lifecycle.jsonl", args.event_id)
     if not args.body:
-        if verified is not None:
-            output["recipient_role"] = _recipient_role(record, verified)
         print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
         return 0
     if not record.get("roster_match"):

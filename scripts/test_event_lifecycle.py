@@ -166,10 +166,14 @@ with tempfile.TemporaryDirectory() as raw:
         legacy_record, no_marker, event_cli._body_text(no_marker))
     check("copy without a level 1 marker is reported as context, not silent action",
           summary["recipient_role"] == "cc" and summary["marker_for_me"] is False)
-    recorded_record = {"account": "agent@example.com", "recipient_role": "undisclosed"}
+    recorded_record = {"account": "agent@example.com", "recipient_role": "to"}
     summary = event_cli._marker_summary(recorded_record, cc_message, body)
-    check("recorded recipient_role is used before deriving from the verified message",
-          summary["recipient_role"] == "undisclosed")
+    check("verified message recipient_role wins over a recorded journal value",
+          summary["recipient_role"] == "cc")
+    check("recipient_role disagreement preserves the recorded value",
+          summary["recipient_role_recorded"] == "to")
+    check("recipient_role disagreement is flagged",
+          summary["recipient_role_disagreement"] is True)
     event_cli.env_file = old_env_file
     event_cli.state_dir = old_state_dir
     event_cli.roster_file = old_roster_file
