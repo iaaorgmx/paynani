@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     set_parser = subparsers.add_parser(
         "set", help="Set one .env key, with a live IMAP/SMTP check by default."
     )
-    set_parser.add_argument("key", help="One of the seven keys .env owns, e.g. AGENT_EMAIL_PASSWORD.")
+    set_parser.add_argument("key", help="One supported .env key, e.g. AGENT_EMAIL_PASSWORD or PAYNANI_SIGNATURE_FILE.")
     set_parser.add_argument("value", nargs="?", help="New value. Omit to be prompted (hidden for the password).")
     set_parser.add_argument(
         "--skip-check",

@@ -499,6 +499,19 @@ scripts/send.sh --check "$(awk -F'|' '
 A `From:` line carrying your agent's address means it found them. `no sender
 address in ...` means it did not.
 
+To add a plain-text signature to every `scripts/send.sh` reply, point Paynani at
+a readable file with the CLI instead of editing `.env` by hand:
+
+```bash
+scripts/paynani set PAYNANI_SIGNATURE_FILE /path/signature.txt
+```
+
+To send without a signature again:
+
+```bash
+scripts/paynani set PAYNANI_SIGNATURE_FILE ""
+```
+
 ### 3.1 If the listener exits complaining about the old schema
 
 An earlier version of the workspace `.env` named three keys after servers and

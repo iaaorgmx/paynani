@@ -752,6 +752,45 @@ try:
         "set_cli: nothing is written when a neighbour field blocks the check",
         "AGENT_EMAIL_ACCOUNT=new@example.com" not in set_env.read_text(encoding="utf-8"),
     )
+
+    signature = set_dir / "signature.txt"
+    signature.write_text("Paynani Test Agent\n", encoding="utf-8")
+    r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value=str(signature), skip_check=False))
+    check("set_cli: PAYNANI_SIGNATURE_FILE writes a readable path", r == 0)
+    check(
+        "set_cli: PAYNANI_SIGNATURE_FILE is on disk",
+        f"PAYNANI_SIGNATURE_FILE={signature}" in set_env.read_text(encoding="utf-8"),
+    )
+
+    missing_signature = set_dir / "missing-signature.txt"
+    before_missing_signature = set_env.read_text(encoding="utf-8")
+    r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value=str(missing_signature), skip_check=True))
+    check("set_cli: PAYNANI_SIGNATURE_FILE rejects a missing path", r == 1)
+    check(
+        "set_cli: PAYNANI_SIGNATURE_FILE missing path writes nothing",
+        set_env.read_text(encoding="utf-8") == before_missing_signature,
+    )
+
+    unreadable_signature = set_dir / "unreadable-signature.txt"
+    unreadable_signature.write_text("secret-ish\n", encoding="utf-8")
+    unreadable_signature.chmod(0)
+    before_unreadable_signature = set_env.read_text(encoding="utf-8")
+    try:
+        r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value=str(unreadable_signature), skip_check=True))
+        check("set_cli: PAYNANI_SIGNATURE_FILE rejects an unreadable path", r == 1)
+        check(
+            "set_cli: PAYNANI_SIGNATURE_FILE unreadable path writes nothing",
+            set_env.read_text(encoding="utf-8") == before_unreadable_signature,
+        )
+    finally:
+        unreadable_signature.chmod(0o600)
+
+    r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value="", skip_check=False))
+    check("set_cli: PAYNANI_SIGNATURE_FILE empty value removes the key", r == 0)
+    check(
+        "set_cli: PAYNANI_SIGNATURE_FILE is absent after empty value",
+        "PAYNANI_SIGNATURE_FILE" not in set_env.read_text(encoding="utf-8"),
+    )
 finally:
     os.environ.pop("PAYNANI_ENV", None)
     shutil.rmtree(set_dir, ignore_errors=True)
