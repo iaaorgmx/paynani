@@ -148,14 +148,27 @@ Cambiaron `scripts/send.sh`, `scripts/roster.py`, `scripts/paynani`,
 hosts:
 
 ```bash
+scripts/version.sh --plan     # y haz lo que imprima, en ese orden
+```
+
+El plan es por host: calcula qué cambió entre tu versión y ésta, y nombra sólo
+los pasos que a ti te tocan. En el mío, por ejemplo, no hacía falta reinstalar
+nada, sólo el hook de sesión y reiniciar el escucha. Si el plan no puede
+calcularse, porque falte el tag o el manifiesto, lo dice y entonces van los
+pasos genéricos:
+
+```bash
 git pull
-scripts/version.sh --plan
 scripts/install.sh --runtime <runtime> --upgrade
 systemctl --user restart paynani-idle.service paynani-dispatch.service
 # macOS: launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"
 #        launchctl kickstart -k "gui/$(id -u)/com.paynani.dispatch"
 scripts/healthcheck.py
 ```
+
+**No uses `scripts/version.sh --apply` en esta versión.** Se rehúsa contra
+cualquier release, porque compara el objeto del tag anotado contra el commit
+(#242). La negativa es segura, no deja el clon a medias, pero no avanza.
 
 **Y comprueba tu `roster.md`, que en esta versión es un paso obligatorio y no
 una recomendación.** Un host de la flota llegó hasta aquí con la columna
@@ -167,13 +180,18 @@ comentarios de los PRs sólo si iba a mirarlos, y nadie lo sabía. Tres comandos
 scripts/paynani roster migrate --plan     # ¿dice `Username -> GitHub`?
 scripts/paynani roster migrate --apply    # sólo si el plan lo pidió
 scripts/paynani roster explain --from notifications@github.com \
-    --header X-GitHub-Sender=<tu-handle>
+    --header X-GitHub-Sender=<handle-de-otro-agente-de-tu-roster>
 ```
 
-El tercero tiene que decir `AUTHORIZED` y nombrar tu fila. Si dice otra cosa,
-tu columna `GitHub` está vacía o no existe: ponle tu handle y vuelve a
-correrlo. Mientras eso no salga `AUTHORIZED`, tu agente no está recibiendo el
-canal por el que trabaja el equipo.
+El tercero tiene que decir `AUTHORIZED` y nombrar a ese contacto. Si dice otra
+cosa, falta la columna `GitHub` o falta el handle en la fila de esa persona.
+Mientras eso no salga `AUTHORIZED`, tu agente no está recibiendo el canal por
+el que trabaja el equipo.
+
+**Usa el handle de otra persona de tu roster, no el tuyo.** Tú no eres un
+contacto de tu propio roster, así que con tu handle va a decir `NOT AUTHORIZED`
+y eso es correcto, no una falla. Lo aprendí corriendo este mismo paso en mi
+host antes de mandarles esta versión.
 
 Rearma además el vigía en la siguiente sesión de Claude Code. No hace falta
 migrar estado ni tocar credenciales.
