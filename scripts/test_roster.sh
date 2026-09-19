@@ -256,6 +256,33 @@ assert "no --cc means no Cc: header"      '! grep -q "^Cc:" "$CAPTURE"'
 send_ok --cc "$(printf 'second_contact@example.org\nBcc: evil@example.com')" "jjulianfe@gmail.com" "subject" "$body"
 assert "no header injection via --cc"     '! grep -qi "^Bcc:" "$CAPTURE"'
 
+: >"$CAPTURE"
+send_ok --to "second_contact@example.org" "jjulianfe@gmail.com" "two direct recipients" "$body"
+assert "--to adds a direct recipient"       'grep -qx "To: jjulianfe@gmail.com, second_contact@example.org" "$CAPTURE"'
+assert "two To recipients are one message"   '[ "$(grep -c "^To: " "$CAPTURE")" -eq 1 ]'
+
+: >"$CAPTURE"
+"$SEND" --to "stranger@example.com" "jjulianfe@gmail.com" "subject" "$body" >/dev/null 2>&1 && torc=0 || torc=$?
+assert "--to to an unlisted address is refused" '[ "${torc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'
+
+: >"$CAPTURE"
+send_ok --bcc "second_contact@example.org" "jjulianfe@gmail.com" "bcc check" "$body"
+assert "--bcc has no delivered header"       '! grep -q "^Bcc:" "$CAPTURE"'
+
+: >"$CAPTURE"
+"$SEND" --bcc "stranger@example.com" "jjulianfe@gmail.com" "subject" "$body" >/dev/null 2>&1 && bcrc=0 || bcrc=$?
+assert "--bcc to an unlisted address is refused" '[ "${bcrc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'
+
+: >"$CAPTURE"
+send_ok --to "$(printf 'second_contact@example.org
+Bcc: evil@example.com')" "jjulianfe@gmail.com" "subject" "$body"
+assert "no header injection via --to"         '! grep -qi "^Bcc:" "$CAPTURE"'
+
+: >"$CAPTURE"
+send_ok --bcc "$(printf 'second_contact@example.org
+Bcc: evil@example.com')" "jjulianfe@gmail.com" "subject" "$body"
+assert "no header injection via --bcc"        '! grep -qi "^Bcc:" "$CAPTURE"'
+
 # --check is how an install proves send.sh can find its credentials. The roster
 # tests cannot: the gate runs first, so a refusal exits before the env is read.
 : >"$CAPTURE"
@@ -265,8 +292,8 @@ assert "--check sends nothing"          '[ ! -s "$CAPTURE" ]'
 assert "--check still obeys the roster" '! "$SEND" --check "stranger@example.com" "s" "$body" >/dev/null 2>&1'
 
 : >"$CAPTURE"
-dry_plain=$("$SEND" --dry-run --cc "second_contact@example.org" "jjulianfe@gmail.com" "dry run" "$body" 2>/dev/null)
-assert "--dry-run reports recipients and roster rows" 'printf "%s" "$dry_plain" | grep -q "To: jjulianfe@gmail.com (roster row: Julian Flores | jjulianfe@gmail.com | Human)" && printf "%s" "$dry_plain" | grep -q "Cc: second_contact@example.org (roster row: Second Contact | second_contact@example.org | AI Agent)"'
+dry_plain=$("$SEND" --dry-run --cc "second_contact@example.org" --cc "reordered@example.net" --bcc "bare-address-still-works@example.com" "jjulianfe@gmail.com" "dry run" "$body" 2>/dev/null)
+assert "--dry-run reports recipients and roster rows" 'printf "%s" "$dry_plain" | grep -q "To: jjulianfe@gmail.com (roster row: Julian Flores | jjulianfe@gmail.com | Human)" && printf "%s" "$dry_plain" | grep -q "Cc: second_contact@example.org (roster row: Second Contact | second_contact@example.org | AI Agent)" && printf "%s" "$dry_plain" | grep -q "Cc: reordered@example.net (roster row: AI Agent | Reordered Contact | reordered@example.net)" && printf "%s" "$dry_plain" | grep -q "Bcc: bare-address-still-works@example.com (roster row: bare-address-still-works@example.com)"'
 assert "--dry-run reports plain MIME shape" 'printf "%s" "$dry_plain" | grep -q "MIME shape: single-part (text/plain)" && printf "%s" "$dry_plain" | grep -q "Attachments: 0 file" && printf "%s" "$dry_plain" | grep -q "Attachment bytes total: 0"'
 assert "--dry-run reports no signature" 'printf "%s" "$dry_plain" | grep -qx "Signature: no"'
 assert "--dry-run uses ASCII status line" 'printf "%s" "$dry_plain" | grep -q "^dry-run: nothing sent$"'
@@ -362,8 +389,15 @@ assert "--check records nothing"        '[ ! -e "$sent_log" ]'
 rm -rf "$sent_state"
 PAYNANI_STATE="$sent_state" send_ok --cc "second_contact@example.org" "jjulianfe@gmail.com" "with cc" "$body"
 assert "the record names the cc"        'grep -q "cc=second_contact@example.org" "$sent_log"'
+assert "the record names empty bcc"     'grep -q "bcc=" "$sent_log"'
 assert "message-id stays last with a cc" \
     '[ "$(sed -n "s/.*message-id=//p" "$sent_log")" = "$(grep -m1 "^Message-ID: " "$CAPTURE" | sed "s/^Message-ID: //")" ]'
+
+# Bcc is part of "who" for local audit even though it is not delivered as a header.
+rm -rf "$sent_state"
+PAYNANI_STATE="$sent_state" send_ok --bcc "second_contact@example.org" "jjulianfe@gmail.com" "with bcc" "$body"
+assert "the record names the bcc"       'grep -q "bcc=second_contact@example.org" "$sent_log"'
+assert "the message omits Bcc header"   '! grep -q "^Bcc:" "$CAPTURE"'
 
 # --- HTML alternatives ---------------------------------------------------------
 #
