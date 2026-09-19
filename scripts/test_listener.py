@@ -316,6 +316,9 @@ def main():
               "listener state records a UTC heartbeat")
         check(state.get("version") == PROCESS_VERSION,
               "listener state records the version loaded by this process")
+        check(state.get("python", {}).get("supported") is True
+              and state.get("python", {}).get("executable"),
+              "listener state records the service Python interpreter")
 
     # --- keepalive, the thing that makes a dead connection announce itself ----
     #

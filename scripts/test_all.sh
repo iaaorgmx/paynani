@@ -18,6 +18,25 @@ set -uo pipefail
 
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
+PYTHON=${PYTHON:-python3}
+export PYTHON
+python_version=$("$PYTHON" - <<'PY'
+import sys
+
+version = sys.version_info
+print(f"{version.major}.{version.minor}.{version.micro}")
+raise SystemExit(0 if version >= (3, 10) else 1)
+PY
+)
+if [ "$?" -ne 0 ]; then
+	{
+		printf '%s is %s; paynani'"'"'s test suite needs 3.10 or newer.\n' "$PYTHON" "$python_version"
+		printf 'INSTALL.md explains the floor. Point PYTHON at a newer interpreter, or install one:\n'
+		printf '    PYTHON=/opt/homebrew/bin/python3.12 bash scripts/test_all.sh\n'
+	} >&2
+	exit 1
+fi
+
 self=$(basename "$0")
 pass=0
 fail=0
@@ -41,7 +60,7 @@ run() {
 		# tests do not, so add the portable baseline here instead of leaving a CI
 		# failure with only a traceback and no platform identity.
 		if ! printf '%s\n' "$output" | grep -q '^diagnostic: python='; then
-			python3 scripts/failure_diagnostics.py 2>&1 | sed 's/^/     /'
+			"$PYTHON" scripts/failure_diagnostics.py 2>&1 | sed 's/^/     /'
 		fi
 		fail=$((fail + 1))
 		failed+=("$name")
@@ -50,7 +69,7 @@ run() {
 
 for t in scripts/test_*.py; do
 	[ -e "$t" ] || continue
-	run "$t" python3 "$t"
+	run "$t" "$PYTHON" "$t"
 done
 
 for t in scripts/test_*.sh; do

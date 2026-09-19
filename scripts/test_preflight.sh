@@ -14,6 +14,7 @@
 set -uo pipefail
 
 PREFLIGHT="$(cd "$(dirname "$0")" && pwd)/preflight.py"
+PYTHON=${PYTHON:-python3}
 pass=0
 fail=0
 
@@ -64,7 +65,7 @@ fi
 # ---------------------------------------------------------------------------
 # No credentials file, no terminal: the case an agent actually hits.
 # ---------------------------------------------------------------------------
-out=$(PAYNANI_ENV="$tmp/missing" ${limit[@]+"${limit[@]}"} python3 "$PREFLIGHT" </dev/null 2>&1)
+out=$(PAYNANI_ENV="$tmp/missing" ${limit[@]+"${limit[@]}"} "$PYTHON" "$PREFLIGHT" </dev/null 2>&1)
 status=$?
 
 check "no credentials: exits 1" "1" "$status"
@@ -81,7 +82,7 @@ check "no credentials: says which step it belongs to" "yes" \
 # A file that exists but holds nothing useful is the same situation.
 # ---------------------------------------------------------------------------
 printf '# nothing here yet\n\n' >"$tmp/empty"
-out=$(PAYNANI_ENV="$tmp/empty" ${limit[@]+"${limit[@]}"} python3 "$PREFLIGHT" </dev/null 2>&1)
+out=$(PAYNANI_ENV="$tmp/empty" ${limit[@]+"${limit[@]}"} "$PYTHON" "$PREFLIGHT" </dev/null 2>&1)
 check "empty credentials file: treated as nothing to check" "yes" \
     "$(contains "$out" "nothing to check yet")"
 
@@ -95,7 +96,7 @@ PAYNANI_IMAP_PORT=993
 PAYNANI_EMAIL=agent@example.com
 PAYNANI_PASSWORD=not-used
 EOF
-out=$(PAYNANI_ENV="$tmp/env" ${limit[@]+"${limit[@]}"} python3 "$PREFLIGHT" </dev/null 2>&1)
+out=$(PAYNANI_ENV="$tmp/env" ${limit[@]+"${limit[@]}"} "$PYTHON" "$PREFLIGHT" </dev/null 2>&1)
 check "settings present: gets past the guard" "no" \
     "$(contains "$out" "nothing to check yet")"
 check "settings present: actually tries the server" "yes" \
@@ -108,7 +109,7 @@ check "settings present: actually tries the server" "yes" \
 # therefore names itself in the output the moment the network is touched. So
 # "does not mention the host" is a real assertion here and not a tautology.
 # ---------------------------------------------------------------------------
-out=$(PAYNANI_ENV="$tmp/env" ${limit[@]+"${limit[@]}"} python3 "$PREFLIGHT" --help </dev/null 2>&1)
+out=$(PAYNANI_ENV="$tmp/env" ${limit[@]+"${limit[@]}"} "$PYTHON" "$PREFLIGHT" --help </dev/null 2>&1)
 status=$?
 
 check "--help: exits 0" "0" "$status"
@@ -117,13 +118,13 @@ check "--help: prints the usage line" "yes" \
 check "--help: does not connect" "no" \
     "$(contains "$out" no-such-host.invalid)"
 
-out=$(PAYNANI_ENV="$tmp/env" ${limit[@]+"${limit[@]}"} python3 "$PREFLIGHT" -h </dev/null 2>&1)
+out=$(PAYNANI_ENV="$tmp/env" ${limit[@]+"${limit[@]}"} "$PYTHON" "$PREFLIGHT" -h </dev/null 2>&1)
 check "-h: same as --help" "yes" \
     "$(contains "$out" "Usage:")"
 
 # An unknown flag is refused rather than ignored: silently doing nothing leaves
 # the caller believing it took effect.
-out=$(PAYNANI_ENV="$tmp/env" ${limit[@]+"${limit[@]}"} python3 "$PREFLIGHT" --no-such-flag </dev/null 2>&1)
+out=$(PAYNANI_ENV="$tmp/env" ${limit[@]+"${limit[@]}"} "$PYTHON" "$PREFLIGHT" --no-such-flag </dev/null 2>&1)
 status=$?
 
 check "unknown flag: exits 2" "2" "$status"
