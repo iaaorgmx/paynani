@@ -67,6 +67,7 @@ EOF
 
 > "$tmp/sent.eml"
 export CAPTURE="$tmp/sent.eml"
+export HIMALAYA_ARGS="$tmp/himalaya.args"
 
 # The fake Himalaya keeps what it was given. Before it did, this suite could pass
 # while every real send failed: the allowlist was tested and the message handed to
@@ -75,6 +76,11 @@ fakebin="$tmp/bin"
 mkdir -p "$fakebin"
 cat >"$fakebin/himalaya" <<'EOF'
 #!/usr/bin/env bash
+if [ "${1:-}" = account ] && [ "${2:-}" = check ]; then
+    [ -z "${PAYNANI_FAKE_SMTP_FAIL:-}" ] || exit 1
+    exit 0
+fi
+printf '%s\n' "$@" >"$HIMALAYA_ARGS"
 cat >"$CAPTURE"
 exit 0
 EOF
@@ -256,6 +262,41 @@ assert "no --cc means no Cc: header"      '! grep -q "^Cc:" "$CAPTURE"'
 send_ok --cc "$(printf 'second_contact@example.org\nBcc: evil@example.com')" "jjulianfe@gmail.com" "subject" "$body"
 assert "no header injection via --cc"     '! grep -qi "^Bcc:" "$CAPTURE"'
 
+# --- repeated To/Cc and Bcc ---------------------------------------------------
+: >"$CAPTURE"
+send_ok --to "second_contact@example.org" "jjulianfe@gmail.com" "two direct" "$body"
+assert "--to adds a second direct recipient" 'grep -qx "To: jjulianfe@gmail.com, second_contact@example.org" "$CAPTURE"'
+assert "two direct recipients are one SMTP send" 'python3 - "$HIMALAYA_ARGS" <<"PY"
+import sys
+args=open(sys.argv[1], "rb").read().splitlines()
+assert args[:2] == [b"smtp", b"send"], args
+assert args.count(b"--rcpt-to") == 2, args
+PY'
+
+: >"$CAPTURE"
+send_ok --bcc "second_contact@example.org" "jjulianfe@gmail.com" "bcc" "$body"
+assert "--bcc does not add a Bcc header"  '! grep -qi "^Bcc:" "$CAPTURE"'
+assert "--bcc is an SMTP envelope recipient" 'python3 - "$HIMALAYA_ARGS" <<"PY"
+import sys
+args=open(sys.argv[1], "rb").read().splitlines()
+pairs=list(zip(args, args[1:]))
+assert (b"--rcpt-to", b"second_contact@example.org") in pairs, args
+PY'
+
+for opt in --to --cc --bcc; do
+    : >"$CAPTURE"
+    "$SEND" "$opt" "stranger@example.com" "jjulianfe@gmail.com" "bad $opt" "$body" >/dev/null 2>&1 && opt_rc=0 || opt_rc=$?
+    assert "$opt to an unlisted address is refused" '[ "${opt_rc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'
+done
+
+: >"$CAPTURE"
+send_ok --to "$(printf 'second_contact@example.org\n')" "jjulianfe@gmail.com" "newline direct" "$body"
+assert "newline in --to is stripped" 'grep -qx "To: jjulianfe@gmail.com, second_contact@example.org" "$CAPTURE" && ! grep -qi "^Bcc:" "$CAPTURE"'
+
+: >"$CAPTURE"
+send_ok --bcc "$(printf 'second_contact@example.org\nBcc: evil@example.com')" "jjulianfe@gmail.com" "bcc injection" "$body"
+assert "no header injection via --bcc"    '! grep -qi "^Bcc:" "$CAPTURE"'
+
 # --check is how an install proves send.sh can find its credentials. The roster
 # tests cannot: the gate runs first, so a refusal exits before the env is read.
 : >"$CAPTURE"
@@ -267,6 +308,8 @@ assert "--check still obeys the roster" '! "$SEND" --check "stranger@example.com
 : >"$CAPTURE"
 dry_plain=$("$SEND" --dry-run --cc "second_contact@example.org" "jjulianfe@gmail.com" "dry run" "$body" 2>/dev/null)
 assert "--dry-run reports recipients and roster rows" 'printf "%s" "$dry_plain" | grep -q "To: jjulianfe@gmail.com (roster row: Julian Flores | jjulianfe@gmail.com | Human)" && printf "%s" "$dry_plain" | grep -q "Cc: second_contact@example.org (roster row: Second Contact | second_contact@example.org | AI Agent)"'
+dry_many=$("$SEND" --dry-run --cc "second_contact@example.org" --cc "reordered@example.net" --bcc "bare-address-still-works@example.com" "jjulianfe@gmail.com" "dry many" "$body" 2>/dev/null)
+assert "--dry-run reports repeated Cc and Bcc roster rows" 'printf "%s" "$dry_many" | grep -q "Cc: second_contact@example.org (roster row: Second Contact | second_contact@example.org | AI Agent)" && printf "%s" "$dry_many" | grep -q "Cc: reordered@example.net (roster row: AI Agent | Reordered Contact | reordered@example.net)" && printf "%s" "$dry_many" | grep -q "Bcc: bare-address-still-works@example.com (roster row: bare-address-still-works@example.com)"'
 assert "--dry-run reports plain MIME shape" 'printf "%s" "$dry_plain" | grep -q "MIME shape: single-part (text/plain)" && printf "%s" "$dry_plain" | grep -q "Attachments: 0 file" && printf "%s" "$dry_plain" | grep -q "Attachment bytes total: 0"'
 assert "--dry-run reports no signature" 'printf "%s" "$dry_plain" | grep -qx "Signature: no"'
 assert "--dry-run uses ASCII status line" 'printf "%s" "$dry_plain" | grep -q "^dry-run: nothing sent$"'
@@ -275,6 +318,10 @@ assert "--dry-run sends nothing" '[ ! -s "$CAPTURE" ]'
 assert "--dry-run still obeys the roster" '! "$SEND" --dry-run "stranger@example.com" "s" "$body" >/dev/null 2>&1'
 "$SEND" --check --dry-run "jjulianfe@gmail.com" "choose one" "$body" >/dev/null 2>&1 && cdrc=0 || cdrc=$?
 assert "--check and --dry-run cannot be combined" '[ "${cdrc:-0}" -eq 2 ]'
+
+: >"$CAPTURE"
+backend_err=$(PAYNANI_FAKE_SMTP_FAIL=yes "$SEND" "jjulianfe@gmail.com" "backend" "$body" 2>&1 >/dev/null) && backrc=0 || backrc=$?
+assert "non-SMTP outgoing backend is refused" '[ "${backrc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ] && printf "%s" "$backend_err" | grep -q "outgoing backend is not SMTP; refusing to send"'
 
 dry_signed=$(ENV_FILE="$tmp/env-signature" "$SEND" --dry-run "jjulianfe@gmail.com" "dry signed" "$body" 2>/dev/null)
 assert "--dry-run reports signature without contents" 'printf "%s" "$dry_signed" | grep -qx "Signature: yes (text/plain, source: PAYNANI_SIGNATURE_FILE)" && ! printf "%s" "$dry_signed" | grep -q "Paynani Test Agent"'
@@ -364,6 +411,14 @@ PAYNANI_STATE="$sent_state" send_ok --cc "second_contact@example.org" "jjulianfe
 assert "the record names the cc"        'grep -q "cc=second_contact@example.org" "$sent_log"'
 assert "message-id stays last with a cc" \
     '[ "$(sed -n "s/.*message-id=//p" "$sent_log")" = "$(grep -m1 "^Message-ID: " "$CAPTURE" | sed "s/^Message-ID: //")" ]'
+
+rm -rf "$sent_state"
+PAYNANI_STATE="$sent_state" send_ok --cc "second_contact@example.org" --bcc "reordered@example.net" --bcc "bare-address-still-works@example.com" "jjulianfe@gmail.com" "with bcc" "$body"
+assert "the record names bcc addresses"   'grep -q "to=jjulianfe@gmail.com" "$sent_log" && grep -q "cc=second_contact@example.org" "$sent_log" && grep -q "bcc=reordered@example.net,bare-address-still-works@example.com" "$sent_log"'
+
+rm -rf "$sent_state"
+PAYNANI_STATE="$sent_state" send_ok --bcc "bare-address-still-works@example.com" "jjulianfe@gmail.com" "with bcc" "$body"
+assert "the record names the bcc"       'grep -q "bcc=bare-address-still-works@example.com" "$sent_log"'
 
 # --- HTML alternatives ---------------------------------------------------------
 #

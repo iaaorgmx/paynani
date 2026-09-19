@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Send via Himalaya, but only to allowlisted recipients.
 #
-#   send.sh [--check|--dry-run] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>
+#   send.sh [--check|--dry-run] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... [<to>] <subject> <body-file>
 #
 # Anything not in roster.md exits 2 and sends nothing. That is the point: this
 # agent reads mail all day and acts on the part of it that comes from the roster,
@@ -25,8 +25,8 @@
 # prints attachments encoded, not summarised, because a message you cannot see
 # whole is one you cannot check.
 #
-# --dry-run prints a redacted delivery summary and sends nothing: recipient, cc,
-# the roster row that authorised each recipient, MIME shape, and attachment
+# --dry-run prints a redacted delivery summary and sends nothing: recipients, cc,
+# bcc, the roster row that authorised each recipient, MIME shape, and attachment
 # names/sizes. It deliberately does not print the body, env file, password,
 # attachment contents, or any generated raw message.
 #
@@ -61,7 +61,9 @@ ACCOUNT="paynani"
 
 check_only=""
 dry_run=""
-cc=""
+to_addrs=()
+cc_addrs=()
+bcc_addrs=()
 htmlfile=""
 attachments=()
 while [ $# -gt 0 ]; do
@@ -74,8 +76,16 @@ while [ $# -gt 0 ]; do
             dry_run=yes
             shift
             ;;
+        --to)
+            to_addrs+=("${2:?--to requires an address}")
+            shift 2
+            ;;
         --cc)
-            cc=${2:?--cc requires an address}
+            cc_addrs+=("${2:?--cc requires an address}")
+            shift 2
+            ;;
+        --bcc)
+            bcc_addrs+=("${2:?--bcc requires an address}")
             shift 2
             ;;
         --html)
@@ -92,9 +102,26 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-to=${1:?usage: send.sh [--check|--dry-run] [--cc <address>] [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
-subject=${2:?missing subject}
-bodyfile=${3:?missing body file}
+usage="usage: send.sh [--check|--dry-run] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... [<to>] <subject> <body-file>"
+case $# in
+    2)
+        if [ ${#to_addrs[@]} -eq 0 ]; then
+            echo "$usage" >&2
+            exit 2
+        fi
+        subject=${1:?missing subject}
+        bodyfile=${2:?missing body file}
+        ;;
+    3)
+        to_addrs=("${1:?missing recipient}" "${to_addrs[@]}")
+        subject=${2:?missing subject}
+        bodyfile=${3:?missing body file}
+        ;;
+    *)
+        echo "$usage" >&2
+        exit 2
+        ;;
+esac
 
 [ -f "$bodyfile" ] || { echo "no such body file: $bodyfile" >&2; exit 1; }
 if [ -n "$htmlfile" ] && { [ ! -f "$htmlfile" ] || [ ! -r "$htmlfile" ]; }; then
@@ -139,14 +166,20 @@ if [ "$attach_encoded" -gt "$ATTACH_LIMIT" ]; then
 fi
 
 # A newline in any of these would end the header and start another one, so a
-# crafted subject (or cc) could add Bcc: and reach an address the roster never
-# approved. All three reach here from mail the agent was asked to act on, so
+# crafted recipient or subject could add Bcc: and reach an address the roster
+# never approved. All reach here from mail the agent was asked to act on, so
 # strip rather than trust. Everything after the first line of a header is not
 # a header.
-to=$(printf '%s' "$to" | tr -d '\r\n')
 subject=$(printf '%s' "$subject" | tr -d '\r\n')
-cc=$(printf '%s' "$cc" | tr -d '\r\n')
-
+for _paynani_i in "${!to_addrs[@]}"; do
+    to_addrs[$_paynani_i]=$(printf '%s' "${to_addrs[$_paynani_i]}" | tr -d '\r\n')
+done
+for _paynani_i in "${!cc_addrs[@]}"; do
+    cc_addrs[$_paynani_i]=$(printf '%s' "${cc_addrs[$_paynani_i]}" | tr -d '\r\n')
+done
+for _paynani_i in "${!bcc_addrs[@]}"; do
+    bcc_addrs[$_paynani_i]=$(printf '%s' "${bcc_addrs[$_paynani_i]}" | tr -d '\r\n')
+done
 if [ ! -f "$ROSTER" ]; then
     echo "no roster at $ROSTER — refusing to send" >&2
     echo "Create it with the first contact:  scripts/paynani roster add \"Name\" address@example.com" >&2
@@ -170,6 +203,24 @@ fi
 # exercises -- which is exactly how send.sh drifted from roster.py in #91. Both
 # <to> and --cc call this one function rather than each inlining the check, for
 # the same reason.
+join_addresses() {
+    local IFS=,
+    printf '%s' "$*"
+}
+
+header_join_addresses() {
+    local _paynani_first=yes
+    local _paynani_addr
+    for _paynani_addr in "$@"; do
+        if [ -n "$_paynani_first" ]; then
+            printf '%s' "$_paynani_addr"
+            _paynani_first=""
+        else
+            printf ', %s' "$_paynani_addr"
+        fi
+    done
+}
+
 _paynani_scriptdir="$(cd "$(dirname "$0")" && pwd)"
 roster_allows() {
     _paynani_want=$(printf '%s' "$1" | tr -d '[:blank:]' | tr '[:upper:]' '[:lower:]')
@@ -214,26 +265,54 @@ roster_row_for() {
     ' "$ROSTER"
 }
 
-if ! roster_allows "$to"; then
-    echo "REFUSED: $to is not in $ROSTER" >&2
-    echo "Add it deliberately, or ask your human to send this one." >&2
+if [ ${#to_addrs[@]} -eq 0 ]; then
+    echo "REFUSED: at least one direct recipient is required" >&2
+    echo "Use <to> or --to for a visible recipient." >&2
     exit 2
 fi
 
-if [ -n "$cc" ] && ! roster_allows "$cc"; then
-    echo "REFUSED: cc $cc is not in $ROSTER" >&2
-    echo "Add it deliberately, or ask your human to send this one." >&2
-    exit 2
-fi
+for _paynani_addr in "${to_addrs[@]}"; do
+    if ! roster_allows "$_paynani_addr"; then
+        echo "REFUSED: $_paynani_addr is not in $ROSTER" >&2
+        echo "Add it deliberately, or ask your human to send this one." >&2
+        exit 2
+    fi
+done
+for _paynani_addr in "${cc_addrs[@]}"; do
+    if ! roster_allows "$_paynani_addr"; then
+        echo "REFUSED: cc $_paynani_addr is not in $ROSTER" >&2
+        echo "Add it deliberately, or ask your human to send this one." >&2
+        exit 2
+    fi
+done
+for _paynani_addr in "${bcc_addrs[@]}"; do
+    if ! roster_allows "$_paynani_addr"; then
+        echo "REFUSED: bcc $_paynani_addr is not in $ROSTER" >&2
+        echo "Add it deliberately, or ask your human to send this one." >&2
+        exit 2
+    fi
+done
+
+to=$(join_addresses "${to_addrs[@]}")
+cc=$(join_addresses "${cc_addrs[@]}")
+bcc=$(join_addresses "${bcc_addrs[@]}")
+to_header=$(header_join_addresses "${to_addrs[@]}")
+cc_header=$(header_join_addresses "${cc_addrs[@]}")
 
 # Keep the roster evidence for the redacted dry-run report. The command exits
 # before any SMTP path, but only after the same allowlist checks a live send uses.
-to_roster_row=$(roster_row_for "$to")
-if [ -n "$cc" ]; then
-    cc_roster_row=$(roster_row_for "$cc")
-else
-    cc_roster_row=""
-fi
+to_roster_rows=()
+for _paynani_addr in "${to_addrs[@]}"; do
+    to_roster_rows+=("$(roster_row_for "$_paynani_addr")")
+done
+cc_roster_rows=()
+for _paynani_addr in "${cc_addrs[@]}"; do
+    cc_roster_rows+=("$(roster_row_for "$_paynani_addr")")
+done
+bcc_roster_rows=()
+for _paynani_addr in "${bcc_addrs[@]}"; do
+    bcc_roster_rows+=("$(roster_row_for "$_paynani_addr")")
+done
 
 # --- Who the message is from -------------------------------------------------
 #
@@ -507,9 +586,9 @@ build_message() {
     else
         printf 'From: %s\n' "$from_addr"
     fi
-    printf 'To: %s\n' "$to"
-    if [ -n "$cc" ]; then
-        printf 'Cc: %s\n' "$cc"
+    printf 'To: %s\n' "$to_header"
+    if [ ${#cc_addrs[@]} -gt 0 ]; then
+        printf 'Cc: %s\n' "$cc_header"
     fi
     printf 'Subject: %s\n' "$(encode_header "$subject")"
     printf '\n'
@@ -540,11 +619,28 @@ fi
 
 if [ -n "$dry_run" ]; then
     printf 'dry-run: nothing sent\n'
-    printf 'To: %s (roster row: %s)\n' "$to" "$to_roster_row"
-    if [ -n "$cc" ]; then
-        printf 'Cc: %s (roster row: %s)\n' "$cc" "$cc_roster_row"
+    _paynani_i=0
+    for _paynani_addr in "${to_addrs[@]}"; do
+        printf 'To: %s (roster row: %s)\n' "$_paynani_addr" "${to_roster_rows[$_paynani_i]}"
+        _paynani_i=$(( _paynani_i + 1 ))
+    done
+    if [ ${#cc_addrs[@]} -gt 0 ]; then
+        _paynani_i=0
+        for _paynani_addr in "${cc_addrs[@]}"; do
+            printf 'Cc: %s (roster row: %s)\n' "$_paynani_addr" "${cc_roster_rows[$_paynani_i]}"
+            _paynani_i=$(( _paynani_i + 1 ))
+        done
     else
         printf 'Cc: none\n'
+    fi
+    if [ ${#bcc_addrs[@]} -gt 0 ]; then
+        _paynani_i=0
+        for _paynani_addr in "${bcc_addrs[@]}"; do
+            printf 'Bcc: %s (roster row: %s)\n' "$_paynani_addr" "${bcc_roster_rows[$_paynani_i]}"
+            _paynani_i=$(( _paynani_i + 1 ))
+        done
+    else
+        printf 'Bcc: none\n'
     fi
     printf 'Subject: %s\n' "$subject"
     if [ -n "$htmlfile" ]; then
@@ -575,14 +671,24 @@ if [ -n "$dry_run" ]; then
     printf 'Secrets/body/raw message: not shown\n'
     exit 0
 fi
-
 if [ -n "$check_only" ]; then
     build_message
     echo "check only — nothing sent" >&2
     exit 0
 fi
 
-build_message | himalaya message send -a "$ACCOUNT"
+if ! himalaya account check -a "$ACCOUNT" -b smtp >/dev/null 2>&1; then
+    echo "outgoing backend is not SMTP; refusing to send" >&2
+    echo "scripts/send.sh sends with an explicit SMTP envelope so Bcc never reaches the message." >&2
+    echo "Fix the account's outgoing backend, or open an issue to add this backend." >&2
+    exit 2
+fi
+
+himalaya_args=(smtp send -a "$ACCOUNT" --mail-from "$from_addr")
+for _paynani_addr in "${to_addrs[@]}" "${cc_addrs[@]}" "${bcc_addrs[@]}"; do
+    himalaya_args+=(--rcpt-to "$_paynani_addr")
+done
+build_message | himalaya "${himalaya_args[@]}"
 
 # --- What was sent, written down where it survives the process -----------------
 #
@@ -612,15 +718,18 @@ build_message | himalaya message send -a "$ACCOUNT"
 sent_log="$(paynani_state_dir)/sent.log"
 if ! {
     mkdir -p "$(dirname "$sent_log")" &&
-    printf '%s\tto=%s\tcc=%s\tsubject=%s\tmessage-id=%s\n' \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$to" "$cc" "$subject" "$msgid" >> "$sent_log"
+    printf '%s\tto=%s\tcc=%s\tbcc=%s\tsubject=%s\tmessage-id=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$to" "$cc" "$bcc" "$subject" "$msgid" >> "$sent_log"
 } 2>/dev/null; then
     echo "warning: sent, but could not record it in $sent_log" >&2
 fi
 
+sent_summary="sent to $to"
 if [ -n "$cc" ]; then
-    echo "sent to $to (cc $cc)"
-else
-    echo "sent to $to"
+    sent_summary="$sent_summary (cc $cc)"
 fi
+if [ -n "$bcc" ]; then
+    sent_summary="$sent_summary (bcc $bcc)"
+fi
+echo "$sent_summary"
 echo "message-id: $msgid"
