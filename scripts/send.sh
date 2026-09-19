@@ -355,16 +355,28 @@ esac
 # Long accented subjects therefore produce an overlong word; clients accept it,
 # and splitting correctly means chunking the UTF-8 *before* base64 so no character
 # straddles a boundary. Revisit if a real subject is ever rejected for length.
+base64_one_line() {
+    # GNU base64 has -w0; BSD base64 does not. MIME headers need one encoded-word,
+    # so make the no-wrap behavior explicit on every host.
+    base64 | tr -d '\n'
+}
+
 encode_header() {
     if printf '%s' "$1" | LC_ALL=C grep -q '[^ -~]'; then
-        printf '=?UTF-8?B?%s?=' "$(printf '%s' "$1" | base64 -w0)"
+        printf '=?UTF-8?B?%s?=' "$(printf '%s' "$1" | base64_one_line)"
     else
         printf '%s' "$1"
     fi
 }
 
-# RFC 5322 date, with the offset. `date -R` is exactly this format.
-date_hdr=$(date -R)
+rfc5322_date() {
+    # GNU date has -R; BSD/macOS date does not. %e is portable here but pads
+    # single-digit days with a space, so collapse the RFC-legal day to one digit.
+    LC_ALL=C date '+%a, %e %b %Y %H:%M:%S %z' | sed 's/,  /, /'
+}
+
+# RFC 5322 date, with the offset.
+date_hdr=$(rfc5322_date)
 
 # Enough entropy that two sends in the same second cannot collide. The domain
 # half must be one we plausibly own, so take it from the sender.
