@@ -1068,13 +1068,42 @@ class WatchRegistry(unittest.TestCase):
         self.addCleanup(self._take_down)
 
     def _take_down(self):
-        import signal
+        import signal, time
         for proc in self.procs:
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                group = os.getpgid(proc.pid)
             except OSError:
+                # The leader can exit before cleanup while a child in its process
+                # group is still writing under the TemporaryDirectory. The group id
+                # is the leader pid because every watcher here starts a new session.
+                group = proc.pid
+
+            for sig in (signal.SIGTERM, signal.SIGCONT, signal.SIGKILL):
+                try:
+                    os.killpg(group, sig)
+                except OSError:
+                    pass
+                if sig is signal.SIGTERM:
+                    try:
+                        proc.wait(timeout=1)
+                    except Exception:
+                        pass
+
+            try:
+                proc.wait(timeout=5)
+            except Exception:
                 pass
-            proc.wait()
+
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                try:
+                    os.killpg(group, 0)
+                except OSError:
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail(f"watcher process group {group} did not exit before cleanup")
+
             proc.stdout.close(); proc.stderr.close()
 
     def _hook(self, session_id, spool_through=0, **stubs):
