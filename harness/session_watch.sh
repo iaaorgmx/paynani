@@ -34,7 +34,7 @@ registry() {   # verb [k=v ...]  -> the registry of this session, if it has one
 	PAYNANI_RUNTIME=claudecode python3 "$HOOK" --registry "$1" "$session_id" "state=$STATE_DIR" "${@:2}" 2>/dev/null 9>&-
 }
 
-session_id=""
+session_id="${CLAUDE_CODE_SESSION_ID:-}"
 start=${2:-0}
 if [ "$start" = "--from-hook" ]; then
 	session_id=${3:-${CLAUDE_CODE_SESSION_ID:-}}

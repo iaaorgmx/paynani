@@ -55,13 +55,37 @@ Source for every line above: `scripts/healthcheck.py` (`render()`'s `watch`
 block) and `harness/session_start.py` (`prompt_submit()`), not transcribed
 from memory -- reread both before reusing this table on a future version.
 
-## Other runtimes
+## OpenAI Codex (`codex`)
 
-Codex, Hermes Agent and OpenCode are next, one section each, same skeleton, in
-a follow-up PR (#173): Ocelotl validates Codex, Atenea Hermes Agent, and Balam
-OpenCode, each on their own host. OpenCode's five states already have a
-version of this table in [#160](https://github.com/iaaorgmx/paynani/issues/160)'s
-acceptance criteria; that PR moves it here rather than rewriting it.
+Codex writes every event to `state/codex.spool` first (the durable, always-
+safe path) and only then tries to wake a live session with the undocumented
+`codex queue` command. `reachable`/`NOT REACHABLE` here means the spool
+directory is writable, not that a session exists -- the same caveat as
+Claude Code. `paynani doctor` declares `registered_session`,
+`last_queue_attempt` and `last_queue_result` as observations for this
+runtime, but none of them has a dedicated renderer in
+`scripts/paynani_lib/diagnostics.py`'s `_observation_check()` today, so they
+currently print as `unknown` regardless of real state -- `scripts/paynani
+status` is where this runtime's live detail actually lives, and what every
+step below uses instead.
+
+Rows 1, 2 and 4 are provoked with a temporary `CODEX_HOME` or `PAYNANI_STATE`,
+never by uninstalling hooks or deleting `state/codex.session` on a host that
+is receiving real mail. Rows 3, 5 and 6 are read from the real, live state.
+
+| # | State to provoke | Command | Exact expected output | Paste as evidence |
+|---|---|---|---|---|
+| 1 | Hooks not installed | `d=$(mktemp -d); env CODEX_HOME="$d" scripts/codex_hook.py --check` | Exit 1, with stdout containing `NOT registered in <path>/hooks.json` and no stderr. | The command output and exit code. |
+| 2 | No session registered | Hooks installed, but no Codex TUI has started (or `SessionEnd` already ran and removed `state/codex.session`) | `scripts/paynani status` prints `Codex session: not registered` | That line. |
+| 3 | A session is registered | Open a Codex TUI with the hooks installed, so `SessionStart` writes `state/codex.session` | `scripts/paynani status` prints `Codex session: registered` | That line, plus `cat state/codex.session`. |
+| 4 | Mail lands in the spool, no live session to wake | `d=$(mktemp -d); printf 'imap:INBOX:1:1 email.received\n' > "$d/codex.spool"; env PAYNANI_STATE="$d" scripts/paynani status` | `Codex session: not registered`, `Codex spool: 0/30 bytes acknowledged` with the offset behind the total, and no `Last queue:` line. The `Codex queue contract` line is host-dependent (`supported` when the Codex binary is present, `unsupported (Codex binary not found)` when it is not). | The `Codex session`, `Codex spool`, and `Codex queue contract` lines together. |
+| 5 | `codex queue` wakes a live, idle session | With a session registered (state 3) and mail delivered | `scripts/paynani status` shows a `Last queue: <event_id> at <timestamp>` line, and `Codex spool` shows `offset` caught up to `total` only once the queue call did not skip an older unread line | The `Last queue` and `Codex spool` lines, plus the Codex TUI actually showing the queued message. |
+| 6 | The `codex queue` contract itself | Any time, with the Codex binary installed | `scripts/paynani status` prints `Codex queue contract: supported (--thread and --message are available)` (or `unsupported (Codex binary not found)` without one) | That line -- this is what proves the integration point in `harness/adapters/codex.py`'s own warning ("if a future Codex release changes it, this is the integration point to retest") hasn't silently broken. |
+
+Source: `harness/adapters/codex.py` (`check()`, `queue_contract()`),
+`scripts/healthcheck.py` (the `session_arming == "queue-or-replay"` branch
+of `render()`), and `scripts/paynani_lib/status_cli.py` (the `Codex ...`
+print lines) -- reread all three before reusing this table.
 
 ## OpenClaw (`openclaw`)
 
@@ -89,3 +113,50 @@ Source for the OpenClaw lines above: `scripts/healthcheck.py`
 (`runtime`, `instructions`, `openclaw probe`, and `dispatcher` rows),
 `scripts/paynani_lib/openclaw_cli.py` (`openclaw_probe=accepted`), and
 `scripts/openclaw_rules.py --check`.
+
+## Hermes Agent (`hermes`)
+
+Hermes has no session and no spool either: delivery is an HTTP POST to one
+of three operator-configured routes (health, notify, roster), described in
+[`HERMES.md`](HERMES.md). `reachable`/`NOT REACHABLE` here comes from a GET
+to `HERMES_HEALTH_URL` alone (`harness/adapters/hermes.py`'s `check()`); it
+says nothing about the notify or roster routes. `paynani doctor` declares
+`notify_route_configured` and `roster_route_configured` as observations for
+this runtime, but like Codex's queue observations, neither has a dedicated
+renderer yet, so both print `unknown` regardless of real state today --
+provoke and read the routes directly, as below, rather than trusting
+`doctor` for them.
+
+| # | State to provoke | Command | Exact expected output | Paste as evidence |
+|---|---|---|---|---|
+| 1 | Health route reachable | `HERMES_HEALTH_URL` configured and answering | `scripts/healthcheck.py` prints `reachable: Hermes webhook server answers GET /health; this is reachability, not route readiness or agent completion` | That line. |
+| 2 | Health route unreachable | Point `HERMES_HEALTH_URL` at a closed port or wrong host, then run the check | `scripts/healthcheck.py` prints `NOT REACHABLE: Hermes health endpoint is unreachable or timed out: <error>` | That line, then revert the URL. |
+| 3 | Notify route delivers directly | Send real roster mail with the notify route configured correctly | The adapter's `_classify()` returns `accepted`, detail `Hermes completed direct delivery (HTTP 200)`; `scripts/healthcheck.py`'s `delivery` block shows `runtime said: Hermes completed direct delivery (HTTP 200)` | The `delivery` block. |
+| 4 | Roster route queues an agent run, unconfirmed | Send real roster mail with the roster route configured correctly | Detail `Hermes queued the agent run (HTTP 202); completion is unconfirmed`; same `delivery` block shows that text | The `delivery` block, plus whatever the agent did afterward (or didn't) as the actual confirmation this line admits it cannot give. |
+| 5 | Route URL and secret swapped | Configure the notify secret on the roster route or vice versa, then send mail | Detail `Hermes answered for route '<other>', not configured route '<expected>'. Check the route URL and secret pairing.` | The `delivery` block. |
+
+Source: `harness/adapters/hermes.py` (`check()`, `_health()`,
+`_classify()`) and [`HERMES.md`](HERMES.md) -- reread both before reusing
+this table; the exact HTTP status/route-class combinations in `_classify()`
+are more numerous than the five rows above, which cover the ones a real
+mail send actually exercises.
+
+## OpenCode (`opencode`)
+
+The five states below are [#160](https://github.com/iaaorgmx/paynani/issues/160)'s
+acceptance criteria, moved here rather than rewritten: they were already a
+reproducible checklist, and re-deriving them from the code a second time
+would only risk disagreeing with the version that shipped.
+
+| # | State to provoke | Command | Exact expected output | Paste as evidence |
+|---|---|---|---|---|
+| 1 | OpenCode closed | No OpenCode process open, with the plugin installed (`scripts/opencode_plugin.py --install`) | `scripts/healthcheck.py` prints `no OpenCode process is open; unread bytes wait until OpenCode is open, which is normal` | That line. |
+| 2 | OpenCode open, no message sent yet | Open the OpenCode TUI and do not write anything in it | `scripts/healthcheck.py` prints `OpenCode is open (process <pid>) but not delivering yet: write in a session and delivery starts when it is idle`; `ls state/opencode.processes/` shows `<pid>` | Both. |
+| 3 | Delivering | Write in the open session and let it go idle | `scripts/healthcheck.py` prints `delivering from OpenCode process <pid>` | That line. |
+| 4 | Closed again | Close OpenCode | `state/opencode.processes/` is empty; `scripts/healthcheck.py` prints state 1's line again | Both. |
+| 5 | Headless `opencode run`, TUI closed | `opencode run "hola"` with no TUI open | `state/opencode.processes/` stays empty throughout (a one-shot `opencode run` never registers, by design -- `shouldRun()` in `harness/opencode/paynani.js`) | The empty `ls`, captured during the run. |
+
+Source: `scripts/healthcheck.py` (`spool_facts()`, `opencode_plugin_facts()`)
+and `harness/opencode/paynani.js` (`PaynaniPlugin`, `shouldRun()`) -- reread
+both before reusing this table, and see #160 itself for how this checklist
+was first run, on Balam's host, in OpenCode 1.18.31.
