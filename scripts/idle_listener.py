@@ -18,7 +18,7 @@ Usage:  python3 scripts/idle_listener.py [--env PATH] [--mailbox INBOX] [--once]
 Exit:   0 clean shutdown · 1 configuration or login failure (not retryable)
 """
 
-import argparse, datetime, email, email.utils, imaplib, json, os, pathlib, re
+import argparse, calendar, datetime, email, email.utils, imaplib, json, os, pathlib, re
 import select, signal, socket, ssl, sys, time
 from email.header import decode_header, make_header
 
@@ -417,6 +417,29 @@ def timestamp():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def _timestamp_seconds(stamp):
+    try:
+        return calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError):
+        return None
+
+
+def record_imap_reconnect(telemetry, now=None):
+    now = timestamp() if now is None else now
+    now_seconds = _timestamp_seconds(now)
+    window = []
+    for stamp in telemetry.get("imap_reconnect_window") or []:
+        stamp_seconds = _timestamp_seconds(stamp)
+        if stamp_seconds is None or now_seconds is None:
+            continue
+        if now_seconds - stamp_seconds <= 3600:
+            window.append(stamp)
+    window.append(now)
+    telemetry["imap_reconnect_window"] = window
+    telemetry["imap_reconnects_last_hour"] = len(window)
+    return telemetry
+
+
 def save_state(path, mailbox, validity, last_uid, telemetry=None):
     state = {
         "mailbox": mailbox,
@@ -555,6 +578,8 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
         "imap_last_disconnect_error": state.get("imap_last_disconnect_error"),
         "imap_last_recovered_at": state.get("imap_last_recovered_at"),
         "imap_reconnect_attempts": int(state.get("imap_reconnect_attempts") or 0),
+        "imap_reconnect_window": state.get("imap_reconnect_window") or [],
+        "imap_reconnects_last_hour": int(state.get("imap_reconnects_last_hour") or 0),
         "imap_current_backoff_seconds": int(state.get("imap_current_backoff_seconds") or 0),
     }
     # What the journal has been told about the listener's own health.
@@ -651,6 +676,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
             telemetry["imap_last_disconnect_at"] = timestamp()
             telemetry["imap_last_disconnect_error"] = message
             telemetry["imap_reconnect_attempts"] = int(telemetry.get("imap_reconnect_attempts") or 0) + 1
+            record_imap_reconnect(telemetry, telemetry["imap_last_disconnect_at"])
             telemetry["imap_current_backoff_seconds"] = backoff
             try:
                 save_state(state_path, mailbox, state.get("uidvalidity"), last_uid, telemetry)
