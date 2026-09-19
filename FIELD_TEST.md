@@ -69,12 +69,16 @@ currently print as `unknown` regardless of real state -- `scripts/paynani
 status` is where this runtime's live detail actually lives, and what every
 step below uses instead.
 
+Rows 1, 2 and 4 are provoked with a temporary `CODEX_HOME` or `PAYNANI_STATE`,
+never by uninstalling hooks or deleting `state/codex.session` on a host that
+is receiving real mail. Rows 3, 5 and 6 are read from the real, live state.
+
 | # | State to provoke | Command | Exact expected output | Paste as evidence |
 |---|---|---|---|---|
 | 1 | Hooks not installed | Before running `scripts/codex_hook.py --install` | `scripts/codex_hook.py --check` prints `NOT registered in <path>` on stdout and exits 1. | The exit code and the stdout line. |
 | 2 | No session registered | Hooks installed, but no Codex TUI has started (or `SessionEnd` already ran and removed `state/codex.session`) | `scripts/paynani status` prints `Codex session: not registered` | That line. |
 | 3 | A session is registered | Open a Codex TUI with the hooks installed, so `SessionStart` writes `state/codex.session` | `scripts/paynani status` prints `Codex session: registered` | That line, plus `cat state/codex.session`. |
-| 4 | Mail lands in the spool, no live session to wake | With mail delivered and no session registered (state 2) | `scripts/paynani status` shows `Codex spool: <offset>/<total> bytes acknowledged` with `offset` behind `total`, and no `Last queue:` line; the next Codex `SessionStart` replays it | The `Codex spool` and `Codex session` lines together. |
+| 4 | Mail lands in the spool, no live session to wake | `d=$(mktemp -d); printf 'imap:INBOX:1:1 email.received\n' > "$d/codex.spool"; env PAYNANI_STATE="$d" scripts/paynani status` | `Codex session: not registered`, `Codex spool: 0/30 bytes acknowledged` with `offset` behind `total`, and no `Last queue:` line | The `Codex spool` and `Codex session` lines together. |
 | 5 | `codex queue` wakes a live, idle session | With a session registered (state 3) and mail delivered | `scripts/paynani status` shows a `Last queue: <event_id> at <timestamp>` line, and `Codex spool` shows `offset` caught up to `total` only once the queue call did not skip an older unread line | The `Last queue` and `Codex spool` lines, plus the Codex TUI actually showing the queued message. |
 | 6 | The `codex queue` contract itself | Any time, with the Codex binary installed | `scripts/paynani status` prints `Codex queue contract: supported (--thread and --message are available)` (or `unsupported (Codex binary not found)` without one) | That line -- this is what proves the integration point in `harness/adapters/codex.py`'s own warning ("if a future Codex release changes it, this is the integration point to retest") hasn't silently broken. |
 
