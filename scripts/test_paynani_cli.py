@@ -17,7 +17,10 @@ write anything, and that the guard rails around all of it hold.
 
 from __future__ import annotations
 
+import contextlib
 import http.client
+import io
+import json
 import os
 import shutil
 import stat
@@ -752,6 +755,45 @@ try:
         "set_cli: nothing is written when a neighbour field blocks the check",
         "AGENT_EMAIL_ACCOUNT=new@example.com" not in set_env.read_text(encoding="utf-8"),
     )
+
+    signature = set_dir / "signature.txt"
+    signature.write_text("Paynani Test Agent\n", encoding="utf-8")
+    r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value=str(signature), skip_check=False))
+    check("set_cli: PAYNANI_SIGNATURE_FILE writes a readable path", r == 0)
+    check(
+        "set_cli: PAYNANI_SIGNATURE_FILE is on disk",
+        f"PAYNANI_SIGNATURE_FILE={signature}" in set_env.read_text(encoding="utf-8"),
+    )
+
+    missing_signature = set_dir / "missing-signature.txt"
+    before_missing_signature = set_env.read_text(encoding="utf-8")
+    r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value=str(missing_signature), skip_check=True))
+    check("set_cli: PAYNANI_SIGNATURE_FILE rejects a missing path", r == 1)
+    check(
+        "set_cli: PAYNANI_SIGNATURE_FILE missing path writes nothing",
+        set_env.read_text(encoding="utf-8") == before_missing_signature,
+    )
+
+    unreadable_signature = set_dir / "unreadable-signature.txt"
+    unreadable_signature.write_text("secret-ish\n", encoding="utf-8")
+    unreadable_signature.chmod(0)
+    before_unreadable_signature = set_env.read_text(encoding="utf-8")
+    try:
+        r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value=str(unreadable_signature), skip_check=True))
+        check("set_cli: PAYNANI_SIGNATURE_FILE rejects an unreadable path", r == 1)
+        check(
+            "set_cli: PAYNANI_SIGNATURE_FILE unreadable path writes nothing",
+            set_env.read_text(encoding="utf-8") == before_unreadable_signature,
+        )
+    finally:
+        unreadable_signature.chmod(0o600)
+
+    r = set_cli.run(Args(key="PAYNANI_SIGNATURE_FILE", value="", skip_check=False))
+    check("set_cli: PAYNANI_SIGNATURE_FILE empty value removes the key", r == 0)
+    check(
+        "set_cli: PAYNANI_SIGNATURE_FILE is absent after empty value",
+        "PAYNANI_SIGNATURE_FILE" not in set_env.read_text(encoding="utf-8"),
+    )
 finally:
     os.environ.pop("PAYNANI_ENV", None)
     shutil.rmtree(set_dir, ignore_errors=True)
@@ -787,6 +829,43 @@ try:
     )
 finally:
     shutil.rmtree(lang_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# scripts/paynani entry point
+# ---------------------------------------------------------------------------
+
+import subprocess
+
+paynani_cmd = [sys.executable, str(REPO / "scripts" / "paynani")]
+paynani_no_args = subprocess.run(paynani_cmd, capture_output=True, text=True, timeout=30)
+paynani_help = subprocess.run(paynani_cmd + ["help"], capture_output=True, text=True, timeout=30)
+paynani_dash_h = subprocess.run(paynani_cmd + ["-h"], capture_output=True, text=True, timeout=30)
+paynani_dash_dash_help = subprocess.run(paynani_cmd + ["--help"], capture_output=True, text=True, timeout=30)
+paynani_invalid = subprocess.run(paynani_cmd + ["not-a-command"], capture_output=True, text=True, timeout=30)
+
+check(
+    "paynani (subprocess): no arguments prints help to stdout and exits 0",
+    paynani_no_args.returncode == 0 and "usage: paynani" in paynani_no_args.stdout and paynani_no_args.stderr == "",
+)
+check(
+    "paynani (subprocess): help prints the same text as no arguments",
+    paynani_help.returncode == 0 and paynani_help.stdout == paynani_no_args.stdout and paynani_help.stderr == "",
+)
+check(
+    "paynani (subprocess): -h prints the same text as no arguments",
+    paynani_dash_h.returncode == 0 and paynani_dash_h.stdout == paynani_no_args.stdout and paynani_dash_h.stderr == "",
+)
+check(
+    "paynani (subprocess): --help prints the same text as no arguments",
+    paynani_dash_dash_help.returncode == 0
+    and paynani_dash_dash_help.stdout == paynani_no_args.stdout
+    and paynani_dash_dash_help.stderr == "",
+)
+check(
+    "paynani (subprocess): invalid subcommand still exits nonzero",
+    paynani_invalid.returncode != 0 and "invalid choice" in paynani_invalid.stderr,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -866,6 +945,136 @@ try:
 
     r = roster_cli.run_remove(RArgs(address="ghost@example.com", yes=True))
     check("roster_cli.run_remove: a nonexistent address is refused", r == 1)
+
+    # Every ordinary write path must refuse a legacy schema, even when add
+    # omits --github. Only `roster migrate` and batch apply may cross this
+    # boundary, so the file cannot continue drifting in an old format.
+    legacy_path = roster_dir / "legacy" / "roster.md"
+    legacy_path.parent.mkdir()
+    legacy_text = (
+        "# preserve this comment\n"
+        "| Name | Email | Type | Username |\n"
+        "|---|---|---|---|\n"
+        "| Ximena | ximena@example.org | Human | ximenasalazartob |\n"
+    )
+    legacy_path.write_text(legacy_text, encoding="utf-8")
+    roster_cli.roster_file = lambda: legacy_path
+    with contextlib.redirect_stderr(io.StringIO()):
+        r = roster_cli.run_add(RArgs(name="No GitHub", address="nogithub@example.org", type="AI Agent", yes=True))
+    check("roster_cli.run_add: legacy schema rejects add without --github", r == 1)
+    check("roster_cli.run_add: rejected legacy add leaves bytes untouched", legacy_path.read_text(encoding="utf-8") == legacy_text)
+    with contextlib.redirect_stderr(io.StringIO()):
+        r = roster_cli.run_remove(RArgs(address="ximena@example.org", yes=True))
+    check("roster_cli.run_remove: legacy schema requires migration", r == 1)
+    check("roster_cli.run_remove: rejected legacy remove leaves bytes untouched", legacy_path.read_text(encoding="utf-8") == legacy_text)
+    status, detail = roster_cli.add_contact_noninteractive("Web Legacy", "weblegacy@example.org")
+    check("add_contact_noninteractive: legacy schema reports rejected", status == "rejected")
+    check("add_contact_noninteractive: rejected legacy write leaves bytes untouched", legacy_path.read_text(encoding="utf-8") == legacy_text)
+
+    # migrate --apply is a writer like add/remove/apply, so it must confirm
+    # unless --yes is explicit.
+    builtins.input = lambda prompt="": "n"
+    try:
+        r = roster_cli.run_migrate(RArgs(apply=True, plan=False))
+    finally:
+        builtins.input = real_input
+    check("roster_cli.run_migrate: declining confirmation returns nonzero", r == 1)
+    check(
+        "roster_cli.run_migrate: declining confirmation preserves legacy bytes",
+        legacy_path.read_text(encoding="utf-8") == legacy_text,
+    )
+
+    # A nine-row batch is one transaction. One invalid fifth row rejects the
+    # whole batch; dry-run prints the migration/add plan without writing; the
+    # corrected batch migrates and adds every row in one operation.
+    contacts = [
+        {
+            "name": f"Agent {i}",
+            "email": f"agent{i}@example.org",
+            "type": "AI Agent",
+            "github": f"agent{i}",
+        }
+        for i in range(1, 10)
+    ]
+    batch_file = legacy_path.parent / "contacts.json"
+    invalid_contacts = [dict(item) for item in contacts]
+    invalid_contacts[4]["email"] = "sin-arroba"
+    batch_file.write_text(json.dumps(invalid_contacts), encoding="utf-8")
+    before_batch = legacy_path.read_bytes()
+    with contextlib.redirect_stderr(io.StringIO()):
+        r = roster_cli.run_apply(
+            RArgs(file=str(batch_file), dry_run=False, yes=True)
+        )
+    check("roster_cli.run_apply: invalid row in nine rejects the batch", r == 1)
+    check(
+        "roster_cli.run_apply: invalid nine-row batch preserves exact bytes",
+        legacy_path.read_bytes() == before_batch,
+    )
+
+    batch_file.write_text(json.dumps(contacts), encoding="utf-8")
+    dry_output = io.StringIO()
+    with contextlib.redirect_stdout(dry_output):
+        r = roster_cli.run_apply(
+            RArgs(file=str(batch_file), dry_run=True, yes=False)
+        )
+    check("roster_cli.run_apply: nine-row dry-run succeeds", r == 0)
+    check(
+        "roster_cli.run_apply: dry-run prints migration and add plan",
+        "migrate Username -> GitHub" in dry_output.getvalue()
+        and "add agent9@example.org" in dry_output.getvalue(),
+    )
+    check(
+        "roster_cli.run_apply: dry-run preserves exact bytes",
+        legacy_path.read_bytes() == before_batch,
+    )
+
+    r = roster_cli.run_apply(
+        RArgs(file=str(batch_file), dry_run=False, yes=True)
+    )
+    applied_text = legacy_path.read_text(encoding="utf-8")
+    check("roster_cli.run_apply: corrected nine-row batch succeeds", r == 0)
+    check(
+        "roster_cli.run_apply: corrected batch migrates the header",
+        "| Name | Email | Type | GitHub |" in applied_text,
+    )
+    check(
+        "roster_cli.run_apply: corrected batch adds all nine rows",
+        all(item["email"] in applied_text for item in contacts),
+    )
+    check(
+        "roster_cli.run_apply: corrected batch preserves comments",
+        "# preserve this comment" in applied_text,
+    )
+    check(
+        "roster_cli.run_apply: corrected batch leaves the original backup",
+        legacy_path.with_suffix(".md.bak").read_bytes() == before_batch,
+    )
+
+    # A failure after os.replace must still restore the exact original bytes.
+    # This models chmod or another post-replace failure inside _write_atomic.
+    rollback_path = roster_dir / "post-replace" / "roster.md"
+    rollback_path.parent.mkdir()
+    rollback_original = b"# original bytes\r\n| Name | Email | Type | GitHub |\r\n|---|---|---|---|\r\n"
+    rollback_path.write_bytes(rollback_original)
+    real_write_atomic = roster_cli._write_atomic
+
+    def write_then_raise(path, text):
+        real_write_atomic(path, text)
+        raise OSError("simulated post-replace failure")
+
+    roster_cli._write_atomic = write_then_raise
+    try:
+        status, detail = roster_cli._apply_roster_text(
+            rollback_path,
+            "| Name | Email | Type | GitHub |\n|---|---|---|---|\n| New | new@example.org | AI Agent | new |\n",
+            {"new@example.org"},
+        )
+    finally:
+        roster_cli._write_atomic = real_write_atomic
+    check("_apply_roster_text: post-replace failure reports verify_failed", status == "verify_failed")
+    check("_apply_roster_text: post-replace failure restores original bytes", rollback_path.read_bytes() == rollback_original)
+
+    roster_cli.roster_file = lambda: roster_path
 
     # add_contact_noninteractive() -- the onboard web form's non-terminal
     # path. No confirmation, no console output, a status string instead of
@@ -978,9 +1187,6 @@ try:
     # `paynani roster add` on a host whose .env was written by hand (#135): the
     # form never ran, so there is no roster.md. The command creates it from
     # the same template, through the same _starting_text() the form uses.
-    import contextlib
-    import io
-
     cli_fresh_path = roster_dir / "cli-fresh" / "roster.md"
     cli_fresh_path.parent.mkdir()
     roster_cli.roster_file = lambda: cli_fresh_path

@@ -1,6 +1,84 @@
 # Changelog
 
-## Sin publicar
+## 0.7.2 (2026-09-19)
+
+**Correo con copia oculta, el roster migrado, y dos defectos de documentación
+que sólo aparecieron cuando dos hosts distintos corrieron la misma prueba.**
+Desde 0.7.1, 30 PRs: #182, #184, #185, #191, #192, #193, #194, #195, #196,
+#197, #198, #199, #200, #201, #202, #203, #205, #206, #207, #208, #210, #211,
+#212, #213, #217, #218, #223, #224, #229 y #235.
+
+- **`scripts/send.sh` manda con copia oculta, y `--to`, `--cc` y `--bcc` se
+  repiten** (#220, PR #229). El envío pasa a `himalaya smtp send` con el sobre
+  explícito: un `--rcpt-to` por cada dirección, y el encabezado `Bcc:` nunca
+  viaja en el mensaje. Esa decisión no es de estilo. Antes de escribir código se
+  comprobó qué hace Himalaya con un encabezado `Bcc:` en la entrada, y resultó
+  que lo usa como destinatario del sobre **pero lo deja pasar en el mensaje
+  entregado**, o sea que la implementación obvia le habría mostrado a cada
+  destinatario la lista completa de copias ocultas. Las tres listas pasan por el
+  mismo portero del roster, con la misma limpieza de saltos de línea, y
+  `state/sent.log` registra `bcc=` porque el secreto de una copia oculta es
+  frente a los destinatarios, no frente a la bitácora local. `--dry-run` y
+  `--check` muestran ahora los destinatarios del sobre y el backend de salida.
+  Si ese backend no es SMTP, `send.sh` se rehúsa antes de mandar en vez de
+  ignorar la configuración de la cuenta.
+- **`scripts/paynani roster migrate` y `roster apply`** (#166, PR #184). La
+  columna heredada `Username` se migra a `GitHub` con `--plan` y `--apply`, con
+  confirmación o `--yes`, y las altas por lote desde un JSON son atómicas: una
+  fila inválida no deja el archivo a medias. El éxito informa dónde quedó el
+  respaldo.
+- **`paynani set` escribe `PAYNANI_SIGNATURE_FILE`** (#219, PR #223), y
+  `scripts/send.sh` agrega una firma de texto plano a las respuestas (#175, PR
+  #212). La llave se validó contra una ruta legible antes de tocar `.env`, y un
+  valor vacío la quita. Antes existía la función pero no la forma de
+  configurarla: el único comando que escribe `.env` no conocía la llave y
+  mandaba a editar a mano el archivo donde viven la contraseña y los tokens.
+- **`paynani` a secas muestra la ayuda** (#231, PR #235), igual que `paynani
+  help`, `-h` y `--help`, en `stdout` y con salida 0. Antes respondía con un
+  error de argparse en `stderr` y código 2 a quien escribía el comando para ver
+  qué hacía.
+- **`FIELD_TEST.md` cubre los cinco runtimes** (#173, PRs #201, #205, #206,
+  #217): Claude Code, OpenClaw, OpenAI Codex, Hermes Agent y OpenCode, una
+  sección por runtime con los estados que hay que provocar, el comando, la
+  salida exacta esperada y qué se pega como evidencia. Dos hosts distintos de
+  Codex corrieron la misma tabla y encontraron dos defectos que ninguno de los
+  dos habría encontrado solo: una fila documentaba `stderr` donde el programa
+  escribe en `stdout`, y otra pedía provocar un estado que en un host al
+  corriente es imposible de provocar, sin decir cómo. Las dos filas traen ahora
+  un fixture reproducible, y el encabezado advierte que las filas de estado se
+  provocan con `CODEX_HOME` o `PAYNANI_STATE` temporales, nunca desinstalando
+  hooks ni borrando estado en un host que recibe correo.
+- **`AGENTS.md` dice cómo entra un cambio** (#213): por PR aprobado por alguien
+  distinto del autor, y nadie mezcla lo suyo con su propia aprobación. Una
+  autorización permanente del humano dice cuándo se puede mezclar, no exime de
+  la revisión.
+- **El vigía con offset numérico ya escribe su registro** (#215, PR #218). Sólo
+  el camino de `--from-hook` fijaba `session_id`, así que armar con un offset
+  numérico dejaba a `healthcheck.py` diciendo que nadie vigilaba mientras el
+  vigía entregaba correo.
+- `paynani doctor` reporta la telemetría IMAP de reconexión (#207) y las
+  observaciones declaradas por cada runtime (#210); `paynani onboard` completa
+  su lista de verificación y su resumen sin secretos (#208).
+- `paynani doctor` comprueba además sus dependencias, `python`, `himalaya` y el
+  CLI del runtime (PR #198), mide el drenado de la cola y el entorno real del
+  servicio (PR #192), y `paynani onboard` termina con una pantalla que nombra
+  los pasos que faltan según el runtime (PR #196).
+- **`STATUS_MATRIX.md`**: qué estado puede observar cada harness y cuál no,
+  incluidos los notificadores y la regla permanente de OpenClaw (PRs #197 y
+  #200). `HARNESS_CAPABILITIES.md` queda enlazado desde la documentación y las
+  traducciones se verifican contra la estructura del original (PR #191).
+- `scripts/send.sh --dry-run` imprime un resumen redactado de la entrega, con
+  destinatarios, filas del roster que los autorizan y forma MIME, y no manda
+  nada (PR #194). Es la base sobre la que esta versión agregó el sobre
+  explícito y el backend de salida.
+- `scripts/paynani openclaw probe --dry-run` acepta una sonda sintética sin
+  tocar IMAP ni el diario, y `healthcheck.py` la reporta aparte del correo real
+  (PR #195).
+- `scripts/test_hermes_install.py` ignora `state/` al clonar el repo en sus
+  cajas de arena (#216, PR #224): el FIFO de un vigía vivo, que es el estado
+  normal de un host sano, hacía fallar la prueba. De paso, un clon de prueba ya
+  no se lleva el `roster.md` real del host.
+
 
 - `scripts/version.sh --apply [REF]` ejecuta la parte 2 de #167: congela el
   commit del plan, comprueba que el ref remoto no cambió antes del fast-forward,
@@ -23,7 +101,7 @@
   watcher from a previous version still holds this spool». Visto en vivo el
   2026-09-18 a las 07:15Z, en el paso 4 de `FIELD_TEST.md`.
 - **Claude Code: el vigía se arma sin copiar números y su estado se ve desde
-  fuera** (#170). El hook de `SessionStart` escribe
+  fuera** (#170, PR #199). El hook de `SessionStart` escribe
   `state/sessions/<session-id>/watch.json` con el offset que replicó (el id
   viene del JSON que Claude Code le da al hook; nunca se inventa) y el comando
   que imprime es `session_watch.sh <state> --from-hook`, que lee ese registro
@@ -36,7 +114,7 @@
   spool que ningún vigía vivo va a mostrar, con el comando para rearmar.
   `scripts/claude_hook.py --install` registra el que falte. La forma con
   offset numérico sigue funcionando para invocaciones a mano.
-- `scripts/ci_streak.sh` (#174): cuántas corridas seguidas en verde lleva
+- `scripts/ci_streak.sh` (#174, PR #193): cuántas corridas seguidas en verde lleva
   `main` para volver requerido `suite-macos`, con la regla del CHANGELOG de
   0.7.0 aplicada igual cada vez: un re-run (`attempt > 1`) o una falla
   reinician la cuenta y se nombran con su commit; una corrida en curso no
@@ -56,17 +134,49 @@
   remite a `UPGRADE.md`; nunca convierte datos ausentes en «nada que
   reiniciar». Lista además los overlays locales (archivos rastreados
   modificados en el clon), dice cuáles también cambian con la actualización y
-  da los comandos para dejar registro y apartarlos antes del pull. El reporte
+  da los comandos para dejar registro y apartarlos antes del pull (PR #185). El reporte
   completo de `version.sh` imprime el plan cuando hay una versión más nueva.
   `UPGRADE.md` §2 lo incorpora.
 - Claude Code: el vigía de sesión conserva el FIFO hasta cerrar, para que `tail`
   no pueda escribir en un archivo regular si el ticker abre primero. Incluye una
-  prueba determinista de esa carrera (#179).
+  prueba determinista de esa carrera (#179, PR #182).
 
-### Si actualizas
+### Si actualizas desde 0.7.1
 
-Rearma el vigía en la siguiente sesión de Claude Code; no hace falta migrar
-estado ni tocar credenciales.
+Cambiaron `scripts/send.sh`, `scripts/roster.py`, `scripts/paynani`,
+`scripts/idle_listener.py` y `harness/session_watch.sh`, así que en todos los
+hosts:
+
+```bash
+git pull
+scripts/version.sh --plan
+scripts/install.sh --runtime <runtime> --upgrade
+systemctl --user restart paynani-idle.service paynani-dispatch.service
+# macOS: launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"
+#        launchctl kickstart -k "gui/$(id -u)/com.paynani.dispatch"
+scripts/healthcheck.py
+```
+
+**Y comprueba tu `roster.md`, que en esta versión es un paso obligatorio y no
+una recomendación.** Un host de la flota llegó hasta aquí con la columna
+heredada `Username` y sin fila de notificadores, así que las notificaciones de
+GitHub le llegaban como correo de un desconocido: su agente veía los
+comentarios de los PRs sólo si iba a mirarlos, y nadie lo sabía. Tres comandos:
+
+```bash
+scripts/paynani roster migrate --plan     # ¿dice `Username -> GitHub`?
+scripts/paynani roster migrate --apply    # sólo si el plan lo pidió
+scripts/paynani roster explain --from notifications@github.com \
+    --header X-GitHub-Sender=<tu-handle>
+```
+
+El tercero tiene que decir `AUTHORIZED` y nombrar tu fila. Si dice otra cosa,
+tu columna `GitHub` está vacía o no existe: ponle tu handle y vuelve a
+correrlo. Mientras eso no salga `AUTHORIZED`, tu agente no está recibiendo el
+canal por el que trabaja el equipo.
+
+Rearma además el vigía en la siguiente sesión de Claude Code. No hace falta
+migrar estado ni tocar credenciales.
 
 ## 0.7.1 (2026-09-18)
 
@@ -146,6 +256,14 @@ basta.
 - **#168 sigue abierto** con tres requisitos por entregar: `draining` medido,
   entorno persistente vs vivo de `systemd --user` y telemetría de reconexión
   IMAP.
+- `paynani roster migrate --plan` muestra la migracion de la columna heredada
+  `Username` a `GitHub` sin escribir.
+- `paynani roster migrate --apply [--yes]` aplica la migracion de forma
+  atomica, conserva un respaldo `roster.md.bak` y restaura los bytes originales
+  ante cualquier fallo.
+- `paynani roster apply --file CONTACTS.json [--dry-run] [--yes]` valida y
+  agrega un lote completo en una sola escritura. Si una fila es invalida, no
+  cambia el roster. El campo `type` del lote acepta `Human` o `AI Agent`.
 
 ## 0.7.0 (2026-09-17)
 
