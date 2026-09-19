@@ -65,8 +65,12 @@ dry_run=""
 to_recipients=()
 cc_recipients=()
 bcc_recipients=()
+to_recipients_count=0
+cc_recipients_count=0
+bcc_recipients_count=0
 htmlfile=""
 attachments=()
+attachments_count=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --check)
@@ -79,14 +83,17 @@ while [ $# -gt 0 ]; do
             ;;
         --to)
             to_recipients+=("${2:?--to requires an address}")
+            to_recipients_count=$(( to_recipients_count + 1 ))
             shift 2
             ;;
         --cc)
             cc_recipients+=("${2:?--cc requires an address}")
+            cc_recipients_count=$(( cc_recipients_count + 1 ))
             shift 2
             ;;
         --bcc)
             bcc_recipients+=("${2:?--bcc requires an address}")
+            bcc_recipients_count=$(( bcc_recipients_count + 1 ))
             shift 2
             ;;
         --html)
@@ -95,6 +102,7 @@ while [ $# -gt 0 ]; do
             ;;
         --attach)
             attachments+=("${2:?--attach requires a path}")
+            attachments_count=$(( attachments_count + 1 ))
             shift 2
             ;;
         *)
@@ -106,7 +114,12 @@ done
 to=${1:?usage: send.sh [--check|--dry-run] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
-to_recipients=("$to" "${to_recipients[@]}")
+if [ "$to_recipients_count" -gt 0 ]; then
+    to_recipients=("$to" "${to_recipients[@]}")
+else
+    to_recipients=("$to")
+fi
+to_recipients_count=$(( to_recipients_count + 1 ))
 
 [ -f "$bodyfile" ] || { echo "no such body file: $bodyfile" >&2; exit 1; }
 if [ -n "$htmlfile" ] && { [ ! -f "$htmlfile" ] || [ ! -r "$htmlfile" ]; }; then
@@ -159,12 +172,16 @@ subject=$(printf '%s' "$subject" | tr -d '\r\n')
 for _paynani_i in "${!to_recipients[@]}"; do
     to_recipients[$_paynani_i]=$(printf '%s' "${to_recipients[$_paynani_i]}" | tr -d '\r\n')
 done
-for _paynani_i in "${!cc_recipients[@]}"; do
-    cc_recipients[$_paynani_i]=$(printf '%s' "${cc_recipients[$_paynani_i]}" | tr -d '\r\n')
-done
-for _paynani_i in "${!bcc_recipients[@]}"; do
-    bcc_recipients[$_paynani_i]=$(printf '%s' "${bcc_recipients[$_paynani_i]}" | tr -d '\r\n')
-done
+if [ "$cc_recipients_count" -gt 0 ]; then
+    for _paynani_i in "${!cc_recipients[@]}"; do
+        cc_recipients[$_paynani_i]=$(printf '%s' "${cc_recipients[$_paynani_i]}" | tr -d '\r\n')
+    done
+fi
+if [ "$bcc_recipients_count" -gt 0 ]; then
+    for _paynani_i in "${!bcc_recipients[@]}"; do
+        bcc_recipients[$_paynani_i]=$(printf '%s' "${bcc_recipients[$_paynani_i]}" | tr -d '\r\n')
+    done
+fi
 to=${to_recipients[0]}
 
 if [ ! -f "$ROSTER" ]; then
@@ -234,7 +251,20 @@ roster_row_for() {
     ' "$ROSTER"
 }
 
-all_recipients=("${to_recipients[@]}" "${cc_recipients[@]}" "${bcc_recipients[@]}")
+all_recipients=()
+for _paynani_recipient in "${to_recipients[@]}"; do
+    all_recipients+=("$_paynani_recipient")
+done
+if [ "$cc_recipients_count" -gt 0 ]; then
+    for _paynani_recipient in "${cc_recipients[@]}"; do
+        all_recipients+=("$_paynani_recipient")
+    done
+fi
+if [ "$bcc_recipients_count" -gt 0 ]; then
+    for _paynani_recipient in "${bcc_recipients[@]}"; do
+        all_recipients+=("$_paynani_recipient")
+    done
+fi
 for _paynani_recipient in "${all_recipients[@]}"; do
     if ! roster_allows "$_paynani_recipient"; then
         echo "REFUSED: $_paynani_recipient is not in $ROSTER" >&2
@@ -256,7 +286,7 @@ join_addresses() {
 
 to_header=$(join_addresses "${to_recipients[@]}")
 cc_header=""
-if [ ${#cc_recipients[@]} -gt 0 ]; then
+if [ "$cc_recipients_count" -gt 0 ]; then
     cc_header=$(join_addresses "${cc_recipients[@]}")
 fi
 envelope_recipients=("${all_recipients[@]}")
@@ -268,13 +298,17 @@ for _paynani_recipient in "${to_recipients[@]}"; do
     to_roster_rows+=("$(roster_row_for "$_paynani_recipient")")
 done
 cc_roster_rows=()
-for _paynani_recipient in "${cc_recipients[@]}"; do
-    cc_roster_rows+=("$(roster_row_for "$_paynani_recipient")")
-done
+if [ "$cc_recipients_count" -gt 0 ]; then
+    for _paynani_recipient in "${cc_recipients[@]}"; do
+        cc_roster_rows+=("$(roster_row_for "$_paynani_recipient")")
+    done
+fi
 bcc_roster_rows=()
-for _paynani_recipient in "${bcc_recipients[@]}"; do
-    bcc_roster_rows+=("$(roster_row_for "$_paynani_recipient")")
-done
+if [ "$bcc_recipients_count" -gt 0 ]; then
+    for _paynani_recipient in "${bcc_recipients[@]}"; do
+        bcc_roster_rows+=("$(roster_row_for "$_paynani_recipient")")
+    done
+fi
 
 # --- Who the message is from -------------------------------------------------
 #
@@ -372,7 +406,7 @@ msgid="<$(date -u +%Y%m%d%H%M%S).$$.${RANDOM}@${from_addr##*@}>"
 # message at that line, so it carries 128 bits of randomness and a prefix no
 # body plausibly contains.
 boundary=""
-if [ ${#attachments[@]} -gt 0 ]; then
+if [ "$attachments_count" -gt 0 ]; then
     boundary="=_paynani_$(openssl rand -hex 16)"
 fi
 alternative_boundary=""
@@ -579,19 +613,68 @@ if [ -n "$check_only" ] && [ -n "$dry_run" ]; then
     exit 2
 fi
 
+outgoing_backend_type() {
+    python3 - "$ACCOUNT" <<'PY'
+import os, sys, tomllib
+from pathlib import Path
+
+account = sys.argv[1]
+paths = os.environ.get("HIMALAYA_CONFIG") or str(Path.home() / ".config/himalaya/config.toml")
+outgoing_tables = ("smtp", "sendmail", "jmap", "gmail", "msgraph")
+
+for raw in paths.split(':'):
+    if not raw:
+        continue
+    p = Path(raw).expanduser()
+    if not p.exists():
+        continue
+    data = tomllib.loads(p.read_text())
+    acct = data.get('accounts', {}).get(account, {})
+    if not isinstance(acct, dict):
+        continue
+    msg = acct.get('message', {})
+    send = msg.get('send', {}) if isinstance(msg, dict) else {}
+    backend = send.get('backend', {}) if isinstance(send, dict) else {}
+    if isinstance(backend, dict) and backend.get('type'):
+        print(backend.get('type'))
+        raise SystemExit
+    if isinstance(acct.get('smtp'), dict):
+        print('smtp')
+        raise SystemExit
+    for backend_name in outgoing_tables:
+        if isinstance(acct.get(backend_name), dict):
+            print(backend_name)
+            raise SystemExit
+print('')
+PY
+}
+
+outgoing_backend=$(outgoing_backend_type)
+if [ "$outgoing_backend" != "smtp" ]; then
+    if [ -n "$outgoing_backend" ]; then
+        echo "outgoing backend is $outgoing_backend, not SMTP; refusing to send" >&2
+    else
+        echo "outgoing backend is not declared; refusing to send" >&2
+    fi
+    echo "scripts/send.sh sends with an explicit SMTP envelope so Bcc never reaches the message." >&2
+    echo "Fix the account's outgoing backend, or open an issue to add this backend." >&2
+    exit 2
+fi
+
 if [ -n "$dry_run" ]; then
     printf 'dry-run: nothing sent\n'
+    printf 'Outgoing backend: %s\n' "$outgoing_backend"
     for _paynani_i in "${!to_recipients[@]}"; do
         printf 'To: %s (roster row: %s)\n' "${to_recipients[$_paynani_i]}" "${to_roster_rows[$_paynani_i]}"
     done
-    if [ ${#cc_recipients[@]} -gt 0 ]; then
+    if [ "$cc_recipients_count" -gt 0 ]; then
         for _paynani_i in "${!cc_recipients[@]}"; do
             printf 'Cc: %s (roster row: %s)\n' "${cc_recipients[$_paynani_i]}" "${cc_roster_rows[$_paynani_i]}"
         done
     else
         printf 'Cc: none\n'
     fi
-    if [ ${#bcc_recipients[@]} -gt 0 ]; then
+    if [ "$bcc_recipients_count" -gt 0 ]; then
         for _paynani_i in "${!bcc_recipients[@]}"; do
             printf 'Bcc envelope: %s (roster row: %s)\n' "${bcc_recipients[$_paynani_i]}" "${bcc_roster_rows[$_paynani_i]}"
         done
@@ -613,7 +696,7 @@ if [ -n "$dry_run" ]; then
         mime_shape='single-part'
     fi
     printf 'MIME shape: %s (%s)\n' "$mime_shape" "$body_formats"
-    printf 'Attachments: %s file(s)\n' "${#attachments[@]}"
+    printf 'Attachments: %s file(s)\n' "$attachments_count"
     _paynani_i=0
     for _paynani_file in ${attachments[@]+"${attachments[@]}"}; do
         printf 'Attachment: %s (%s bytes)\n' "$(basename "$_paynani_file" | tr -d '\r\n')" "${attachment_sizes[$_paynani_i]}"
@@ -636,36 +719,6 @@ if [ -n "$check_only" ]; then
     exit 0
 fi
 
-outgoing_backend_type() {
-    python3 - "$ACCOUNT" <<'PY'
-import os, sys, tomllib
-from pathlib import Path
-account = sys.argv[1]
-paths = os.environ.get("HIMALAYA_CONFIG") or str(Path.home() / ".config/himalaya/config.toml")
-for raw in paths.split(':'):
-    if not raw:
-        continue
-    p = Path(raw).expanduser()
-    if not p.exists():
-        continue
-    data = tomllib.loads(p.read_text())
-    acct = data.get('accounts', {}).get(account, {})
-    msg = acct.get('message', {})
-    send = msg.get('send', {}) if isinstance(msg, dict) else {}
-    backend = send.get('backend', {}) if isinstance(send, dict) else {}
-    if isinstance(backend, dict) and backend.get('type'):
-        print(backend.get('type'))
-        raise SystemExit
-print('')
-PY
-}
-
-if [ "$(outgoing_backend_type)" != "smtp" ]; then
-    echo "outgoing backend is not SMTP; refusing to send" >&2
-    echo "scripts/send.sh sends with an explicit SMTP envelope so Bcc never reaches the message." >&2
-    echo "Fix the account's outgoing backend, or open an issue to add this backend." >&2
-    exit 2
-fi
 
 smtp_args=(-a "$ACCOUNT" smtp send --mail-from "$from_addr")
 for _paynani_recipient in "${envelope_recipients[@]}"; do
@@ -703,7 +756,7 @@ if ! {
     mkdir -p "$(dirname "$sent_log")" &&
     printf '%s\tto=%s\tcc=%s\tbcc=%s\tsubject=%s\tmessage-id=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$to_header" "$cc_header" \
-        "$(join_addresses "${bcc_recipients[@]}")" "$subject" "$msgid" >> "$sent_log"
+        "$(if [ "$bcc_recipients_count" -gt 0 ]; then join_addresses "${bcc_recipients[@]}"; fi)" "$subject" "$msgid" >> "$sent_log"
 } 2>/dev/null; then
     echo "warning: sent, but could not record it in $sent_log" >&2
 fi

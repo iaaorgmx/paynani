@@ -89,7 +89,8 @@ export ENV_FILE="$envfile"
 himalaya_config="$tmp/himalaya-config.toml"
 cat >"$himalaya_config" <<'EOF'
 [accounts.paynani]
-message.send.backend.type = "smtp"
+[accounts.paynani.smtp]
+server = "smtps://example.invalid:465"
 EOF
 export HIMALAYA_CONFIG="$himalaya_config"
 
@@ -282,7 +283,20 @@ message.send.backend.type = "jmap"
 EOF
 : >"$CAPTURE"
 HIMALAYA_CONFIG="$bad_backend_config" "$SEND" "jjulianfe@gmail.com" "bad backend" "$body" >/dev/null 2>"$tmp/bad-backend.err" && brc=0 || brc=$?
-assert "non-SMTP outgoing backend is refused before send" '[ "${brc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ] && grep -qx "outgoing backend is not SMTP; refusing to send" "$tmp/bad-backend.err"'
+assert "non-SMTP outgoing backend is refused before send" '[ "${brc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ] && grep -qx "outgoing backend is jmap, not SMTP; refusing to send" "$tmp/bad-backend.err"'
+
+bad_backend_dry=$tmp/bad-backend-dry.err
+HIMALAYA_CONFIG="$bad_backend_config" "$SEND" --dry-run "jjulianfe@gmail.com" "bad backend dry" "$body" >/dev/null 2>"$bad_backend_dry" && bdrc=0 || bdrc=$?
+assert "--dry-run refuses non-SMTP backend" '[ "${bdrc:-0}" -eq 2 ] && grep -qx "outgoing backend is jmap, not SMTP; refusing to send" "$bad_backend_dry"'
+
+no_backend_config="$tmp/himalaya-no-backend.toml"
+cat >"$no_backend_config" <<'EOF'
+[accounts.paynani]
+[accounts.paynani.imap]
+server = "imaps://example.invalid:993"
+EOF
+HIMALAYA_CONFIG="$no_backend_config" "$SEND" --check "jjulianfe@gmail.com" "no backend" "$body" >/dev/null 2>"$tmp/no-backend.err" && nbrc=0 || nbrc=$?
+assert "missing outgoing backend is refused distinctly" '[ "${nbrc:-0}" -eq 2 ] && grep -qx "outgoing backend is not declared; refusing to send" "$tmp/no-backend.err"'
 
 # --check is how an install proves send.sh can find its credentials. The roster
 # tests cannot: the gate runs first, so a refusal exits before the env is read.
@@ -295,6 +309,7 @@ assert "--check still obeys the roster" '! "$SEND" --check "stranger@example.com
 : >"$CAPTURE"
 dry_plain=$("$SEND" --dry-run --cc "second_contact@example.org" "jjulianfe@gmail.com" "dry run" "$body" 2>/dev/null)
 assert "--dry-run reports recipients and roster rows" 'printf "%s" "$dry_plain" | grep -q "To: jjulianfe@gmail.com (roster row: Julian Flores | jjulianfe@gmail.com | Human)" && printf "%s" "$dry_plain" | grep -q "Cc: second_contact@example.org (roster row: Second Contact | second_contact@example.org | AI Agent)"'
+assert "--dry-run reports outgoing backend" 'printf "%s" "$dry_plain" | grep -qx "Outgoing backend: smtp"'
 assert "--dry-run reports plain MIME shape" 'printf "%s" "$dry_plain" | grep -q "MIME shape: single-part (text/plain)" && printf "%s" "$dry_plain" | grep -q "Attachments: 0 file" && printf "%s" "$dry_plain" | grep -q "Attachment bytes total: 0"'
 assert "--dry-run reports no signature" 'printf "%s" "$dry_plain" | grep -qx "Signature: no"'
 assert "--dry-run uses ASCII status line" 'printf "%s" "$dry_plain" | grep -q "^dry-run: nothing sent$"'
