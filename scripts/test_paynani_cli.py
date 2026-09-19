@@ -832,6 +832,43 @@ finally:
 
 
 # ---------------------------------------------------------------------------
+# scripts/paynani entry point
+# ---------------------------------------------------------------------------
+
+import subprocess
+
+paynani_cmd = [sys.executable, str(REPO / "scripts" / "paynani")]
+paynani_no_args = subprocess.run(paynani_cmd, capture_output=True, text=True, timeout=30)
+paynani_help = subprocess.run(paynani_cmd + ["help"], capture_output=True, text=True, timeout=30)
+paynani_dash_h = subprocess.run(paynani_cmd + ["-h"], capture_output=True, text=True, timeout=30)
+paynani_dash_dash_help = subprocess.run(paynani_cmd + ["--help"], capture_output=True, text=True, timeout=30)
+paynani_invalid = subprocess.run(paynani_cmd + ["not-a-command"], capture_output=True, text=True, timeout=30)
+
+check(
+    "paynani (subprocess): no arguments prints help to stdout and exits 0",
+    paynani_no_args.returncode == 0 and "usage: paynani" in paynani_no_args.stdout and paynani_no_args.stderr == "",
+)
+check(
+    "paynani (subprocess): help prints the same text as no arguments",
+    paynani_help.returncode == 0 and paynani_help.stdout == paynani_no_args.stdout and paynani_help.stderr == "",
+)
+check(
+    "paynani (subprocess): -h prints the same text as no arguments",
+    paynani_dash_h.returncode == 0 and paynani_dash_h.stdout == paynani_no_args.stdout and paynani_dash_h.stderr == "",
+)
+check(
+    "paynani (subprocess): --help prints the same text as no arguments",
+    paynani_dash_dash_help.returncode == 0
+    and paynani_dash_dash_help.stdout == paynani_no_args.stdout
+    and paynani_dash_dash_help.stderr == "",
+)
+check(
+    "paynani (subprocess): invalid subcommand still exits nonzero",
+    paynani_invalid.returncode != 0 and "invalid choice" in paynani_invalid.stderr,
+)
+
+
+# ---------------------------------------------------------------------------
 # paynani_lib/roster_cli.py
 # ---------------------------------------------------------------------------
 

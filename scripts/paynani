@@ -48,6 +48,7 @@ DEFAULT_PORT = 8765
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
     parser = argparse.ArgumentParser(prog="paynani", description="paynani CLI.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -142,6 +143,10 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Use a synthetic probe event, not mail or the paynani journal.",
     )
+
+    if argv == [] or argv == ["help"]:
+        parser.print_help()
+        return 0
 
     args = parser.parse_args(argv)
 
