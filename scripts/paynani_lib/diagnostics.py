@@ -219,7 +219,7 @@ def _service_environment_check(facts: dict) -> dict:
 def _facts() -> dict:
     facts = {
         "listener": healthcheck.listener_facts(),
-        "dispatcher_unit": healthcheck.unit_state(healthcheck.DISPATCH_UNIT),
+        "dispatcher": healthcheck.dispatcher_facts(),
         "queue": healthcheck.queue_facts(),
         "runtime": healthcheck.runtime_facts(),
         "delivery": healthcheck.delivery_facts(),
@@ -228,9 +228,11 @@ def _facts() -> dict:
         "himalaya": healthcheck.himalaya_facts(),
         "git": healthcheck.git_facts(),
     }
+    facts["dispatcher_unit"] = facts["dispatcher"]["unit"]
+    facts["python"] = healthcheck.python_facts(facts["listener"], facts["dispatcher"])
     facts["spool"] = healthcheck.spool_facts(facts["runtime"].get("selected"))
     facts["reply"] = healthcheck.reply_facts(facts["queue"]["cursor"])
-    facts["dependencies"] = _dependency_facts(facts["runtime"].get("selected"))
+    facts["dependencies"] = _dependency_facts(facts["runtime"].get("selected"), facts["python"])
     return facts
 
 
@@ -296,7 +298,7 @@ def _python_version() -> tuple[int, int, int]:
     return tuple(sys.version_info[:3])
 
 
-def _dependency_facts(selected_runtime) -> dict:
+def _dependency_facts(selected_runtime, python=None) -> dict:
     """
     What is actually installed, gathered once per doctor run so the checks
     below can be pure functions over a dict, the same shape as every other
@@ -304,9 +306,11 @@ def _dependency_facts(selected_runtime) -> dict:
     layer -- never inside a check function itself, or a test cannot fake
     them without a real himalaya/opencode binary on the test host.
     """
-    found = _python_version()
-    python = {"found": ".".join(str(p) for p in found), "minimum": "3.10",
-              "supported": found[:2] >= MIN_PYTHON}
+    if python is None:
+        found = _python_version()
+        python = {"healthcheck": {"found": ".".join(str(p) for p in found),
+                                   "minimum": "3.10",
+                                   "supported": found[:2] >= MIN_PYTHON}}
 
     version = _safe_run(["himalaya", "--version"])
     himalaya = {"runnable": version["returncode"] is not None,
@@ -346,10 +350,34 @@ def _python_check(deps: dict) -> dict:
     in its own docstring; this check does not relax it.
     """
     py = deps.get("python") or {}
-    found = py.get("found")
+    service_names = ("listener", "dispatcher")
+    services = {name: py.get(name) for name in service_names if py.get(name)}
+    if services:
+        blocked = [(name, facts) for name, facts in services.items()
+                   if facts.get("supported") is False]
+        if blocked:
+            name, facts = blocked[0]
+            return _check(
+                "python",
+                "blocked",
+                f"{name} uses {facts.get('found')} at {facts.get('executable')}; minimum 3.10",
+                py,
+                "point the service at Python 3.10 or newer",
+            )
+        missing = [name for name in service_names if py.get(name) is None]
+        if missing:
+            return _check("python", "unknown", "service python is not fully reported yet", py)
+        shown = "; ".join(
+            f"{name} {facts.get('found')} at {facts.get('executable')}"
+            for name, facts in services.items()
+        )
+        return _check("python", "ok", f"{shown} (minimum 3.10)", py)
+
+    current = py.get("healthcheck") or py
+    found = current.get("found")
     if found is None:
         return _check("python", "unknown", "python version could not be determined", py)
-    if py.get("supported"):
+    if current.get("supported"):
         return _check("python", "ok", f"{found} (minimum 3.10)", py)
     return _check("python", "blocked", f"{found} found, minimum 3.10", py,
                   "install Python 3.10 or newer for this host")
