@@ -482,7 +482,7 @@ def apply_plan(p, repo=ROOT, runner=subprocess.run, sleeper=time.sleep, wait_sec
 
         print(f"apply: fetching and advancing exactly to {p['to']} ({target_oid[:12]})")
         _run(_fetch_argv(p["to"]), repo, runner=runner, capture=True)
-        code, fetched = git("rev-parse", "FETCH_HEAD", repo=repo)
+        code, fetched = git("rev-parse", "FETCH_HEAD^{commit}", repo=repo)
         if code != 0 or fetched != target_oid:
             raise ApplyError(f"remote {p['to']} is now {fetched or 'unknown'}, not planned target "
                              f"{target_oid}; the worktree was not advanced")
