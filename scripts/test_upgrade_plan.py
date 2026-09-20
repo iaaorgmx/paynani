@@ -293,7 +293,7 @@ try:
     write(seed, "VERSION", "2.0.0\n")
     sh(seed, "add", "VERSION")
     sh(seed, "commit", "-q", "-m", "two")
-    sh(seed, "tag", "v2.0.0")
+    sh(seed, "tag", "-a", "v2.0.0", "-m", "version 2.0.0")
     sh(seed, "push", "-q", "origin", "HEAD:main", "--tags")
     subprocess.run(["git", "-C", str(remote), "symbolic-ref", "HEAD", "refs/heads/main"],
                    check=True)
@@ -326,10 +326,10 @@ try:
         return subprocess.run(argv, cwd=cwd, text=text, capture_output=capture_output)
 
     result = up.apply_plan(apply, repo=applied, runner=apply_runner, wait_seconds=0)
-    check("apply advances to the exact planned tag",
+    check("apply advances to the exact planned annotated tag",
           subprocess.run(["git", "-C", str(applied), "rev-parse", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
-          == subprocess.run(["git", "-C", str(applied), "rev-parse", "v2.0.0"],
+          == subprocess.run(["git", "-C", str(applied), "rev-parse", "v2.0.0^{commit}"],
                             capture_output=True, text=True).stdout.strip())
     check("apply restores the tracked overlay", (applied / "overlay.txt").read_text() == "local overlay\n")
     check("apply records a binary-capable overlay patch",
