@@ -97,15 +97,21 @@ run 1.10.0
 assert "1.10.0 is not behind 1.9.0"      '[ "$rc" -eq 0 ]'
 assert "1.10.0 reports latest 1.10.0"    'grep -q "latest:    1.10.0" <<<"$out"'
 
+printf 'runtime\tclaudecode\n' >"$clone/install.manifest"
+run 1.9.0 --plan
+assert "--plan fetches missing tags itself" '[ "$rc" -eq 0 ]'
+assert "--plan with missing local tags prints the plan" 'grep -q "^upgrade plan: v1.9.0 -> v1.10.0" <<<"$out"'
+assert "--plan with missing local tags does not ask for an intermediate fetch" '! grep -q "git fetch --tags" <<<"$out"'
+rm -f "$clone/install.manifest"
+
 run 1.9.0
 assert "1.9.0 is behind 1.10.0"          '[ "$rc" -eq 2 ]'
 assert "behind names the newer version"  'grep -q "1.10.0 has been released" <<<"$out"'
-# The plan rides on the behind report (#167). This clone has the remote's tags
-# only on the remote, so the honest plan is "cannot compute, fetch": never a
-# silent "nothing to restart" built on a diff that does not exist.
+# The plan rides on the behind report (#167). Even when tags are present, a
+# missing manifest is never rounded up to "nothing to restart".
 assert "behind carries an upgrade plan"  'grep -q "^upgrade plan: v1.9.0 -> v1.10.0" <<<"$out"'
-assert "plan without local tags says so" 'grep -q "could not compute: v1.9.0 is not in this clone" <<<"$out"'
-assert "and tells the operator to fetch" 'grep -q "git fetch --tags" <<<"$out"'
+assert "plan without a manifest cannot compute" 'grep -q "could not compute: no install manifest at" <<<"$out"'
+assert "and points at UPGRADE.md"               'grep -q "UPGRADE.md" <<<"$out"'
 assert "and never says nothing to restart" '! grep -q "no service needs a restart" <<<"$out"'
 # With the tags fetched but no install manifest, the plan still refuses: the
 # manifest is what says which copies outside the clone this install owns

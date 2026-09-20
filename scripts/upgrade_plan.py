@@ -144,6 +144,10 @@ def local_tags(repo=ROOT):
     return sorted((t for t in out.splitlines() if VERSION_RE.match(t[1:])), key=version_key)
 
 
+def fetch_tags(repo=ROOT):
+    return git("fetch", "--tags", "origin", repo=repo)
+
+
 def ref_exists(ref, repo=ROOT):
     code, _ = git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", repo=repo)
     return code == 0
@@ -624,10 +628,18 @@ def main(argv=None):
         tags = local_tags(repo=repo)
         newer = [t for t in tags if ref_exists(from_ref, repo=repo) and version_key(t) > version_key(from_ref)] if VERSION_RE.match(from_ref[1:]) else []
         if not newer:
-            print(f"upgrade plan: no local tag newer than {from_ref}. Run `git fetch --tags origin`; "
-                  f"if none appears, this clone is on the newest release and there is no upgrade to plan. "
-                  f"To plan against unreleased code: --to origin/main", file=sys.stderr)
-            return 2
+            fetch_code, fetch_out = fetch_tags(repo=repo)
+            if fetch_code == 0:
+                tags = local_tags(repo=repo)
+                newer = [t for t in tags if ref_exists(from_ref, repo=repo) and version_key(t) > version_key(from_ref)] if VERSION_RE.match(from_ref[1:]) else []
+            if not newer:
+                message = (f"upgrade plan: no local tag newer than {from_ref}. Run `git fetch --tags origin`; "
+                           f"if none appears, this clone is on the newest release and there is no upgrade to plan. "
+                           f"To plan against unreleased code: --to origin/main")
+                if fetch_code != 0 and fetch_out:
+                    message += f"\n\ngit fetch --tags origin failed: {fetch_out}"
+                print(message, file=sys.stderr)
+                return 2
         to_ref = newer[-1]
 
     p = plan(from_ref, to_ref, repo=repo, runtime=args.runtime or selected_runtime(repo=repo))
