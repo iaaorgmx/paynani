@@ -393,6 +393,32 @@ answers whether mail could arrive; silence does not. Reporting a quiet mailbox
 from a dead listener is the one failure this whole tool exists to prevent, and it
 is indistinguishable from the truth unless you ask.
 
+**A reconnection that recovered is not news.** The IMAP connection drops now and
+then, from the network or from the provider hanging up on an idle socket, and the
+listener reconnects by itself. Do not tell your human about each one. A drop that
+recovered in seconds changed nothing they can act on, and a person who is told
+about every one of them stops reading the ones that matter.
+
+Report when the listener has **failed to recover after three attempts**. Two
+fields in `state/idle.json` say that without guesswork:
+
+- `imap_last_disconnect_at` is newer than `imap_last_recovered_at`, so the
+  listener is still down rather than back up.
+- `imap_current_backoff_seconds` has reached **20 or more**. The wait doubles
+  from 5, so 20 means the attempts at 5 and 10 seconds both failed and the third
+  is under way.
+
+Then say it, with the text of `imap_last_disconnect_error` and how long it has
+been down. At that point it is no longer a network hiccup: it is a mailbox
+nobody is watching, and your human is the only one who can do something about a
+credential that expired, a host that lost its network, or a provider that is
+refusing the account.
+
+`healthcheck.py` also warns above five reconnects in an hour. Read that number
+carefully before repeating it: each failed **attempt** adds a mark, so one
+stubborn outage retried five times looks the same as five separate drops. The
+warning is still worth acting on, but describe what you actually saw.
+
 **Answer only what you can actually answer.** Nobody is watching you work, so a
 made-up answer can travel a long way before anyone notices. If a message asks for
 something you have no tool or no access for, say that in the reply. A forecast, a
