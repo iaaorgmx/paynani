@@ -148,7 +148,7 @@ the install to confirm rather than trusting this table blind.
 |---|---|---|
 | Python | 3.10 | Union-type (`X \| None`) and builtin generic (`list[str]`) annotations, used throughout, are 3.10 syntax. **Exception:** `scripts/failure_diagnostics.py` is deliberately kept 3.9-compatible, because it is the one module that has to run on the host it is diagnosing, including the Python 3.9 Apple still ships. Its own docstring says so; do not "fix" it to match this floor. |
 | Bash | 3.2 | The version macOS ships and does not update. Nothing here requires a newer one on purpose. |
-| Himalaya | v1.x or v2.x, either recognized schema | There is no single minimum version: the two majors are different config schemas, not points on a scale, and INSTALL.md #4 documents both against a real binary. v2.x is what the current fleet runs; v1.x is verified here but not fleet-tested. 0.x and below are not supported. |
+| Himalaya | v2.x | `scripts/send.sh` uses v2.x `smtp send` with an explicit SMTP envelope so Bcc never reaches the message body. v1.x can still read mail, but it cannot send through this path and is not supported. Section 4.3 documents the required v2 config schema. |
 | Bun (OpenCode only) | Bundled with OpenCode itself | The plugin runs inside OpenCode's own bundled Bun; nothing here calls a separate one. What is pinned instead is OpenCode: field-tested at **1.18.31** ([#157](https://github.com/iaaorgmx/paynani/issues/157), Balam's host). An older release is a warning, not a block -- nobody has reproduced a failure below it, only never tested one. |
 
 ### 1.1 Does this host have a systemd user session?
@@ -602,14 +602,15 @@ whose config schema you are writing against.
 
 ### 4.3 Configure
 
-**Check your version first: the schema is completely different across majors.**
+**Paynani requires Himalaya v2.x for sending.** v1.x has no `smtp send`, and
+`send.sh` needs that subcommand to keep Bcc in the SMTP envelope and out of the
+message body.
 
 ```bash
-himalaya --version
+himalaya --version   # must report v2.x
 ```
 
 There is no `himalaya account configure` in v2; the wizard is bare `himalaya`.
-Both schemas below were verified against a running binary, not read from docs.
 
 ### v2.x
 
@@ -661,28 +662,16 @@ himalaya account check -a paynani
 a mailbox. Section 4.4 below is the check that can fail after this one
 succeeds.
 
-### v1.x
+### Migrating an old v1.x config
 
-Flat `backend` keys, separate host and port, explicit encryption. **The secret key
-is `auth.cmd`, not `auth.command`**: `command` is silently ignored.
+Upgrading only the binary is not enough. With a v1-style config under Himalaya
+2.x, `himalaya account list` can show an empty `BACKENDS` column and commands can
+fail with `No backend matching 'auto' is configured for this account`. Rewrite
+`~/.config/himalaya/config.toml` using the v2 schema above, then confirm
+`BACKENDS` reads `imap, smtp`.
 
-```toml
-[accounts.paynani]
-email = "agent@example.com"
-backend = "imap"
-imap-host = "mail.example.com"
-imap-port = 993
-imap-ssl = true
-imap-login = "agent@example.com"
-imap-auth = "passwd"
-imap-passwd.cmd = "python3 /full/path/to/the/clone/scripts/env_secret.py /full/path/to/the/.env PAYNANI_PASSWORD"
-```
-
-Field names moved between 1.x releases too, so if a key is rejected, the error
-names the ones it expected; that is the fastest way to the right shape.
-
-**Use `scripts/env_secret.py`, not a hand-written `sed`.** It exists for this
-one job and it tolerates a UTF-8 BOM and CRLF line endings, which a `sed -n
+Use `scripts/env_secret.py`, not a hand-written `sed`. It exists for this one
+job and it tolerates a UTF-8 BOM and CRLF line endings, which a `sed -n
 's/^KEY=//p'` does not: on a CRLF `.env` that `sed` returns the password with a
 trailing carriage return and the server rejects the login **as a bad
 credential**. Nothing else in this project notices (`preflight.py`, the
@@ -693,10 +682,10 @@ on a real host: an `.env` written from a Windows editor.
 Give it absolute paths. Himalaya resolves nothing and runs the command from a
 working directory this project does not choose.
 
-**Use a command-based secret in either version, not the keyring.** On a headless
-box there is no unlocked keyring, and a systemd service failing to reach
-`secret-service` looks exactly like an auth error. A `600` file read by a command
-works everywhere and survives reboot.
+**Use a command-based secret, not the keyring.** On a headless box there is no
+unlocked keyring, and a systemd service failing to reach `secret-service` looks
+exactly like an auth error. A `600` file read by a command works everywhere and
+survives reboot.
 
 ### 4.4 Prove it
 

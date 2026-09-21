@@ -265,12 +265,18 @@ old_himalaya = base_facts()
 old_himalaya["dependencies"]["himalaya"] = {"runnable": True, "version_output": "himalaya v0.9.0",
                                             "major": 0, "account_check_ok": None}
 him_check = next(c for c in doctor_with(old_himalaya)["checks"] if c["name"] == "himalaya")
-check("himalaya 0.x is blocked as an unrecognized schema", him_check["status"] == "blocked")
+check("himalaya 0.x is blocked as unsupported for sending", him_check["status"] == "blocked" and "v2.x" in him_check["summary"])
+
+v1_himalaya = base_facts()
+v1_himalaya["dependencies"]["himalaya"] = {"runnable": True, "version_output": "himalaya v1.2.0",
+                                           "major": 1, "account_check_ok": None}
+him_check = next(c for c in doctor_with(v1_himalaya)["checks"] if c["name"] == "himalaya")
+check("himalaya 1.x is blocked and points at the v2 schema", him_check["status"] == "blocked" and "section 4.3 schema" in him_check.get("next_command", ""))
 
 failed_account = base_facts()
 failed_account["dependencies"]["himalaya"]["account_check_ok"] = False
 him_check = next(c for c in doctor_with(failed_account)["checks"] if c["name"] == "himalaya")
-check("himalaya with a recognized schema but a failed account check is blocked", him_check["status"] == "blocked")
+check("himalaya v2 with a failed account check is blocked and mentions the schema", him_check["status"] == "blocked" and "section 4.3 schema" in him_check.get("next_command", ""))
 
 no_opencode_check = doctor_with(base_facts())
 check("opencode check is absent when opencode is not the selected runtime", not any(c["name"] == "opencode" for c in no_opencode_check["checks"]))

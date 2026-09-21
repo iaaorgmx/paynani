@@ -78,6 +78,10 @@ fakebin="$tmp/bin"
 mkdir -p "$fakebin"
 cat >"$fakebin/himalaya" <<'EOF'
 #!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+    printf 'himalaya v2.1.0\n'
+    exit 0
+fi
 cat >"$CAPTURE"
 exit 0
 EOF
