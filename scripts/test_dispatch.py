@@ -627,5 +627,15 @@ check("openclaw: a missing binary is not detected as present", False, openclaw.d
 os.environ.pop("OPENCLAW", None)
 os.environ.pop("CAPTURE", None)
 
+# --- dispatcher state records the version it loaded (#257) ------------------
+
+with tempfile.TemporaryDirectory() as tmp:
+    state_path = pathlib.Path(tmp) / "dispatch.json"
+    state = dispatch.write_state(state_path)
+    check("dispatcher state records the version loaded by this process",
+          dispatch.PROCESS_VERSION, state.get("version"))
+    check("and the file on disk agrees", dispatch.PROCESS_VERSION,
+          json.loads(state_path.read_text()).get("version"))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

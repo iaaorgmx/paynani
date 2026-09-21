@@ -231,6 +231,8 @@ class Fixture:
         facts["spool"] = self.spool_facts
         facts["instructions"] = hc.instructions_facts(self.runtime)
         facts["reply"] = hc.reply_facts(facts["queue"]["cursor"])
+        facts["version_drift"] = hc.version_drift_facts(
+            hc.disk_version(), facts["listener"], facts["dispatcher"])
         problems, warnings = hc.assess(facts)
         return facts, problems, warnings
 
@@ -1055,6 +1057,63 @@ check("a retired Monitor with mail waiting is named as ended, not as nobody", Tr
 check("and warns with the same words", True,
       any("ended at 2026-09-18T07:15:23Z (the Monitor was retired) and nobody re-armed" in w for w in warnings))
 check("still never a problem", [], problems)
+
+# --- version drift (#257): disk and the running processes can disagree -----
+
+check("matching versions everywhere: no drift", [],
+      hc.version_drift_facts(disk="0.7.2", listener={"version": "0.7.2"},
+                             dispatcher={"version": "0.7.2"})["drift"])
+check("listener behind disk is named", ["listener"],
+      hc.version_drift_facts(disk="0.7.2", listener={"version": "0.7.1"},
+                             dispatcher={"version": "0.7.2"})["drift"])
+check("dispatcher behind disk is named", ["dispatcher"],
+      hc.version_drift_facts(disk="0.7.2", listener={"version": "0.7.2"},
+                             dispatcher={"version": "0.7.1"})["drift"])
+check("both behind disk are both named", ["listener", "dispatcher"],
+      hc.version_drift_facts(disk="0.7.2", listener={"version": "0.7.1"},
+                             dispatcher={"version": "0.7.1"})["drift"])
+check("a service that has not reported yet is not a mismatch", [],
+      hc.version_drift_facts(disk="0.7.2", listener={"version": None},
+                             dispatcher={"version": None})["drift"])
+# disk=None means "figure it out yourself" to version_drift_facts(), same as
+# listener/dispatcher, so a real missing VERSION file is exercised by patching
+# disk_version() rather than passing None -- passing None here would read this
+# host's actual VERSION instead of testing the missing case.
+_original_disk_version_for_none_case = hc.disk_version
+hc.disk_version = lambda: None
+try:
+    check("no disk version known is never a mismatch either", [],
+          hc.version_drift_facts(listener={"version": "0.7.1"},
+                                 dispatcher={"version": "0.7.1"})["drift"])
+finally:
+    hc.disk_version = _original_disk_version_for_none_case
+
+original_disk_version = hc.disk_version
+hc.disk_version = lambda: "0.7.2"
+try:
+    f = Fixture()
+    state = json.loads(hc.LISTENER_STATE.read_text())
+    state["version"] = "0.7.1"
+    hc.LISTENER_STATE.write_text(json.dumps(state))
+    code, text = f.exit_code()
+    check("a stale listener does not fail the exit code (it is a warning)", 0, code)
+    check("and the version row names disk and the running listener", True,
+          "paynani 0.7.2 on disk, but the listener is running 0.7.1" in text)
+    check("with the restart command underneath it", True,
+          "systemctl --user restart paynani-idle.service paynani-dispatch.service" in text)
+    check("and it is listed under worth knowing, not NOT HEALTHY", True,
+          "worth knowing:" in text and "NOT HEALTHY:" not in text)
+    _, problems, warnings = f.run()
+    check("the drift is a warning, never a problem", True,
+          not any("0.7.1" in p for p in problems)
+          and any("0.7.1" in w for w in warnings))
+
+    f = Fixture()
+    code, text = f.exit_code()
+    check("disk and listener agreeing prints nothing extra", False,
+          "on disk, but" in text)
+finally:
+    hc.disk_version = original_disk_version
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
