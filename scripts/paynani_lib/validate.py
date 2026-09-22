@@ -99,3 +99,18 @@ def validate(values: dict) -> dict:
         errors["ROSTER_EMAIL"] = t("v.roster_email_same_as_account")
 
     return errors
+
+
+def validate_env(values: dict) -> dict:
+    """validate()'s checks, restricted to keys .env itself carries.
+
+    validate() also checks ROSTER_NAME/ROSTER_EMAIL, which exist only in the
+    onboarding web form's session, never in .env -- so a caller working from
+    .env alone (`paynani config edit`, after the human's editor exits) would
+    otherwise always see those two flagged "missing" for a file that was
+    never supposed to have them.
+    """
+    from .envfile import ENV_FIELDS
+
+    errors = validate(values)
+    return {key: message for key, message in errors.items() if key in ENV_FIELDS}
