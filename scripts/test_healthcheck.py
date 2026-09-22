@@ -1118,6 +1118,36 @@ check("a service that has not reported a commit yet is not a commit mismatch", [
                              listener={"version": "0.7.2", "commit": None},
                              dispatcher={"version": "0.7.2", "commit": None})["drift"])
 
+dead_pid = 2**30
+while hc.process_alive(dead_pid) is not False:
+    dead_pid += 1
+vd_dead = hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                                 listener={"version": "0.7.2", "commit": _c2, "pid": dead_pid},
+                                 dispatcher={"version": "0.7.2", "commit": _c1})
+check("a dead writer pid makes stale commit state unknown, not drift", [], vd_dead["drift"])
+check("the dead listener is named unknown", ["listener"], vd_dead["unknown"])
+check("the unknown detail says the restarted process has not reported yet",
+      "listener restarted and has not reported its loaded version yet",
+      vd_dead["unknown_detail"]["listener"]["reason"])
+vd_live = hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                                 listener={"version": "0.7.2", "commit": _c2, "pid": os.getpid()},
+                                 dispatcher={"version": "0.7.2", "commit": _c1})
+check("the same mismatch from a live pid remains drift", ["listener"], vd_live["drift"])
+vd_both_diff = hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                                      listener={"version": "0.7.2", "commit": _c2, "pid": os.getpid()},
+                                      dispatcher={"version": "0.7.2", "commit": "f00ba47222222222222222222222222222222222", "pid": os.getpid()})
+check("commit drift summary names both processes when they differ", True,
+      "but the listener is running eba16ec; the dispatcher is running f00ba47" in hc.version_drift_summary(vd_both_diff))
+vd_both_same = hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                                      listener={"version": "0.7.2", "commit": _c2, "pid": os.getpid()},
+                                      dispatcher={"version": "0.7.2", "commit": _c2, "pid": os.getpid()})
+check("commit drift summary groups both processes when they match", True,
+      "but the listener and the dispatcher are running eba16ec" in hc.version_drift_summary(vd_both_same))
+vd_no_pid = hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                                   listener={"version": "0.7.2", "commit": _c2},
+                                   dispatcher={"version": "0.7.2", "commit": _c1})
+check("a mismatch without a pid preserves the old drift behavior", ["listener"], vd_no_pid["drift"])
+
 # commit=None means "figure it out yourself" to version_drift_facts(), same as
 # disk above, so a real missing commit is exercised by patching disk_commit()
 # rather than passing None -- passing None here would read this host's actual
@@ -1178,6 +1208,21 @@ try:
         check("commit drift is also a warning, never a problem", True,
               not any("eba16ec" in p for p in problems)
               and any("eba16ec" in w for w in warnings))
+
+        f = Fixture()
+        state = json.loads(hc.LISTENER_STATE.read_text())
+        state["version"] = "0.7.2"
+        state["commit"] = _c2
+        state["pid"] = dead_pid
+        hc.LISTENER_STATE.write_text(json.dumps(state))
+        code, text = f.exit_code()
+        check("a stale state file from a dead process is unknown in the report", 0, code)
+        check("the unknown row explains the restart race", True,
+              "listener unknown: listener restarted and has not reported its loaded version yet" in text)
+        _, problems, warnings = f.run()
+        check("stale dead-process state is not a drift warning", True,
+              not any("eba16ec" in p for p in problems)
+              and not any("eba16ec" in w for w in warnings))
 
         f = Fixture()
         state = json.loads(hc.LISTENER_STATE.read_text())

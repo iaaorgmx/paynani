@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- **`version_drift` distingue un proceso reiniciado de uno atrasado** (#265).
+  Si el listener o dispatcher dejó un estado con `commit` viejo pero su `pid`
+  ya no existe, `healthcheck.py` y `paynani doctor` lo reportan como `unknown`
+  (`... restarted and has not reported its loaded version yet`) y no como
+  `warning`: el proceso nuevo todavía no escribió qué cargó. Cuando ambos
+  procesos sí están vivos y atrasados, el mensaje nombra a los dos, separando
+  sus commits si difieren o agrupándolos si cargaron el mismo.
+
 - **`paynani event show` ya no inventa el motivo de un rechazo de notifier**
   (#259). Al explicar un evento, `event show` armaba un mensaje con sólo el
   `From`, así que un correo de `notifications@github.com` rechazado por el

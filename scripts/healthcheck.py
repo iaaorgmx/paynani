@@ -211,6 +211,7 @@ def listener_facts():
         out["heartbeat_at"] = state.get("heartbeat_at")
         out["version"] = state.get("version")
         out["commit"] = state.get("commit")
+        out["pid"] = state.get("pid")
         out["python"] = state.get("python")
         heartbeat = _stamp_seconds(out["heartbeat_at"])
         if heartbeat is not None:
@@ -245,7 +246,7 @@ def listener_facts():
 
 def dispatcher_facts():
     out = {"unit": unit_state(DISPATCH_UNIT), "python": None, "started_at": None,
-           "version": None, "commit": None}
+           "version": None, "commit": None, "pid": None}
     try:
         state = json.loads(DISPATCH_STATE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -254,6 +255,7 @@ def dispatcher_facts():
     out["python"] = state.get("python")
     out["version"] = state.get("version")
     out["commit"] = state.get("commit")
+    out["pid"] = state.get("pid")
     return out
 
 
@@ -280,6 +282,69 @@ def disk_commit():
 def short_commit(value):
     """First 7 hex chars of a commit SHA, for display. Passes None through."""
     return value[:7] if value else value
+
+
+def process_alive(pid):
+    """Whether a reported process id still names a live process."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return None
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _service_list(names):
+    names = list(names)
+    if len(names) == 1:
+        return f"the {names[0]}"
+    return "the " + ", the ".join(names[:-1]) + f" and the {names[-1]}"
+
+
+def _version_process_phrase(entries):
+    if not entries:
+        return ""
+    values = {value for _, value in entries}
+    if len(values) == 1:
+        service_text = _service_list(name for name, _ in entries)
+        return f"{service_text} are running {entries[0][1]}" if len(entries) > 1 else f"{service_text} is running {entries[0][1]}"
+    return "; ".join(f"the {name} is running {value}" for name, value in entries)
+
+
+def version_drift_summary(vd):
+    entries = []
+    for service in vd.get("drift", []):
+        detail = vd.get("drift_detail", {}).get(service, {})
+        if detail.get("field") == "commit":
+            shown = short_commit(detail.get("process"))
+        else:
+            shown = vd.get(service)
+        entries.append((service, shown))
+    if not entries:
+        return ""
+    first_detail = vd.get("drift_detail", {}).get(entries[0][0], {})
+    if first_detail.get("field") == "commit":
+        disk_shown = short_commit(first_detail.get("disk"))
+        return f"paynani {vd['disk']} on disk ({disk_shown}), but {_version_process_phrase(entries)}"
+    return f"paynani {vd['disk']} on disk, but {_version_process_phrase(entries)}"
+
+
+def version_unknown_summary(vd):
+    entries = []
+    for service in vd.get("unknown", []):
+        detail = vd.get("unknown_detail", {}).get(service, {})
+        reason = detail.get("reason") or f"{service} restarted and has not reported its loaded version yet"
+        entries.append(reason)
+    return "; ".join(entries)
 
 
 def version_drift_facts(disk=None, listener=None, dispatcher=None, commit=None):
@@ -311,8 +376,18 @@ def version_drift_facts(disk=None, listener=None, dispatcher=None, commit=None):
     dispatcher = dispatcher if dispatcher is not None else dispatcher_facts()
     services = {"listener": listener, "dispatcher": dispatcher}
     drift = []
+    unknown = []
     detail = {}
+    unknown_detail = {}
     for name, state in services.items():
+        pid = state.get("pid")
+        if pid is not None and process_alive(pid) is False:
+            unknown.append(name)
+            unknown_detail[name] = {
+                "pid": pid,
+                "reason": f"{name} restarted and has not reported its loaded version yet",
+            }
+            continue
         version = state.get("version")
         if version is None or disk is None:
             continue
@@ -328,6 +403,7 @@ def version_drift_facts(disk=None, listener=None, dispatcher=None, commit=None):
            "listener": listener.get("version"), "dispatcher": dispatcher.get("version"),
            "listener_commit": listener.get("commit"),
            "dispatcher_commit": dispatcher.get("commit"),
+           "unknown": unknown, "unknown_detail": unknown_detail,
            "drift": drift, "drift_detail": detail}
 
 
@@ -990,20 +1066,10 @@ def assess(facts):
 
     vd = facts.get("version_drift") or {}
     if vd.get("drift"):
-        for service in vd["drift"]:
-            detail = vd.get("drift_detail", {}).get(service, {})
-            if detail.get("field") == "commit":
-                warnings.append(
-                    f"paynani {vd['disk']} on disk ({short_commit(detail['disk'])}), but the "
-                    f"{service} is running {short_commit(detail['process'])}: restart the "
-                    f"services to load it (systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT})"
-                )
-            else:
-                warnings.append(
-                    f"paynani {vd['disk']} is on disk, but the {service} is running "
-                    f"{vd[service]}: restart the services to load it "
-                    f"(systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT})"
-                )
+        warnings.append(
+            f"{version_drift_summary(vd)}: restart the services to load it "
+            f"(systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT})"
+        )
 
     if runtime["selected"] is None:
         detail = (runtime["detail"] or "unknown reason").rstrip()
@@ -1327,14 +1393,12 @@ def render(facts, problems, warnings):
     if config["version"]:
         out.append(f"version      {config['version']}")
     vd = facts.get("version_drift") or {}
-    for service in vd.get("drift", []):
-        detail = vd.get("drift_detail", {}).get(service, {})
-        if detail.get("field") == "commit":
-            out.append(f"             paynani {vd['disk']} on disk ({short_commit(detail['disk'])}), "
-                       f"but the {service} is running {short_commit(detail['process'])}")
-        else:
-            out.append(f"             paynani {vd['disk']} on disk, but the {service} is "
-                       f"running {vd[service]}")
+    for service in vd.get("unknown", []):
+        detail = vd.get("unknown_detail", {}).get(service, {})
+        reason = detail.get("reason") or f"{service} restarted and has not reported its loaded version yet"
+        out.append(f"             {service} unknown: {reason}")
+    if vd.get("drift"):
+        out.append(f"             {version_drift_summary(vd)}")
         out.append("             restart the services to load it:")
         out.append(f"             systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT}")
 

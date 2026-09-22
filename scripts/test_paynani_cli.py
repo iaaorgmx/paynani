@@ -39,6 +39,7 @@ sys.path.insert(0, str(REPO / "harness"))
 
 from paynani_lib import config_cli, envfile, guard, i18n, onboard, validate  # noqa: E402
 from paynani_lib import roster_cli, set_cli  # noqa: E402
+from paynani_lib import diagnostics as diagnostics_cli  # noqa: E402
 from paynani_lib import server as server_mod  # noqa: E402
 from paynani_lib.i18n_data import CATALOGUES  # noqa: E402
 from paynani_lib.server import make_handler  # noqa: E402
@@ -237,6 +238,69 @@ check(
     "ROSTER_EMAIL" in validate.validate(with_override(ROSTER_EMAIL="AGENT@EXAMPLE.COM")),
 )
 
+
+
+# ---------------------------------------------------------------------------
+# paynani doctor: version_drift details (#265)
+# ---------------------------------------------------------------------------
+
+vd_dead_doctor = {
+    "disk": "0.7.2",
+    "listener": "0.7.2",
+    "dispatcher": "0.7.2",
+    "listener_commit": "eba16ec222222222222222222222222222222222",
+    "dispatcher_commit": "c3a5de4111111111111111111111111111111111",
+    "unknown": ["listener"],
+    "unknown_detail": {
+        "listener": {
+            "pid": 2**30,
+            "reason": "listener restarted and has not reported its loaded version yet",
+        }
+    },
+    "drift": [],
+    "drift_detail": {},
+}
+check("doctor version_drift: dead writer pid is unknown, not warning",
+      diagnostics_cli._version_drift_check(vd_dead_doctor)["status"] == "unknown")
+check("doctor version_drift: dead writer summary explains the restart race",
+      diagnostics_cli._version_drift_check(vd_dead_doctor)["summary"]
+      == "listener restarted and has not reported its loaded version yet")
+
+vd_live_doctor = {
+    "disk": "0.7.2",
+    "listener": "0.7.2",
+    "dispatcher": "0.7.2",
+    "listener_commit": "eba16ec222222222222222222222222222222222",
+    "dispatcher_commit": "c3a5de4111111111111111111111111111111111",
+    "unknown": [],
+    "unknown_detail": {},
+    "drift": ["listener"],
+    "drift_detail": {
+        "listener": {
+            "field": "commit",
+            "disk": "c3a5de4111111111111111111111111111111111",
+            "process": "eba16ec222222222222222222222222222222222",
+        }
+    },
+}
+check("doctor version_drift: live mismatched pid remains warning",
+      diagnostics_cli._version_drift_check(vd_live_doctor)["status"] == "warning")
+
+vd_no_pid_doctor = dict(vd_live_doctor)
+check("doctor version_drift: no pid preserves warning behavior",
+      diagnostics_cli._version_drift_check(vd_no_pid_doctor)["status"] == "warning")
+
+vd_both_doctor = dict(vd_live_doctor)
+vd_both_doctor["drift"] = ["listener", "dispatcher"]
+vd_both_doctor["drift_detail"] = {
+    "listener": {"field": "commit", "disk": "c3a5de4111111111111111111111111111111111",
+                 "process": "eba16ec222222222222222222222222222222222"},
+    "dispatcher": {"field": "commit", "disk": "c3a5de4111111111111111111111111111111111",
+                   "process": "f00ba47222222222222222222222222222222222"},
+}
+check("doctor version_drift: summary names both stale processes",
+      "but the listener is running eba16ec; the dispatcher is running f00ba47"
+      in diagnostics_cli._version_drift_check(vd_both_doctor)["summary"])
 
 # ---------------------------------------------------------------------------
 # envfile — in a throwaway directory, never the real install

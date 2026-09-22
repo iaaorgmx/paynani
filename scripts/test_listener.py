@@ -7,6 +7,7 @@ instructions, so most of these tests are about what must *not* be tagged.
 """
 
 import email
+import os
 import pathlib
 import socket
 import sys
@@ -416,6 +417,8 @@ def main():
               "listener state records the version loaded by this process")
         check(state.get("commit") == PROCESS_COMMIT,
               "listener state records the commit loaded by this process")
+        check(state.get("pid") == os.getpid(),
+              "listener state records the process that wrote it")
         check(PROCESS_COMMIT is None or
               (len(PROCESS_COMMIT) == 40 and all(c in "0123456789abcdef" for c in PROCESS_COMMIT)),
               "a real checkout's commit is a 40-char hex SHA")
