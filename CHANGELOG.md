@@ -2,6 +2,18 @@
 
 ## Sin publicar
 
+- **`paynani event show` ya no inventa el motivo de un rechazo de notifier**
+  (#259). Al explicar un evento, `event show` armaba un mensaje con sólo el
+  `From`, así que un correo de `notifications@github.com` rechazado por el
+  roster salía como "declared notifier is missing X-GitHub-Sender": culpaba
+  al proveedor cuando el header sí venía y lo que no coincidía era el roster
+  propio. Ahora el listener guarda en el evento los headers declarados en
+  `## Notifiers` (`notifier_headers`) y `event show` los vuelve a poner antes
+  de decidir, así que el motivo nombra el valor real y la columna del roster
+  contra la que falló. Un evento viejo que no guardó el header ya no recibe
+  un motivo inventado: `event show` dice que no puede determinarlo desde el
+  journal y remite a `paynani roster explain` y al `roster.md` del host.
+
 - **CLI: `paynani setup`, `paynani config`, `config web` y `config edit`**
   (#232, parte 2 de #230). `setup` es el nombre descubrible de `onboard`, que
   se queda como alias funcionando igual (está escrito en `INSTALL.md`,
