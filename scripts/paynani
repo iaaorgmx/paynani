@@ -2,7 +2,11 @@
 """
 paynani CLI.
 
+    paynani setup [--port PORT]
     paynani onboard [--port PORT]
+    paynani config
+    paynani config web [--port PORT]
+    paynani config edit
     paynani set KEY [VALUE] [--skip-check]
     paynani status [--json]
     paynani event show EVENT_ID [--body]
@@ -30,6 +34,13 @@ other part of paynani already requires only Python 3's standard library).
 `set` and `roster` are issue #116's follow-up to that PRD: changing one .env
 key, or one roster.md contact, without hand-editing either file or re-running
 the whole onboarding flow for a single value.
+
+`setup` (#232) is the discoverable name for `onboard` -- same command, kept
+as a working alias since INSTALL.md, MAILBOX_SETUP.md and several fleet
+agents' own notes already say `onboard`. `config` prints what is currently
+set; `config web` reuses the same setup server to edit it in a browser;
+`config edit` opens .env directly in $EDITOR and is for a human only --
+AGENTS.md says why, and `paynani set` is what an agent uses instead.
 """
 
 from __future__ import annotations
@@ -40,8 +51,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paynani_lib import (  # noqa: E402
-    diagnostics, event_cli, i18n, onboard, openclaw_cli, roster_cli, set_cli,
-    status_cli,
+    config_cli, diagnostics, event_cli, i18n, onboard, openclaw_cli,
+    roster_cli, set_cli, status_cli,
 )
 
 DEFAULT_PORT = 8765
@@ -60,6 +71,33 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=DEFAULT_PORT,
         help=f"Port to bind on 127.0.0.1 (default: {DEFAULT_PORT}).",
+    )
+
+    setup_parser = subparsers.add_parser(
+        "setup", help="Start the mailbox setup web form and write .env. Same as `onboard`."
+    )
+    setup_parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help=f"Port to bind on 127.0.0.1 (default: {DEFAULT_PORT}).",
+    )
+
+    config_parser = subparsers.add_parser(
+        "config", help="Print the current .env configuration."
+    )
+    config_sub = config_parser.add_subparsers(dest="config_command", required=False)
+    config_web = config_sub.add_parser(
+        "web", help="Open the setup form in a browser to edit .env."
+    )
+    config_web.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help=f"Port to bind on 127.0.0.1 (default: {DEFAULT_PORT}).",
+    )
+    config_sub.add_parser(
+        "edit", help="Open .env in $EDITOR. Human only -- an agent uses `paynani set`."
     )
 
     set_parser = subparsers.add_parser(
@@ -156,11 +194,20 @@ def main(argv: list[str] | None = None) -> int:
     # a message from validate.py reached the terminal in Spanish inside an
     # English sentence. onboard is untouched here: server.py sets the
     # language itself on every request, before this default could matter.
-    if args.command in ("set", "roster", "event", "status"):
+    if args.command in ("set", "roster", "event", "status", "config"):
         i18n.set_current("en-US")
 
     if args.command == "onboard":
-        return onboard.run(port=args.port)
+        return onboard.run(port=args.port, mode="setup")
+    if args.command == "setup":
+        return onboard.run(port=args.port, mode="setup")
+    if args.command == "config":
+        if args.config_command is None:
+            return config_cli.run_print(args)
+        if args.config_command == "web":
+            return config_cli.run_web(args)
+        if args.config_command == "edit":
+            return config_cli.run_edit(args)
     if args.command == "set":
         return set_cli.run(args)
     if args.command == "roster":

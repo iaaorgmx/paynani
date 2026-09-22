@@ -2,6 +2,25 @@
 
 ## Sin publicar
 
+- **CLI: `paynani setup`, `paynani config`, `config web` y `config edit`**
+  (#232, parte 2 de #230). `setup` es el nombre descubrible de `onboard`, que
+  se queda como alias funcionando igual (está escrito en `INSTALL.md`,
+  `MAILBOX_SETUP.md` y las notas de varios agentes de la flota). `config`
+  imprime la configuración actual, de sólo lectura y siempre sale con 0: la
+  contraseña nunca se imprime (`(set, not shown)` o `(not set)`, nunca un
+  enmascarado parcial), sólo se listan las llaves de paynani (las ajenas se
+  cuentan, no se nombran ni se muestran), y una llave obligatoria ausente se
+  marca en su renglón y se repite al final sin cambiar el código de salida.
+  `config web` reutiliza el mismo servidor de `setup` -- si ya hay uno vivo
+  de esta instalación (rastreado por un archivo de marca con PID y puerto,
+  verificados antes de confiar en él), imprime esa URL en vez de levantar un
+  segundo servidor sobre el mismo `.env`. `config edit` abre `.env` en
+  `$EDITOR`: se rehúsa sin `$EDITOR` (nombrando la variable) y sin una
+  terminal en la entrada estándar, valida al salir con la misma validación
+  del formulario y reporta campo por campo, y conserva el modo 600. Es un
+  comando del humano -- `AGENTS.md` deja escrito que ningún agente lo corre;
+  para cambiar una llave, `paynani set` sigue siendo lo que un agente usa.
+
 - **`version_drift` también confronta el commit, no sólo la versión** (#260).
   Un host que sigue `main` entre versiones etiquetadas puede hacer `git pull`
   y traer código nuevo sin que `VERSION` cambie, así que el aviso de #257 se

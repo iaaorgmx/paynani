@@ -23,6 +23,7 @@ import io
 import json
 import os
 import shutil
+import socket
 import stat
 import sys
 import tempfile
@@ -36,7 +37,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 sys.path.insert(0, str(REPO / "harness"))
 
-from paynani_lib import envfile, guard, i18n, validate  # noqa: E402
+from paynani_lib import config_cli, envfile, guard, i18n, onboard, validate  # noqa: E402
 from paynani_lib import roster_cli, set_cli  # noqa: E402
 from paynani_lib import server as server_mod  # noqa: E402
 from paynani_lib.i18n_data import CATALOGUES  # noqa: E402
@@ -797,6 +798,272 @@ try:
 finally:
     os.environ.pop("PAYNANI_ENV", None)
     shutil.rmtree(set_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# paynani_lib/config_cli.py (#232, part 2 of #230)
+# ---------------------------------------------------------------------------
+
+i18n.set_current("en-US")  # scripts/paynani's entry point does this for `config`; see set_cli block above
+
+
+class Args:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+config_dir = Path(tempfile.mkdtemp(prefix="paynani-test-config-"))
+try:
+    config_env = config_dir / ".env"
+    config_env.write_text(
+        "AGENT_EMAIL_ACCOUNT=agent@example.com\n"
+        "AGENT_EMAIL_PASSWORD=super-secret-password\n"
+        "AGENT_EMAIL_FROM_NAME=Test Agent\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap.example.com\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=993\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST=smtp.example.com\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT=465\n"
+        "TELEGRAM_TOKEN=super-secret-telegram-value\n"
+        "GITHUB_TOKEN=super-secret-github-value\n",
+        encoding="utf-8",
+    )
+    config_env.chmod(0o600)
+    os.environ["PAYNANI_ENV"] = str(config_env)
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        r = config_cli.run_print(Args())
+    printed = out.getvalue()
+    check("config_cli.run_print: always exits 0 (read-only, not a diagnosis)", r == 0)
+    check("config_cli.run_print: the password is never printed", "super-secret-password" not in printed)
+    check("config_cli.run_print: the password row says only set/not shown",
+          "AGENT_EMAIL_PASSWORD" in printed and "(set, not shown)" in printed)
+    check("config_cli.run_print: a foreign key's value never appears",
+          "super-secret-telegram-value" not in printed and "super-secret-github-value" not in printed)
+    check("config_cli.run_print: foreign keys are counted, not named",
+          "2 other keys in this file are not paynani's and are not shown." in printed)
+    check("config_cli.run_print: a present paynani key is shown in full",
+          "AGENT_EMAIL_ACCOUNT" in printed and "agent@example.com" in printed)
+
+    incomplete_env = config_dir / "incomplete.env"
+    incomplete_env.write_text(
+        "AGENT_EMAIL_ACCOUNT=agent@example.com\n"
+        "AGENT_EMAIL_FROM_NAME=Test Agent\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap.example.com\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=993\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST=smtp.example.com\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT=465\n",
+        encoding="utf-8",
+    )
+    os.environ["PAYNANI_ENV"] = str(incomplete_env)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        r = config_cli.run_print(Args())
+    printed = out.getvalue()
+    check("config_cli.run_print: a missing required key still exits 0", r == 0)
+    check("config_cli.run_print: the missing key's row is marked",
+          "AGENT_EMAIL_PASSWORD" in printed and "MISSING" in printed)
+    check("config_cli.run_print: the missing key is repeated in the summary line",
+          "Missing: AGENT_EMAIL_PASSWORD" in printed)
+    os.environ["PAYNANI_ENV"] = str(config_env)
+
+    # --- config edit -----------------------------------------------------
+
+    class _TTYStdin:
+        def isatty(self):
+            return True
+
+    class _NonTTYStdin:
+        def isatty(self):
+            return False
+
+    def _fake_editor(body: str) -> str:
+        script = config_dir / f"editor-{len(list(config_dir.glob('editor-*')))}.sh"
+        script.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+        script.chmod(0o755)
+        return str(script)
+
+    real_stdin = sys.stdin
+    real_editor = os.environ.get("EDITOR")
+    try:
+        os.environ.pop("EDITOR", None)
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            r = config_cli.run_edit(Args())
+        check("config_cli.run_edit: no $EDITOR refuses (exit 64)", r == 64)
+        check("config_cli.run_edit: no $EDITOR names the variable", "EDITOR" in err.getvalue())
+
+        os.environ["EDITOR"] = _fake_editor(f"echo not-a-real-invocation >> {config_dir}/should-not-exist")
+        sys.stdin = _NonTTYStdin()
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            r = config_cli.run_edit(Args())
+        check("config_cli.run_edit: a non-tty stdin refuses (exit 64)", r == 64)
+        check("config_cli.run_edit: a non-tty stdin never launches the editor",
+              not (config_dir / "should-not-exist").exists())
+
+        sys.stdin = _TTYStdin()
+
+        before = config_env.read_text(encoding="utf-8")
+        os.environ["EDITOR"] = _fake_editor("true")  # opens, changes nothing, exits 0
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            r = config_cli.run_edit(Args())
+        check("config_cli.run_edit: an editor that changes nothing exits 0", r == 0)
+        check("config_cli.run_edit: and says nothing changed", "was not changed" in out.getvalue())
+        check("config_cli.run_edit: the file is untouched", config_env.read_text(encoding="utf-8") == before)
+
+        os.environ["EDITOR"] = _fake_editor(
+            f"sed -i 's/AGENT_EMAIL_FROM_NAME=.*/AGENT_EMAIL_FROM_NAME=Edited Name/' \"$1\""
+        )
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            r = config_cli.run_edit(Args())
+        check("config_cli.run_edit: a valid edit exits 0", r == 0)
+        check("config_cli.run_edit: and says the file was updated", "updated" in out.getvalue())
+        check("config_cli.run_edit: the new value is on disk",
+              "AGENT_EMAIL_FROM_NAME=Edited Name" in config_env.read_text(encoding="utf-8"))
+        check("config_cli.run_edit: mode 600 survives the edit",
+              stat.S_IMODE(config_env.stat().st_mode) == 0o600)
+        check("config_cli.run_edit: an unrelated key survives the edit",
+              "TELEGRAM_TOKEN=super-secret-telegram-value" in config_env.read_text(encoding="utf-8"))
+
+        os.environ["EDITOR"] = _fake_editor(
+            "sed -i 's/AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=.*/"
+            "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=not-a-port/' \"$1\""
+        )
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            r = config_cli.run_edit(Args())
+        check("config_cli.run_edit: an invalid edit reports nonzero", r == 1)
+        check("config_cli.run_edit: the field-by-field report names the broken field",
+              "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT" in err.getvalue())
+        check(
+            "config_cli.run_edit: it never demands ROSTER_NAME/ROSTER_EMAIL, which .env never has",
+            "ROSTER_NAME" not in err.getvalue() and "ROSTER_EMAIL" not in err.getvalue(),
+        )
+        # Put the port back so later assertions in this block are not
+        # order-dependent on this one having broken it.
+        os.environ["EDITOR"] = _fake_editor(
+            "sed -i 's/AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=.*/"
+            "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=993/' \"$1\""
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            config_cli.run_edit(Args())
+
+        os.environ["EDITOR"] = _fake_editor("exit 3")
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            r = config_cli.run_edit(Args())
+        check("config_cli.run_edit: a nonzero editor exit is surfaced, not swallowed", r == 3)
+        check("config_cli.run_edit: it says the editor's own exit status", "3" in err.getvalue())
+    finally:
+        sys.stdin = real_stdin
+        if real_editor is None:
+            os.environ.pop("EDITOR", None)
+        else:
+            os.environ["EDITOR"] = real_editor
+finally:
+    os.environ.pop("PAYNANI_ENV", None)
+    shutil.rmtree(config_dir, ignore_errors=True)
+
+
+# --- onboard.find_live_server() (#232): a setup/config-web server this ------
+# --- same install already has running, tracked by a marker file -------------
+
+live_dir = Path(tempfile.mkdtemp(prefix="paynani-test-live-"))
+try:
+    probe_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe_socket.bind(("127.0.0.1", 0))
+    probe_socket.listen(1)
+    live_port = probe_socket.getsockname()[1]
+    marker = live_dir / onboard.SERVER_MARKER_NAME
+
+    marker.write_text(json.dumps({"pid": os.getpid(), "port": live_port,
+                                  "url": f"http://127.0.0.1:{live_port}/?t=abc"}), encoding="utf-8")
+    found = onboard.find_live_server(live_dir)
+    check("find_live_server: our own pid plus an open port counts as live",
+          found is not None and found["port"] == live_port)
+
+    probe_socket.close()
+    check("find_live_server: once the port closes, it is no longer live",
+          onboard.find_live_server(live_dir) is None)
+    check("find_live_server: a stale marker is removed once found stale", not marker.exists())
+
+    reserve = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    reserve.bind(("127.0.0.1", 0))
+    reserve.listen(1)
+    closed_pid_port = reserve.getsockname()[1]
+    marker.write_text(json.dumps({"pid": 2**30, "port": closed_pid_port,
+                                  "url": "http://127.0.0.1:x/?t=abc"}), encoding="utf-8")
+    check("find_live_server: an unreachable pid is not live even with the port open",
+          onboard.find_live_server(live_dir) is None)
+    reserve.close()
+
+    check("find_live_server: no marker at all is not live",
+          onboard.find_live_server(live_dir / "does-not-exist") is None)
+finally:
+    shutil.rmtree(live_dir, ignore_errors=True)
+
+
+# --- onboard.run(): starts a server and prints a URL with a token; a --------
+# --- concurrent invocation reuses it rather than starting a second one ------
+#
+# A real subprocess, not a Python thread: onboard.run() installs a SIGTERM
+# handler (`signal.signal()` only works in a process's main thread), and the
+# codebase's own e2e tests already sidestep that by driving HTTPServer
+# directly rather than through onboard.run() -- here the point is exactly to
+# exercise onboard.run()'s own reuse logic, including that SIGTERM handler.
+
+import subprocess as _subprocess
+
+onboard_dir = Path(tempfile.mkdtemp(prefix="paynani-test-onboard-"))
+try:
+    onboard_env = onboard_dir / ".env"
+    onboard_env.write_text("AGENT_EMAIL_ACCOUNT=old@example.com\n", encoding="utf-8")
+    onboard_state = onboard_dir / "state"
+    proc_env = dict(os.environ)
+    proc_env["PAYNANI_ENV"] = str(onboard_env)
+    proc_env["PAYNANI_STATE"] = str(onboard_state)
+
+    reserve = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    reserve.bind(("127.0.0.1", 0))
+    first_port = reserve.getsockname()[1]
+    reserve.close()
+
+    proc = _subprocess.Popen(
+        [sys.executable, str(REPO / "scripts" / "paynani"), "setup", "--port", str(first_port)],
+        stdout=_subprocess.PIPE, stderr=_subprocess.STDOUT, text=True, env=proc_env,
+    )
+    try:
+        marker = onboard_state / onboard.SERVER_MARKER_NAME
+        deadline = time.time() + 10
+        while not marker.exists() and time.time() < deadline and proc.poll() is None:
+            time.sleep(0.05)
+        marker_info = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else {}
+        check("onboard.run (subprocess): a live setup server writes a marker with a token URL",
+              marker.exists() and "?t=" in marker_info.get("url", ""))
+
+        # The reuse side runs in-process, same call config_cli.run_web makes
+        # for real -- it only ever reads the marker, never who wrote it.
+        os.environ["PAYNANI_ENV"] = str(onboard_env)
+        os.environ["PAYNANI_STATE"] = str(onboard_state)
+        second_out = io.StringIO()
+        with contextlib.redirect_stdout(second_out):
+            second_code = onboard.run(port=first_port + 1, mode="config_web")
+        check("onboard.run: a concurrent invocation exits 0 without binding a second port",
+              second_code == 0)
+        check("onboard.run: it prints the already-running server's URL, not a new one",
+              marker_info.get("url", "\0") in second_out.getvalue())
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except _subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+        os.environ.pop("PAYNANI_ENV", None)
+        os.environ.pop("PAYNANI_STATE", None)
+    check("onboard.run (subprocess): SIGTERM makes it exit 0 (clean shutdown, not killed)",
+          proc.returncode == 0)
+    check("onboard.run (subprocess): its marker is removed after it stops",
+          not (onboard_state / onboard.SERVER_MARKER_NAME).exists())
+finally:
+    shutil.rmtree(onboard_dir, ignore_errors=True)
 
 
 # The language-consistency fix only exists at scripts/paynani's entry point

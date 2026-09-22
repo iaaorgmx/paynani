@@ -352,6 +352,15 @@ into a `600` file without passing through you. `paynani onboard` prints the
 `ssh -L` command to forward its port every time it starts; send it along
 whenever your human is not at this machine, as step 2 says.
 
+**`paynani config edit` is for your human, never for you.** It opens `.env`
+directly in `$EDITOR` -- the whole file, credentials included, exactly the
+exposure the form and `paynani set` both exist to avoid. If you need to change
+one key, use `paynani set KEY` instead; it writes that key alone, without
+putting the rest of the file, or the password, in front of you. If your human
+wants to review or hand-edit `.env` themselves, point them at
+`paynani config edit` (or `paynani config web` for the browser form) and let
+them run it -- do not run it on their behalf, even at their request.
+
 ---
 
 ## Standing rules, once it is running
