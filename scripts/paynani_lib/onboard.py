@@ -21,6 +21,7 @@ import json
 import os
 import secrets
 import signal
+import socketserver
 import socket
 import sys
 import threading
@@ -35,6 +36,20 @@ from . import guard
 from .server import make_handler
 
 SERVER_MARKER_NAME = "setup.server.json"
+
+
+class _LoopbackServer(HTTPServer):
+    """HTTPServer without the reverse DNS lookup in server_bind().
+
+    The stock server_bind() calls socket.getfqdn() on the bound address,
+    which can take many seconds on macOS. This server only ever binds
+    127.0.0.1, so the name is known and the lookup buys nothing.
+    """
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
 
 
 def _fingerprint(path: Path) -> str:
@@ -141,7 +156,7 @@ def run(port: int = 8765, mode: str = "setup") -> int:
 
     command = "onboard" if mode == "setup" else "config web"
     try:
-        httpd = HTTPServer(("127.0.0.1", port), handler_cls)
+        httpd = _LoopbackServer(("127.0.0.1", port), handler_cls)
     except OSError as exc:
         print(f"The server did not start on port {port}: {exc}", file=sys.stderr)
         print(f"Try:  scripts/paynani {command} --port {port + 1}", file=sys.stderr)
@@ -155,54 +170,59 @@ def run(port: int = 8765, mode: str = "setup") -> int:
 
     url = f"http://127.0.0.1:{port}/?t={token}"
     marker_path = state / SERVER_MARKER_NAME
-    marker_old_umask = os.umask(0o077)
-    try:
-        marker_path.write_text(json.dumps({
-            "pid": os.getpid(), "port": port, "url": url,
-            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }), encoding="utf-8")
-    finally:
-        os.umask(marker_old_umask)
-    try:
-        marker_path.chmod(0o600)
-    except OSError:
-        pass
 
-    host = socket.getfqdn() or socket.gethostname()
-    print()
-    if mode == "setup":
-        print("  paynani — mailbox setup")
-        print("  " + "─" * 60)
-        print()
-        print("  Send this link to whoever is setting up the mailbox:")
-    else:
-        print("  paynani — edit configuration")
-        print("  " + "─" * 60)
-        print()
-        print("  Open this link to change what's in .env:")
-    print()
-    print(f"      {url}")
-    print()
-    print("  If they are not sitting at this machine, they run this first,")
-    print("  on their own computer, and then open the same link there:")
-    print()
-    print(f"      ssh -L {port}:127.0.0.1:{port} {getpass.getuser()}@{host}")
-    print()
-    print("  (that host name is this machine's idea of itself — replace it")
-    print("   with whatever you normally ssh to, if they differ)")
-    print()
-    print("  The link works once, until this stops. Ctrl-C when finished.")
-    print()
-
-    # Stop the moment a save actually succeeds. server.py sets saved_event
-    # from inside the request that just wrote the file, once the response
-    # carrying the confirmation page is already on the wire -- so this does
-    # not need to guess *whether* something changed the way polling a
-    # fingerprint would, only wait to be told. The fingerprint check survives
-    # as a fallback for the one thing the event cannot see: something other
-    # than this server's own save path replacing the file underneath it.
-    before = _fingerprint(target)
+    # Everything from here on is inside the try: a SIGTERM that lands while
+    # the banner is still being printed (socket.getfqdn() below can take
+    # seconds) must still reach the cleanup, or the marker and token outlive
+    # the server.
     try:
+        marker_old_umask = os.umask(0o077)
+        try:
+            marker_path.write_text(json.dumps({
+                "pid": os.getpid(), "port": port, "url": url,
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }), encoding="utf-8")
+        finally:
+            os.umask(marker_old_umask)
+        try:
+            marker_path.chmod(0o600)
+        except OSError:
+            pass
+
+        host = socket.getfqdn() or socket.gethostname()
+        print()
+        if mode == "setup":
+            print("  paynani — mailbox setup")
+            print("  " + "─" * 60)
+            print()
+            print("  Send this link to whoever is setting up the mailbox:")
+        else:
+            print("  paynani — edit configuration")
+            print("  " + "─" * 60)
+            print()
+            print("  Open this link to change what's in .env:")
+        print()
+        print(f"      {url}")
+        print()
+        print("  If they are not sitting at this machine, they run this first,")
+        print("  on their own computer, and then open the same link there:")
+        print()
+        print(f"      ssh -L {port}:127.0.0.1:{port} {getpass.getuser()}@{host}")
+        print()
+        print("  (that host name is this machine's idea of itself — replace it")
+        print("   with whatever you normally ssh to, if they differ)")
+        print()
+        print("  The link works once, until this stops. Ctrl-C when finished.")
+        print()
+
+        # Stop the moment a save actually succeeds. server.py sets saved_event
+        # from inside the request that just wrote the file, once the response
+        # carrying the confirmation page is already on the wire -- so this does
+        # not need to guess *whether* something changed the way polling a
+        # fingerprint would, only wait to be told. The fingerprint check survives
+        # as a fallback for the one thing the event cannot see: something other
+        # than this server's own save path replacing the file underneath it.
+        before = _fingerprint(target)
         while server_thread.is_alive():
             fired = saved_event.wait(timeout=1)
             if fired or _fingerprint(target) != before:
