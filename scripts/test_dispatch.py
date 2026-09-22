@@ -637,5 +637,19 @@ with tempfile.TemporaryDirectory() as tmp:
     check("and the file on disk agrees", dispatch.PROCESS_VERSION,
           json.loads(state_path.read_text()).get("version"))
 
+# --- and the commit it loaded, for a `main` host between tagged versions (#260) --
+
+with tempfile.TemporaryDirectory() as tmp:
+    state_path = pathlib.Path(tmp) / "dispatch.json"
+    state = dispatch.write_state(state_path)
+    check("dispatcher state records the commit loaded by this process",
+          dispatch.PROCESS_COMMIT, state.get("commit"))
+    check("and the file on disk agrees", dispatch.PROCESS_COMMIT,
+          json.loads(state_path.read_text()).get("commit"))
+    check("a real checkout's commit is a 40-char hex SHA", True,
+          dispatch.PROCESS_COMMIT is None or
+          (len(dispatch.PROCESS_COMMIT) == 40
+           and all(c in "0123456789abcdef" for c in dispatch.PROCESS_COMMIT)))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

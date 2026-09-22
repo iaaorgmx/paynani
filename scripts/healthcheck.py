@@ -190,7 +190,7 @@ def tail(path, lines=1):
 def listener_facts():
     out = {"unit": unit_state(LISTENER_UNIT), "mailbox": None,
            "last_uid": None, "uidvalidity": None, "heartbeat_at": None,
-           "version": None,
+           "version": None, "commit": None,
            "heartbeat_age_seconds": None, "last_error": None,
            "last_error_age_seconds": None,
            "imap_last_disconnect_at": None,
@@ -210,6 +210,7 @@ def listener_facts():
         out["uidvalidity"] = state.get("uidvalidity")
         out["heartbeat_at"] = state.get("heartbeat_at")
         out["version"] = state.get("version")
+        out["commit"] = state.get("commit")
         out["python"] = state.get("python")
         heartbeat = _stamp_seconds(out["heartbeat_at"])
         if heartbeat is not None:
@@ -244,7 +245,7 @@ def listener_facts():
 
 def dispatcher_facts():
     out = {"unit": unit_state(DISPATCH_UNIT), "python": None, "started_at": None,
-           "version": None}
+           "version": None, "commit": None}
     try:
         state = json.loads(DISPATCH_STATE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -252,6 +253,7 @@ def dispatcher_facts():
     out["started_at"] = state.get("started_at")
     out["python"] = state.get("python")
     out["version"] = state.get("version")
+    out["commit"] = state.get("commit")
     return out
 
 
@@ -265,7 +267,22 @@ def disk_version():
     return value or None
 
 
-def version_drift_facts(disk=None, listener=None, dispatcher=None):
+def disk_commit():
+    """The full commit SHA this checkout's git HEAD points at.
+
+    Matches what idle_listener.py and harness/dispatch.py record at startup
+    (`git rev-parse HEAD`, full 40 hex chars), so the two can be compared
+    without a truncation mismatch. Abbreviated only for display, via
+    short_commit()."""
+    return _git("rev-parse", "HEAD")
+
+
+def short_commit(value):
+    """First 7 hex chars of a commit SHA, for display. Passes None through."""
+    return value[:7] if value else value
+
+
+def version_drift_facts(disk=None, listener=None, dispatcher=None, commit=None):
     """
     Whether disk and the running processes agree on which version they loaded.
 
@@ -280,15 +297,38 @@ def version_drift_facts(disk=None, listener=None, dispatcher=None):
     A service that has not reported a version yet (just restarted, or running
     a build from before this field existed) is `None` here, not a mismatch:
     silence is not evidence of drift.
+
+    Matching `VERSION` is not the whole story either: a host that tracks
+    `main` between tagged releases can `git pull` new code without `VERSION`
+    changing at all, so #257's check alone stays silent through it (#260).
+    When the versions agree, the commit each process loaded is compared too,
+    and a mismatch there drifts the same way, just named by commit instead of
+    by version.
     """
     disk = disk if disk is not None else disk_version()
+    commit = commit if commit is not None else disk_commit()
     listener = listener if listener is not None else listener_facts()
     dispatcher = dispatcher if dispatcher is not None else dispatcher_facts()
-    versions = {"listener": listener.get("version"), "dispatcher": dispatcher.get("version")}
-    drift = [name for name, version in versions.items()
-             if version is not None and disk is not None and version != disk]
-    return {"disk": disk, "listener": versions["listener"],
-           "dispatcher": versions["dispatcher"], "drift": drift}
+    services = {"listener": listener, "dispatcher": dispatcher}
+    drift = []
+    detail = {}
+    for name, state in services.items():
+        version = state.get("version")
+        if version is None or disk is None:
+            continue
+        if version != disk:
+            drift.append(name)
+            detail[name] = {"field": "version", "disk": disk, "process": version}
+            continue
+        proc_commit = state.get("commit")
+        if proc_commit is not None and commit is not None and proc_commit != commit:
+            drift.append(name)
+            detail[name] = {"field": "commit", "disk": commit, "process": proc_commit}
+    return {"disk": disk, "disk_commit": commit,
+           "listener": listener.get("version"), "dispatcher": dispatcher.get("version"),
+           "listener_commit": listener.get("commit"),
+           "dispatcher_commit": dispatcher.get("commit"),
+           "drift": drift, "drift_detail": detail}
 
 
 def python_facts(listener=None, dispatcher=None):
@@ -951,11 +991,19 @@ def assess(facts):
     vd = facts.get("version_drift") or {}
     if vd.get("drift"):
         for service in vd["drift"]:
-            warnings.append(
-                f"paynani {vd['disk']} is on disk, but the {service} is running "
-                f"{vd[service]}: restart the services to load it "
-                f"(systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT})"
-            )
+            detail = vd.get("drift_detail", {}).get(service, {})
+            if detail.get("field") == "commit":
+                warnings.append(
+                    f"paynani {vd['disk']} on disk ({short_commit(detail['disk'])}), but the "
+                    f"{service} is running {short_commit(detail['process'])}: restart the "
+                    f"services to load it (systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT})"
+                )
+            else:
+                warnings.append(
+                    f"paynani {vd['disk']} is on disk, but the {service} is running "
+                    f"{vd[service]}: restart the services to load it "
+                    f"(systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT})"
+                )
 
     if runtime["selected"] is None:
         detail = (runtime["detail"] or "unknown reason").rstrip()
@@ -1280,8 +1328,13 @@ def render(facts, problems, warnings):
         out.append(f"version      {config['version']}")
     vd = facts.get("version_drift") or {}
     for service in vd.get("drift", []):
-        out.append(f"             paynani {vd['disk']} on disk, but the {service} is "
-                   f"running {vd[service]}")
+        detail = vd.get("drift_detail", {}).get(service, {})
+        if detail.get("field") == "commit":
+            out.append(f"             paynani {vd['disk']} on disk ({short_commit(detail['disk'])}), "
+                       f"but the {service} is running {short_commit(detail['process'])}")
+        else:
+            out.append(f"             paynani {vd['disk']} on disk, but the {service} is "
+                       f"running {vd[service]}")
         out.append("             restart the services to load it:")
         out.append(f"             systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT}")
 

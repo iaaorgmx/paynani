@@ -15,7 +15,7 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import roster as roster_mod
-from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_VERSION, Listed,
+from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_COMMIT, PROCESS_VERSION, Listed,
                            decode_hdr, describe, fetch_since, keepalive,
                            record_imap_reconnect, resolve_keepalive_option,
                            save_state)
@@ -395,6 +395,11 @@ def main():
               "listener state records a UTC heartbeat")
         check(state.get("version") == PROCESS_VERSION,
               "listener state records the version loaded by this process")
+        check(state.get("commit") == PROCESS_COMMIT,
+              "listener state records the commit loaded by this process")
+        check(PROCESS_COMMIT is None or
+              (len(PROCESS_COMMIT) == 40 and all(c in "0123456789abcdef" for c in PROCESS_COMMIT)),
+              "a real checkout's commit is a 40-char hex SHA")
         check(state.get("python", {}).get("supported") is True
               and state.get("python", {}).get("executable"),
               "listener state records the service Python interpreter")
