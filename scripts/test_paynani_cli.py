@@ -1062,7 +1062,10 @@ live_dir = Path(tempfile.mkdtemp(prefix="paynani-test-live-"))
 try:
     probe_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     probe_socket.bind(("127.0.0.1", 0))
-    probe_socket.listen(1)
+    # Room for every probe below: find_live_server() connects without being
+    # accepted, and macOS refuses a connection once a listen(1) backlog is
+    # full, where Linux lets it through.
+    probe_socket.listen(16)
     live_port = probe_socket.getsockname()[1]
     marker = live_dir / onboard.SERVER_MARKER_NAME
 
