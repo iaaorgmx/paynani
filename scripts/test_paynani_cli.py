@@ -1066,11 +1066,15 @@ try:
     live_port = probe_socket.getsockname()[1]
     marker = live_dir / onboard.SERVER_MARKER_NAME
 
-    marker.write_text(json.dumps({"pid": os.getpid(), "port": live_port,
-                                  "url": f"http://127.0.0.1:{live_port}/?t=abc"}), encoding="utf-8")
+    marker.write_text(json.dumps({"pid": os.getpid(), "port": live_port}), encoding="utf-8")
+    check("find_live_server: a live server with no setup.token is not offered (#230)",
+          onboard.find_live_server(live_dir) is None)
+    (live_dir / "setup.token").write_text("abc\n", encoding="utf-8")
     found = onboard.find_live_server(live_dir)
     check("find_live_server: our own pid plus an open port counts as live",
           found is not None and found["port"] == live_port)
+    check("find_live_server: the link is rebuilt from setup.token, not read from the marker (#230)",
+          found is not None and found["url"] == f"http://127.0.0.1:{live_port}/?t=abc")
 
     probe_socket.close()
     check("find_live_server: once the port closes, it is no longer live",
@@ -1081,8 +1085,7 @@ try:
     reserve.bind(("127.0.0.1", 0))
     reserve.listen(1)
     closed_pid_port = reserve.getsockname()[1]
-    marker.write_text(json.dumps({"pid": 2**30, "port": closed_pid_port,
-                                  "url": "http://127.0.0.1:x/?t=abc"}), encoding="utf-8")
+    marker.write_text(json.dumps({"pid": 2**30, "port": closed_pid_port}), encoding="utf-8")
     check("find_live_server: an unreachable pid is not live even with the port open",
           onboard.find_live_server(live_dir) is None)
     reserve.close()
@@ -1127,9 +1130,15 @@ try:
         deadline = time.time() + 10
         while not marker.exists() and time.time() < deadline and proc.poll() is None:
             time.sleep(0.05)
-        marker_info = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else {}
-        check("onboard.run (subprocess): a live setup server writes a marker with a token URL",
-              marker.exists() and "?t=" in marker_info.get("url", ""))
+        marker_text = marker.read_text(encoding="utf-8") if marker.exists() else ""
+        marker_info = json.loads(marker_text) if marker_text else {}
+        token_file = onboard_state / "setup.token"
+        live_token = token_file.read_text(encoding="utf-8").strip() if token_file.exists() else ""
+        live_url = f"http://127.0.0.1:{first_port}/?t={live_token}"
+        check("onboard.run (subprocess): a live setup server writes a marker with its pid and port",
+              marker_info.get("pid") == proc.pid and marker_info.get("port") == first_port)
+        check("onboard.run (subprocess): the marker never holds the link or the token (#230)",
+              bool(live_token) and "url" not in marker_info and live_token not in marker_text)
 
         # The reuse side runs in-process, same call config_cli.run_web makes
         # for real -- it only ever reads the marker, never who wrote it.
@@ -1141,7 +1150,7 @@ try:
         check("onboard.run: a concurrent invocation exits 0 without binding a second port",
               second_code == 0)
         check("onboard.run: it prints the already-running server's URL, not a new one",
-              marker_info.get("url", "\0") in second_out.getvalue())
+              bool(live_token) and live_url in second_out.getvalue())
     finally:
         proc.terminate()
         try:

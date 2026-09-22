@@ -89,6 +89,12 @@ def find_live_server(state: Path) -> dict | None:
     process that started the server and removed when it stops, so a stale
     marker (process gone, or something else now holding the port) is treated
     the same as no server at all rather than trusted blindly.
+
+    The marker holds the pid and the port, never the link: the token only
+    lives in setup.token (#230). The link is rebuilt from that file, which is
+    also the one guard.check_token() reads on every request, so the rebuilt
+    link is exactly the one the running server accepts. A live server whose
+    token file is gone accepts no link at all, and is not offered.
     """
     marker = state / SERVER_MARKER_NAME
     try:
@@ -99,10 +105,16 @@ def find_live_server(state: Path) -> dict | None:
     if not isinstance(pid, int) or not isinstance(port, int):
         marker.unlink(missing_ok=True)
         return None
-    if _pid_alive(pid) and _port_open(port):
-        return info
-    marker.unlink(missing_ok=True)
-    return None
+    if not (_pid_alive(pid) and _port_open(port)):
+        marker.unlink(missing_ok=True)
+        return None
+    try:
+        token = guard.token_path(state).read_text(encoding="utf-8").strip()
+    except OSError:
+        token = ""
+    if not token:
+        return None
+    return {"pid": pid, "port": port, "url": f"http://127.0.0.1:{port}/?t={token}"}
 
 
 def run(port: int = 8765, mode: str = "setup") -> int:
@@ -178,7 +190,7 @@ def run(port: int = 8765, mode: str = "setup") -> int:
         marker_old_umask = os.umask(0o077)
         try:
             marker_path.write_text(json.dumps({
-                "pid": os.getpid(), "port": port, "url": url,
+                "pid": os.getpid(), "port": port,
                 "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }), encoding="utf-8")
         finally:
