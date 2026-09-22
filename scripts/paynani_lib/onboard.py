@@ -172,9 +172,8 @@ def run(port: int = 8765, mode: str = "setup") -> int:
     marker_path = state / SERVER_MARKER_NAME
 
     # Everything from here on is inside the try: a SIGTERM that lands while
-    # the banner is still being printed (socket.getfqdn() below can take
-    # seconds) must still reach the cleanup, or the marker and token outlive
-    # the server.
+    # the banner is still being printed must still reach the cleanup, or the
+    # marker and token outlive the server.
     try:
         marker_old_umask = os.umask(0o077)
         try:
@@ -189,7 +188,14 @@ def run(port: int = 8765, mode: str = "setup") -> int:
         except OSError:
             pass
 
-        host = socket.getfqdn() or socket.gethostname()
+        # gethostname(), not getfqdn(): the latter does a reverse DNS lookup
+        # that can block for many seconds (macOS CI runners hit this) and,
+        # worse, is not reliably interruptible by the SIGTERM this function
+        # depends on to shut down promptly -- a signal delivered while libc
+        # is blocked in that lookup is not handled until it returns. This is
+        # only an illustrative hint in the ssh command below; the short name
+        # serves that exactly as well as the fully qualified one.
+        host = socket.gethostname()
         print()
         if mode == "setup":
             print("  paynani — mailbox setup")
