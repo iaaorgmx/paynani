@@ -935,7 +935,12 @@ try:
         check("config_cli.run_edit: the file is untouched", config_env.read_text(encoding="utf-8") == before)
 
         os.environ["EDITOR"] = _fake_editor(
-            f"sed -i 's/AGENT_EMAIL_FROM_NAME=.*/AGENT_EMAIL_FROM_NAME=Edited Name/' \"$1\""
+            # sed -i is not portable: GNU takes the in-place flag bare, BSD
+            # (macOS) demands a backup-suffix argument right after it, so a
+            # script that works on one errors ("invalid command code") on the
+            # other. Redirecting to a temp file and moving it back over the
+            # original works identically on both.
+            f"sed 's/AGENT_EMAIL_FROM_NAME=.*/AGENT_EMAIL_FROM_NAME=Edited Name/' \"$1\" > \"$1.tmp\" && mv \"$1.tmp\" \"$1\""
         )
         with contextlib.redirect_stdout(io.StringIO()) as out:
             r = config_cli.run_edit(Args())
@@ -949,8 +954,8 @@ try:
               "TELEGRAM_TOKEN=super-secret-telegram-value" in config_env.read_text(encoding="utf-8"))
 
         os.environ["EDITOR"] = _fake_editor(
-            "sed -i 's/AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=.*/"
-            "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=not-a-port/' \"$1\""
+            "sed 's/AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=.*/"
+            "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=not-a-port/' \"$1\" > \"$1.tmp\" && mv \"$1.tmp\" \"$1\""
         )
         with contextlib.redirect_stderr(io.StringIO()) as err:
             r = config_cli.run_edit(Args())
@@ -964,8 +969,8 @@ try:
         # Put the port back so later assertions in this block are not
         # order-dependent on this one having broken it.
         os.environ["EDITOR"] = _fake_editor(
-            "sed -i 's/AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=.*/"
-            "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=993/' \"$1\""
+            "sed 's/AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=.*/"
+            "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=993/' \"$1\" > \"$1.tmp\" && mv \"$1.tmp\" \"$1\""
         )
         with contextlib.redirect_stdout(io.StringIO()):
             config_cli.run_edit(Args())
