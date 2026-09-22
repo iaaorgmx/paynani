@@ -65,8 +65,19 @@ no es contacto de su propio roster.
 
 **Y comprueba en qué se parece tu host a los demás.** El cuarto defecto lo
 encontró Zeus, no yo, porque mi clon seguía `main` y el suyo el tag: yo probé la
-instrucción en el único host donde no podía fallar. Si tu clon no está como los
-de la flota, pide a alguien que corra los pasos en el suyo antes de mandarlos.
+instrucción en el único host donde no podía fallar. El quinto lo encontró Ares,
+por la razón opuesta y el mismo motivo de fondo. Si tu clon no está como los de
+la flota, pide a alguien que corra los pasos en el suyo **antes** de mandarlos;
+dos correcciones seguidas por el mismo desajuste dicen que este paso no es
+opcional.
+
+**Y di qué versión de cada herramienta externa exige esta release.** 0.7.2
+cambió el envío a un subcomando que sólo existe en himalaya 2.x y no lo dijo en
+ningún lado, mientras la tabla de `INSTALL.md` seguía prometiendo que v1.x
+servía. El host que venía de v1.x siguió recibiendo correo y dejó de poder
+contestar, sin que nada se lo dijera hasta que lo intentó. Si una release mueve
+ese piso, va en el CHANGELOG, va en el aviso, y el código se rehúsa con un
+mensaje que nombre la versión encontrada y la requerida.
 
 ## 7. Avisa, con lo que esta versión pida comprobar
 
