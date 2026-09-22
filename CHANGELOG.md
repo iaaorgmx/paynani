@@ -2,6 +2,15 @@
 
 ## Sin publicar
 
+- **El marcador del servidor de configuración ya no guarda la liga con su
+  token** (#230). `state/setup.server.json`, el archivo con el que `setup` y
+  `config web` detectan un servidor ya vivo (#232), guardaba la URL completa,
+  y con ella el token que permite escribir `.env`. El PRD de #230 pide que ese
+  token viva sólo en `state/setup.token`. Ahora el marcador guarda el PID y el
+  puerto, y la liga se rearma con `setup.token`, que es el mismo archivo que
+  el servidor consulta en cada petición. Si un servidor sigue vivo pero su
+  `setup.token` ya no existe, no se ofrece, porque ninguna liga le serviría.
+
 - **`version_drift` distingue un proceso reiniciado de uno atrasado** (#265).
   Si el listener o dispatcher dejó un estado con `commit` viejo pero su `pid`
   ya no existe, `healthcheck.py` y `paynani doctor` lo reportan como `unknown`
