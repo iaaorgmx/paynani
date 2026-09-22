@@ -198,6 +198,25 @@ def main():
               "and the notifier address alone grants nothing without the header")
         check(not listed("noreply@jira.example.com", **{"X-GitHub-Sender": "julianflores"}),
               "an undeclared sender carrying the header grants nothing")
+        [(_, notifier_fields)] = fetch_since(
+            FakeConn({1: envelope(
+                from_addr="notifications@github.com",
+                to="iris.claude.tob@agenteiamail.com",
+                subject="[iaaorgmx/paynani] notifier test",
+            )}), 0, Listed(notifier_roster), "iris.claude.tob@agenteiamail.com")
+        check("notifier_headers" not in notifier_fields,
+              "a missing notifier header is not invented in the envelope")
+        notifier_message = envelope(
+            from_addr="notifications@github.com",
+            to="iris.claude.tob@agenteiamail.com",
+            subject="[iaaorgmx/paynani] notifier test",
+        )
+        notifier_message["X-GitHub-Sender"] = "a-stranger"
+        [(_, notifier_fields)] = fetch_since(
+            FakeConn({1: notifier_message}), 0, Listed(notifier_roster),
+            "iris.claude.tob@agenteiamail.com")
+        check(notifier_fields["notifier_headers"] == {"X-GitHub-Sender": "a-stranger"},
+              "the listener preserves declared notifier headers for later diagnostics")
         legacy_notifier_roster = pathlib.Path(tmp) / "legacy-notifiers.md"
         legacy_notifier_roster.write_text(
             "| Name | Email | Type | Username |\n"

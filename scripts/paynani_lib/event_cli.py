@@ -36,7 +36,7 @@ def _safe_record(record):
         "schema_version", "event_type", "event_id", "source", "account",
         "mailbox", "uidvalidity", "uid", "observed_at", "sent_at", "sender",
         "subject", "roster_match", "authenticated_sender", "message_id",
-        "provider_id", "recipient_role", "inspection_command",
+        "provider_id", "recipient_role", "notifier_headers", "inspection_command",
     )
     return {key: record[key] for key in allowed if key in record}
 
@@ -46,11 +46,15 @@ def _authorization(record):
     path = roster_file()
     message = email.message.EmailMessage()
     message["From"] = sender
+    for header, value in (record.get("notifier_headers") or {}).items():
+        if str(header).strip() and str(value).strip():
+            message[str(header).strip()] = str(value).strip()
+    notifiers = roster_mod.notifiers(path)
     decision = roster_mod.explain_sender(
         message,
         roster_mod.roster_addresses(path),
         roster_mod.roster_entries(path),
-        roster_mod.notifiers(path),
+        notifiers,
     )
     # A notifier match depends on a provider header that the legacy event does
     # not retain. The listener's original positive decision is therefore valid
@@ -61,6 +65,19 @@ def _authorization(record):
             "kind": "recorded",
             "reason": "the listener recorded a roster/notifier match at observation time",
         }
+    elif (
+        not record.get("roster_match")
+        and decision.get("kind") == "notifier"
+        and str(decision.get("reason") or "").startswith("declared notifier is missing ")
+    ):
+        notifier = decision.get("notifier") or {}
+        header = notifier.get("header", "the provider header")
+        decision = dict(decision)
+        decision["reason"] = (
+            f"cannot determine notifier authorization from the saved event: "
+            f"the journal does not retain {header}; run `paynani roster explain` "
+            "against the original message headers and check this host's roster.md"
+        )
     return decision
 
 

@@ -167,7 +167,7 @@ def openclaw_text(record, root=None):
 
 def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_address,
                subject, sent_at, roster_match, notification_text, observed_at=None,
-               message_id="", provider_id="", recipient_role=""):
+               message_id="", provider_id="", recipient_role="", notifier_headers=None):
     """
     One arrived message, as structure rather than prose.
 
@@ -211,6 +211,14 @@ def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_addres
         record["provider_id"] = str(provider_id).strip()
     if recipient_role:
         record["recipient_role"] = str(recipient_role).strip()
+    if notifier_headers:
+        kept = {
+            str(k).strip(): str(v).strip()
+            for k, v in dict(notifier_headers).items()
+            if str(k).strip() and str(v).strip()
+        }
+        if kept:
+            record["notifier_headers"] = kept
     record["inspection_command"] = f"scripts/paynani event show {record['event_id']}"
     return record
 
