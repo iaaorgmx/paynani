@@ -644,8 +644,13 @@ with tempfile.TemporaryDirectory() as tmp:
     state = dispatch.write_state(state_path)
     check("dispatcher state records the commit loaded by this process",
           dispatch.PROCESS_COMMIT, state.get("commit"))
+    written = json.loads(state_path.read_text())
     check("and the file on disk agrees", dispatch.PROCESS_COMMIT,
-          json.loads(state_path.read_text()).get("commit"))
+          written.get("commit"))
+    check("dispatcher state records the process that wrote it", os.getpid(),
+          state.get("pid"))
+    check("and the file on disk records the process too", os.getpid(),
+          written.get("pid"))
     check("a real checkout's commit is a 40-char hex SHA", True,
           dispatch.PROCESS_COMMIT is None or
           (len(dispatch.PROCESS_COMMIT) == 40

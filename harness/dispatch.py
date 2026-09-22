@@ -132,6 +132,7 @@ def write_state(path=DISPATCH_STATE):
         "python": PYTHON_FACTS,
         "version": PROCESS_VERSION,
         "commit": PROCESS_COMMIT,
+        "pid": os.getpid(),
     }
     path = Path(path)
     try:

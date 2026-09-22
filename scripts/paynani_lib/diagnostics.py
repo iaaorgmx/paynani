@@ -294,18 +294,13 @@ OPENCODE_VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 
 
 def _version_drift_check(vd: dict) -> dict:
+    if vd.get("unknown"):
+        return _check("version_drift", "unknown", healthcheck.version_unknown_summary(vd), vd)
     if vd.get("drift"):
-        service = vd["drift"][0]
-        detail = vd.get("drift_detail", {}).get(service, {})
-        if detail.get("field") == "commit":
-            summary = (f"paynani {vd['disk']} on disk ({healthcheck.short_commit(detail['disk'])}), "
-                      f"but the {service} is running {healthcheck.short_commit(detail['process'])}")
-        else:
-            summary = f"paynani {vd['disk']} is on disk, but the {service} is running {vd[service]}"
         return _check(
             "version_drift",
             "warning",
-            summary,
+            healthcheck.version_drift_summary(vd),
             vd,
             f"systemctl --user restart {healthcheck.LISTENER_UNIT} {healthcheck.DISPATCH_UNIT}",
         )

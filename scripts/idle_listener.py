@@ -493,6 +493,7 @@ def save_state(path, mailbox, validity, last_uid, telemetry=None):
         "heartbeat_at": timestamp(),
         "version": PROCESS_VERSION,
         "commit": PROCESS_COMMIT,
+        "pid": os.getpid(),
         "python": PYTHON_FACTS,
     }
     if telemetry:
