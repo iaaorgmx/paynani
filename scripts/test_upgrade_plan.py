@@ -130,6 +130,17 @@ try:
     # ledger.py (0.7.1) is imported by the listener, the dispatcher and the
     # session hook; the real v0.7.0 -> v0.7.1 plan listed it as unknown.
     check("ledger.py -> restart both", up.classify("harness/ledger.py")["unit"] == "both")
+    # python_floor.py (#241) is imported by both services at start; the real
+    # v0.7.2 -> main plan listed it as unknown, and --apply refused because of it.
+    check("python_floor.py -> restart both", up.classify("harness/python_floor.py")["unit"] == "both")
+    # The same miss twice (ledger.py, then python_floor.py): every harness module
+    # that ships in this repository has a row, so the next one fails here instead
+    # of in the fleet's upgrade plan.
+    shipped = subprocess.run(["git", "-C", str(up.ROOT), "ls-files", "harness"],
+                             capture_output=True, text=True).stdout.split()
+    unclassified = [p for p in shipped if up.classify(p)["verb"] == "unknown"]
+    check("every file under harness/ has a row in the upgrade table", not unclassified,
+          ", ".join(unclassified))
     check("systemd unit -> reinstall-and-restart", verbs.get("systemd/paynani-idle.service") == "reinstall-and-restart")
     check("opencode plugin -> reinstall-and-restart", verbs.get("harness/opencode/paynani.js") == "reinstall-and-restart")
     check("session watcher -> next-session", verbs.get("harness/session_watch.sh") == "next-session")
