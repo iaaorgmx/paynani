@@ -243,14 +243,52 @@ def listener_facts():
 
 
 def dispatcher_facts():
-    out = {"unit": unit_state(DISPATCH_UNIT), "python": None, "started_at": None}
+    out = {"unit": unit_state(DISPATCH_UNIT), "python": None, "started_at": None,
+           "version": None}
     try:
         state = json.loads(DISPATCH_STATE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return out
     out["started_at"] = state.get("started_at")
     out["python"] = state.get("python")
+    out["version"] = state.get("version")
     return out
+
+
+def disk_version():
+    """The VERSION file this checkout carries, plain (e.g. "0.7.2"), not the
+    decorated line config_facts() builds from `version.sh --line`."""
+    try:
+        value = (repo_root() / "VERSION").read_text().strip()
+    except OSError:
+        return None
+    return value or None
+
+
+def version_drift_facts(disk=None, listener=None, dispatcher=None):
+    """
+    Whether disk and the running processes agree on which version they loaded.
+
+    A process reads its code once, at startup, and never again. A `git pull`
+    that lands while paynani-idle keeps running leaves disk and the process
+    telling two different, both-true stories: the repo really is on the new
+    version, and the listener really did load the old one. Before #257 nothing
+    compared the two, so this state looked identical to being current for as
+    long as nobody restarted the services -- found on a host that carried it
+    for three days without a single warning.
+
+    A service that has not reported a version yet (just restarted, or running
+    a build from before this field existed) is `None` here, not a mismatch:
+    silence is not evidence of drift.
+    """
+    disk = disk if disk is not None else disk_version()
+    listener = listener if listener is not None else listener_facts()
+    dispatcher = dispatcher if dispatcher is not None else dispatcher_facts()
+    versions = {"listener": listener.get("version"), "dispatcher": dispatcher.get("version")}
+    drift = [name for name, version in versions.items()
+             if version is not None and disk is not None and version != disk]
+    return {"disk": disk, "listener": versions["listener"],
+           "dispatcher": versions["dispatcher"], "drift": drift}
 
 
 def python_facts(listener=None, dispatcher=None):
@@ -910,6 +948,15 @@ def assess(facts):
                 f"{service_py.get('executable')}; minimum is {service_py.get('minimum')}"
             )
 
+    vd = facts.get("version_drift") or {}
+    if vd.get("drift"):
+        for service in vd["drift"]:
+            warnings.append(
+                f"paynani {vd['disk']} is on disk, but the {service} is running "
+                f"{vd[service]}: restart the services to load it "
+                f"(systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT})"
+            )
+
     if runtime["selected"] is None:
         detail = (runtime["detail"] or "unknown reason").rstrip()
         if not runtime["runtime_env"]:
@@ -1231,6 +1278,12 @@ def render(facts, problems, warnings):
                    if git["dirty_tracked"] else "             tree matches the commit")
     if config["version"]:
         out.append(f"version      {config['version']}")
+    vd = facts.get("version_drift") or {}
+    for service in vd.get("drift", []):
+        out.append(f"             paynani {vd['disk']} on disk, but the {service} is "
+                   f"running {vd[service]}")
+        out.append("             restart the services to load it:")
+        out.append(f"             systemctl --user restart {LISTENER_UNIT} {DISPATCH_UNIT}")
 
     if not facts["delivery"]["last_accepted"] and not facts["delivery"]["last_error"]:
         recent = tail(DISPATCH_ERR)
@@ -1276,6 +1329,8 @@ def main(argv=None):
     facts["instructions"] = instructions_facts(facts["runtime"].get("selected"))
     facts["openclaw_probe"] = openclaw_probe_facts(facts["runtime"].get("selected"))
     facts["reply"] = reply_facts(facts["queue"]["cursor"])
+    facts["version_drift"] = version_drift_facts(
+        disk_version(), facts["listener"], facts["dispatcher"])
     problems, warnings = assess(facts)
 
     if args.json:

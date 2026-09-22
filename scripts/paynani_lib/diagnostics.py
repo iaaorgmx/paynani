@@ -230,6 +230,8 @@ def _facts() -> dict:
     facts["spool"] = healthcheck.spool_facts(facts["runtime"].get("selected"))
     facts["reply"] = healthcheck.reply_facts(facts["queue"]["cursor"])
     facts["dependencies"] = _dependency_facts(facts["runtime"].get("selected"), facts["python"])
+    facts["version_drift"] = healthcheck.version_drift_facts(
+        healthcheck.disk_version(), facts["listener"], facts["dispatcher"])
     return facts
 
 
@@ -288,6 +290,22 @@ MIN_OPENCODE = (1, 18, 31)
 
 HIMALAYA_VERSION_RE = re.compile(r"himalaya\s+v?(\d+)\.")
 OPENCODE_VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+
+def _version_drift_check(vd: dict) -> dict:
+    if vd.get("drift"):
+        service = vd["drift"][0]
+        return _check(
+            "version_drift",
+            "warning",
+            f"paynani {vd['disk']} is on disk, but the {service} is running {vd[service]}",
+            vd,
+            f"systemctl --user restart {healthcheck.LISTENER_UNIT} {healthcheck.DISPATCH_UNIT}",
+        )
+    if vd.get("listener") is None and vd.get("dispatcher") is None:
+        return _check("version_drift", "unknown",
+                      "neither service has reported its loaded version yet", vd)
+    return _check("version_drift", "ok", "disk and the running services agree on the version", vd)
 
 
 def _python_version() -> tuple[int, int, int]:
@@ -641,6 +659,7 @@ def doctor_data() -> dict:
     else:
         status, summary, fix = "blocked", f"dispatcher service is {du}", _service_fix(healthcheck.DISPATCH_UNIT)
     checks.append(_check("dispatcher", status, summary, {"unit": du}, fix))
+    checks.append(_version_drift_check(facts["version_drift"]))
 
     runtime = facts["runtime"]
     if runtime.get("selected") is None:

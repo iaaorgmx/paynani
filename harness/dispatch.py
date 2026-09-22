@@ -40,6 +40,18 @@ import ledger   # noqa: E402
 from adapters import ACCEPTED, CONFIG, RETRY   # noqa: E402
 from paths import state_dir   # noqa: E402
 
+
+def _process_version():
+    """Version loaded by this process, fixed at startup rather than per heartbeat."""
+    try:
+        value = (Path(__file__).resolve().parent.parent / "VERSION").read_text().strip()
+    except OSError:
+        return None
+    return value or None
+
+
+PROCESS_VERSION = _process_version()
+
 STATE_DIR = state_dir()
 JOURNAL = STATE_DIR / "events.jsonl"
 CURSOR = STATE_DIR / "dispatch.offset"
@@ -101,6 +113,7 @@ def write_state(path=DISPATCH_STATE):
     state = {
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "python": PYTHON_FACTS,
+        "version": PROCESS_VERSION,
     }
     path = Path(path)
     try:

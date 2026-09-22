@@ -1,5 +1,19 @@
 # Changelog
 
+## Sin publicar
+
+- **`healthcheck.py` compara la versión en disco con la que cada proceso
+  cargó** (#257). `scripts/idle_listener.py` y `harness/dispatch.py` ya
+  guardaban la versión que cargaron al arrancar (`PROCESS_VERSION`), pero
+  nada la confrontaba contra `VERSION` del repo -- un `git pull` con los
+  servicios sin reiniciar dejaba el disco y los procesos en desacuerdo sin
+  que ningún aviso lo dijera, durante tres días en un host real. Ahora la
+  fila `version` de `healthcheck.py` lo dice con ambas cifras y el comando
+  para corregirlo; `paynani doctor` lo reporta como `warning`, no `blocked`
+  (el host sigue recibiendo y entregando correo) ni `ok`. Un proceso que
+  aún no reportó su versión (recién reiniciado) sale como `unknown`, no
+  como una discrepancia.
+
 ## 0.7.2 (2026-09-19)
 
 **Correo con copia oculta, el roster migrado, y dos defectos de documentación
