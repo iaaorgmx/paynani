@@ -1,8 +1,15 @@
 # Changelog
 
-## Unreleased
+## Sin publicar
 
-- `scripts/send.sh` and `paynani doctor` now require Himalaya v2.x for sending. v1.x is refused before SMTP because it has no `smtp send`; the refusal points operators to INSTALL.md section 4.3 to upgrade the binary, rewrite the v2 config, confirm `BACKENDS` is `imap, smtp`, and run a real `himalaya envelope list`. Closes #255.
+- **`scripts/send.sh` y `paynani doctor` exigen himalaya v2.x para enviar**
+  (#255). v1.x no tiene `smtp send`, que es como el Bcc se queda en el sobre y
+  fuera del mensaje, así que `send.sh` se rehúsa antes de intentar mandar y el
+  aviso dice la versión encontrada, la requerida y que subir el binario no
+  basta: hay que reescribir la configuración con el esquema v2 de `INSTALL.md`
+  §4.3 y confirmarlo con `himalaya account list` (`BACKENDS` en `imap, smtp`) y
+  un `himalaya envelope list` real. `INSTALL.md` deja de documentar v1.x como
+  soportada. Sin cambios para v2.x.
 
 ## 0.7.2 (2026-09-19)
 
