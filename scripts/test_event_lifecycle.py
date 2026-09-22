@@ -217,6 +217,25 @@ with tempfile.TemporaryDirectory() as raw:
     check("GitHub notifier attribution is explained as authorized", decision["matched"])
     check("the notifier explanation identifies its declared header", "X-GitHub-Sender" in decision["reason"])
 
+    old_roster_file = event_cli.roster_file
+    event_cli.roster_file = lambda: notifier_roster
+    rejected_notifier = envelope(10, address="notifications@github.com", roster_match=False)
+    rejected_notifier["notifier_headers"] = {"X-GitHub-Sender": "ocelotlcodextob"}
+    rejected_decision = event_cli._authorization(rejected_notifier)
+    check("event show explains a rejected notifier header value against the roster",
+          "X-GitHub-Sender=ocelotlcodextob matches no contact in the github column"
+          in rejected_decision["reason"])
+    check("event show keeps rejected notifier events with headers unauthorized",
+          rejected_decision["matched"] is False)
+    legacy_rejected_notifier = envelope(11, address="notifications@github.com", roster_match=False)
+    legacy_rejected_decision = event_cli._authorization(legacy_rejected_notifier)
+    check("event show does not invent a missing notifier header for rejected legacy events",
+          "cannot determine notifier authorization" in legacy_rejected_decision["reason"]
+          and "roster.md" in legacy_rejected_decision["reason"])
+    check("event show keeps rejected legacy notifier events unauthorized",
+          legacy_rejected_decision["matched"] is False)
+    event_cli.roster_file = old_roster_file
+
     first = envelope(2, address="known@example.com", roster_match=True,
                      message_id="<provider-42@example.test>")
     duplicate = envelope(3, address="known@example.com", roster_match=True,

@@ -555,13 +555,21 @@ def fetch_since(conn, last_uid, listed, account):
             continue
         msg = email.message_from_bytes(payload[0][1])
         message_id = decode_hdr(msg.get("Message-ID"))
-        out.append((uid, parts(decode_hdr(msg.get("From")),
-                               decode_hdr(msg.get("Subject")),
-                               msg.get("Date", ""),
-                               sender_is_listed(msg, listed.allowed,
-                                                listed.entries, listed.notifiers),
-                               message_id, provider_identifier(message_id),
-                               recipient_role_for(msg, account))))
+        fields = parts(decode_hdr(msg.get("From")),
+                       decode_hdr(msg.get("Subject")),
+                       msg.get("Date", ""),
+                       sender_is_listed(msg, listed.allowed,
+                                        listed.entries, listed.notifiers),
+                       message_id, provider_identifier(message_id),
+                       recipient_role_for(msg, account))
+        notifier_values = {
+            header: decode_hdr(msg.get(header))
+            for header in notifier_headers(listed.notifiers)
+            if decode_hdr(msg.get(header))
+        }
+        if notifier_values:
+            fields["notifier_headers"] = notifier_values
+        out.append((uid, fields))
     return out
 
 
