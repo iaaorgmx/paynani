@@ -94,6 +94,8 @@ def base_facts(listener="active", dispatcher="active", runtime_reachable=True, p
             "himalaya": {"runnable": True, "version_output": "himalaya v2.1.0",
                         "major": 2, "account_check_ok": True},
         },
+        "version_drift": {"disk": "0.test", "listener": "0.test",
+                          "dispatcher": "0.test", "drift": []},
     }
 
 
@@ -340,6 +342,33 @@ try:
     check("support-bundle rejects non-empty output directories", rejected_contaminated)
 finally:
     shutil.rmtree(bundle_dir, ignore_errors=True)
+
+# --- version drift (#257) ---------------------------------------------------
+
+vd_ok = d._version_drift_check({"disk": "0.7.2", "listener": "0.7.2",
+                              "dispatcher": "0.7.2", "drift": []})
+check("matching versions is ok", vd_ok["status"] == "ok")
+
+vd_stale = d._version_drift_check({"disk": "0.7.2", "listener": "0.7.1",
+                                 "dispatcher": "0.7.2", "drift": ["listener"]})
+check("a stale listener is a warning, not blocked", vd_stale["status"] == "warning")
+check("the warning names both versions", "0.7.2" in vd_stale["summary"] and "0.7.1" in vd_stale["summary"])
+check("the fix is the restart command", "systemctl --user restart" in vd_stale["next_command"]
+     and "paynani-idle.service" in vd_stale["next_command"]
+     and "paynani-dispatch.service" in vd_stale["next_command"])
+
+vd_unknown = d._version_drift_check({"disk": "0.7.2", "listener": None,
+                                   "dispatcher": None, "drift": []})
+check("neither service reporting yet is unknown, not a mismatch", vd_unknown["status"] == "unknown")
+
+facts = base_facts()
+facts["version_drift"] = {"disk": "0.7.2", "listener": "0.7.1",
+                          "dispatcher": "0.7.2", "drift": ["listener"]}
+data = doctor_with(facts)
+names = {c["name"]: c for c in data["checks"]}
+check("doctor includes the version_drift check", "version_drift" in names)
+check("and it drives the overall status to warning", data["status"] == "warning")
+check("doctor JSON with a drift still validates against the schema", not schema_errors(schema, data))
 
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
