@@ -620,7 +620,10 @@ if [ "$himalaya_major" != "2" ]; then
     [ -n "$himalaya_shown" ] || himalaya_shown=${himalaya_version:-unavailable}
     echo "himalaya is $himalaya_shown; paynani needs v2.x to send." >&2
     echo 'v1.x has no `smtp send`, which is how Bcc stays out of the message.' >&2
-    echo 'INSTALL.md section 4.3 has the v2 config schema; upgrading the binary alone is not enough.' >&2
+    echo 'Upgrading the binary alone is not enough: the v1 and v2 config schemas are' >&2
+    echo 'incompatible. Rewrite ~/.config/himalaya/config.toml with the v2 schema in' >&2
+    echo 'INSTALL.md section 4.3, then confirm with `himalaya account list`' >&2
+    echo '(BACKENDS must read `imap, smtp`) and a real `himalaya envelope list`.' >&2
     exit 2
 fi
 

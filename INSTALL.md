@@ -664,11 +664,10 @@ succeeds.
 
 ### Migrating an old v1.x config
 
-Upgrading only the binary is not enough. With a v1-style config under Himalaya
-2.x, `himalaya account list` can show an empty `BACKENDS` column and commands can
-fail with `No backend matching 'auto' is configured for this account`. Rewrite
-`~/.config/himalaya/config.toml` using the v2 schema above, then confirm
-`BACKENDS` reads `imap, smtp`.
+On a new host, install Himalaya v2.x. On a host coming from v1.x, upgrade the
+binary first and then rewrite `~/.config/himalaya/config.toml` with the v2 schema
+above. Confirm `himalaya account list` shows `BACKENDS` as `imap, smtp`, then run
+a real `himalaya envelope list`; upgrading only the binary is not enough.
 
 Use `scripts/env_secret.py`, not a hand-written `sed`. It exists for this one
 job and it tolerates a UTF-8 BOM and CRLF line endings, which a `sed -n

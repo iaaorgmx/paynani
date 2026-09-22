@@ -412,7 +412,9 @@ def _himalaya_version_check(deps: dict) -> dict:
     him = deps.get("himalaya") or {}
     schema_command = (
         "upgrade Himalaya to v2.x and rewrite ~/.config/himalaya/config.toml "
-        "with the INSTALL.md section 4.3 schema"
+        "with the INSTALL.md section 4.3 schema; then confirm with "
+        "`himalaya account list` (BACKENDS must read `imap, smtp`) and a real "
+        "`himalaya envelope list`"
     )
     if not him.get("runnable"):
         return _check("himalaya", "unknown", "himalaya binary could not be run",
