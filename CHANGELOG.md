@@ -150,14 +150,19 @@ hosts:
 ```bash
 git fetch --tags origin
 git pull --ff-only origin main
-scripts/version.sh --plan     # y haz lo que imprima, en ese orden
+python3 scripts/upgrade_plan.py --from v0.7.1     # y haz lo que imprima
 ```
 
-El `pull` va **antes** del plan y no al revés: `--plan` se publica en esta misma
-versión, así que el `version.sh` que tienes instalado si vienes de la 0.7.1
-etiquetada todavía no lo conoce y contesta `usage:` con salida 64. Lo encontró
-Zeus actualizando su host; a mí no me pasó porque mi clon seguía `main` y ya
-tenía el comando.
+**El plan se pide nombrando la versión de la que vienes, no con `version.sh
+--plan` a secas.** Ese camino no funciona en ningún momento de esta
+actualización, y falla por dos razones opuestas. Antes del `pull`, el
+`version.sh` instalado desde la 0.7.1 etiquetada todavía no conoce `--plan` y
+contesta `usage:` con salida 64, que fue lo que encontró Zeus. Después del
+`pull`, `VERSION` ya dice 0.7.2 y `--plan` toma por defecto `--from v<VERSION>`,
+así que compara 0.7.2 contra 0.7.2 y responde que no hay nada que planear, que
+fue lo que encontró Ares. A ninguno de los dos defectos llegué yo, y por la
+misma razón las dos veces: mi clon sigue `main` en vez del tag, así que es el
+único host donde ese comando podía funcionar.
 
 El plan es por host: calcula qué cambió entre tu versión y ésta, y nombra sólo
 los pasos que a ti te tocan. En el mío, por ejemplo, no hacía falta reinstalar
