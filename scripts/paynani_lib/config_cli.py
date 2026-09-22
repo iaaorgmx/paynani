@@ -24,6 +24,9 @@ from pathlib import Path
 from . import envfile, onboard, validate
 
 PASSWORD_KEY = "AGENT_EMAIL_PASSWORD"
+# The one ENV_FIELDS key validate() never requires: send.sh falls back
+# without it. Absent, it prints "(not set)" and is not called missing.
+OPTIONAL_IN_ENV = {"AGENT_EMAIL_FROM_NAME"}
 
 
 def _fingerprint(path: Path) -> str:
@@ -54,7 +57,7 @@ def run_print(args) -> int:
         else:
             value = stored.get(key, "") if present else "(not set)"
         line = f"  {key:<40} {value}"
-        if not present:
+        if not present and key not in OPTIONAL_IN_ENV:
             line += "   MISSING"
             missing.append(key)
         print(line)

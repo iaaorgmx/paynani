@@ -865,6 +865,30 @@ try:
           "AGENT_EMAIL_PASSWORD" in printed and "MISSING" in printed)
     check("config_cli.run_print: the missing key is repeated in the summary line",
           "Missing: AGENT_EMAIL_PASSWORD" in printed)
+
+    # AGENT_EMAIL_FROM_NAME is in ENV_FIELDS but not actually required:
+    # validate() only checks it is one line, and send.sh falls back without
+    # it. It must print as absent without being called missing.
+    no_from_name_env = config_dir / "no-from-name.env"
+    no_from_name_env.write_text(
+        "AGENT_EMAIL_ACCOUNT=agent@example.com\n"
+        "AGENT_EMAIL_PASSWORD=super-secret-password\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap.example.com\n"
+        "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=993\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST=smtp.example.com\n"
+        "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT=465\n",
+        encoding="utf-8",
+    )
+    os.environ["PAYNANI_ENV"] = str(no_from_name_env)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        r = config_cli.run_print(Args())
+    printed = out.getvalue()
+    check("config_cli.run_print: an absent optional key still exits 0", r == 0)
+    check("config_cli.run_print: it is shown as not set",
+          "AGENT_EMAIL_FROM_NAME" in printed and "(not set)" in printed)
+    check("config_cli.run_print: but never called missing", "MISSING" not in printed)
+    check("config_cli.run_print: and never listed in the missing summary", "Missing:" not in printed)
     os.environ["PAYNANI_ENV"] = str(config_env)
 
     # --- config edit -----------------------------------------------------
