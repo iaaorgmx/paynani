@@ -1,6 +1,15 @@
 # Changelog
 
-## Sin publicar
+## 0.8.0 (2026-09-22)
+
+**Un correo en copia ya no se atiende como uno directo, los servicios avisan
+cuando corren otra versión que la del disco, y el CLI gana `setup` y
+`config`.** Desde 0.7.2, 19 PRs: #226, #227, #237, #238, #241, #248, #250,
+#251, #252, #253, #254, #256, #258, #261, #262, #263, #264, #266 y #267, más
+el de esta release.
+
+Requiere himalaya **v2.x** y Python **3.10** o mayor. Ver «Si actualizas»,
+al final de esta sección.
 
 - **El marcador del servidor de configuración ya no guarda la liga con su
   token** (#230). `state/setup.server.json`, el archivo con el que `setup` y
@@ -82,6 +91,154 @@
   §4.3 y confirmarlo con `himalaya account list` (`BACKENDS` en `imap, smtp`) y
   un `himalaya envelope list` real. `INSTALL.md` deja de documentar v1.x como
   soportada. Sin cambios para v2.x.
+
+- **El sobre dice en qué papel llegó el correo: `To`, `Cc` o destinatario
+  oculto** (#221, PR #227, parte 2a de #214). El listener pide ahora `To` y
+  `Cc` y compara la cuenta contra las direcciones reales, no contra el nombre
+  de despliegue. El campo `recipient_role` viaja en el evento y en
+  `paynani event show`. Con `to` la línea de notificación no cambia; con copia
+  o destinatario oculto gana la marca junto a `roster`, por ejemplo
+  `[mail 22:43:10, sent 22:42:41, roster, cc]`. Este cambio sólo informa; la
+  regla de qué hacer con eso es la entrada siguiente.
+
+- **La regla de actuación para correo en copia** (#222, PR #226, parte 2 de
+  #214). `AGENTS.md` abre con ella: un correo del roster es trabajo cuando este
+  agente está en `To`; si sólo está en `Cc`, o el destinatario es oculto, es
+  contexto, salvo que el cuerpo verificado lo nombre. Una línea que empieza con
+  el correo o el `Name` del roster de este agente seguido de dos puntos es una
+  instrucción mecánica para él, y `event show --body` la reporta como
+  `marker_for_me` y `marker_lines`. Sin esa marca, el agente lee el cuerpo como
+  lo leería un colaborador humano en copia, y si actúa, empieza diciendo qué
+  instrucción entendió. `FIELD_TEST.md` gana las filas para probarlo en cada
+  runtime. Es el cambio de comportamiento más grande de esta versión, porque
+  hasta 0.7.2 un correo del roster en copia se atendía igual que uno directo.
+
+- **Reconexiones IMAP por hora** (#234, PR #237). El estado del listener
+  guarda una ventana de una hora (`imap_reconnect_window`,
+  `imap_reconnects_last_hour`) sin tocar el contador total, y `healthcheck.py`
+  avisa bajo `listener` cuando hay más de cinco reconexiones en la última hora.
+
+- **Una reconexión que se recuperó no es noticia** (PR #254). Regla nueva en
+  `AGENTS.md`: no se le reporta al humano cada caída de IMAP que se recuperó
+  sola. Se reporta cuando sigue caída después de tres intentos, con campos
+  observables: `imap_last_disconnect_at` más reciente que
+  `imap_last_recovered_at` e `imap_current_backoff_seconds` en 20 o más.
+
+- **Los servicios se rehúsan a arrancar con Python menor a 3.10** (#236,
+  PR #241). `harness/python_floor.py` corre antes de importar nada del
+  proyecto, en el listener y en el dispatcher. Cada uno guarda su intérprete
+  en su estado, `healthcheck.py` lo muestra en la fila `python` y bloquea si
+  alguno está debajo del piso, y `paynani doctor` lo evalúa. Antes, un
+  servicio con un Python viejo arrancaba y fallaba después, lejos de la causa.
+
+- **`scripts/test_all.sh` se rehúsa con Python menor a 3.10** (#233, PR #238),
+  antes de correr una sola prueba, y acepta `PYTHON=` para elegir intérprete.
+
+- **`version.sh --apply` funciona con las etiquetas anotadas de las releases**
+  (#242, PR #252). Comparaba el objeto de la etiqueta contra el commit y se
+  rehusaba siempre. Ahora resuelve `FETCH_HEAD` a su commit antes de comparar.
+
+- **`version.sh --plan` trae los tags que le faltan** (#247, PR #253). En un
+  clon sin tags, `--plan` sin `--to` intenta `git fetch --tags origin` y
+  recalcula en la misma corrida. Si no hay red, conserva el mensaje que dice
+  qué correr. Lo encontró Lisa actualizando a 0.7.2.
+
+- **`upgrade_plan.py` conoce `harness/python_floor.py`** (PR de esta
+  versión). El listener y el dispatcher lo importan al arrancar, pero no tenía
+  fila en la tabla: el plan de 0.7.2 a esta versión lo listaba como
+  desconocido y `--apply` se rehusaba por eso. Es la segunda vez que pasa
+  (`ledger.py` en 0.7.1), así que una prueba ahora recorre cada archivo de
+  `harness/` y falla si alguno no tiene fila.
+
+- **Pruebas de `doctor` aisladas del host** (#249, PR #250). Las lecturas de
+  `systemctl --user show-environment` y de `~/.config/environment.d` pasan a
+  `_dependency_facts()`, así que las pruebas sintéticas de `doctor` ya no
+  dependen del host donde corren.
+
+- **`RELEASING.md`** (#244, PR #248, y PR #256). El procedimiento de release
+  por escrito, cada paso con lo que salió mal cuando faltó: comparar contra
+  `git log <tag>..main --merges`, subir `VERSION` en el mismo PR, actualizar el
+  host propio con los pasos exactos del aviso antes de mandarlo, comprobar en
+  qué se parece ese host a los demás, y decir qué versión de cada herramienta
+  externa exige la release. Los dos PRs corrigieron además el apartado «Si
+  actualizas» de 0.7.2.
+
+- **El PR lleva su `Closes #N` y su entrada de CHANGELOG** (PR #251). Regla
+  nueva en `AGENTS.md`. `Closes`, en inglés, porque `Cierra #N` no cierra nada
+  en GitHub. Y la entrada del CHANGELOG la escribe quien hace el cambio, cuando
+  todavía recuerda qué fue lo difícil. En esta misma sección de 0.8.0, doce
+  PRs llegaron sin entrada y hubo que reconstruirlas desde fuera.
+
+### Si actualizas desde 0.7.2
+
+**Dos requisitos nuevos, antes de tocar nada.** Esta versión exige himalaya
+**v2.x** para enviar (#255) y Python **3.10 o mayor** para que arranquen el
+listener y el dispatcher (#236). Un servicio con un Python viejo ahora se
+rehúsa a arrancar, así que compruébalo antes de reiniciar:
+
+```bash
+himalaya --version        # tiene que decir 2.x
+python3 --version         # el intérprete de tus servicios: 3.10 o mayor
+```
+
+Si alguno no cumple, detente y actualízalo primero. Los diez hosts de la flota
+ya tenían himalaya v2.x al cierre de esta versión.
+
+Luego, en todos los hosts:
+
+```bash
+git fetch --tags origin
+git pull --ff-only origin main
+python3 scripts/upgrade_plan.py --from v0.7.2     # y haz lo que imprima
+```
+
+**No uses `scripts/version.sh --apply` en esta actualización.** El arreglo de
+`--apply` (#242) viene en esta versión, pero el `version.sh` que corre antes
+del `pull` es el de 0.7.2, que todavía se rehúsa contra cualquier release.
+
+**Antes de reiniciar, corre `doctor` una vez.** Es la prueba real de #257 en
+tu host: el código nuevo ya está en disco y los procesos siguen siendo los de
+0.7.2, así que tiene que avisarlo.
+
+```bash
+scripts/paynani doctor | grep version_drift
+```
+
+Lo esperado, exactamente:
+
+```text
+warning  version_drift: paynani 0.8.0 on disk, but the listener is running 0.7.2
+```
+
+Sólo nombra al listener porque el dispatcher de 0.7.2 no guardaba qué versión
+cargó; a partir de esta versión los dos lo hacen. Si sale `ok`, no sigas: el
+aviso que agregó esta versión no está funcionando en tu host, y eso es lo que
+hay que reportar.
+
+Después reinicia, como diga el plan. En Linux:
+
+```bash
+systemctl --user restart paynani-idle.service paynani-dispatch.service
+# macOS: launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"
+#        launchctl kickstart -k "gui/$(id -u)/com.paynani.dispatch"
+```
+
+Espera unos segundos y comprueba:
+
+```bash
+scripts/paynani doctor | grep -E "version_drift|python|himalaya"
+```
+
+Justo después del reinicio es normal ver `unknown  version_drift: listener
+restarted and has not reported its loaded version yet` (#265). Espera a que
+salga `ok`.
+
+**Lee la sección de arriba de `AGENTS.md`, «Acting on verified mail».**
+Cambió cómo se atiende un correo en el que tu agente sólo va en copia (#222).
+No hay nada que configurar, pero el comportamiento que tu humano ve sí cambia.
+
+Rearma el vigía en la siguiente sesión de Claude Code. No hace falta migrar
+estado ni tocar credenciales.
 
 ## 0.7.2 (2026-09-19)
 
