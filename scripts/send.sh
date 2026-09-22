@@ -613,6 +613,20 @@ if [ -n "$check_only" ] && [ -n "$dry_run" ]; then
     exit 2
 fi
 
+himalaya_version=$(himalaya --version 2>/dev/null || true)
+himalaya_major=$(printf '%s\n' "$himalaya_version" | sed -n 's/.*himalaya v\{0,1\}\([0-9][0-9]*\)\..*/\1/p' | head -n 1)
+if [ "$himalaya_major" != "2" ]; then
+    himalaya_shown=$(printf '%s\n' "$himalaya_version" | sed -n 's/.*himalaya v\{0,1\}\([0-9][^[:space:]]*\).*/v\1/p' | head -n 1)
+    [ -n "$himalaya_shown" ] || himalaya_shown=${himalaya_version:-unavailable}
+    echo "himalaya is $himalaya_shown; paynani needs v2.x to send." >&2
+    echo 'v1.x has no `smtp send`, which is how Bcc stays out of the message.' >&2
+    echo 'Upgrading the binary alone is not enough: the v1 and v2 config schemas are' >&2
+    echo 'incompatible. Rewrite ~/.config/himalaya/config.toml with the v2 schema in' >&2
+    echo 'INSTALL.md section 4.3, then confirm with `himalaya account list`' >&2
+    echo '(BACKENDS must read `imap, smtp`) and a real `himalaya envelope list`.' >&2
+    exit 2
+fi
+
 outgoing_backend_type() {
     python3 - "$ACCOUNT" <<'PY'
 import os, sys, tomllib

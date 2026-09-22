@@ -287,6 +287,7 @@ def _imap_telemetry_check(listener: dict) -> dict:
 # Documented in INSTALL.md #1 alongside these; keep both in sync.
 MIN_PYTHON = (3, 10)
 MIN_OPENCODE = (1, 18, 31)
+MIN_HIMALAYA_MAJOR = 2
 
 HIMALAYA_VERSION_RE = re.compile(r"himalaya\s+v?(\d+)\.")
 OPENCODE_VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
@@ -333,7 +334,7 @@ def _dependency_facts(selected_runtime, python=None) -> dict:
     if himalaya["runnable"]:
         match = HIMALAYA_VERSION_RE.search(version["stdout"])
         himalaya["major"] = int(match.group(1)) if match else None
-        if himalaya["major"] in (1, 2):
+        if himalaya["major"] == MIN_HIMALAYA_MAJOR:
             account = _safe_run(["himalaya", "account", "check", "-a", "paynani"])
             himalaya["account_check_output"] = (account["stdout"].strip()
                                                 or account["stderr"].strip())
@@ -422,25 +423,29 @@ def _python_check(deps: dict) -> dict:
 
 def _himalaya_version_check(deps: dict) -> dict:
     """
-    A recognized config schema, not a pinned version -- INSTALL.md #4 has two
-    completely different schemas (v1.x and v2.x) rather than a version scale,
-    and both are fleet-tested against a real binary. 0.x is blocked; a binary
-    that cannot be run is unknown rather than guessed at. Named apart from the
-    existing "smtp" check, which only looks for the config file on disk.
+    Sending uses Himalaya v2's explicit SMTP envelope (`smtp send`) so Bcc stays
+    out of DATA. Himalaya v1 can still read mail, but cannot satisfy the send
+    path, so doctor blocks it before the agent discovers the break while replying.
     """
     him = deps.get("himalaya") or {}
+    schema_command = (
+        "upgrade Himalaya to v2.x and rewrite ~/.config/himalaya/config.toml "
+        "with the INSTALL.md section 4.3 schema; then confirm with "
+        "`himalaya account list` (BACKENDS must read `imap, smtp`) and a real "
+        "`himalaya envelope list`"
+    )
     if not him.get("runnable"):
         return _check("himalaya", "unknown", "himalaya binary could not be run",
-                       him, "see INSTALL.md #4 to install Himalaya")
+                       him, "see INSTALL.md section 4.3 to install Himalaya v2.x")
     major = him.get("major")
-    if major not in (1, 2):
+    if major != MIN_HIMALAYA_MAJOR:
         shown = him.get("version_output") or "no output"
-        return _check("himalaya", "blocked", f"unrecognized schema ({shown})", him,
-                       "see INSTALL.md #4 to install a supported Himalaya (v1.x or v2.x)")
+        return _check("himalaya", "blocked", f"v2.x required to send ({shown})",
+                       him, schema_command)
     if him.get("account_check_ok"):
-        return _check("himalaya", "ok", f"v{major}.x, account check passed", him)
-    return _check("himalaya", "blocked", f"v{major}.x, account check failed", him,
-                   "himalaya account check -a paynani")
+        return _check("himalaya", "ok", "v2.x, account check passed", him)
+    return _check("himalaya", "blocked", "v2.x account check failed", him,
+                   "himalaya account check -a paynani after rewriting config with the INSTALL.md section 4.3 schema")
 
 
 def _opencode_version_check(deps: dict) -> dict:

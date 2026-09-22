@@ -14,6 +14,15 @@
   aún no reportó su versión (recién reiniciado) sale como `unknown`, no
   como una discrepancia.
 
+- **`scripts/send.sh` y `paynani doctor` exigen himalaya v2.x para enviar**
+  (#255). v1.x no tiene `smtp send`, que es como el Bcc se queda en el sobre y
+  fuera del mensaje, así que `send.sh` se rehúsa antes de intentar mandar y el
+  aviso dice la versión encontrada, la requerida y que subir el binario no
+  basta: hay que reescribir la configuración con el esquema v2 de `INSTALL.md`
+  §4.3 y confirmarlo con `himalaya account list` (`BACKENDS` en `imap, smtp`) y
+  un `himalaya envelope list` real. `INSTALL.md` deja de documentar v1.x como
+  soportada. Sin cambios para v2.x.
+
 ## 0.7.2 (2026-09-19)
 
 **Correo con copia oculta, el roster migrado, y dos defectos de documentación
