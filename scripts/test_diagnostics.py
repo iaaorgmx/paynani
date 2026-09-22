@@ -361,6 +361,29 @@ vd_unknown = d._version_drift_check({"disk": "0.7.2", "listener": None,
                                    "dispatcher": None, "drift": []})
 check("neither service reporting yet is unknown, not a mismatch", vd_unknown["status"] == "unknown")
 
+# #260: same VERSION, different commit -- version_drift_facts() names the
+# mismatch by commit once the versions already agree.
+vd_commit = d._version_drift_check({
+    "disk": "0.7.2", "disk_commit": "c3a5de4111111111111111111111111111111111",
+    "listener": "0.7.2", "dispatcher": "0.7.2", "drift": ["listener"],
+    "drift_detail": {"listener": {"field": "commit",
+                                  "disk": "c3a5de4111111111111111111111111111111111",
+                                  "process": "eba16ec222222222222222222222222222222222"}},
+})
+check("a same-version commit drift is a warning, not blocked", vd_commit["status"] == "warning")
+check("named by commit, abbreviated to 7 chars, not by version",
+      vd_commit["summary"] == "paynani 0.7.2 on disk (c3a5de4), but the listener is running eba16ec")
+check("the fix is still the restart command", "systemctl --user restart" in vd_commit["next_command"]
+     and "paynani-idle.service" in vd_commit["next_command"]
+     and "paynani-dispatch.service" in vd_commit["next_command"])
+
+# #258's nit: VERSION missing on disk means nothing was compared, so this must
+# read `unknown`, not the `ok` it used to claim.
+vd_no_version = d._version_drift_check({"disk": None, "listener": "0.7.2",
+                                      "dispatcher": "0.7.2", "drift": []})
+check("VERSION missing on disk is unknown, not ok, even with both services reporting",
+      vd_no_version["status"] == "unknown")
+
 facts = base_facts()
 facts["version_drift"] = {"disk": "0.7.2", "listener": "0.7.1",
                           "dispatcher": "0.7.2", "drift": ["listener"]}

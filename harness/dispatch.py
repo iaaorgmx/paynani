@@ -25,6 +25,7 @@ import fcntl
 import importlib
 import os
 import random
+import subprocess
 import sys
 import json
 import time
@@ -50,7 +51,23 @@ def _process_version():
     return value or None
 
 
+def _process_commit():
+    """Git HEAD this process's checkout was on at startup, fixed like
+    PROCESS_VERSION: a `VERSION` match can still hide a `git pull` on `main`
+    that landed between tagged releases (#260)."""
+    try:
+        run = subprocess.run(
+            ["git", "-C", str(Path(__file__).resolve().parent.parent), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if run.returncode != 0:
+        return None
+    return (run.stdout or "").strip() or None
+
+
 PROCESS_VERSION = _process_version()
+PROCESS_COMMIT = _process_commit()
 
 STATE_DIR = state_dir()
 JOURNAL = STATE_DIR / "events.jsonl"
@@ -114,6 +131,7 @@ def write_state(path=DISPATCH_STATE):
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "python": PYTHON_FACTS,
         "version": PROCESS_VERSION,
+        "commit": PROCESS_COMMIT,
     }
     path = Path(path)
     try:

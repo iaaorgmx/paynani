@@ -296,13 +296,26 @@ OPENCODE_VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 def _version_drift_check(vd: dict) -> dict:
     if vd.get("drift"):
         service = vd["drift"][0]
+        detail = vd.get("drift_detail", {}).get(service, {})
+        if detail.get("field") == "commit":
+            summary = (f"paynani {vd['disk']} on disk ({healthcheck.short_commit(detail['disk'])}), "
+                      f"but the {service} is running {healthcheck.short_commit(detail['process'])}")
+        else:
+            summary = f"paynani {vd['disk']} is on disk, but the {service} is running {vd[service]}"
         return _check(
             "version_drift",
             "warning",
-            f"paynani {vd['disk']} is on disk, but the {service} is running {vd[service]}",
+            summary,
             vd,
             f"systemctl --user restart {healthcheck.LISTENER_UNIT} {healthcheck.DISPATCH_UNIT}",
         )
+    # #260's nit against #258: with VERSION missing on disk, nothing was ever
+    # compared, so "ok" claimed an agreement that was never checked. Ahead of
+    # the "neither service reported" case below on purpose -- a missing
+    # VERSION is the more specific, more actionable reason to say "unknown".
+    if vd.get("disk") is None:
+        return _check("version_drift", "unknown",
+                      "VERSION is missing on disk; version drift cannot be checked", vd)
     if vd.get("listener") is None and vd.get("dispatcher") is None:
         return _check("version_drift", "unknown",
                       "neither service has reported its loaded version yet", vd)

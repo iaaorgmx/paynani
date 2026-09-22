@@ -2,6 +2,18 @@
 
 ## Sin publicar
 
+- **`version_drift` también confronta el commit, no sólo la versión** (#260).
+  Un host que sigue `main` entre versiones etiquetadas puede hacer `git pull`
+  y traer código nuevo sin que `VERSION` cambie, así que el aviso de #257 se
+  quedaba callado justo en ese caso -- reproducido la misma noche del merge,
+  en el único host de la flota que sigue `main`. `idle_listener.py` y
+  `harness/dispatch.py` ahora guardan también el `HEAD` que cargaron al
+  arrancar; cuando la versión coincide pero el commit no, `healthcheck.py` y
+  `paynani doctor` lo dicen con los dos commits abreviados a 7 caracteres y
+  el mismo comando de reinicio, todavía como `warning`, nunca como
+  `problem`. De paso, `VERSION` ausente en disco ya no se reporta como `ok`
+  (nada se comparó): sale `unknown`.
+
 - **`healthcheck.py` compara la versión en disco con la que cada proceso
   cargó** (#257). `scripts/idle_listener.py` y `harness/dispatch.py` ya
   guardaban la versión que cargaron al arrancar (`PROCESS_VERSION`), pero

@@ -19,7 +19,7 @@ Exit:   0 clean shutdown · 1 configuration or login failure (not retryable)
 """
 
 import argparse, calendar, datetime, email, email.utils, imaplib, json, os, pathlib, re
-import select, signal, socket, ssl, sys, time
+import select, signal, socket, ssl, subprocess, sys, time
 from email.header import decode_header, make_header
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "harness"))
@@ -47,7 +47,23 @@ def _process_version():
     return value or None
 
 
+def _process_commit():
+    """Git HEAD this process's checkout was on at startup, fixed like
+    PROCESS_VERSION: a `VERSION` match can still hide a `git pull` on `main`
+    that landed between tagged releases (#260)."""
+    try:
+        run = subprocess.run(
+            ["git", "-C", str(pathlib.Path(__file__).resolve().parent.parent), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if run.returncode != 0:
+        return None
+    return (run.stdout or "").strip() or None
+
+
 PROCESS_VERSION = _process_version()
+PROCESS_COMMIT = _process_commit()
 
 # RFC 2177: a client must re-issue IDLE at least every 29 minutes. We stay well
 # under the ceiling on purpose: this interval is also the longest a dead
@@ -476,6 +492,7 @@ def save_state(path, mailbox, validity, last_uid, telemetry=None):
         "last_uid": last_uid,
         "heartbeat_at": timestamp(),
         "version": PROCESS_VERSION,
+        "commit": PROCESS_COMMIT,
         "python": PYTHON_FACTS,
     }
     if telemetry:

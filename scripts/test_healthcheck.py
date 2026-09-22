@@ -1088,6 +1088,53 @@ try:
 finally:
     hc.disk_version = _original_disk_version_for_none_case
 
+# --- commit drift (#260): a `main` host can keep VERSION unchanged across a
+# `git pull` -- version_drift_facts() falls back to comparing the commit each
+# process loaded only once the versions already agree. ----------------------
+
+_c1 = "c3a5de4111111111111111111111111111111111"
+_c2 = "eba16ec222222222222222222222222222222222"
+
+check("matching version and commit: no drift", [],
+      hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                             listener={"version": "0.7.2", "commit": _c1},
+                             dispatcher={"version": "0.7.2", "commit": _c1})["drift"])
+
+vd_commit = hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                                   listener={"version": "0.7.2", "commit": _c2},
+                                   dispatcher={"version": "0.7.2", "commit": _c1})
+check("same version, differing commit is drift", ["listener"], vd_commit["drift"])
+check("named by commit, not by version", "commit", vd_commit["drift_detail"]["listener"]["field"])
+check("carrying the disk and process commits in full", {"disk": _c1, "process": _c2, "field": "commit"},
+      vd_commit["drift_detail"]["listener"])
+
+check("a differing version wins over a differing commit", ["dispatcher"],
+      hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                             listener={"version": "0.7.2", "commit": _c1},
+                             dispatcher={"version": "0.7.1", "commit": _c2})["drift"])
+
+check("a service that has not reported a commit yet is not a commit mismatch", [],
+      hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                             listener={"version": "0.7.2", "commit": None},
+                             dispatcher={"version": "0.7.2", "commit": None})["drift"])
+
+# commit=None means "figure it out yourself" to version_drift_facts(), same as
+# disk above, so a real missing commit is exercised by patching disk_commit()
+# rather than passing None -- passing None here would read this host's actual
+# HEAD instead of testing the missing case.
+_original_disk_commit_for_none_case = hc.disk_commit
+hc.disk_commit = lambda: None
+try:
+    check("no disk commit known is never a commit mismatch either", [],
+          hc.version_drift_facts(disk="0.7.2",
+                                 listener={"version": "0.7.2", "commit": _c2},
+                                 dispatcher={"version": "0.7.2", "commit": _c1})["drift"])
+finally:
+    hc.disk_commit = _original_disk_commit_for_none_case
+
+check("short_commit abbreviates to 7 hex chars", "c3a5de4", hc.short_commit(_c1))
+check("short_commit passes None through", None, hc.short_commit(None))
+
 original_disk_version = hc.disk_version
 hc.disk_version = lambda: "0.7.2"
 try:
@@ -1112,6 +1159,44 @@ try:
     code, text = f.exit_code()
     check("disk and listener agreeing prints nothing extra", False,
           "on disk, but" in text)
+
+    original_disk_commit = hc.disk_commit
+    hc.disk_commit = lambda: _c1
+    try:
+        f = Fixture()
+        state = json.loads(hc.LISTENER_STATE.read_text())
+        state["version"] = "0.7.2"
+        state["commit"] = _c2
+        hc.LISTENER_STATE.write_text(json.dumps(state))
+        code, text = f.exit_code()
+        check("a same-version commit drift does not fail the exit code either", 0, code)
+        check("and the row names disk and process commits, abbreviated to 7", True,
+              "paynani 0.7.2 on disk (c3a5de4), but the listener is running eba16ec" in text)
+        check("with the restart command underneath it too", True,
+              "systemctl --user restart paynani-idle.service paynani-dispatch.service" in text)
+        _, problems, warnings = f.run()
+        check("commit drift is also a warning, never a problem", True,
+              not any("eba16ec" in p for p in problems)
+              and any("eba16ec" in w for w in warnings))
+
+        f = Fixture()
+        state = json.loads(hc.LISTENER_STATE.read_text())
+        state["version"] = "0.7.2"
+        state["commit"] = _c1
+        hc.LISTENER_STATE.write_text(json.dumps(state))
+        code, text = f.exit_code()
+        check("matching version and commit prints nothing extra", False,
+              "on disk (" in text)
+
+        f = Fixture()
+        state = json.loads(hc.LISTENER_STATE.read_text())
+        state["version"] = "0.7.2"
+        hc.LISTENER_STATE.write_text(json.dumps(state))
+        code, text = f.exit_code()
+        check("a listener that has not reported a commit yet is not a mismatch", False,
+              "on disk (" in text)
+    finally:
+        hc.disk_commit = original_disk_commit
 finally:
     hc.disk_version = original_disk_version
 
