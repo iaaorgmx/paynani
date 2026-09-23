@@ -633,6 +633,22 @@ def _observation_check(name: str, facts: dict) -> dict:
             return _check(name, "ok", OBSERVATION_LABELS[name], plugin)
         return _check(name, "unknown", OBSERVATION_LABELS.get(name, name), plugin)
 
+    # The watch registries are already classified once, by
+    # healthcheck.watch_registry_facts() (#170), and folded into facts["spool"];
+    # read that rather than watch.json again (#269).
+    if name == "session_watch_state" and selected == "claudecode":
+        if isinstance(spool, dict):
+            live = spool.get("watch_live")
+            if live is not None:
+                return _check(name, "ok",
+                              f"watch armed by session {str(live.get('session_id'))[:8]}, "
+                              f"last heartbeat {live.get('heartbeat_at')}", spool)
+            if (spool.get("watch_expired") or spool.get("watch_orphan") or spool.get("watch_pending")
+                    or spool.get("watch_ended_last") is not None):
+                return _check(name, "warning", "no Claude Code session is watching mail; mail waits in the spool",
+                              spool, "re-arm the Monitor with harness/session_watch.sh <state> --from-hook")
+        return _check(name, "unknown", OBSERVATION_LABELS[name], spool)
+
     return _check(name, "unknown", OBSERVATION_LABELS.get(name, name), {"runtime": selected})
 
 

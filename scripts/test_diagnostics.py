@@ -393,5 +393,43 @@ check("doctor includes the version_drift check", "version_drift" in names)
 check("and it drives the overall status to warning", data["status"] == "warning")
 check("doctor JSON with a drift still validates against the schema", not schema_errors(schema, data))
 
+# #269: session_watch_state was declared for claudecode but nothing computed it,
+# so every Claude Code host closed doctor on unknown. It reads the registry
+# summary healthcheck already puts in facts["spool"].
+def watch_spool(**overrides):
+    spool = {"watch_live": None, "watch_expired": [], "watch_orphan": [],
+             "watch_pending": [], "watch_yielded": 0, "watch_ended": 0,
+             "watch_ended_last": None}
+    spool.update(overrides)
+    return spool
+
+def watch_state(spool):
+    return d._observation_check("session_watch_state",
+                                {"runtime": {"selected": "claudecode"}, "spool": spool})
+
+brief = {"session_id": "59d7250d-dda4-43a7-a980-3ce605eda909",
+         "armed_at": "2026-09-23T03:15:39Z", "expires_at": "2026-09-23T03:45:39Z",
+         "heartbeat_at": "2026-09-23T03:16:39Z", "watcher_pid": 808}
+
+sw_live = watch_state(watch_spool(watch_live=brief))
+check("a live watch is ok", sw_live["status"] == "ok")
+check("and names the session and its last heartbeat",
+      sw_live["summary"] == "watch armed by session 59d7250d, last heartbeat 2026-09-23T03:16:39Z")
+check("the spool summary rides along as facts", sw_live.get("facts", {}).get("watch_live") == brief)
+
+sw_expired = watch_state(watch_spool(watch_expired=[brief]))
+check("an expired watch with no live one is a warning", sw_expired["status"] == "warning")
+check("that says mail waits in the spool",
+      sw_expired["summary"] == "no Claude Code session is watching mail; mail waits in the spool")
+check("and says to re-arm with --from-hook",
+      sw_expired.get("next_command") == "re-arm the Monitor with harness/session_watch.sh <state> --from-hook")
+
+sw_ended = watch_state(watch_spool(watch_ended=1, watch_ended_last=dict(brief, ended_at="2026-09-23T03:45:39Z")))
+check("a retired watch (ended, nothing live) is a warning", sw_ended["status"] == "warning")
+
+sw_none = watch_state(watch_spool())
+check("no registry at all is unknown, the honest never-armed answer", sw_none["status"] == "unknown")
+check("with the usual label", sw_none["summary"] == d.OBSERVATION_LABELS["session_watch_state"])
+
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
