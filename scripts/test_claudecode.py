@@ -1304,6 +1304,70 @@ class WatchRegistry(unittest.TestCase):
         self.assertEqual([], [r for r in self.ss.list_registries() if r[2] == "pending"])
         self.assertEqual("sess-a", self.ss.live_watch()["session_id"])
 
+    def _rearm_with_offset(self, session_id, offset=0):
+        """What a session does when it re-arms with an explicit offset: same session, second watcher."""
+        import subprocess as sp
+        env = dict(os.environ, CLAUDE_CODE_SESSION_ID=session_id)
+        return sp.run(["bash", str(self.WATCH), str(self.state), str(offset)],
+                      capture_output=True, text=True, timeout=10, env=env)
+
+    def test_the_lock_owner_records_the_session_it_belongs_to(self):
+        self._hook("sess-own", spool_through=0)
+        self._watch("sess-own")
+        self.assertTrue(self._wait(lambda: (self.state / "session.watch.lock.d" / "owner").exists()))
+        owner = (self.state / "session.watch.lock.d" / "owner").read_text()
+        self.assertIn("session_id=sess-own\n", owner)
+
+    def test_a_session_rearming_early_leaves_its_own_live_watch_armed(self):
+        """
+        #301. The session re-armed a little before its Monitor expired. The second
+        watcher yields, as it must, but it used to write `yielded` into the
+        registry of the very session whose first watcher was still showing mail,
+        and doctor then said nobody was watching.
+        """
+        self.spool.write_text("", encoding="utf-8")
+        self._hook("sess-early", spool_through=0)
+        first = self._watch("sess-early")
+        self.assertTrue(self._wait(lambda: self._registry("sess-early")["status"] == "armed"))
+        before = self._registry("sess-early")
+
+        second = self._rearm_with_offset("sess-early")
+        self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+        self.assertIn("this session is already watching", second.stdout)
+        self.assertNotIn("another session", second.stdout)
+
+        after = self._registry("sess-early")
+        self.assertEqual("armed", after["status"])
+        self.assertIsNone(after["ended_at"])
+        self.assertEqual(first.pid, after["watcher_pid"], "still the first watcher's registry")
+        self.assertEqual(before["token"], after["token"])
+        self.assertEqual("live", self.ss.registry_state(after))
+        self.assertEqual("sess-early", self.ss.live_watch()["session_id"])
+
+    def test_a_different_session_still_yields_when_the_lock_is_held(self):
+        """The other half of the same branch: only the holder's own session is exempt."""
+        self._hook("sess-holder", spool_through=0)
+        self._hook("sess-other", spool_through=0)
+        self._watch("sess-holder")
+        self.assertTrue(self._wait(lambda: self._registry("sess-holder")["status"] == "armed"))
+        second = self._rearm_with_offset("sess-other")
+        self.assertEqual(0, second.returncode)
+        self.assertIn("another session is already watching", second.stdout)
+        self.assertEqual("yielded", self._registry("sess-other")["status"])
+        self.assertEqual("armed", self._registry("sess-holder")["status"])
+
+    def test_a_lock_written_before_session_ids_were_recorded_keeps_the_old_answer(self):
+        """A watcher of an older version left no session_id in its owner file: treat the caller as another session."""
+        self._hook("sess-legacy", spool_through=0)
+        self._watch("sess-legacy")
+        self.assertTrue(self._wait(lambda: self._registry("sess-legacy")["status"] == "armed"))
+        owner = self.state / "session.watch.lock.d" / "owner"
+        owner.write_text("".join(line for line in owner.read_text().splitlines(keepends=True)
+                                 if not line.startswith("session_id=")))
+        second = self._rearm_with_offset("sess-legacy")
+        self.assertEqual(0, second.returncode)
+        self.assertIn("another session is already watching", second.stdout)
+
     def test_a_killed_watcher_is_an_orphan_not_a_live_one(self):
         import signal
         self._hook("sess-k", spool_through=0)
