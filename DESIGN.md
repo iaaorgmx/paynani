@@ -752,6 +752,47 @@ because they are the parts somebody working from memory would miss.
 
 ---
 
+## Why several accounts share one journal
+
+An agent can watch up to ten mailboxes besides its own (`MULTI_ACCOUNT.md`). The
+property this serves is the one everything else serves: a message must not be
+lost or acted on with the wrong authority, and what the design gives up to keep
+that is a few processes, not a few rules.
+
+**One listener process per account.** `paynani-idle@<id>.service` on Linux,
+`com.paynani.idle.<id>` on macOS. A mailbox that is down must not blind the
+others, and one process holding several IDLE connections would turn "ventas@ is
+down" into "everything is down" the moment it crashed.
+
+**One journal and one dispatcher for all of them.** The session receives
+everything in order, behind one cursor. Giving each account its own journal and
+its own dispatcher would put two cursors in competition for a single session,
+and the fix for that is the design already here. Do not "simplify" this by
+separating them.
+
+**The roster is per account.** The `roster` mark on a message to `ventas@` is
+decided by the roster of `ventas`, and only by it. Being on the main roster
+grants nothing on another account, and the other way round. Trust is per
+mailbox, because the reason to be on a roster is to be allowed to give
+instructions to that mailbox's owner, and nobody vouched for anyone else's.
+
+**The `event_id` names the account only when it is an additional one**
+(`imap:<id>:<mailbox>:<uidvalidity>:<uid>`). The main account's id did not
+change, so no ledger had to be migrated and no reader of old events had to
+learn a second format.
+
+**`event show` and `send.sh --account` never fall back to the main login or the
+main roster for an event of another account** (#283). If the account is gone
+from `accounts.json`, they refuse. Falling back would mean reading a mailbox with
+credentials, or sending with permissions, that were never granted for it, and it
+would do so silently.
+
+**No password lives in `accounts.json`.** `password_env` names a key in the
+`.env`, so there is one file of secrets to protect, and himalaya reads it through
+the same `env_secret.py` as for the main account.
+
+---
+
 ## Event lifecycle ledger
 
 `state/lifecycle.jsonl` is the append-only audit trail keyed by canonical

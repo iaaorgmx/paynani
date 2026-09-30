@@ -271,6 +271,13 @@ systemctl --user restart paynani-idle.service
 systemctl --user restart paynani-dispatch.service
 ```
 
+With additional accounts (`MULTI_ACCOUNT.md`), restart their instances as well:
+
+```bash
+systemctl --user list-units --all --plain --no-legend 'paynani-idle@*.service' \
+    | awk '{print $1}' | xargs -r systemctl --user restart
+```
+
 On macOS, the same two steps use `launchctl`. Load and enable all three agents,
 bootstrapping only one that is not loaded already, since `bootstrap` fails on a
 loaded agent:
@@ -291,6 +298,17 @@ nothing to restart:
 ```bash
 launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"
 launchctl kickstart -k "gui/$(id -u)/com.paynani.dispatch"
+```
+
+With additional accounts (`MULTI_ACCOUNT.md`), each one has its own agent,
+`com.paynani.idle.<id>`, and it loaded the old code too. Restart them all:
+
+```bash
+launchctl list \
+    | awk '$3 ~ /^com\.paynani\.idle\./ {print $3}' \
+    | while read -r label; do
+        launchctl kickstart -k "gui/$(id -u)/$label"
+    done
 ```
 
 If you re-ran `scripts/install.sh` in §5, it already booted out and

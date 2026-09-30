@@ -189,6 +189,10 @@ fiable tant que l'expéditeur ne correspond pas à votre liste.
   absente de la liste vous est signalé, et rien de plus.
 - **Ne pas perdre ce qui est arrivé** si la machine redémarre en pleine tâche.
   Chaque message détecté est noté sur disque avant d'être remis.
+- **Surveiller aussi les boîtes de votre entreprise**, comme `ventas@` ou
+  `soporte@` (jusqu'à 10), chacune avec sa propre liste de personnes autorisées à
+  lui donner des instructions. Voir [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (en
+  espagnol).
 
 ## Qu'est-ce que cela change sur la machine ?
 
@@ -346,6 +350,7 @@ fichier `.env` et à votre propre jugement sur qui entre.
 | Retirer Paynani | [`UNINSTALL.md`](../UNINSTALL.md) |
 | Voir les changements par version | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autoriser des expéditeurs | `roster.md` et [`roster.md.example`](../roster.md.example) |
+| Surveiller plusieurs comptes de courrier | [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (en espagnol) |
 | Envoyer du courrier depuis la frontière sûre | [`scripts/send.sh`](../scripts/send.sh) |
 | Voir ce que garantit chaque harness | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
