@@ -26,6 +26,16 @@ When `event show --body` reports `marker_for_me: false`, that does not mean
 the message has no instruction for this agent. It means no mechanical marker
 matched; read the verified body and decide as a copied collaborator would.
 
+**Close each roster notice once you have dealt with it.** On Claude Code the
+watcher moves its cursor the moment it shows a notice, so seeing a notice and
+acting on it are two separate events, and only you know about the second one.
+When you have acted, run `scripts/paynani event mark <event_id> handled`. Use
+`replied` instead if you answered it, or `closed` if it needed nothing. The
+event id is the last field of the notice, inside `[scripts/paynani event show …]`.
+A roster notice left open from the last seven days is listed again at every
+session start, under «ROSTER MAIL NOT YET CLOSED», so a session that ended
+before acting does not lose it (#271).
+
 ---
 
 ## The path

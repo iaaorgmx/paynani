@@ -2,6 +2,27 @@
 
 ## Sin publicar
 
+- **Un aviso del roster ya no se pierde si la sesión se cierra antes de
+  atenderlo** (#271). En Claude Code el vigía mueve el cursor en cuanto
+  muestra un aviso, así que para paynani mostrar equivalía a atender. Si la
+  sesión moría entre las dos cosas, el aviso no volvía a aparecer. Ahora el
+  hook de SessionStart también lee el ledger y lista, en el bloque «ROSTER
+  MAIL NOT YET CLOSED», cada aviso del roster de los últimos 7 días que sigue
+  en `dispatched` o `presented`, con su `event_id`. Un aviso sale de esa lista
+  cuando el agente lo cierra con `paynani event mark <id> handled`, `replied`
+  o `closed`. El hook y `AGENTS.md` ya dicen que hay que hacerlo. La ventana se
+  cambia con `PAYNANI_UNATTENDED_DAYS`. Esto aplica sólo a Claude Code: en
+  Codex, la repetición al iniciar sesión tiene un límite de tamaño y no se
+  toca.
+
+- **Rearmar el vigía ya no repite los avisos que ya se cerraron** (#271).
+  Después de un `/clear`, Claude Code cambia el `session_id` pero sigue en el
+  mismo proceso. El registro de la sesión nueva guardaba el offset del momento
+  del hook, así que al rearmar se volvían a mostrar los avisos que el vigía
+  anterior ya había entregado. Ahora el vigía consulta el ledger antes de
+  imprimir cada línea: si el evento ya está `handled`, `replied` o `closed`, lo
+  consume sin mostrarlo y el cursor avanza igual.
+
 - **Un corte de IMAP que se recupera solo ya no avisa** (#273). Cuando el
   proveedor cortaba la sesión TLS a mitad de IDLE (`SSLEOFError: EOF occurred
   in violation of protocol`), el listener escribía `connection lost` en el
@@ -23,6 +44,19 @@
   repite antes de una hora. La telemetría de cada corte se sigue guardando como
   antes, así que `doctor` y `healthcheck.py` muestran el patrón completo aunque
   no se haya avisado.
+
+### Si actualizas
+
+La primera sesión después de actualizar puede listar muchos avisos, porque
+antes de esta versión ningún agente cerraba avisos (en el host de Metis
+salieron 202). `python3 harness/session_start.py --unattended` imprime la
+lista completa, un `event_id` por renglón. Revísala y, cuando todo lo que
+lista ya esté atendido, ciérrala de una vez:
+
+```bash
+python3 harness/session_start.py --unattended |
+    while read -r id; do scripts/paynani event mark "$id" closed; done
+```
 
 ## 0.8.0 (2026-09-22)
 
