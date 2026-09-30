@@ -110,8 +110,9 @@
   `paynani roster add --roster`, el servicio por cuenta y las filas de `doctor`,
   con el caso de una PYME (`contacto@`, `ventas@`, `soporte@`) paso a paso, la
   regla de quién puede dar instrucciones en cada cuenta y los límites de esta
-  versión. `send.sh --account` y `event show` por cuenta se documentan aparte,
-  cuando lleguen (#283).
+  versión. También cubre leer el cuerpo de un aviso y contestar desde la cuenta
+  con `send.sh --account`, con su firma propia (#283), y cuánto tiempo se guardan
+  los registros de las cuentas adicionales (`PAYNANI_RETENTION_DAYS`, #294).
 
 - **Retención para registros de cuentas adicionales** (#276, #284, punto 2).
   `paynani-logrotate.timer` ahora también aplica `PAYNANI_RETENTION_DAYS`

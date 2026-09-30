@@ -225,3 +225,18 @@ evidencia está en
 El correo de una PYME trae datos de sus clientes. Paynani guarda del correo lo
 mismo que guardaba: el sobre (remitente, asunto, hora) y el estado del aviso,
 **nunca el cuerpo**. El cuerpo se lee de IMAP solo cuando el agente lo pide.
+
+## Cuánto tiempo se guarda
+
+- De cada aviso de una cuenta adicional queda el sobre y su estado en el ledger
+  (`state/lifecycle.jsonl`).
+- `PAYNANI_RETENTION_DAYS` (**90** por omisión) dice cuántos días se conserva.
+  Una vez al día, `paynani-logrotate.timer` quita del ledger los eventos de las
+  cuentas adicionales cuyo último registro es más viejo que eso. **El historial
+  de la cuenta del agente no se toca.**
+- El journal (`state/events.jsonl`) es uno solo para todas las cuentas y es la
+  cola de entrega, no un archivo histórico. El dispatcher lo compacta, quitando
+  lo que ya se entregó, cuando crece mucho o cuando su primer registro supera esos
+  días, y solo si el cursor demuestra que todo se entregó.
+- Para cambiar los días, se pone `PAYNANI_RETENTION_DAYS` en el entorno de
+  `paynani-logrotate.service` y del dispatcher; `INSTALL.md` lo explica.
