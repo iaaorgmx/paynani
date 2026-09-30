@@ -264,9 +264,15 @@ fi
 # keeps the two versions excluding each other through an upgrade. Where `flock`
 # does not exist there is nothing to honour and nothing to miss: on macOS the old
 # script never armed at all, so no legacy watcher can be running there.
+#
+# It waits up to two seconds rather than none. A watcher that is retiring
+# writes `ended` to its registry as the last step of its cleanup and only then
+# exits and lets go of this lock, so a re-arm that reads `ended` can land in
+# that gap and meet a lock held by the very watcher it is replacing. A watcher
+# from a previous version does not let go in two seconds, so it is still refused.
 if command -v flock >/dev/null 2>&1; then
 	exec 9>"$LOCK"
-	if ! flock -n 9; then
+	if ! flock -w 2 9; then
 		echo "[watch] a watcher from a previous version still holds this spool; not arming a second."
 		echo "[watch] restart that session, or end it, and arm again."
 		exit 0
