@@ -212,6 +212,7 @@ def listener_facts():
         out["version"] = state.get("version")
         out["commit"] = state.get("commit")
         out["pid"] = state.get("pid")
+        out["pid_ns"] = state.get("pid_ns")
         out["python"] = state.get("python")
         heartbeat = _stamp_seconds(out["heartbeat_at"])
         if heartbeat is not None:
@@ -246,7 +247,7 @@ def listener_facts():
 
 def dispatcher_facts():
     out = {"unit": unit_state(DISPATCH_UNIT), "python": None, "started_at": None,
-           "version": None, "commit": None, "pid": None}
+           "version": None, "commit": None, "pid": None, "pid_ns": None}
     try:
         state = json.loads(DISPATCH_STATE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -256,6 +257,7 @@ def dispatcher_facts():
     out["version"] = state.get("version")
     out["commit"] = state.get("commit")
     out["pid"] = state.get("pid")
+    out["pid_ns"] = state.get("pid_ns")
     return out
 
 
@@ -284,7 +286,14 @@ def short_commit(value):
     return value[:7] if value else value
 
 
-def process_alive(pid):
+def current_pid_namespace():
+    try:
+        return os.readlink("/proc/self/ns/pid")
+    except OSError:
+        return None
+
+
+def process_alive(pid, pid_ns=None):
     """Whether a reported process id still names a live process."""
     try:
         pid = int(pid)
@@ -292,6 +301,9 @@ def process_alive(pid):
         return None
     if pid <= 0:
         return False
+    own_pid_ns = current_pid_namespace()
+    if pid_ns and own_pid_ns and pid_ns != own_pid_ns:
+        return None
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -299,7 +311,7 @@ def process_alive(pid):
     except PermissionError:
         return True
     except OSError:
-        return False
+        return None
     return True
 
 
@@ -381,7 +393,7 @@ def version_drift_facts(disk=None, listener=None, dispatcher=None, commit=None):
     unknown_detail = {}
     for name, state in services.items():
         pid = state.get("pid")
-        if pid is not None and process_alive(pid) is False:
+        if pid is not None and process_alive(pid, state.get("pid_ns")) is False:
             unknown.append(name)
             unknown_detail[name] = {
                 "pid": pid,

@@ -69,6 +69,13 @@ def _process_commit():
 PROCESS_VERSION = _process_version()
 PROCESS_COMMIT = _process_commit()
 
+
+def _pid_namespace():
+    try:
+        return os.readlink("/proc/self/ns/pid")
+    except OSError:
+        return None
+
 STATE_DIR = state_dir()
 JOURNAL = STATE_DIR / "events.jsonl"
 CURSOR = STATE_DIR / "dispatch.offset"
@@ -133,6 +140,7 @@ def write_state(path=DISPATCH_STATE):
         "version": PROCESS_VERSION,
         "commit": PROCESS_COMMIT,
         "pid": os.getpid(),
+        "pid_ns": _pid_namespace(),
     }
     path = Path(path)
     try:

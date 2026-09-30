@@ -65,6 +65,13 @@ def _process_commit():
 PROCESS_VERSION = _process_version()
 PROCESS_COMMIT = _process_commit()
 
+
+def _pid_namespace():
+    try:
+        return os.readlink("/proc/self/ns/pid")
+    except OSError:
+        return None
+
 # RFC 2177: a client must re-issue IDLE at least every 29 minutes. We stay well
 # under the ceiling on purpose: this interval is also the longest a dead
 # connection can sit unnoticed, so 25 minutes bought nothing and cost a
@@ -494,6 +501,7 @@ def save_state(path, mailbox, validity, last_uid, telemetry=None):
         "version": PROCESS_VERSION,
         "commit": PROCESS_COMMIT,
         "pid": os.getpid(),
+        "pid_ns": _pid_namespace(),
         "python": PYTHON_FACTS,
     }
     if telemetry:

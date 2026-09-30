@@ -1,5 +1,14 @@
 # Changelog
 
+## Sin publicar
+
+- **`version_drift` ya no confunde un sandbox de Codex con un reinicio
+  permanente** (#272). El listener y el dispatcher guardan el espacio de PIDs
+  que cargaron; si `doctor` corre desde otro espacio, deja de usar ese `pid`
+  para decidir que el proceso murió y conserva la comparación de versión y
+  commit. Así un host Codex vuelve a reportar `ok`, y un `git pull` sin
+  reiniciar sigue saliendo como `warning`.
+
 ## 0.8.0 (2026-09-22)
 
 **Un correo en copia ya no se atiende como uno directo, los servicios avisan
