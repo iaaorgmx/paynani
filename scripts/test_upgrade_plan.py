@@ -150,7 +150,7 @@ try:
     check("unknown files are listed by name", p["unknown"] == ["tools/new_thing.py"])
     check("VERSION restarts the listener and dispatch.py restarts the dispatcher",
           [u for u, _ in p["restart_units"]]
-          == ["paynani-idle.service", "paynani-dispatch.service"])
+          == ["paynani-idle.service", "paynani-idle@*.service", "paynani-dispatch.service"])
     check("a copied unit sets reinstall", p["reinstall"] is True)
 
     here = {f["path"]: f["here"] for f in p["files"]}
@@ -161,6 +161,9 @@ try:
           cmds and cmds[0] == "scripts/install.sh --runtime claudecode --upgrade", str(cmds))
     check("commands restart the listener and dispatcher with systemctl",
           any(c == "systemctl --user restart paynani-idle.service paynani-dispatch.service"
+              for c in cmds), str(cmds))
+    check("commands restart account listener instances only when systemd lists them",
+          any("paynani-idle@*.service" in c and "xargs -r systemctl --user restart" in c
               for c in cmds), str(cmds))
     check("commands do not mention OpenCode on a Claude Code host",
           not any("OpenCode" in c for c in cmds), str(cmds))

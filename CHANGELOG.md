@@ -42,6 +42,15 @@
   La cuenta principal no cambia en nada: sus eventos, sus avisos y sus fallas
   salen idénticos a los de antes.
 
+- **Base de servicio por cuenta para varias cuentas** (#281). El instalador de
+  Linux ahora instala la plantilla `paynani-idle@.service`; macOS expone la
+  forma de LaunchAgent `com.paynani.idle.<id>`; y `account_service.py` concentra
+  `enable(id)`, `disable(id)` y `state(id)` para systemd y launchd. La unidad
+  instancia `idle_listener.py --account <id> --env <env>` y deja que el
+  listener resuelva estado, roster y buzones desde `accounts.json`.
+  `upgrade_plan.py` reinicia el listener principal y las instancias
+  `paynani-idle@*` cuando cambia `idle_listener.py`, `roster.py` o `VERSION`.
+
 - **Varias cuentas: `doctor` y `healthcheck.py` por cuenta** (#276, #284, punto 1).
   - Cada cuenta de `accounts.json` tiene sus propias filas en `doctor`:
     `account:<id>:listener`, `:imap_telemetry`, `:version_drift` y `:roster`.
@@ -52,6 +61,7 @@
   - `healthcheck.py` muestra una línea por cuenta y avisa de cada una caída,
     pero su código de salida sigue dependiendo sólo de la cuenta principal.
   - Sin `accounts.json`, las dos salidas quedan idénticas a las de antes.
+
 
 ## 0.8.1 (2026-09-30)
 
