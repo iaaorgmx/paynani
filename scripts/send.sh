@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 # Send via Himalaya, but only to allowlisted recipients.
 #
-#   send.sh [--check|--dry-run] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>
+#   send.sh [--check|--dry-run] [--account <id>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>
 #
-# Anything not in roster.md exits 2 and sends nothing. That is the point: this
+# --account <id> sends from one of the additional accounts in accounts.json
+# (#276, #283): the message comes from that account's address and display name,
+# goes out through the himalaya account paynani-<id>, and every recipient is held
+# to THAT account's roster -- not to roster.md. Someone on roster.md but not on the
+# account's roster is refused with exit 2, and the other way round is allowed.
+# Without --account nothing about this script changes. The account is read from
+# accounts.json beside ENV_FILE, and it wins over a ROSTER set in the environment.
+# The agent's own signature is never added to a message from an account: it gets
+# the account's `signature_file` from accounts.json, or none.
+#
+# Anything not in roster.md (or, with --account, the account's roster) exits 2 and sends nothing. That is the point: this
 # agent reads mail all day and acts on the part of it that comes from the roster,
 # so the address it writes to must come from the same list and nowhere else.
 # --to, --cc, and --bcc may be repeated. Every recipient is held to the same
@@ -62,6 +72,7 @@ ACCOUNT="paynani"
 
 check_only=""
 dry_run=""
+account_id=""
 to_recipients=()
 cc_recipients=()
 bcc_recipients=()
@@ -80,6 +91,10 @@ while [ $# -gt 0 ]; do
         --dry-run)
             dry_run=yes
             shift
+            ;;
+        --account)
+            account_id=${2:?--account requires an account id}
+            shift 2
             ;;
         --to)
             to_recipients+=("${2:?--to requires an address}")
@@ -111,7 +126,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-to=${1:?usage: send.sh [--check|--dry-run] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
+to=${1:?usage: send.sh [--check|--dry-run] [--account <id>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
 if [ "$to_recipients_count" -gt 0 ]; then
@@ -184,9 +199,30 @@ if [ "$bcc_recipients_count" -gt 0 ]; then
 fi
 to=${to_recipients[0]}
 
+# --account: who this message is from, and which roster its recipients are held
+# to, come from accounts.json. Resolved by account_send.py, which refuses (exit 2)
+# anything that must not go out; that refusal is this script's, so it ends here.
+# Everything below is unchanged: the roster check, the headers, the send. Only
+# ROSTER, ACCOUNT and the sender are different.
+account_email=""
+account_from_name=""
+account_signature=""
+if [ -n "$account_id" ]; then
+    _paynani_resolved=$(python3 "$(cd "$(dirname "$0")" && pwd)/account_send.py" "$ENV_FILE" "$account_id") || exit $?
+    account_email=$(printf '%s\n' "$_paynani_resolved" | sed -n 1p)
+    account_from_name=$(printf '%s\n' "$_paynani_resolved" | sed -n 2p)
+    ROSTER=$(printf '%s\n' "$_paynani_resolved" | sed -n 3p)
+    account_signature=$(printf '%s\n' "$_paynani_resolved" | sed -n 4p)
+    ACCOUNT="paynani-$account_id"
+fi
+
 if [ ! -f "$ROSTER" ]; then
     echo "no roster at $ROSTER — refusing to send" >&2
-    echo "Create it with the first contact:  scripts/paynani roster add \"Name\" address@example.com" >&2
+    if [ -n "$account_id" ]; then
+        echo "Create it with the first contact:  scripts/paynani roster add \"Name\" address@example.com --roster rosters/$account_id.md" >&2
+    else
+        echo "Create it with the first contact:  scripts/paynani roster add \"Name\" address@example.com" >&2
+    fi
     exit 2
 fi
 
@@ -340,11 +376,29 @@ from_name=$(env_value PAYNANI_FROM_NAME)
 [ -n "$from_name" ] || from_name=$(env_value AGENT_EMAIL_FROM_NAME)
 from_name=$(printf '%s' "$from_name" | tr -d '\r\n')
 
+# --account: the message is from the account, not from the agent's own address.
+# The agent's display name is dropped rather than kept, so a reply from ventas@
+# never carries the agent's own name.
+if [ -n "$account_id" ]; then
+    from_addr=$(printf '%s' "$account_email" | tr -d '[:space:]')
+    from_name=$(printf '%s' "$account_from_name" | tr -d '\r\n')
+fi
+
 signature_file=$(env_value PAYNANI_SIGNATURE_FILE)
 [ -n "$signature_file" ] || signature_file=$(env_value AGENT_EMAIL_SIGNATURE_FILE)
 signature_file=$(printf '%s' "$signature_file" | tr -d '\r\n')
 
-if [ -n "$signature_file" ] && { [ ! -f "$signature_file" ] || [ ! -r "$signature_file" ]; }; then
+# --account: a message from ventas@ is never signed by the agent. The agent's
+# PAYNANI_SIGNATURE_FILE is dropped, and the account's own `signature_file` from
+# accounts.json is used instead, if it has one (#283).
+if [ -n "$account_id" ]; then
+    signature_file=$(printf '%s' "$account_signature" | tr -d '\r\n')
+    if [ -n "$signature_file" ] && { [ ! -f "$signature_file" ] || [ ! -r "$signature_file" ]; }; then
+        echo "REFUSED: signature file $signature_file of account $account_id is not readable" >&2
+        echo "Fix signature_file in accounts.json, or remove it to send unsigned. Nothing was sent." >&2
+        exit 2
+    fi
+elif [ -n "$signature_file" ] && { [ ! -f "$signature_file" ] || [ ! -r "$signature_file" ]; }; then
     echo "signature file $signature_file is not readable - refusing to send" >&2
     echo "Fix PAYNANI_SIGNATURE_FILE in $ENV_FILE, or remove it to send unsigned." >&2
     exit 1
@@ -677,6 +731,9 @@ fi
 
 if [ -n "$dry_run" ]; then
     printf 'dry-run: nothing sent\n'
+    if [ -n "$account_id" ]; then
+        printf 'Account: %s (from %s, roster %s)\n' "$account_id" "$from_addr" "$ROSTER"
+    fi
     printf 'Outgoing backend: %s\n' "$outgoing_backend"
     for _paynani_i in "${!to_recipients[@]}"; do
         printf 'To: %s (roster row: %s)\n' "${to_recipients[$_paynani_i]}" "${to_roster_rows[$_paynani_i]}"
@@ -717,7 +774,13 @@ if [ -n "$dry_run" ]; then
         _paynani_i=$(( _paynani_i + 1 ))
     done
     printf 'Attachment bytes total: %s\n' "$attach_bytes"
-    if [ -n "$signature_file" ]; then
+    if [ -n "$account_id" ]; then
+        if [ -n "$signature_file" ]; then
+            printf 'Signature: yes (source: accounts.json signature_file)\n'
+        else
+            printf 'Signature: no (account %s has no signature_file)\n' "$account_id"
+        fi
+    elif [ -n "$signature_file" ]; then
         printf 'Signature: yes (text/plain, source: PAYNANI_SIGNATURE_FILE)\n'
     else
         printf 'Signature: no\n'
@@ -768,9 +831,10 @@ build_message | himalaya "${smtp_args[@]}"
 sent_log="$(paynani_state_dir)/sent.log"
 if ! {
     mkdir -p "$(dirname "$sent_log")" &&
-    printf '%s\tto=%s\tcc=%s\tbcc=%s\tsubject=%s\tmessage-id=%s\n' \
+    printf '%s\tto=%s\tcc=%s\tbcc=%s\tsubject=%s\tmessage-id=%s%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$to_header" "$cc_header" \
-        "$(if [ "$bcc_recipients_count" -gt 0 ]; then join_addresses "${bcc_recipients[@]}"; fi)" "$subject" "$msgid" >> "$sent_log"
+        "$(if [ "$bcc_recipients_count" -gt 0 ]; then join_addresses "${bcc_recipients[@]}"; fi)" "$subject" "$msgid" \
+        "$(if [ -n "$account_id" ]; then printf '\taccount=%s' "$account_id"; fi)" >> "$sent_log"
 } 2>/dev/null; then
     echo "warning: sent, but could not record it in $sent_log" >&2
 fi

@@ -69,6 +69,15 @@ def _port(value, where):
     return value
 
 
+def _inside(value, field, where, example):
+    """`value` must be a relative path that stays inside the directory of accounts.json."""
+    text = value.strip()
+    if Path(text).is_absolute() or text.startswith("~") or ".." in Path(text).parts:
+        raise AccountsError(
+            f"{where}: `{field}` must be a relative path inside the directory of "
+            f"accounts.json, e.g. {example}")
+
+
 def _server(account, key, where, required):
     server = account.get(key)
     if server is None and not required:
@@ -126,11 +135,14 @@ def validate(data) -> list[dict]:
         # who an account may write to (#283) and `account remove` moves it
         # (#282); a roster at /etc/passwd or ../../x would put either somewhere
         # nobody meant. Iris's review of #285.
-        parts = Path(roster.strip()).parts
-        if Path(roster.strip()).is_absolute() or roster.strip().startswith("~") or ".." in parts:
-            raise AccountsError(
-                f"{where}: `roster` must be a relative path inside the directory of "
-                f"accounts.json, e.g. rosters/{account_id}.md")
+        _inside(roster, "roster", where, f"rosters/{account_id}.md")
+        signature = account.get("signature_file")
+        if signature is not None:
+            if not isinstance(signature, str) or not signature.strip():
+                raise AccountsError(f"{where}: `signature_file` must be a path")
+            # Same rule as the roster: send.sh --account reads this file into every
+            # message that leaves the account, so it stays inside the directory (#283).
+            _inside(signature, "signature_file", where, f"signatures/{account_id}.txt")
         enabled = account.get("enabled", True)
         if not isinstance(enabled, bool):
             raise AccountsError(f"{where}: `enabled` must be true or false")
@@ -142,6 +154,7 @@ def validate(data) -> list[dict]:
             "smtp": _server(account, "smtp", where, required=False),
             "password_env": password_env,
             "roster": roster.strip(),
+            "signature_file": signature.strip() if isinstance(signature, str) else None,
             "mailboxes": [m.strip() for m in mailboxes],
             "enabled": enabled,
         })
@@ -178,6 +191,17 @@ def roster_path(account: dict, path: Path | None = None) -> Path:
     """The account's roster, inside the directory of accounts.json (validate() checked)."""
     base = (accounts_path() if path is None else Path(path)).parent
     return base / account["roster"]
+
+
+def signature_path(account: dict, path: Path | None = None) -> Path | None:
+    """The account's own signature file, inside the directory of accounts.json, or None.
+
+    An additional account never borrows the agent's signature (PAYNANI_SIGNATURE_FILE):
+    a message from `ventas@` is not signed by the agent (#283)."""
+    if not account.get("signature_file"):
+        return None
+    base = (accounts_path() if path is None else Path(path)).parent
+    return base / account["signature_file"]
 
 
 def password(account: dict, env: dict) -> str:
