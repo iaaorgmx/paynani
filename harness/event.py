@@ -74,7 +74,7 @@ def _now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def event_id(mailbox, uidvalidity, uid):
+def event_id(mailbox, uidvalidity, uid, account_id=None):
     """
     Stable across retries and restarts, which is what makes an adapter's
     deduplication mean anything.
@@ -84,7 +84,15 @@ def event_id(mailbox, uidvalidity, uid):
     it means a reset produces new IDs instead: the cost is that mail already seen
     can be delivered a second time after a rebuild, which is a duplicate rather
     than a collision, and duplicates are what this design accepts.
+
+    An additional account (#276) puts its id first,
+    `imap:<account_id>:<mailbox>:<uidvalidity>:<uid>`, because two accounts can
+    hold the same mailbox, UIDVALIDITY and UID. The agent's own account keeps
+    `imap:<mailbox>:<uidvalidity>:<uid>`, so no ledger written before accounts
+    existed changes.
     """
+    if account_id and account_id != "main":
+        return f"imap:{account_id}:{mailbox}:{uidvalidity}:{uid}"
     return f"imap:{mailbox}:{uidvalidity}:{uid}"
 
 
@@ -167,7 +175,8 @@ def openclaw_text(record, root=None):
 
 def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_address,
                subject, sent_at, roster_match, notification_text, observed_at=None,
-               message_id="", provider_id="", recipient_role="", notifier_headers=None):
+               message_id="", provider_id="", recipient_role="", notifier_headers=None,
+               account_id=None):
     """
     One arrived message, as structure rather than prose.
 
@@ -179,7 +188,7 @@ def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_addres
     record = {
         "schema_version": SCHEMA_VERSION,
         "event_type": MAIL_RECEIVED,
-        "event_id": event_id(mailbox, uidvalidity, uid),
+        "event_id": event_id(mailbox, uidvalidity, uid, account_id),
         "source": "paynani",
         # Which configured account, not which folder. An adapter that has to
         # fetch the message needs both, and a route serving more than one install
@@ -205,6 +214,10 @@ def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_addres
         # for display, not for routing.
         "notification_text": notification_text,
     }
+    if account_id and account_id != "main":
+        # Only for an additional account (#276): a record from the agent's own
+        # account stays byte-for-byte what it was before accounts existed.
+        record["account_id"] = account_id
     if message_id:
         record["message_id"] = str(message_id).strip()
     if provider_id:
@@ -223,7 +236,7 @@ def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_addres
     return record
 
 
-def listener_error(*, account, message, observed_at=None):
+def listener_error(*, account, message, observed_at=None, account_id=None):
     """
     A listener fault, in the same stream as the mail.
 
@@ -235,17 +248,24 @@ def listener_error(*, account, message, observed_at=None):
     # rather than the value gave the same fault two different ids depending on
     # whether the caller passed a time or let this fill one in.
     observed_at = observed_at or _now()
-    return {
+    # An additional account's listener names itself, and its id goes into the
+    # hash: two accounts hitting the same fault in the same second are two
+    # faults, not one (#276).
+    extra = account_id if account_id and account_id != "main" else ""
+    key = f"{observed_at}|{message}" + (f"|{extra}" if extra else "")
+    record = {
         "schema_version": SCHEMA_VERSION,
         "event_type": LISTENER_ERROR,
-        "event_id": "listener:" + hashlib.sha256(
-            f"{observed_at}|{message}".encode("utf-8")).hexdigest()[:16],
+        "event_id": "listener:" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16],
         "source": "paynani",
         "account": (account or "").strip().lower(),
         "observed_at": observed_at,
         "message": message,
-        "notification_text": f"[listener] {message}",
+        "notification_text": f"[listener {extra}] {message}" if extra else f"[listener] {message}",
     }
+    if extra:
+        record["account_id"] = extra
+    return record
 
 
 LOCK_SUFFIX = ".lock"
