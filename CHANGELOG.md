@@ -1,5 +1,20 @@
 # Changelog
 
+## Sin publicar
+
+- **Varias cuentas, parte 1: `accounts.json`, `paynani account list` y
+  `paynani account test`** (#276, #279). Base de la implementación del PRD de
+  #276. Las cuentas adicionales (hasta 10 por agente) se describen en
+  `accounts.json`, junto al `.env`. El JSON **nunca** guarda una contraseña:
+  `password_env` nombra la clave del `.env` donde vive. El módulo nuevo
+  `scripts/paynani_lib/accounts.py` valida el archivo entero y lo rechaza
+  nombrando la cuenta y el campo, en vez de usarlo a medias. Define también el
+  `event_id` de una cuenta adicional (`imap:<id>:<buzón>:<uidvalidity>:<uid>`).
+  La cuenta principal conserva el formato de hoy, así que ningún ledger
+  cambia. `account list` muestra las cuentas sin secretos, y `account test <id>`
+  prueba el login, cada buzón e IDLE con el mismo `connect()` que usa el
+  listener. Sin `accounts.json`, nada cambia.
+
 ## 0.8.1 (2026-09-30)
 
 **Un aviso del roster ya no se pierde al cerrarse la sesión, un corte de

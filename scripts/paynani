@@ -22,6 +22,8 @@ paynani CLI.
     paynani doctor [--json]
     paynani support-bundle --output DIR
     paynani openclaw probe --dry-run
+    paynani account list
+    paynani account test ID
 
 `onboard` starts the mailbox onboarding flow: a local, loopback-only web
 server prints a one-time link, a human fills in the seven mailbox settings,
@@ -51,8 +53,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paynani_lib import (  # noqa: E402
-    config_cli, diagnostics, event_cli, i18n, onboard, openclaw_cli,
-    roster_cli, set_cli, status_cli,
+    accounts_cli, config_cli, diagnostics, event_cli, i18n, onboard,
+    openclaw_cli, roster_cli, set_cli, status_cli,
 )
 
 DEFAULT_PORT = 8765
@@ -182,6 +184,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Use a synthetic probe event, not mail or the paynani journal.",
     )
 
+    account_parser = subparsers.add_parser(
+        "account", help="Additional mail accounts in accounts.json (#276)."
+    )
+    account_sub = account_parser.add_subparsers(dest="account_command", required=True)
+    account_sub.add_parser("list", help="List the additional accounts, without secrets.")
+    account_test = account_sub.add_parser(
+        "test", help="Log in, open each mailbox and check IDLE for one account."
+    )
+    account_test.add_argument("account_id")
+
     if argv == [] or argv == ["help"]:
         parser.print_help()
         return 0
@@ -194,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     # a message from validate.py reached the terminal in Spanish inside an
     # English sentence. onboard is untouched here: server.py sets the
     # language itself on every request, before this default could matter.
-    if args.command in ("set", "roster", "event", "status", "config"):
+    if args.command in ("set", "roster", "event", "status", "config", "account"):
         i18n.set_current("en-US")
 
     if args.command == "onboard":
@@ -240,6 +252,11 @@ def main(argv: list[str] | None = None) -> int:
         out = diagnostics.support_bundle(args.output)
         print(f"wrote redacted support bundle to {out}")
         return 0
+    if args.command == "account":
+        if args.account_command == "list":
+            return accounts_cli.run_list(args)
+        if args.account_command == "test":
+            return accounts_cli.run_test(args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)
