@@ -8,8 +8,8 @@ con su propio roster, su propio servicio y su propia firma, y todas entregando
 en la misma sesión. La cuenta del agente no cambia y no hay nada que migrar:
 sin `accounts.json`, paynani se comporta exactamente como 0.8.1. La guía
 completa, con el caso PYME paso a paso, está en `MULTI_ACCOUNT.md`. Desde
-0.8.1, 9 PRs: #285, #287, #288, #286, #289, #290, #292, #293 y #294, más el
-de esta release.
+0.8.1, 10 PRs: #285, #287, #288, #286, #289, #290, #292, #293, #294 y #295,
+más el de esta release.
 
 Sin requisitos nuevos: himalaya **v2.x** y Python **3.10** o mayor, como en
 0.8.1. **Esta versión sí pide correr el instalador** (ver «Si actualizas»),
