@@ -227,6 +227,7 @@ def _facts() -> dict:
     }
     facts["dispatcher_unit"] = facts["dispatcher"]["unit"]
     facts["python"] = healthcheck.python_facts(facts["listener"], facts["dispatcher"])
+    facts["account_checks"] = _account_checks()
     facts["spool"] = healthcheck.spool_facts(facts["runtime"].get("selected"))
     facts["reply"] = healthcheck.reply_facts(facts["queue"]["cursor"])
     facts["dependencies"] = _dependency_facts(facts["runtime"].get("selected"), facts["python"])
@@ -249,7 +250,8 @@ def _service_fix(unit: str) -> str:
     return f"systemctl --user restart {unit}"
 
 
-def _imap_telemetry_check(listener: dict) -> dict:
+def _imap_telemetry_check(listener: dict, name: str = "imap_telemetry",
+                          unit: str | None = None) -> dict:
     facts = {
         "heartbeat_at": listener.get("heartbeat_at"),
         "heartbeat_age_seconds": listener.get("heartbeat_age_seconds"),
@@ -262,10 +264,10 @@ def _imap_telemetry_check(listener: dict) -> dict:
         "current_backoff_seconds": listener.get("imap_current_backoff_seconds", 0),
     }
     if listener.get("heartbeat_at") is None:
-        return _check("imap_telemetry", "unknown", "listener has not written IMAP telemetry yet", facts)
+        return _check(name, "unknown", "listener has not written IMAP telemetry yet", facts)
     if facts["current_backoff_seconds"]:
         return _check(
-            "imap_telemetry",
+            name,
             "warning",
             f"IMAP listener is retrying after a disconnect; next retry in {facts['current_backoff_seconds']}s",
             facts,
@@ -274,13 +276,13 @@ def _imap_telemetry_check(listener: dict) -> dict:
     heartbeat_age = facts.get("heartbeat_age_seconds")
     if heartbeat_age is not None and heartbeat_age > healthcheck.STALE_LISTENER_HEARTBEAT:
         return _check(
-            "imap_telemetry",
+            name,
             "warning",
             f"IMAP listener heartbeat is stale ({heartbeat_age}s)",
             facts,
-            _service_fix(healthcheck.LISTENER_UNIT),
+            _service_fix(unit or healthcheck.LISTENER_UNIT),
         )
-    return _check("imap_telemetry", "ok", "IMAP listener heartbeat and reconnection telemetry are current", facts)
+    return _check(name, "ok", "IMAP listener heartbeat and reconnection telemetry are current", facts)
 
 
 # Minimum versions this install has actually been run against, per #173.
@@ -665,6 +667,81 @@ def _capability_checks(facts: dict) -> list[dict]:
     return checks
 
 
+def _account_unit(account_id: str) -> str:
+    """The name healthcheck.unit_state() asks about for an account's listener."""
+    if sys.platform == "darwin":
+        return f"com.paynani.idle.{account_id}"
+    return f"paynani-idle@{account_id}.service"
+
+
+def _account_checks() -> list[dict]:
+    """
+    One group of rows per additional account in accounts.json (#276, #284).
+
+    None at all without accounts.json, so an install that never added an
+    account reads exactly as before (the PRD's criterion 7). An account that
+    is down is a `warning` under its own name: it must be seen, and it must not
+    make the agent's own mailbox look broken when that one is fine.
+    """
+    from . import accounts
+
+    try:
+        configured = accounts.load()
+    except accounts.AccountsError as exc:
+        return [_check("accounts", "blocked", f"accounts.json is not usable: {exc}",
+                       {"path": str(accounts.accounts_path())}, "scripts/paynani account list")]
+    checks = []
+    disk = healthcheck.disk_version()
+    for account in configured:
+        aid = account["id"]
+        prefix = f"account:{aid}"
+        if not account["enabled"]:
+            checks.append(_check(prefix, "ok", f"{account['email']} is disabled in accounts.json; not watched",
+                                 {"email": account["email"]}))
+            continue
+        unit = _account_unit(aid)
+        state_file = healthcheck.STATE_DIR / "accounts" / aid / "idle.json"
+        listener = healthcheck.listener_facts(state_file, unit, state_file.parent / "idle.err.log")
+        listener["email"] = account["email"]
+        lu = listener.get("unit")
+        if lu == "active":
+            status, summary, fix = "ok", f"listener for {account['email']} is active", None
+        elif lu == "unknown":
+            status, summary, fix = "unknown", f"listener unit {unit} cannot be queried from this environment", None
+        else:
+            status, summary, fix = "warning", f"listener for {account['email']} is {lu}", _service_fix(unit)
+        checks.append(_check(f"{prefix}:listener", status, summary, listener, fix))
+        checks.append(_imap_telemetry_check(listener, f"{prefix}:imap_telemetry", unit))
+        vd = healthcheck.version_drift_facts(disk=disk, listener=listener, dispatcher={})
+        if vd.get("drift"):
+            checks.append(_check(f"{prefix}:version_drift", "warning",
+                                 healthcheck.version_drift_summary(vd), vd, _service_fix(unit)))
+        elif vd.get("unknown"):
+            checks.append(_check(f"{prefix}:version_drift", "unknown",
+                                 healthcheck.version_unknown_summary(vd), vd))
+        elif listener.get("version") is None:
+            checks.append(_check(f"{prefix}:version_drift", "unknown",
+                                 "the listener has not reported its loaded version yet", vd))
+        else:
+            checks.append(_check(f"{prefix}:version_drift", "ok",
+                                 "disk and the listener agree on the version", vd))
+        roster = accounts.roster_path(account)
+        facts = {"path": str(roster), "present": roster.is_file()}
+        if facts["present"]:
+            facts["addresses"] = len(healthcheck.roster_addresses(roster))
+        if not facts["present"]:
+            checks.append(_check(f"{prefix}:roster", "warning", f"roster {account['roster']} is missing; "
+                                 "no sender to this account is tagged roster", facts,
+                                 f"scripts/paynani roster add NAME ADDRESS --roster {roster}"))
+        elif facts["addresses"] == 0:
+            checks.append(_check(f"{prefix}:roster", "warning", f"roster {account['roster']} has no addresses",
+                                 facts, f"scripts/paynani roster add NAME ADDRESS --roster {roster}"))
+        else:
+            checks.append(_check(f"{prefix}:roster", "ok",
+                                 f"roster has {facts['addresses']} address(es)", facts))
+    return checks
+
+
 def doctor_data() -> dict:
     facts = _facts()
     checks = []
@@ -721,6 +798,9 @@ def doctor_data() -> dict:
         checks.append(_check("roster", "blocked", "roster.md is missing", ros, "scripts/paynani roster add NAME ADDRESS"))
 
     checks.extend(_capability_checks(facts))
+    # Computed in _facts() like everything else doctor reads from the host, so
+    # a caller that supplies its own facts is not handed this host's accounts.
+    checks.extend(facts.get("account_checks") or [])
 
     deps = facts.get("dependencies") or {}
     checks.append(_python_check(deps))
