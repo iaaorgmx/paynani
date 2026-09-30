@@ -70,6 +70,18 @@
   `upgrade_plan.py` reinicia el listener principal y las instancias
   `paynani-idle@*` cuando cambia `idle_listener.py`, `roster.py` o `VERSION`.
 
+- **Varias cuentas: `doctor` y `healthcheck.py` por cuenta** (#276, #284, punto 1).
+  - Cada cuenta de `accounts.json` tiene sus propias filas en `doctor`:
+    `account:<id>:listener`, `:imap_telemetry`, `:version_drift` y `:roster`.
+  - Una cuenta caída, atrasada o con el roster vacío sale en `warning` con su
+    nombre y no cambia las filas de la cuenta principal.
+  - Una cuenta desactivada es una sola fila `ok` que lo dice, y un
+    `accounts.json` inválido es una sola fila `blocked`.
+  - `healthcheck.py` muestra una línea por cuenta y avisa de cada una caída,
+    pero su código de salida sigue dependiendo sólo de la cuenta principal.
+  - Sin `accounts.json`, las dos salidas quedan idénticas a las de antes.
+
+
 ## 0.8.1 (2026-09-30)
 
 **Un aviso del roster ya no se pierde al cerrarse la sesión, un corte de

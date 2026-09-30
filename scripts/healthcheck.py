@@ -187,8 +187,15 @@ def tail(path, lines=1):
     return [ln for ln in text.splitlines() if ln.strip()][-lines:]
 
 
-def listener_facts():
-    out = {"unit": unit_state(LISTENER_UNIT), "mailbox": None,
+def listener_facts(state_path=None, unit=None, err_path=None):
+    """
+    The listener's own account by default. An additional account (#276) passes
+    its state file under state/accounts/<id>/, its unit, and its error log, and
+    gets back the same facts in the same shape.
+    """
+    state_path = LISTENER_STATE if state_path is None else state_path
+    err_path = IDLE_ERR if err_path is None else err_path
+    out = {"unit": unit_state(LISTENER_UNIT if unit is None else unit), "mailbox": None,
            "last_uid": None, "uidvalidity": None, "heartbeat_at": None,
            "version": None, "commit": None,
            "heartbeat_age_seconds": None, "last_error": None,
@@ -204,7 +211,7 @@ def listener_facts():
             "imap_current_backoff_seconds": 0,
             "python": None}
     try:
-        state = json.loads(LISTENER_STATE.read_text())
+        state = json.loads(state_path.read_text())
         out["mailbox"] = state.get("mailbox")
         out["last_uid"] = state.get("last_uid")
         out["uidvalidity"] = state.get("uidvalidity")
@@ -233,15 +240,67 @@ def listener_facts():
         out["imap_current_backoff_seconds"] = int(state.get("imap_current_backoff_seconds") or 0)
     except (OSError, ValueError):
         pass
-    last = tail(IDLE_ERR)
+    last = tail(err_path)
     out["last_error"] = last[0] if last else None
     try:
         # Unlike queue and heartbeat ages, the useful fact here is the write
         # time itself: a retrying listener keeps touching the diagnostic file
         # even while it cannot complete an IDLE cycle.
-        out["last_error_age_seconds"] = max(0, int(time.time() - IDLE_ERR.stat().st_mtime))
+        out["last_error_age_seconds"] = max(0, int(time.time() - err_path.stat().st_mtime))
     except OSError:
         pass
+    return out
+
+
+def account_unit(account_id):
+    """What unit_state() asks about for an additional account's listener."""
+    if platform.system() == "Darwin":
+        return f"com.paynani.idle.{account_id}"
+    return f"paynani-idle@{account_id}.service"
+
+
+def accounts_facts():
+    """
+    One entry per additional account in accounts.json (#276, #284), or an
+    `error` if the file cannot be used. Empty without the file, so an install
+    that never added an account reports exactly as before.
+    """
+    try:
+        from paynani_lib import accounts
+    except ImportError:
+        return {"accounts": [], "error": None}
+    try:
+        configured = accounts.load()
+    except accounts.AccountsError as exc:
+        return {"accounts": [], "error": str(exc)}
+    out = []
+    for account in configured:
+        entry = {"id": account["id"], "email": account["email"], "enabled": account["enabled"]}
+        if account["enabled"]:
+            state_file = STATE_DIR / "accounts" / account["id"] / "idle.json"
+            entry["listener"] = listener_facts(state_file, account_unit(account["id"]),
+                                               state_file.parent / "idle.err.log")
+            roster = accounts.roster_path(account)
+            entry["roster_addresses"] = len(roster_addresses(roster)) if roster.is_file() else None
+        out.append(entry)
+    return {"accounts": out, "error": None}
+
+
+def account_warnings(facts):
+    """An account that is down is a warning under its own name, never a problem:
+    the exit code stays about whether the agent's own mail can arrive."""
+    acc = facts.get("accounts") or {}
+    out = []
+    if acc.get("error"):
+        out.append(f"accounts.json is not usable: {acc['error']}")
+    for entry in acc.get("accounts", []):
+        if not entry.get("enabled"):
+            continue
+        unit = entry["listener"]["unit"]
+        if unit != "active":
+            out.append(f"account {entry['id']} ({entry['email']}): listener is {unit}")
+        if not entry.get("roster_addresses"):
+            out.append(f"account {entry['id']} ({entry['email']}): roster is missing or empty")
     return out
 
 
@@ -1323,6 +1382,14 @@ def render(facts, problems, warnings):
                    f"{RECONNECT_WARN_PER_HOUR}")
     if listener["last_error"]:
         out.append(f"             last diagnostic: {listener['last_error']}")
+    for entry in (facts.get("accounts") or {}).get("accounts", []):
+        if not entry.get("enabled"):
+            out.append(f"account      {entry['id']} ({entry['email']}): disabled")
+            continue
+        acct = entry["listener"]
+        out.append(f"account      {entry['id']} ({entry['email']}): {acct['unit']}"
+                   + (f", {acct['mailbox']} at uid {acct['last_uid']}"
+                      if acct["last_uid"] is not None else ", no position recorded yet"))
     out.append(f"dispatcher   {facts['dispatcher_unit']}")
     py = facts.get("python") or {}
     pieces = []
@@ -1460,7 +1527,9 @@ def main(argv=None):
     facts["reply"] = reply_facts(facts["queue"]["cursor"])
     facts["version_drift"] = version_drift_facts(
         disk_version(), facts["listener"], facts["dispatcher"])
+    facts["accounts"] = accounts_facts()
     problems, warnings = assess(facts)
+    warnings = list(warnings) + account_warnings(facts)
 
     if args.json:
         print(json.dumps({"facts": facts, "problems": problems,
