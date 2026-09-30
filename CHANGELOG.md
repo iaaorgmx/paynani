@@ -24,6 +24,24 @@
   prueba el login, cada buzón e IDLE con el mismo `connect()` que usa el
   listener. Sin `accounts.json`, nada cambia.
 
+- **Varias cuentas, parte 2: `idle_listener.py --account <id>`** (#276, #280).
+  El listener vigila una cuenta de `accounts.json` en lugar de la del `.env`.
+  - Juzga la marca `roster` con **el roster de esa cuenta**: estar en el roster
+    principal no da permiso en `ventas@`, ni al revés.
+  - Guarda su estado en `state/accounts/<id>/idle.json`.
+  - Escribe en el mismo journal que la cuenta principal, así que el dispatcher
+    y el orden de entrega no cambian.
+  - Cada aviso nombra la cuenta (`[mail 10:02:11, sent 10:01:50,
+    ventas@dominio.com, roster] ...`), y cada evento lleva un `event_id`
+    propio (`imap:ventas:INBOX:...`) y el campo `account_id`.
+  - Las fallas del listener dicen de qué cuenta son (`[listener ventas] ...`),
+    y la misma falla en dos cuentas son dos eventos, no uno.
+  - Una cuenta desactivada, o con más de un buzón, se rechaza con un mensaje en
+    vez de vigilarse a medias. Por ahora se vigila un buzón por cuenta.
+
+  La cuenta principal no cambia en nada: sus eventos, sus avisos y sus fallas
+  salen idénticos a los de antes.
+
 - **Base de servicio por cuenta para varias cuentas** (#281). El instalador de
   Linux ahora instala la plantilla `paynani-idle@.service`; macOS expone la
   forma de LaunchAgent `com.paynani.idle.<id>`; y `account_service.py` concentra

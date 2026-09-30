@@ -105,6 +105,14 @@ GH_SUBJECT = re.compile(r"^\s*(?:Re:\s*)?\[([\w.\-]+/[\w.\-]+)\]\s*(.+?)\s*(?:\(
 
 _stop = False
 
+# Which account this process watches (#276). None is the agent's own account
+# in .env, and everything below behaves exactly as it did before accounts
+# existed. An additional account sets both from `--account`: the id goes into
+# every event id and listener fault, and the address into every notice, so a
+# notice from `ventas@` is never mistaken for one from the agent's own mailbox.
+ACCOUNT_ID = None
+ACCOUNT_LABEL = ""
+
 
 def _handle_stop(signum, frame):
     global _stop
@@ -167,7 +175,8 @@ def journal_fault(journal_path, account, message):
     So it travels the path that is already being watched.
     """
     try:
-        ev.append(journal_path, ev.listener_error(account=account, message=message))
+        ev.append(journal_path, ev.listener_error(account=account, message=message,
+                                                  account_id=ACCOUNT_ID))
         return True
     except (OSError, ValueError) as exc:
         log(f"could not journal the listener fault: {exc}")
@@ -352,6 +361,8 @@ def parts(sender, subject, date, trusted=False, message_id="", provider_id="", r
     except Exception:
         pass
     when = time.strftime("%H:%M:%S") + (f", sent {sent}" if sent else "")
+    if ACCOUNT_LABEL:
+        when += f", {ACCOUNT_LABEL}"
     # The tag goes inside the timestamp bracket so one grep finds actionable
     # mail in the log, and so its absence is visible rather than merely implied.
     if trusted:
@@ -715,8 +726,11 @@ class Listed:
         self.notifiers = notifiers(roster_path)
 
 
-def run(env_path, mailbox, once, state_path, roster_path, journal_path):
-    env = load_env(env_path)
+def run(env_path, mailbox, once, state_path, roster_path, journal_path, env=None):
+    # An additional account arrives with `env` already built from accounts.json
+    # (accounts.env_for); the agent's own account reads it from env_path, as
+    # it always has.
+    env = load_env(env_path) if env is None else env
     account = lookup(env, "user")
     if not roster_path.is_file():
         # Not fatal. Mail still gets reported; nothing gets tagged, so the agent
@@ -773,9 +787,10 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
             # dropped connection, a machine that was off overnight.
             pending = fetch_since(conn, last_uid, Listed(roster_path), account)
             if len(pending) > 1:
-                emit(f"[mail] catching up — {len(pending)} messages arrived while offline")
+                label = f" {ACCOUNT_LABEL}" if ACCOUNT_LABEL else ""
+                emit(f"[mail{label}] catching up — {len(pending)} messages arrived while offline")
             for uid, fields in pending:
-                record(journal_path, ev.mail_event(
+                record(journal_path, ev.mail_event(account_id=ACCOUNT_ID,
                     account=account, mailbox=mailbox, uidvalidity=validity, uid=uid, **fields))
                 # Only now. The record is on disk and flushed, so acknowledging
                 # this UID cannot outlive the thing it is acknowledging.
@@ -803,7 +818,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
                 # Re-read the roster every batch. Adding someone takes effect on
                 # their next message, with no restart and no lost notification.
                 for uid, fields in fetch_since(conn, last_uid, Listed(roster_path), account):
-                    record(journal_path, ev.mail_event(
+                    record(journal_path, ev.mail_event(account_id=ACCOUNT_ID,
                         account=account, mailbox=mailbox, uidvalidity=validity, uid=uid, **fields))
                     last_uid = uid
                     found = True
@@ -856,7 +871,42 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
     return 0
 
 
+def account_setup(account_id, env_path, accounts_file=None):
+    """
+    What `--account <id>` means, resolved from accounts.json (#276, #280):
+    the login keys, the account's own roster, its own state file under
+    state/accounts/<id>/, and the one mailbox it watches. The journal is not
+    here on purpose: every account writes to the same one, so the dispatcher,
+    its cursor and the order of delivery stay exactly as they are.
+
+    Raises AccountsError, loudly, for anything that would otherwise start a
+    listener that watches less than it was told to.
+    """
+    from paynani_lib import accounts
+
+    account = accounts.get(account_id, accounts_file)
+    if not account["enabled"]:
+        raise accounts.AccountsError(
+            f"account {account_id!r} is disabled in accounts.json; not watching it")
+    boxes = accounts.mailboxes(account)
+    if len(boxes) > 1:
+        # One IDLE connection watches one mailbox. Watching the first and
+        # dropping the rest would be a silent partial watch, which is the one
+        # failure this listener refuses; say so until it is supported.
+        raise accounts.AccountsError(
+            f"account {account_id!r} lists {len(boxes)} mailboxes; this version "
+            "watches one per account. Leave one in `mailboxes`.")
+    return {
+        "account": account,
+        "env": accounts.env_for(account, load_env(env_path)),
+        "roster": accounts.roster_path(account, accounts_file),
+        "state": state_dir() / "accounts" / account_id / "idle.json",
+        "mailbox": boxes[0],
+    }
+
+
 def main():
+    global ACCOUNT_ID, ACCOUNT_LABEL
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--env", default=None,
                    help="credentials file (default: resolved by harness/paths.py)")
@@ -868,6 +918,9 @@ def main():
                    help="append-only event journal the dispatcher reads")
     p.add_argument("--roster", default=str(DEFAULT_ROSTER),
                    help="trusted-sender list; their mail is tagged 'roster'")
+    p.add_argument("--account", default=None,
+                   help="watch an additional account from accounts.json (#276) "
+                        "instead of the one in the env file")
     args = p.parse_args()
 
     signal.signal(signal.SIGTERM, _handle_stop)
@@ -877,6 +930,27 @@ def main():
     if not env_path.is_file():
         log(f"no env file at {env_path}")
         return 1
+    if args.account:
+        from paynani_lib.accounts import AccountsError
+        try:
+            setup = account_setup(args.account, env_path)
+        except AccountsError as exc:
+            log(str(exc))
+            return 1
+        ACCOUNT_ID = args.account
+        ACCOUNT_LABEL = setup["account"]["email"]
+        setup["state"].parent.mkdir(parents=True, exist_ok=True)
+        log(f"account {ACCOUNT_ID} ({ACCOUNT_LABEL}): roster {setup['roster']}, "
+            f"state {setup['state']}")
+        return run(
+            env_path,
+            setup["mailbox"],
+            args.once,
+            setup["state"],
+            setup["roster"],
+            pathlib.Path(args.journal).expanduser(),
+            env=setup["env"],
+        )
     return run(
         env_path,
         args.mailbox,
