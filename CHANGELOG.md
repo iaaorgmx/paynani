@@ -11,7 +11,8 @@
   nombrando la cuenta y el campo, en vez de usarlo a medias. Define también el
   `event_id` de una cuenta adicional (`imap:<id>:<buzón>:<uidvalidity>:<uid>`).
   La cuenta principal conserva el formato de hoy, así que ningún ledger
-  cambia. `account list` muestra las cuentas sin secretos, y `account test <id>`
+  cambia. El roster de cada cuenta tiene que ser una ruta relativa dentro del
+  directorio de `accounts.json`. `account list` muestra las cuentas sin secretos, y `account test <id>`
   prueba el login, cada buzón e IDLE con el mismo `connect()` que usa el
   listener. Sin `accounts.json`, nada cambia.
 

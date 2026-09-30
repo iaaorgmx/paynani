@@ -125,8 +125,13 @@ except accounts.AccountsError:
     check("get() of an unknown id is refused", True, True)
 check("a relative roster is relative to accounts.json", tmp / "r/v.md",
       accounts.roster_path(accounts.get("ventas", path), path))
-check("an absolute roster stays", Path("/srv/r.md"),
-      accounts.roster_path(dict(ventas, roster="/srv/r.md"), path))
+for label, roster in (("an absolute roster", "/etc/passwd"), ("a roster with ..", "../../x.md"),
+                      ("a roster under ~", "~/r.md"), ("a roster that climbs midway", "rosters/../../x.md")):
+    message = refused({"accounts": [good(roster=roster)]}) or ""
+    check(f"refuses {label}, naming the account and the field", True,
+          "'ventas'" in message and "`roster` must be a relative path" in message)
+check("a nested relative roster is fine", "rosters/pyme/ventas.md",
+      accounts.validate({"accounts": [good(roster="rosters/pyme/ventas.md")]})[0]["roster"])
 check("accounts.json lives beside the .env", Path("/x/y/accounts.json"),
       accounts.accounts_path(environ={"PAYNANI_ENV": "/x/y/.env"}))
 

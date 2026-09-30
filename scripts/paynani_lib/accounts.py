@@ -122,6 +122,15 @@ def validate(data) -> list[dict]:
         roster = account.get("roster", f"rosters/{account_id}.md")
         if not isinstance(roster, str) or not roster.strip():
             raise AccountsError(f"{where}: `roster` must be a path")
+        # Relative, and inside the directory of accounts.json. This file decides
+        # who an account may write to (#283) and `account remove` moves it
+        # (#282); a roster at /etc/passwd or ../../x would put either somewhere
+        # nobody meant. Iris's review of #285.
+        parts = Path(roster.strip()).parts
+        if Path(roster.strip()).is_absolute() or roster.strip().startswith("~") or ".." in parts:
+            raise AccountsError(
+                f"{where}: `roster` must be a relative path inside the directory of "
+                f"accounts.json, e.g. rosters/{account_id}.md")
         enabled = account.get("enabled", True)
         if not isinstance(enabled, bool):
             raise AccountsError(f"{where}: `enabled` must be true or false")
@@ -166,10 +175,9 @@ def get(account_id: str, path: Path | None = None) -> dict:
 
 
 def roster_path(account: dict, path: Path | None = None) -> Path:
-    """The account's roster, relative to the directory of accounts.json."""
+    """The account's roster, inside the directory of accounts.json (validate() checked)."""
     base = (accounts_path() if path is None else Path(path)).parent
-    roster = Path(account["roster"]).expanduser()
-    return roster if roster.is_absolute() else base / roster
+    return base / account["roster"]
 
 
 def password(account: dict, env: dict) -> str:
