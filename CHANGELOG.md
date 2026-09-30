@@ -1,6 +1,12 @@
 # Changelog
 
-## Sin publicar
+## 0.9.1 (2026-09-30)
+
+**Correcciones pequeñas después de 0.9.0, y la documentación al día.** Desde
+0.9.0, 3 PRs: #298, #300 y #303, más el de esta release, que además corrige
+el plan de actualización. Sin requisitos
+nuevos y sin instalador: himalaya **v2.x** y Python **3.10** o mayor, como en
+0.9.0.
 
 - **Rearmar el vigía antes de que expire el anterior ya no hace que `doctor`
   diga que nadie vigila** (#301). Si la misma sesión rearmaba con su propio vigía
@@ -37,6 +43,39 @@
     macOS, que seguían con el código viejo.
   - `DESIGN.md`: nueva sección, «Why several accounts share one journal», con el
     porqué del diseño de varias cuentas.
+
+- **Una release que sólo cambia `VERSION` reinicia también el dispatcher.**
+  `upgrade_plan.py` reiniciaba sólo el listener cuando cambiaba `VERSION`, pero
+  el dispatcher también guarda qué versión cargó y `version_drift` compara los
+  dos. Siguiendo el plan al pie de la letra, `doctor` quedaba en `warning`
+  después de reiniciar. En 0.8.1 y 0.9.0 no se notó porque también cambió
+  `dispatch.py`. Apareció al preparar esta release, cuyo único cambio para los
+  servicios es `VERSION`.
+
+### Si actualizas desde 0.9.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.9.1
+python3 scripts/upgrade_plan.py --from v0.9.0     # y haz lo que imprima
+```
+
+El plan pide reiniciar el listener, el dispatcher y las instancias
+`paynani-idle@*` si tienes cuentas adicionales, para que todos carguen `VERSION`
+0.9.1. **No hace falta el instalador.** Ojo: el `upgrade_plan.py` que corres es
+el que acabas de traer, con el arreglo de abajo, así que el plan ya incluye el
+dispatcher. Antes de reiniciar, `scripts/paynani doctor | grep version_drift`
+tiene que dar `warning`; después, `ok`. En Claude Code, el arreglo de #301 lo
+toma la siguiente sesión, al rearmar el vigía.
+
+En macOS, `upgrade_plan.py` todavía no puede hacer el plan (#291): el mismo
+`git pull`, y `launchctl kickstart -k` de `com.paynani.idle`,
+`com.paynani.dispatch` y cada `com.paynani.idle.<id>`, con el `python3` de tus
+LaunchAgents.
+
+Si vienes de 0.8.x o antes, sigue primero «Si actualizas desde 0.8.1» (más
+abajo): 0.9.0 sí pide el instalador.
 
 ## 0.9.0 (2026-09-30)
 

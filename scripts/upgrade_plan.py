@@ -102,10 +102,12 @@ RULES = (
     (r"^harness/(event|paths|ledger|python_floor)\.py$", "restart", "listener and dispatcher", "both", "both", None, None),
     # Read when a session starts or a watch is armed.
     (r"^harness/(session_start\.py|session_watch\.sh)$", "next-session", "session hook and watcher", None, None, {"claudecode", "codex"}, None),
-    # The listener records this value at process start. Every tagged upgrade
-    # changes VERSION, so applying one must restart the listener and prove the
-    # process is running the bytes now on disk.
-    (r"^VERSION$", "restart", "listener version state", "listener-all", "listener-all", None, None),
+    # Both services record this value at process start, and version_drift
+    # compares both against disk. Every tagged upgrade changes VERSION, so
+    # applying one must restart the listener, its per-account instances and the
+    # dispatcher. Restarting only the listener left doctor in `warning` after a
+    # release that changed nothing else (found preparing 0.9.1).
+    (r"^VERSION$", "restart", "version state of every service", "all", "all", None, None),
     # Runs fresh on every timer tick or every call.
     (r"^harness/rotate_logs\.py$", "none", "logrotate (runs fresh on each timer tick)", None, None, None, None),
     (r"^harness/capabilities\.py$", "none", "capability data (read on each call)", None, None, None, None),
@@ -317,6 +319,8 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
                 units.extend([LISTENER, DISPATCHER])
             elif f["unit"] == "listener-all":
                 units.extend([LISTENER, LISTENER_INSTANCES])
+            elif f["unit"] == "all":
+                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER])
             else:
                 units.append((f["unit"], f["label"]))
         elif f["verb"] == "reinstall-and-restart":
