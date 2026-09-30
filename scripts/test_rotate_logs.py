@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,12 +38,25 @@ def check(description, expected, actual):
         failed += 1
 
 
-def run(home, state):
+def run(home, state, extra_env=None):
     environ = dict(os.environ, HOME=str(home), PAYNANI_STATE=str(state))
+    if extra_env:
+        environ.update(extra_env)
     return subprocess.run(
         [sys.executable, str(ROOT / "harness" / "rotate_logs.py")],
         capture_output=True, text=True, env=environ,
     )
+
+
+def iso(days_ago):
+    stamp = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    return stamp.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def json_line(record):
+    import json
+
+    return (json.dumps(record, separators=(",", ":")) + "\n").encode()
 
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -82,6 +96,71 @@ with tempfile.TemporaryDirectory() as tmp:
     check("and still creates nothing outside the clone",
           False, (home / ".local" / "state" / "paynani").exists())
     check("and does not stack up rotations", False, (state / "mail.log.2").exists())
+
+with tempfile.TemporaryDirectory() as tmp:
+    home = Path(tmp) / "home"
+    state = Path(tmp) / "install" / "state"
+    state.mkdir(parents=True)
+    home.mkdir()
+
+    lifecycle = state / "lifecycle.jsonl"
+    lifecycle.write_bytes(b"".join([
+        json_line({
+            "event_id": "imap:ventas:INBOX:1:1",
+            "state": "observed",
+            "at": iso(120),
+            "envelope": {"account_id": "ventas", "observed_at": iso(120)},
+        }),
+        json_line({"event_id": "imap:ventas:INBOX:1:1", "state": "dispatched", "at": iso(119)}),
+        json_line({
+            "event_id": "imap:soporte:INBOX:1:2",
+            "state": "observed",
+            "at": iso(2),
+            "envelope": {"account_id": "soporte", "observed_at": iso(2)},
+        }),
+        json_line({
+            "event_id": "imap:INBOX:1:3",
+            "state": "observed",
+            "at": iso(120),
+            "envelope": {"observed_at": iso(120)},
+        }),
+    ]))
+
+    delivered_additional = json_line({
+        "event_id": "imap:ventas:INBOX:1:4",
+        "account_id": "ventas",
+        "observed_at": iso(120),
+    })
+    delivered_main = json_line({"event_id": "imap:INBOX:1:5", "observed_at": iso(120)})
+    pending_additional = json_line({
+        "event_id": "imap:ventas:INBOX:1:6",
+        "account_id": "ventas",
+        "observed_at": iso(120),
+    })
+    journal = state / "events.jsonl"
+    journal.write_bytes(delivered_additional + delivered_main + pending_additional)
+    (state / "dispatch.offset").write_text(str(len(delivered_additional) + len(delivered_main)))
+
+    result = run(home, state, {"PAYNANI_RETENTION_DAYS": "90"})
+    lifecycle_text = lifecycle.read_text()
+    journal_bytes = journal.read_bytes()
+
+    check("retention exits cleanly", 0, result.returncode)
+    check("retention reports removed additional-account records", True, "retained" in result.stdout)
+    check("old additional-account lifecycle event was removed",
+          False, "imap:ventas:INBOX:1:1" in lifecycle_text)
+    check("recent additional-account lifecycle event was kept",
+          True, "imap:soporte:INBOX:1:2" in lifecycle_text)
+    check("old main-account lifecycle event was kept",
+          True, "imap:INBOX:1:3" in lifecycle_text)
+    check("delivered old additional-account journal event was removed",
+          False, b"imap:ventas:INBOX:1:4" in journal_bytes)
+    check("old main-account journal event was kept",
+          True, b"imap:INBOX:1:5" in journal_bytes)
+    check("pending old additional-account journal event was kept",
+          True, b"imap:ventas:INBOX:1:6" in journal_bytes)
+    check("journal cursor was adjusted to the new delivered boundary",
+          str(len(delivered_main)), (state / "dispatch.offset").read_text())
 
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
