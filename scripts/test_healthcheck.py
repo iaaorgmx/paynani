@@ -1148,6 +1148,52 @@ vd_no_pid = hc.version_drift_facts(disk="0.7.2", commit=_c1,
                                    dispatcher={"version": "0.7.2", "commit": _c1})
 check("a mismatch without a pid preserves the old drift behavior", ["listener"], vd_no_pid["drift"])
 
+_original_current_pid_namespace = hc.current_pid_namespace
+try:
+    hc.current_pid_namespace = lambda: "pid:[sandbox]"
+    vd_other_ns = hc.version_drift_facts(
+        disk="0.7.2", commit=_c1,
+        listener={"version": "0.7.2", "commit": _c2, "pid": dead_pid, "pid_ns": "pid:[systemd]"},
+        dispatcher={"version": "0.7.2", "commit": _c1},
+    )
+    check("a pid from another namespace is not treated as unknown", [], vd_other_ns["unknown"])
+    check("a commit mismatch from another namespace still drifts", ["listener"], vd_other_ns["drift"])
+finally:
+    hc.current_pid_namespace = _original_current_pid_namespace
+
+_original_current_pid_namespace = hc.current_pid_namespace
+try:
+    hc.current_pid_namespace = lambda: "pid:[same]"
+    vd_same_ns_dead = hc.version_drift_facts(
+        disk="0.7.2", commit=_c1,
+        listener={"version": "0.7.2", "commit": _c2, "pid": dead_pid, "pid_ns": "pid:[same]"},
+        dispatcher={"version": "0.7.2", "commit": _c1},
+    )
+    check("a dead writer pid in the same namespace stays unknown", ["listener"], vd_same_ns_dead["unknown"])
+finally:
+    hc.current_pid_namespace = _original_current_pid_namespace
+
+_original_current_pid_namespace = hc.current_pid_namespace
+try:
+    hc.current_pid_namespace = lambda: "pid:[sandbox]"
+    vd_missing_ns = hc.version_drift_facts(
+        disk="0.7.2", commit=_c1,
+        listener={"version": "0.7.2", "commit": _c2, "pid": dead_pid},
+        dispatcher={"version": "0.7.2", "commit": _c1},
+    )
+    check("a missing pid namespace preserves old dead-pid behavior", ["listener"], vd_missing_ns["unknown"])
+finally:
+    hc.current_pid_namespace = _original_current_pid_namespace
+
+_original_kill_for_generic_oserror = hc.os.kill
+try:
+    def _raise_generic_oserror(pid, signal):
+        raise OSError("cannot check this pid")
+    hc.os.kill = _raise_generic_oserror
+    check("a generic pid-check OSError means unknown liveness", None, hc.process_alive(os.getpid()))
+finally:
+    hc.os.kill = _original_kill_for_generic_oserror
+
 # commit=None means "figure it out yourself" to version_drift_facts(), same as
 # disk above, so a real missing commit is exercised by patching disk_commit()
 # rather than passing None -- passing None here would read this host's actual
