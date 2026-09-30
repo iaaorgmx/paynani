@@ -82,6 +82,14 @@
   - Sin `accounts.json`, las dos salidas quedan idénticas a las de antes.
 
 
+- **`MULTI_ACCOUNT.md`: cómo vigilar varias cuentas de correo** (#276, #284).
+  Explica `accounts.json`, `paynani account add|list|test|remove`,
+  `paynani roster add --roster`, el servicio por cuenta y las filas de `doctor`,
+  con el caso de una PYME (`contacto@`, `ventas@`, `soporte@`) paso a paso, la
+  regla de quién puede dar instrucciones en cada cuenta y los límites de esta
+  versión. `send.sh --account` y `event show` por cuenta se documentan aparte,
+  cuando lleguen (#283).
+
 ## 0.8.1 (2026-09-30)
 
 **Un aviso del roster ya no se pierde al cerrarse la sesión, un corte de
