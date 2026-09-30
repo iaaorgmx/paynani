@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- **Rearmar el vigía justo cuando el anterior se retira ya no falla con «a
+  watcher from a previous version»**. El vigía que se retira escribe `ended`
+  en su registro como último paso de la limpieza y suelta el `flock` sólo al
+  terminar. Un rearme que caía en ese hueco encontraba el lock todavía tomado
+  y se negaba con un mensaje falso. Ahora espera hasta 2 s a que se libere; un
+  vigía de una versión anterior, que no lo suelta, se sigue rechazando.
+  Apareció como falla intermitente de CI en #285.
+
 - **Varias cuentas, parte 1: `accounts.json`, `paynani account list` y
   `paynani account test`** (#276, #279). Base de la implementación del PRD de
   #276. Las cuentas adicionales (hasta 10 por agente) se describen en
