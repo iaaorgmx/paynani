@@ -11,6 +11,22 @@
   ese destino se sigue negando con el mismo error, y la salida con una etiqueta
   o con `origin/main` no cambia. Lo encontró la revisión de la release 0.9.0.
 
+- **Documentación al día con 0.8.1 y 0.9.0** (#299). Solo documentación; no
+  cambia código.
+  - `README.md` y sus cuatro traducciones mencionan ahora vigilar varias cuentas
+    de correo, con una viñeta y una fila que llevan a `MULTI_ACCOUNT.md`. Ese
+    documento sigue en español y las traducciones lo dicen.
+  - `AGENTS.md`: la regla de las reconexiones estaba desactualizada desde 0.8.1.
+    Ya no le pide al agente avisar tras tres intentos: el listener calla los
+    cortes de menos de `PAYNANI_FAULT_GRACE_SECONDS` y manda él mismo sus tres
+    avisos (corte largo, recuperación y ráfaga de cortes cortos), y el agente
+    solo decide qué decirle a su humano de cada uno.
+  - `UPGRADE.md`: al actualizar hay que reiniciar también las instancias de las
+    cuentas adicionales, `paynani-idle@*` en Linux y `com.paynani.idle.<id>` en
+    macOS, que seguían con el código viejo.
+  - `DESIGN.md`: nueva sección, «Why several accounts share one journal», con el
+    porqué del diseño de varias cuentas.
+
 ## 0.9.0 (2026-09-30)
 
 **Un agente puede vigilar hasta diez cuentas de correo además de la suya**

@@ -182,6 +182,9 @@ que o remetente bata com a sua lista.
   relatado para você, e nada além disso.
 - **Não perder o que chegou** se a máquina reiniciar no meio de uma tarefa. Cada
   mensagem detectada é anotada em disco antes de ser entregue.
+- **Vigiar também as caixas do seu negócio**, como `ventas@` ou `soporte@` (até
+  10), cada uma com a sua própria lista de quem pode dar instruções a ela. Veja
+  [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (em espanhol).
 
 ## O que isso muda no computador?
 
@@ -331,6 +334,7 @@ seu próprio critério sobre quem entra.
 | Remover o Paynani | [`UNINSTALL.md`](../UNINSTALL.md) |
 | Ver mudanças por versão | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autorizar remetentes | `roster.md` e [`roster.md.example`](../roster.md.example) |
+| Vigiar várias contas de e-mail | [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (em espanhol) |
 | Enviar e-mail pela fronteira segura | [`scripts/send.sh`](../scripts/send.sh) |
 | Ver o que cada harness garante | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 

@@ -180,6 +180,9 @@ que el remitente coincide con tu lista.
   está en la lista te lo informa, y nada más.
 - **No perder lo que ha llegado** si la máquina se reinicia a media tarea. Cada
   mensaje detectado se anota en disco antes de entregarse.
+- **Vigilar también los buzones de tu negocio**, como `ventas@` o `soporte@`
+  (hasta 10), cada uno con su propia lista de quién puede darle instrucciones.
+  Ver [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (en español de México).
 
 ## ¿Qué cambia en el ordenador?
 
@@ -328,6 +331,7 @@ propio criterio sobre a quién le das entrada.
 | Quitar Paynani | [`UNINSTALL.md`](../UNINSTALL.md) |
 | Ver cambios por versión | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autorizar remitentes | `roster.md` y [`roster.md.example`](../roster.md.example) |
+| Vigilar varias cuentas de correo | [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (en español de México) |
 | Enviar correo desde la frontera segura | [`scripts/send.sh`](../scripts/send.sh) |
 | Ver qué garantiza cada harness | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 

@@ -179,6 +179,9 @@ sender matches your list.
   is reported to you, and nothing more.
 - **Not lose what arrived** if the machine restarts mid-task. Every message it
   detects is written to disk before it is handed over.
+- **Also watch your business mailboxes**, such as `ventas@` or `soporte@` (up to
+  10), each with its own list of who may give it instructions. See
+  [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (in Spanish).
 
 ## What changes on your computer?
 
@@ -327,6 +330,7 @@ and to your own judgement about who gets in.
 | Remove Paynani | [`UNINSTALL.md`](../UNINSTALL.md) |
 | See what changed per version | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Authorize senders | `roster.md` and [`roster.md.example`](../roster.md.example) |
+| Watch several mail accounts | [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (in Spanish) |
 | Send mail from the safe boundary | [`scripts/send.sh`](../scripts/send.sh) |
 | See what each harness guarantees | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
