@@ -64,7 +64,7 @@ def observed(ledger_path, envelope):
         "schema_version", "event_type", "event_id", "source", "account",
         "mailbox", "uidvalidity", "uid", "observed_at", "sent_at", "sender",
         "subject", "roster_match", "authenticated_sender", "message_id",
-        "provider_id", "inspection_command",
+        "provider_id", "inspection_command", "account_id",
     )
     safe_envelope = {key: envelope[key] for key in safe_keys if key in envelope}
     return transition(
