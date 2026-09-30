@@ -16,14 +16,16 @@ paynani CLI.
     paynani roster explain --from ADDRESS [--header NAME=VALUE]
     paynani roster migrate --plan|--apply [--yes]
     paynani roster apply --file CONTACTS.json [--dry-run] [--yes]
-    paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--yes]
-    paynani roster remove ADDRESS [--yes]
+    paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--roster PATH] [--yes]
+    paynani roster remove ADDRESS [--roster PATH] [--yes]
     paynani paths [--json]
     paynani doctor [--json]
     paynani support-bundle --output DIR
     paynani openclaw probe --dry-run
     paynani account list
     paynani account test ID
+    paynani account add ID --email ADDRESS --imap-host HOST [--imap-port N] [--smtp-host HOST] [--smtp-port N] [--from-name NAME] [--mailbox NAME]...
+    paynani account remove ID [--yes]
 
 `onboard` starts the mailbox onboarding flow: a local, loopback-only web
 server prints a one-time link, a human fills in the seven mailbox settings,
@@ -145,10 +147,14 @@ def main(argv: list[str] | None = None) -> int:
     roster_add.add_argument("--type", help='e.g. "Human" or "AI Agent" (only if roster.md has a Type column).')
     roster_add.add_argument("--github", help="GitHub login (only if roster.md has a GitHub column).")
     roster_add.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
+    roster_add.add_argument("--roster", help="An additional account's roster, as `paynani account add` prints it "
+                                             "(e.g. rosters/ventas.md). Default: roster.md.")
 
     roster_remove = roster_sub.add_parser("remove", help="Remove a contact by address.")
     roster_remove.add_argument("address")
     roster_remove.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
+    roster_remove.add_argument("--roster", help="An additional account's roster, as `paynani account add` prints it "
+                                                "(e.g. rosters/ventas.md). Default: roster.md.")
 
     event_parser = subparsers.add_parser("event", help="Inspect and update event lifecycle state.")
     event_sub = event_parser.add_subparsers(dest="event_command", required=True)
@@ -193,6 +199,29 @@ def main(argv: list[str] | None = None) -> int:
         "test", help="Log in, open each mailbox and check IDLE for one account."
     )
     account_test.add_argument("account_id")
+    account_add = account_sub.add_parser(
+        "add",
+        help="Add a mail account: tests the login first, then writes accounts.json, "
+             "the .env, a roster and the himalaya account.",
+    )
+    account_add.add_argument("id", help="Short id: lowercase letters, digits, dashes.")
+    account_add.add_argument("--email", required=True, help="The account's address.")
+    account_add.add_argument("--imap-host", required=True)
+    account_add.add_argument("--imap-port", type=int, default=993)
+    account_add.add_argument("--smtp-host", help="Needed to send from this account; omit to only read it.")
+    account_add.add_argument("--smtp-port", type=int, default=465)
+    account_add.add_argument("--from-name", help="Display name on mail sent from this account.")
+    account_add.add_argument(
+        "--mailbox", action="append",
+        help="Mailbox to watch (repeatable; default INBOX).",
+    )
+    account_remove = account_sub.add_parser(
+        "remove",
+        help="Remove an account: stops its service and drops it from accounts.json, the .env "
+             "and himalaya. Its roster is moved to rosters/removed/, never deleted.",
+    )
+    account_remove.add_argument("id")
+    account_remove.add_argument("--yes", action="store_true", help="Do not ask for confirmation.")
 
     if argv == [] or argv == ["help"]:
         parser.print_help()
@@ -257,6 +286,10 @@ def main(argv: list[str] | None = None) -> int:
             return accounts_cli.run_list(args)
         if args.account_command == "test":
             return accounts_cli.run_test(args)
+        if args.account_command == "add":
+            return accounts_cli.run_add(args)
+        if args.account_command == "remove":
+            return accounts_cli.run_remove(args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)

@@ -366,6 +366,7 @@ def _apply_change(
     *,
     base_text: str | None = None,
     creating: bool = False,
+    path: Path | None = None,
 ) -> int:
     """CLI wrapper around _apply_change_core: confirm and print, on top of
     the same write/verify/revert core the web form uses.
@@ -375,13 +376,13 @@ def _apply_change(
     bigger decision than agreeing to one more row, and the diff is taken
     against `base_text` (the template) so it shows the row being added rather
     than every line of the template."""
-    path = roster_file()
+    path = roster_file() if path is None else path
     original = _read(path) if base_text is None else base_text
 
     if creating:
         print(f"About to create roster.md at {path} from roster.md.example, and {action_label} it:")
     else:
-        print(f"About to {action_label} roster.md:")
+        print(f"About to {action_label} {path.name}:")
     _print_diff(original, new_text)
 
     if not _confirm("Write this change?", assume_yes):
@@ -507,8 +508,40 @@ def run_apply(args) -> int:
     return 0
 
 
+def _roster_target(args) -> Path | None:
+    """
+    The roster file `--roster` names, or roster.md when it is not given.
+
+    `--roster` (#282) takes a path as `paynani account add` prints it, relative to
+    the directory of accounts.json, and it is honoured only for a file that
+    accounts.json lists as an account's roster. It is not a way to point this
+    command at any file: the roster is the list of who may give the agent
+    instructions, and an edit to it is confirmed by a person for that reason.
+    Returns None, after saying why on stderr, when the path is not such a file.
+    """
+    given = getattr(args, "roster", None)
+    if not given:
+        return roster_file()
+    from . import accounts
+
+    try:
+        configured = accounts.load()
+    except accounts.AccountsError as exc:
+        print(f"Not saved: accounts.json is not usable: {exc}", file=sys.stderr)
+        return None
+    wanted = (accounts.accounts_path().parent / given).resolve()
+    for account in configured:
+        if accounts.roster_path(account).resolve() == wanted:
+            return accounts.roster_path(account)
+    print(f"Not saved: {given} is not the roster of any account in accounts.json "
+          "(see `paynani account list`).", file=sys.stderr)
+    return None
+
+
 def run_add(args) -> int:
-    path = roster_file()
+    path = _roster_target(args)
+    if path is None:
+        return 1
     text, creating = _starting_text(path)
     ok, result = roster_mod.add_contact(
         text, args.name, args.address, type_=args.type or "", github=args.github or ""
@@ -518,16 +551,18 @@ def run_add(args) -> int:
         return 1
     expected = roster_mod.roster_addresses(path) | {roster_mod.normalise(args.address)}
     return _apply_change(
-        result, expected, "add a contact to", args.yes, base_text=text, creating=creating
+        result, expected, "add a contact to", args.yes, base_text=text, creating=creating, path=path
     )
 
 
 def run_remove(args) -> int:
-    path = roster_file()
+    path = _roster_target(args)
+    if path is None:
+        return 1
     text = _read(path)
     ok, result = roster_mod.remove_contact(text, args.address)
     if not ok:
         print(f"Not saved: {result}", file=sys.stderr)
         return 1
     expected = roster_mod.roster_addresses(path) - {roster_mod.normalise(args.address)}
-    return _apply_change(result, expected, "remove a contact from", args.yes)
+    return _apply_change(result, expected, "remove a contact from", args.yes, path=path)
