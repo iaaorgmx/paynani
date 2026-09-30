@@ -422,10 +422,18 @@ def _systemd_restart_units(units, repo, runner):
             _run(["systemctl", "--user", "restart", *names], repo, runner=runner)
 
 
+RELEASE_TAG_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")
+
+
+def apply_target_ok(to_ref):
+    """Whether --apply can pull this target reproducibly: a release tag or origin/main."""
+    return to_ref == "origin/main" or RELEASE_TAG_RE.fullmatch(to_ref) is not None
+
+
 def _fetch_argv(to_ref):
     if to_ref == "origin/main":
         return ["git", "fetch", "origin", "main"]
-    if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", to_ref):
+    if RELEASE_TAG_RE.fullmatch(to_ref):
         return ["git", "fetch", "origin", "tag", to_ref]
     raise ApplyError("--apply accepts a release tag or origin/main as its target; "
                      "an arbitrary ref cannot be pulled reproducibly")
@@ -631,6 +639,11 @@ def render(p):
         lines.append("  refused: the plan contains unknown files")
     elif p["drift"]:
         lines.append("  refused: installer-owned copies have local changes")
+    elif not apply_target_ok(p["to"]):
+        # The plan is still worth printing for a branch or a commit; only --apply
+        # cannot pull one reproducibly, and saying so beats a traceback (#297).
+        lines.append(f"  refused: {p['to']} is neither a release tag nor origin/main, "
+                     "so --apply cannot pull it reproducibly")
     else:
         if p["overlays"]:
             lines.append("  record the tracked overlay as a binary patch, then git stash push")

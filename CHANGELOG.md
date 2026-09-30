@@ -1,5 +1,16 @@
 # Changelog
 
+## Sin publicar
+
+- **`upgrade_plan.py --to <rama o commit>` ya no termina con un traceback**
+  (#297). Con un destino que no fuera una etiqueta `vX.Y.Z` ni `origin/main`,
+  `render()` armaba el bloque «automatic apply» y `_fetch_argv()` lanzaba
+  `ApplyError`, aunque nadie hubiera pedido `--apply`. Ahora imprime el plan
+  completo y, en lugar de los pasos, `refused: <destino> is neither a release
+  tag nor origin/main, so --apply cannot pull it reproducibly`. `--apply` con
+  ese destino se sigue negando con el mismo error, y la salida con una etiqueta
+  o con `origin/main` no cambia. Lo encontró la revisión de la release 0.9.0.
+
 ## 0.9.0 (2026-09-30)
 
 **Un agente puede vigilar hasta diez cuentas de correo además de la suya**
