@@ -208,6 +208,7 @@ class FaultLog:
         self.grace = grace
         self.clock = clock
         self.burst_at = None
+        self.quiet = []
 
     def flush(self):
         """Write what is owed. Safe on every pass; does nothing when nothing is."""
@@ -242,21 +243,29 @@ class FaultLog:
             self.pending = message
         self.flush()
 
-    def burst(self, count, last_error, last_recovered, backoff):
+    def burst(self, last_error, last_recovered, backoff):
         """
         Many short outages are a pattern even when none of them was said. One
         record with the numbers, at most once per BURST_EVERY; if it cannot be
         written, the next pass tries again.
+
+        It counts outages that ended inside their grace (`quiet`), not the
+        reconnect attempts in the telemetry: one long outage retries several
+        times, and it was already said as a fault and a recovery. Counting its
+        attempts announced a burst of short outages that never happened.
         """
+        now = self.clock()
+        self.quiet = [t for t in self.quiet if now - t < 3600]
+        count = len(self.quiet)
         if count <= RECONNECT_BURST_PER_HOUR:
             return
-        now = self.clock()
         if self.burst_at is not None and now - self.burst_at < BURST_EVERY:
             return
-        message = (f"{count} IMAP reconnects in the last hour, each recovered "
-                   f"within {self.grace}s; last error: {last_error or 'unknown'}; "
-                   f"last recovered at {last_recovered or 'unknown'}; "
-                   f"current backoff {backoff}s; mail is being seen")
+        message = (f"{count} short IMAP outages in the last hour, each recovered "
+                   f"within {self.grace}s without an alert; last error: "
+                   f"{last_error or 'unknown'}; last recovered at "
+                   f"{last_recovered or 'unknown'}; current backoff {backoff}s; "
+                   "mail is being seen")
         if journal_fault(self.journal, self.account, message):
             self.burst_at = now
 
@@ -269,7 +278,9 @@ class FaultLog:
         leave the outage open rather than quietly ending it.
         """
         # An outage that ended inside its grace was never said, so its end
-        # is not said either.
+        # is not said either; it is counted for burst() instead.
+        if self.held is not None and self.recorded is None and self.pending is None:
+            self.quiet.append(self.clock())
         self.held = None
         self.since = None
         self.flush()
@@ -768,8 +779,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
             if telemetry.get("imap_last_disconnect_at") and telemetry.get("imap_current_backoff_seconds"):
                 telemetry["imap_last_recovered_at"] = timestamp()
             telemetry["imap_current_backoff_seconds"] = 0
-            faults.burst(int(telemetry.get("imap_reconnects_last_hour") or 0),
-                         telemetry.get("imap_last_disconnect_error"),
+            faults.burst(telemetry.get("imap_last_disconnect_error"),
                          telemetry.get("imap_last_recovered_at"),
                          telemetry["imap_current_backoff_seconds"])
             state = save_state(state_path, mailbox, validity, last_uid, telemetry)

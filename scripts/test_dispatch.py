@@ -608,28 +608,66 @@ fl, good, clock = graced(grace=0)
 fl.fault(SSLEOF)
 check("a grace of 0 writes on the first failure", [SSLEOF], faults_in(good))
 
-# (d) Many quiet reconnects are said once, with the numbers.
-fl, good, clock = graced()
-fl.burst(5, SSLEOF, "2026-09-30T01:03:38Z", 0)
-check("five reconnects in an hour is not yet a burst", [], faults_in(good))
-fl.burst(6, SSLEOF, "2026-09-30T01:03:38Z", 0)
-said = faults_in(good)
-check("six is, and it is said once", 1, len(said))
-check("with the count", True, said[0].startswith("6 IMAP reconnects in the last hour"))
-check("the last error and the last recovery", True,
-      "SSLEOFError" in said[0] and "2026-09-30T01:03:38Z" in said[0])
-clock.now += 3599
-fl.burst(9, SSLEOF, "2026-09-30T01:50:00Z", 0)
-check("not again inside the hour", 1, len(faults_in(good)))
-clock.now += 1
-fl.burst(9, SSLEOF, "2026-09-30T02:03:38Z", 0)
-check("but again after it", 2, len(faults_in(good)))
+# (d) Many quiet outages are said once, with the numbers.
+def quiet_outage(fl, clock, seconds=5):
+    fl.fault(SSLEOF)
+    clock.now += seconds
+    fl.recovered()
+
 
 fl, good, clock = graced()
+for _ in range(5):
+    quiet_outage(fl, clock)
+    clock.now += 60
+fl.burst(SSLEOF, "2026-09-30T01:03:38Z", 0)
+check("five short outages in an hour is not yet a burst", [], faults_in(good))
+quiet_outage(fl, clock)
+fl.burst(SSLEOF, "2026-09-30T01:03:38Z", 0)
+said = faults_in(good)
+check("six is, and it is said once", 1, len(said))
+check("with the count", True, said[0].startswith("6 short IMAP outages in the last hour"))
+check("the last error and the last recovery", True,
+      "SSLEOFError" in said[0] and "2026-09-30T01:03:38Z" in said[0])
+quiet_outage(fl, clock)
+clock.now += 3000
+fl.burst(SSLEOF, "2026-09-30T01:50:00Z", 0)
+check("not again inside the hour", 1, len(faults_in(good)))
+for _ in range(6):
+    quiet_outage(fl, clock)
+clock.now += 700
+fl.burst(SSLEOF, "2026-09-30T02:03:38Z", 0)
+check("but again after it, if the pattern goes on", 2, len(faults_in(good)))
+
+# Outages older than an hour no longer count.
+fl, good, clock = graced()
+for _ in range(6):
+    quiet_outage(fl, clock)
+clock.now += 3600
+fl.burst(SSLEOF, None, 0)
+check("short outages older than an hour are not a burst", [], faults_in(good))
+
+# Found live on 2026-09-30: one long outage retries five times, and counting the
+# attempts announced "6 reconnects, each recovered within 120s" right after the
+# fault and the recovery of that same outage had been said.
+fl, good, clock = graced()
+fl.fault(SSLEOF)
+for backoff in (5, 10, 20, 40, 80):
+    for _ in range(backoff):
+        clock.now += 1
+        fl.tick()
+    fl.fault(SSLEOF)
+fl.recovered()
+fl.burst(SSLEOF, None, 0)
+check("one long outage is a fault and a recovery, not a burst",
+      [SSLEOF, listener.RECOVERED], faults_in(good))
+
+fl, good, clock = graced()
+for _ in range(6):
+    quiet_outage(fl, clock)
 fl.journal = wall / "events.jsonl"
-fl.burst(6, SSLEOF, None, 0)
+fl.burst(SSLEOF, None, 0)
 fl.journal = good
-fl.burst(6, SSLEOF, None, 0)
+fl.burst(SSLEOF, None, 0)
 check("a burst that could not be written is tried again", 1, len(faults_in(good)))
 
 # The listener is wired to the grace, not to the class default.

@@ -37,13 +37,15 @@
   La gracia se cambia con `PAYNANI_FAULT_GRACE_SECONDS`; `0` vuelve al
   comportamiento anterior.
 
-- **Muchas reconexiones en una hora se avisan una sola vez, con los números**
-  (#273). Si `imap_reconnects_last_hour` pasa de 5 (el mismo umbral con el que
-  `healthcheck.py` ya advierte), el listener escribe un solo evento con la
-  cantidad, el último error, la última recuperación y el backoff actual. No se
-  repite antes de una hora. La telemetría de cada corte se sigue guardando como
-  antes, así que `doctor` y `healthcheck.py` muestran el patrón completo aunque
-  no se haya avisado.
+- **Muchos cortes cortos en una hora se avisan una sola vez, con los números**
+  (#273). Si en la última hora hubo más de 5 cortes que se recuperaron dentro
+  de la gracia, y que por eso no se avisaron, el listener escribe un solo evento
+  con la cantidad, el último error, la última recuperación y el backoff actual.
+  No se repite antes de una hora. Cuenta cortes, no intentos de reconexión: un
+  solo corte largo reintenta varias veces y ya se avisó como falla y
+  recuperación, así que no se cuenta. La telemetría de cada corte se sigue
+  guardando como antes, así que `doctor` y `healthcheck.py` muestran el patrón
+  completo aunque no se haya avisado.
 
 ### Si actualizas
 
