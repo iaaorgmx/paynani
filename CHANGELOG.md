@@ -42,6 +42,25 @@
   La cuenta principal no cambia en nada: sus eventos, sus avisos y sus fallas
   salen idénticos a los de antes.
 
+- **Varias cuentas, parte 4: `paynani account add` y `paynani account remove`**
+  (#276, #282). `add <id> --email … --imap-host …` **prueba el login IMAP antes
+  de escribir nada**: si falla, sale con 1 y no deja ningún archivo cambiado.
+  La contraseña se pide con `getpass`, en una terminal; nunca se acepta como
+  argumento ni por una tubería. Con el login bueno escribe la contraseña en el
+  `.env` como `PAYNANI_ACCOUNT_<ID>_PASSWORD` (sin tocar ninguna otra línea),
+  la cuenta en `accounts.json` (modo 600), un `rosters/<id>.md` a partir de
+  `roster.md.example` y la cuenta `paynani-<id>` en la configuración de
+  himalaya, que lee la contraseña con `env_secret.py`. Si una escritura falla,
+  las anteriores se deshacen. `remove <id>` pide confirmación (`--yes` la
+  salta), detiene el servicio, quita la cuenta de esos cuatro sitios y mueve el
+  roster a `rosters/removed/`; nunca lo borra ni sobrescribe uno anterior.
+  El historial del journal y del ledger no se toca. Máximo 10 cuentas.
+  Además, `paynani roster add` y `roster remove` aceptan `--roster
+  rosters/<id>.md` para editar el roster de una cuenta; sólo se acepta el
+  archivo que `accounts.json` da como roster de alguna cuenta, no una ruta
+  cualquiera. Por ahora `add` acepta un solo `--mailbox`, porque el listener
+  vigila un buzón por cuenta (#280). Sin `accounts.json`, nada cambia.
+
 - **Base de servicio por cuenta para varias cuentas** (#281). El instalador de
   Linux ahora instala la plantilla `paynani-idle@.service`; macOS expone la
   forma de LaunchAgent `com.paynani.idle.<id>`; y `account_service.py` concentra
