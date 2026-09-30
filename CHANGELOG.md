@@ -1,6 +1,11 @@
 # Changelog
 
-## Sin publicar
+## 0.9.1 (2026-09-30)
+
+**Correcciones pequeñas después de 0.9.0, y la documentación al día.** Desde
+0.9.0, 3 PRs: #298, #300 y #303, más el de esta release. Sin requisitos
+nuevos y sin instalador: himalaya **v2.x** y Python **3.10** o mayor, como en
+0.9.0.
 
 - **Rearmar el vigía antes de que expire el anterior ya no hace que `doctor`
   diga que nadie vigila** (#301). Si la misma sesión rearmaba con su propio vigía
@@ -37,6 +42,28 @@
     macOS, que seguían con el código viejo.
   - `DESIGN.md`: nueva sección, «Why several accounts share one journal», con el
     porqué del diseño de varias cuentas.
+
+### Si actualizas desde 0.9.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.9.1
+python3 scripts/upgrade_plan.py --from v0.9.0     # y haz lo que imprima
+```
+
+El plan sólo pide reiniciar el listener, para que cargue `VERSION` 0.9.1, y las
+instancias `paynani-idle@*` si tienes cuentas adicionales. **No hace falta el
+instalador.** Antes de reiniciar, `scripts/paynani doctor | grep version_drift`
+tiene que dar `warning`; después, `ok`. En Claude Code, el arreglo de #301 lo
+toma la siguiente sesión, al rearmar el vigía.
+
+En macOS, `upgrade_plan.py` todavía no puede hacer el plan (#291): el mismo
+`git pull` y `launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"`, con el
+`python3` de tus LaunchAgents.
+
+Si vienes de 0.8.x o antes, sigue primero «Si actualizas desde 0.8.1» (más
+abajo): 0.9.0 sí pide el instalador.
 
 ## 0.9.0 (2026-09-30)
 
