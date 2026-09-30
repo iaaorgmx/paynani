@@ -82,6 +82,23 @@
   - Sin `accounts.json`, las dos salidas quedan idénticas a las de antes.
 
 
+- **Varias cuentas, parte 5: `send.sh --account` y `paynani event show` por
+  cuenta** (#276, #283). `send.sh --account <id>` envía desde una cuenta
+  adicional: el remitente es el correo y el nombre de la cuenta, sale por la
+  cuenta de himalaya `paynani-<id>` y **cada destinatario se juzga contra el
+  roster de esa cuenta, no contra `roster.md`**. Quien está sólo en el roster
+  principal sale con 2 y no se envía nada, y al revés se permite. Se rechazan
+  con 2, sin enviar, una cuenta que no existe, una sin servidor SMTP, una sin
+  roster o un `accounts.json` ilegible; un salto de línea en `from_name` no
+  puede abrir otra cabecera. `--dry-run` dice qué cuenta y qué roster usó, y
+  `sent.log` anota `account=<id>`. Sin `--account`, `send.sh` queda igual, byte
+  por byte. `paynani event show <event_id> [--body]` de un evento de una
+  cuenta adicional abre IMAP con **el login de esa cuenta**, verifica al
+  remitente contra **su roster** y muestra `account_id`; si la cuenta ya no está
+  en `accounts.json`, no lee el cuerpo y no cae al login del agente. La cuenta
+  principal no cambia. `AGENTS.md` dice que la respuesta a un aviso de una
+  cuenta adicional sale con `--account`.
+
 ## 0.8.1 (2026-09-30)
 
 **Un aviso del roster ya no se pierde al cerrarse la sesión, un corte de
