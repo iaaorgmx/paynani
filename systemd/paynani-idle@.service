@@ -1,0 +1,34 @@
+# Template for additional mail accounts. scripts/install.sh renders it; a
+# manual install edits it by hand.
+#
+# Placeholders are the same as paynani-idle.service:
+#
+#   /path/to/paynani  your clone's absolute path
+#   /path/to/state    the state tree, normally <clone>/state
+#   /path/to/env      your credentials file, normally <clone>/.env
+#
+# The instance name (%i) is the account id, not an email address. The listener
+# resolves state, rosters and mailboxes from accounts.json.
+
+[Unit]
+Description=paynani listener for account %i (IMAP IDLE)
+Documentation=file:///path/to/paynani/DESIGN.md
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /path/to/paynani/scripts/idle_listener.py --account %i --env /path/to/env --journal /path/to/state/events.jsonl
+WorkingDirectory=/path/to/paynani
+
+# The listener retries with backoff on its own, so this only matters if the
+# process dies outright.
+Restart=always
+RestartSec=10
+
+# Keep per-account operator logs separate. The listener writes durable events to
+# the journal selected by accounts.json and the install state.
+StandardOutput=append:/path/to/state/accounts/%i/mail.log
+StandardError=append:/path/to/state/accounts/%i/idle.err.log
+SyslogIdentifier=paynani-idle-%i
+
+[Install]
+WantedBy=default.target

@@ -182,6 +182,7 @@ installed = installed_units("INSTALL.md")
 enableable = {
     unit for unit in shipped
     if "[Install]" in (ROOT / "systemd" / unit).read_text()
+    and "@." not in unit
 }
 
 check("INSTALL.md installs every shipped unit", shipped, installed)

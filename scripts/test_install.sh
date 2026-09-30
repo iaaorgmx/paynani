@@ -412,15 +412,15 @@ chmod 0600 "$runtime_env"
     printf 'FAIL convergence did not create the state tree as a mode-0700 directory\n'
     fail=$((fail + 1))
 }
-[[ "$(grep -c '^artifact[[:space:]]' "$manifest")" == 5 ]] || {
-    printf 'FAIL manifest does not record exactly five created artifacts\n'
+[[ "$(grep -c '^artifact[[:space:]]' "$manifest")" == 6 ]] || {
+    printf 'FAIL manifest does not record exactly six created artifacts\n'
     fail=$((fail + 1))
 }
 [[ "$(<"$runtime_env")" == 'PAYNANI_RUNTIME=openclaw' ]] || {
     printf 'FAIL generated runtime configuration selects OpenClaw\n'
     fail=$((fail + 1))
 }
-for unit in paynani-idle.service paynani-dispatch.service \
+for unit in paynani-idle.service paynani-idle@.service paynani-dispatch.service \
     paynani-logrotate.service paynani-logrotate.timer; do
     installed="$sandbox/.config/systemd/user/$unit"
     [[ -f "$installed" && ! -L "$installed" ]] || {
@@ -529,7 +529,7 @@ crash_window_artifact="$sandbox/.config/systemd/user/paynani-idle.service"
     fail=$((fail + 1))
 }
 check_status 'matching crash-window artifact is adopted on resume' 10 --runtime openclaw
-[[ "$(grep -c '^artifact[[:space:]]' "$manifest")" == 5 ]] || {
+[[ "$(grep -c '^artifact[[:space:]]' "$manifest")" == 6 ]] || {
     printf 'FAIL resumed convergence did not record the adopted artifact set\n'
     fail=$((fail + 1))
 }
@@ -655,7 +655,7 @@ check_status 'dry-run reports planned OpenClaw changes' 10 \
 [[ "$LAST_OUTPUT" == *'systemd_user=available'* ]] || {
     printf 'FAIL dry-run reports systemd user availability\n'; fail=$((fail + 1));
 }
-for unit in paynani-idle.service paynani-dispatch.service \
+for unit in paynani-idle.service paynani-idle@.service paynani-dispatch.service \
     paynani-logrotate.service paynani-logrotate.timer; do
     expected="inventory planned-managed-file=$sandbox/.config/systemd/user/$unit"
     [[ "$LAST_OUTPUT" == *"$expected"* ]] || {

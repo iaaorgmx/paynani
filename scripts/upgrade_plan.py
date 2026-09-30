@@ -78,6 +78,7 @@ VERBS = ("restart", "reinstall-and-restart", "restart-runtime", "next-session",
 # adapters, event.py, paths.py and python_floor.py through importlib. Both are
 # read once at start.
 LISTENER = ("paynani-idle.service", "com.paynani.idle")
+LISTENER_INSTANCES = ("paynani-idle@*.service", "com.paynani.idle.*")
 DISPATCHER = ("paynani-dispatch.service", "com.paynani.dispatch")
 INSTALLER = None
 OPENCODE_PLUGIN = "python3 scripts/opencode_plugin.py --install"
@@ -94,8 +95,8 @@ RULES = (
     (r"^scripts/codex_hook\.py$", "reinstall-and-restart", "Codex session hooks", None, None, {"codex"}, "python3 scripts/codex_hook.py --install"),
     (r"^scripts/openclaw_rules\.py$", "reinstall-and-restart", "OpenClaw standing rule (~/.openclaw/workspace/AGENTS.md)", None, None, {"openclaw"}, "python3 scripts/openclaw_rules.py --install"),
     # Long-running services.
-    (r"^scripts/idle_listener\.py$", "restart", "listener", *LISTENER, None, None),
-    (r"^scripts/roster\.py$", "restart", "listener", *LISTENER, None, None),
+    (r"^scripts/idle_listener\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
+    (r"^scripts/roster\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
     (r"^harness/dispatch\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
     (r"^harness/adapters/.*\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
     (r"^harness/(event|paths|ledger|python_floor)\.py$", "restart", "listener and dispatcher", "both", "both", None, None),
@@ -104,7 +105,7 @@ RULES = (
     # The listener records this value at process start. Every tagged upgrade
     # changes VERSION, so applying one must restart the listener and prove the
     # process is running the bytes now on disk.
-    (r"^VERSION$", "restart", "listener version state", *LISTENER, None, None),
+    (r"^VERSION$", "restart", "listener version state", "listener-all", "listener-all", None, None),
     # Runs fresh on every timer tick or every call.
     (r"^harness/rotate_logs\.py$", "none", "logrotate (runs fresh on each timer tick)", None, None, None, None),
     (r"^harness/capabilities\.py$", "none", "capability data (read on each call)", None, None, None, None),
@@ -314,6 +315,8 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
         if f["verb"] == "restart":
             if f["unit"] == "both":
                 units.extend([LISTENER, DISPATCHER])
+            elif f["unit"] == "listener-all":
+                units.extend([LISTENER, LISTENER_INSTANCES])
             else:
                 units.append((f["unit"], f["label"]))
         elif f["verb"] == "reinstall-and-restart":
@@ -355,10 +358,21 @@ def commands(p):
     if p["restart_units"]:
         if p["system"] == "Darwin":
             for _, label in p["restart_units"]:
-                lines.append(f'launchctl kickstart -k "gui/$(id -u)/{label}"')
+                if "*" in label:
+                    lines.append(f"# restart every matching LaunchAgent: {label}")
+                else:
+                    lines.append(f'launchctl kickstart -k "gui/$(id -u)/{label}"')
         else:
+            normal_units = [u for u, _ in p["restart_units"] if "*" not in u]
+            wildcard_units = [u for u, _ in p["restart_units"] if "*" in u]
             lines.append("systemctl --user daemon-reload")
-            lines.append("systemctl --user restart " + " ".join(u for u, _ in p["restart_units"]))
+            if normal_units:
+                lines.append("systemctl --user restart " + " ".join(normal_units))
+            for unit in wildcard_units:
+                lines.append(
+                    "systemctl --user list-units --all --plain --no-legend "
+                    f"'{unit}' | awk '{{print $1}}' | xargs -r systemctl --user restart"
+                )
     for loader in p["restart_runtime"]:
         lines.append(f"# {loader}")
     if p["next_session"]:
@@ -385,6 +399,27 @@ def _run(argv, repo, runner=subprocess.run, capture=False):
                   if capture else f"exit {result.returncode}")
         raise ApplyError(f"command failed: {shlex.join(str(v) for v in argv)}: {detail}")
     return result
+
+
+def _systemd_restart_units(units, repo, runner):
+    normal = [unit for unit in units if "*" not in unit]
+    patterns = [unit for unit in units if "*" in unit]
+    if normal:
+        _run(["systemctl", "--user", "restart", *normal], repo, runner=runner)
+    for pattern in patterns:
+        listed = _run(
+            ["systemctl", "--user", "list-units", "--all", "--plain", "--no-legend", pattern],
+            repo,
+            runner=runner,
+            capture=True,
+        )
+        names = []
+        for line in (listed.stdout or "").splitlines():
+            fields = line.split()
+            if fields:
+                names.append(fields[0])
+        if names:
+            _run(["systemctl", "--user", "restart", *names], repo, runner=runner)
 
 
 def _fetch_argv(to_ref):
@@ -505,8 +540,11 @@ def apply_plan(p, repo=ROOT, runner=subprocess.run, sleeper=time.sleep, wait_sec
                          repo, runner=runner)
             else:
                 _run(["systemctl", "--user", "daemon-reload"], repo, runner=runner)
-                _run(["systemctl", "--user", "restart",
-                      *(unit for unit, _ in p["restart_units"])], repo, runner=runner)
+                _systemd_restart_units(
+                    [unit for unit, _ in p["restart_units"]],
+                    repo,
+                    runner,
+                )
         for notice in p["restart_runtime"]:
             print(f"apply: manual harness action required: {notice}")
         if p["next_session"]:

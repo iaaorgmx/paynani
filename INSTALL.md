@@ -704,11 +704,12 @@ credentials file. systemd does not expand `~`, so use `%h` or a full path.
 
 ```bash
 install -Dm644 systemd/paynani-idle.service       ~/.config/systemd/user/
+install -Dm644 systemd/paynani-idle@.service      ~/.config/systemd/user/
 install -Dm644 systemd/paynani-dispatch.service   ~/.config/systemd/user/
 install -Dm644 systemd/paynani-logrotate.service  ~/.config/systemd/user/
 install -Dm644 systemd/paynani-logrotate.timer    ~/.config/systemd/user/
 
-# then replace the placeholders in the three .service files:
+# then replace the placeholders in the .service files:
 #   /path/to/paynani  ->  your clone's absolute path
 #   /path/to/env      ->  your credentials file (idle only)
 
