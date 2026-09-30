@@ -809,6 +809,16 @@ needs no move. They are the recommended locations, not a check.
   state/            UID baseline, journal, cursor, delivery status, logs
 ```
 
+The daily `paynani-logrotate.timer` also enforces additional-account retention
+for the lifecycle ledger. `PAYNANI_RETENTION_DAYS` defaults to `90`: old
+additional-account records are removed from `state/lifecycle.jsonl`, while the
+main account's ledger history is kept. The event journal is not pruned by this
+timer. The dispatcher compacts `state/events.jsonl` when the journal is either
+large or starts with a record older than `PAYNANI_RETENTION_DAYS`, and only when
+the cursor proves every journal record has already been delivered. Set
+`PAYNANI_RETENTION_DAYS` in the `paynani-logrotate.service` and dispatcher
+environments if this host needs a longer or shorter additional-account history.
+
 Only the four unit files live outside it, in `~/.config/systemd/user`, because
 systemd will not read them from anywhere else.
 

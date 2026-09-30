@@ -113,6 +113,13 @@
   versión. `send.sh --account` y `event show` por cuenta se documentan aparte,
   cuando lleguen (#283).
 
+- **Retención para registros de cuentas adicionales** (#276, #284, punto 2).
+  `paynani-logrotate.timer` ahora también aplica `PAYNANI_RETENTION_DAYS`
+  (default: 90) al historial de cuentas adicionales: limpia del ledger los
+  eventos viejos de esas cuentas y conserva el historial de la cuenta principal.
+  El journal se compacta desde el dispatcher, no desde el timer, cuando todo el
+  archivo ya fue entregado y el primer registro supera la retención.
+
 ## 0.8.1 (2026-09-30)
 
 **Un aviso del roster ya no se pierde al cerrarse la sesión, un corte de
