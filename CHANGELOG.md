@@ -16,6 +16,15 @@
   prueba el login, cada buzón e IDLE con el mismo `connect()` que usa el
   listener. Sin `accounts.json`, nada cambia.
 
+- **Base de servicio por cuenta para varias cuentas** (#281). El instalador de
+  Linux ahora instala la plantilla `paynani-idle@.service`; macOS expone la
+  forma de LaunchAgent `com.paynani.idle.<id>`; y `account_service.py` concentra
+  `enable(id)`, `disable(id)` y `state(id)` para systemd y launchd. La unidad
+  instancia `idle_listener.py --account <id> --env <env>` y deja que el
+  listener resuelva estado, roster y buzones desde `accounts.json`.
+  `upgrade_plan.py` reinicia el listener principal y las instancias
+  `paynani-idle@*` cuando cambia `idle_listener.py`, `roster.py` o `VERSION`.
+
 ## 0.8.1 (2026-09-30)
 
 **Un aviso del roster ya no se pierde al cerrarse la sesión, un corte de

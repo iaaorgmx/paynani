@@ -462,6 +462,7 @@ set_managed_paths() {
     credentials=$(resolve_credentials_path)
     managed_paths=(
         "$unit_dir/paynani-idle.service"
+        "$unit_dir/paynani-idle@.service"
         "$unit_dir/paynani-dispatch.service"
         "$unit_dir/paynani-logrotate.service"
         "$unit_dir/paynani-logrotate.timer"
@@ -733,7 +734,7 @@ print_managed_inventory() {
         fi
     fi
 
-    for unit in paynani-idle.service paynani-dispatch.service \
+    for unit in paynani-idle.service paynani-idle@.service paynani-dispatch.service \
         paynani-logrotate.service paynani-logrotate.timer; do
         if ((unit_container_safe)); then
             classify_planned_artifact file "$unit_dir/$unit" "$ROOT/systemd/$unit"
@@ -1018,7 +1019,8 @@ initialize_ownership_manifest() {
 
 converge_runtime_filesystem() {
     local unit
-    for unit in paynani-idle.service paynani-dispatch.service         paynani-logrotate.service paynani-logrotate.timer; do
+    for unit in paynani-idle.service paynani-idle@.service paynani-dispatch.service \
+        paynani-logrotate.service paynani-logrotate.timer; do
         converge_artifact file "$unit_dir/$unit" "$ROOT/systemd/$unit" 0644
     done
     converge_artifact file "$config_dir/runtime.env" generated-runtime-config 0600
@@ -1117,6 +1119,7 @@ verify_installed_units() {
         die_config 'systemd-analyze executable not found; installed units were not activated'
     if ! output=$("$systemd_analyze" verify \
         "$unit_dir/paynani-idle.service" \
+        "$unit_dir/paynani-idle@.service" \
         "$unit_dir/paynani-dispatch.service" \
         "$unit_dir/paynani-logrotate.service" \
         "$unit_dir/paynani-logrotate.timer" 2>&1); then
@@ -1221,7 +1224,7 @@ print_final_verification_report() {
     local unit label secret_path secret_mode
     printf 'verification_report_begin\n'
     printf 'verification_runtime=%s\n' "$runtime"
-    for unit in paynani-idle.service paynani-dispatch.service \
+    for unit in paynani-idle.service paynani-idle@.service paynani-dispatch.service \
         paynani-logrotate.service paynani-logrotate.timer; do
         printf 'verification_unit=%s/%s validated=true\n' "$unit_dir" "$unit"
     done
