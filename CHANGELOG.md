@@ -2,12 +2,70 @@
 
 ## Sin publicar
 
+- **Un aviso del roster ya no se pierde si la sesión se cierra antes de
+  atenderlo** (#271). En Claude Code el vigía mueve el cursor en cuanto
+  muestra un aviso, así que para paynani mostrar equivalía a atender. Si la
+  sesión moría entre las dos cosas, el aviso no volvía a aparecer. Ahora el
+  hook de SessionStart también lee el ledger y lista, en el bloque «ROSTER
+  MAIL NOT YET CLOSED», cada aviso del roster de los últimos 7 días que sigue
+  en `dispatched` o `presented`, con su `event_id`. Un aviso sale de esa lista
+  cuando el agente lo cierra con `paynani event mark <id> handled`, `replied`
+  o `closed`. El hook y `AGENTS.md` ya dicen que hay que hacerlo. La ventana se
+  cambia con `PAYNANI_UNATTENDED_DAYS`. Esto aplica sólo a Claude Code: en
+  Codex, la repetición al iniciar sesión tiene un límite de tamaño y no se
+  toca.
+
+- **Rearmar el vigía ya no repite los avisos que ya se cerraron** (#271).
+  Después de un `/clear`, Claude Code cambia el `session_id` pero sigue en el
+  mismo proceso. El registro de la sesión nueva guardaba el offset del momento
+  del hook, así que al rearmar se volvían a mostrar los avisos que el vigía
+  anterior ya había entregado. Ahora el vigía consulta el ledger antes de
+  imprimir cada línea: si el evento ya está `handled`, `replied` o `closed`, lo
+  consume sin mostrarlo y el cursor avanza igual.
+
+- **Un corte de IMAP que se recupera solo ya no avisa** (#273). Cuando el
+  proveedor cortaba la sesión TLS a mitad de IDLE (`SSLEOFError: EOF occurred
+  in violation of protocol`), el listener escribía `connection lost` en el
+  journal a la primera falla y `listener recovered` al reconectar. El
+  dispatcher entregaba los dos como si fueran correo, así que un corte de 10
+  segundos llegaba al humano como dos mensajes, varias veces al día y en varios
+  hosts. Ahora la primera falla de un corte espera un periodo de gracia de
+  120 s, que cubre los reintentos de 5, 10, 20 y 40 s. Si la conexión vuelve
+  antes, no se escribe nada, ni la falla ni la recuperación. Si sigue caída al
+  terminar la gracia, la falla se escribe en ese momento, aunque el listener
+  esté esperando entre reintentos, y la recuperación sale después como antes.
+  La gracia se cambia con `PAYNANI_FAULT_GRACE_SECONDS`; `0` vuelve al
+  comportamiento anterior.
+
+- **Muchos cortes cortos en una hora se avisan una sola vez, con los números**
+  (#273). Si en la última hora hubo más de 5 cortes que se recuperaron dentro
+  de la gracia, y que por eso no se avisaron, el listener escribe un solo evento
+  con la cantidad, el último error, la última recuperación y el backoff actual.
+  No se repite antes de una hora. Cuenta cortes, no intentos de reconexión: un
+  solo corte largo reintenta varias veces y ya se avisó como falla y
+  recuperación, así que no se cuenta. La telemetría de cada corte se sigue
+  guardando como antes, así que `doctor` y `healthcheck.py` muestran el patrón
+  completo aunque no se haya avisado.
+
 - **`version_drift` ya no confunde un sandbox de Codex con un reinicio
   permanente** (#272). El listener y el dispatcher guardan el espacio de PIDs
   que cargaron; si `doctor` corre desde otro espacio, deja de usar ese `pid`
   para decidir que el proceso murió y conserva la comparación de versión y
   commit. Así un host Codex vuelve a reportar `ok`, y un `git pull` sin
   reiniciar sigue saliendo como `warning`.
+
+### Si actualizas
+
+La primera sesión después de actualizar puede listar muchos avisos, porque
+antes de esta versión ningún agente cerraba avisos (en el host de Metis
+salieron 202). `python3 harness/session_start.py --unattended` imprime la
+lista completa, un `event_id` por renglón. Revísala y, cuando todo lo que
+lista ya esté atendido, ciérrala de una vez:
+
+```bash
+python3 harness/session_start.py --unattended |
+    while read -r id; do scripts/paynani event mark "$id" closed; done
+```
 
 ## 0.8.0 (2026-09-22)
 

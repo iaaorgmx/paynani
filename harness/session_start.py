@@ -84,6 +84,10 @@ WATCH_REGISTRY = "watch.json"
 WATCH_TTL = int(os.environ.get("PAYNANI_WATCH_TTL", "1800"))
 
 MAX_REPLAY = 20   # enough to see overnight without flooding the context window
+UNATTENDED_DAYS = int(os.environ.get("PAYNANI_UNATTENDED_DAYS", "7"))
+OPEN_STATES = ("dispatched", "presented")
+SETTLED_STATES = ("handled", "replied", "closed")
+EVENT_REF = re.compile(r"event show (\S+?)\]")
 MAX_DISPATCH_ERR = 5   # the last few lines say whether it is still failing
 MAX_LOCAL_FILES = 10   # name them, but do not paste a whole refactor
 VERSION_TIMEOUT = 20   # above version.sh's own 10s, so its timeout fires first
@@ -584,6 +588,78 @@ def registry_command(args):
     return 2
 
 
+def event_ids_in(lines):
+    """The event ids that rendered notification lines point at."""
+    return {m.group(1) for line in lines for m in EVENT_REF.finditer(str(line))}
+
+
+def unattended_roster(ledger_path=None, now=None, days=None, exclude=()):
+    """
+    [(event_id, envelope)] for roster mail a session was shown and nobody closed.
+
+    The spool cursor answers "has a session seen this line?", and for Claude Code
+    seeing is all it can answer: the watcher moves the cursor the moment it
+    prints. A session that saw a notice and ended before acting on it leaves the
+    cursor past a notice nobody handled, and the next session is told nothing
+    (#271). The ledger keeps the other half of the story: an event stays
+    `dispatched` or `presented` until an agent marks it `handled`, `replied` or
+    `closed`. This reads that half, oldest first, for the last `days` days.
+    """
+    ledger_path = LIFECYCLE if ledger_path is None else pathlib.Path(ledger_path)
+    now = time.time() if now is None else now
+    days = UNATTENDED_DAYS if days is None else days
+    envelopes = {}
+    last = {}
+    try:
+        records = ledger.records(ledger_path)
+    except OSError:
+        return []
+    for record in records:
+        event_id = str(record.get("event_id") or "")
+        if not event_id:
+            continue
+        if isinstance(record.get("envelope"), dict):
+            envelopes.setdefault(event_id, record["envelope"])
+        last[event_id] = record.get("state")
+    out = []
+    for event_id, state in last.items():
+        envelope = envelopes.get(event_id)
+        if state not in OPEN_STATES or event_id in exclude or not envelope:
+            continue
+        if envelope.get("roster_match") is not True:
+            continue
+        seen = _stamp_seconds(envelope.get("observed_at"))
+        if seen is None or now - seen > days * 86400:
+            continue
+        out.append((seen, event_id, envelope))
+    out.sort(key=lambda item: item[0])
+    return [(event_id, envelope) for _, event_id, envelope in out]
+
+
+def unattended_line(event_id, envelope):
+    sender = envelope.get("sender") or {}
+    who = sender.get("name") or sender.get("address") or "?"
+    if sender.get("name") and sender.get("address"):
+        who = f"{sender['name']} <{sender['address']}>"
+    return f"{event_id}  {envelope.get('observed_at', '')}  {who} — {envelope.get('subject', '')}"
+
+
+def settled_command(args):
+    """
+    `--settled <state-dir> <event-id>`: exit 0 when the ledger already closed it.
+
+    The watcher asks before printing a line, so a re-arm that starts behind
+    lines this session already acted on does not show them again (#271).
+    """
+    if len(args) != 2:
+        return 2
+    try:
+        record = ledger.latest(pathlib.Path(args[0]) / "lifecycle.jsonl").get(args[1])
+    except OSError:
+        return 1
+    return 0 if record and record.get("state") in SETTLED_STATES else 1
+
+
 def read_hook_input():
     """
     Read Codex's hook JSON if it is waiting on stdin.
@@ -744,7 +820,7 @@ def codex_replayed(spool_lines):
 
 
 def system_message_parts(listener_state, dispatcher_state, faults, runtime,
-                         spool_lines, lines):
+                         spool_lines, lines, unattended=()):
     messages = []
     if listener_state == "down":
         messages.append("Mail listener is DOWN — new mail is not being detected")
@@ -758,6 +834,8 @@ def system_message_parts(listener_state, dispatcher_state, faults, runtime,
         messages.append(f"{len(spool_lines)} replayed paynani mail event(s) require processing")
     if lines:
         messages.append(f"{len(lines)} unseen mail notification(s)")
+    if unattended:
+        messages.append(f"{len(unattended)} roster mail notice(s) not yet closed")
     return messages
 
 
@@ -981,6 +1059,14 @@ def main():
         return registry_command(sys.argv[2:])
     if sys.argv[1:2] == ["--prompt-submit"]:
         return prompt_submit_command()
+    if sys.argv[1:2] == ["--settled"]:
+        return settled_command(sys.argv[2:])
+    if sys.argv[1:2] == ["--unattended"]:
+        # One event id per line, oldest first: what the block lists, whole and
+        # uncapped, for closing a backlog in one pass after an upgrade (#271).
+        for event_id, _ in unattended_roster():
+            print(event_id)
+        return 0
     runtime = selected_runtime()
     if "--session-end" in sys.argv[1:]:
         forget_codex_session()
@@ -1000,6 +1086,7 @@ def main():
     faults = dispatcher_faults()
 
     parts = []
+    unattended = []
     if listener_state == "down":
         check = (f"`launchctl print gui/$(id -u)/{SERVICE_LABEL}`" if platform.system() == "Darwin"
                  else f"`systemctl --user status {SERVICE}`")
@@ -1054,6 +1141,21 @@ def main():
         else:
             parts.append("No unseen mail since the last session armed the watch.")
 
+        unattended = unattended_roster(exclude=event_ids_in(spool_lines))
+        if unattended:
+            shown = unattended[-MAX_REPLAY:]
+            parts.append(
+                f"ROSTER MAIL NOT YET CLOSED ({len(unattended)} notice(s) from the "
+                f"last {UNATTENDED_DAYS} days"
+                + (f", showing the most recent {MAX_REPLAY}" if len(unattended) > MAX_REPLAY else "")
+                + "). An earlier session was shown each of these, and nobody marked "
+                "it handled, replied or closed; that session may have ended before "
+                f"acting. Read each with `{REPO}/scripts/paynani event show <event_id> "
+                "--body`, act on it, then close it. Each one comes back at every "
+                "session start until it is closed:\n" + "\n".join(
+                    unattended_line(event_id, envelope) for event_id, envelope in shown)
+            )
+
         # The offset goes into this session's registry, not into the text: a
         # number the agent has to copy is a number it can get wrong, and one
         # digit repeated mail or skipped it (#170). The watcher reads it back
@@ -1091,7 +1193,13 @@ def main():
             "Arming is also what acknowledges the replay above — if you skip it, "
             "the next session shows these same messages again, and no new mail "
             "reaches you for the rest of this one. When the Monitor expires, "
-            "re-arm it with the same command."
+            "re-arm it with the same command.\n\n"
+            "Seeing a notice is not the same as dealing with it. After you act on "
+            "a roster notice, close it with "
+            f"`{REPO}/scripts/paynani event mark <event_id> handled`, or `replied` "
+            "if you answered it, or `closed` if it needs nothing. The event id is "
+            "the last field of the notice. A notice you leave open is shown again "
+            "at the next session start."
         )
     elif runtime == "codex":
         if spool_lines:
@@ -1155,7 +1263,8 @@ def main():
         },
     }
     system_messages = system_message_parts(listener_state, dispatcher_state,
-                                           faults, runtime, spool_lines, lines)
+                                           faults, runtime, spool_lines, lines,
+                                           unattended)
     system_message = ". ".join(system_messages) if system_messages else None
     # Omitted rather than sent as null when there is nothing to say. Claude Code
     # validates this payload and rejects `"systemMessage": null` with

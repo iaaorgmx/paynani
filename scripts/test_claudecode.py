@@ -259,6 +259,7 @@ class SpoolReplay(unittest.TestCase):
             "selected_runtime": lambda: "claudecode",
             "version_line": lambda: None,
             "local_code_line": lambda: "",
+            "unattended_roster": lambda **kw: [],
         }
         defaults.update(stubs)
         patchers = [mock.patch.object(ss, name, value) for name, value in defaults.items()]
@@ -1119,6 +1120,7 @@ class WatchRegistry(unittest.TestCase):
             "version_line": lambda: None,
             "local_code_line": lambda: "",
             "read_hook_input": lambda: {"session_id": session_id, "hook_event_name": "SessionStart"},
+            "unattended_roster": lambda **kw: [],
         }
         defaults.update(stubs)
         patchers = [mock.patch.object(ss, name, value) for name, value in defaults.items()]
@@ -1334,6 +1336,34 @@ class WatchRegistry(unittest.TestCase):
         self.assertTrue(self._wait(lambda: self._registry("sess-k-re")["status"] == "armed"))
         self.assertEqual("c\n", second.stdout.readline(), "orphan re-arm resumes past shown mail")
 
+    def test_a_rearm_does_not_show_again_what_was_already_closed(self):
+        """
+        After /clear, Claude Code keeps the process and changes the session id.
+        The hook writes the new registry at the spool offset of that moment; the
+        watcher already armed keeps showing mail past it, and the agent closes
+        each notice. Re-arming from the new registry used to show them all again
+        (#271, found live on 2026-09-30). A closed event is consumed silently.
+        """
+        sys.path.insert(0, str(ROOT / "harness"))
+        import ledger
+        journal = self.state / "lifecycle.jsonl"
+        for n in (1, 2):
+            ledger.observed(journal, {"event_id": f"imap:INBOX:1:{n}", "roster_match": True})
+            ledger.transition(journal, f"imap:INBOX:1:{n}", "dispatched")
+        ledger.transition(journal, "imap:INBOX:1:1", "handled")
+        self.spool.write_text(
+            "[mail] one [scripts/paynani event show imap:INBOX:1:1]\n"
+            "[mail] two [scripts/paynani event show imap:INBOX:1:2]\n",
+            encoding="utf-8")
+        self._hook("sess-settled", spool_through=0)
+        proc = self._watch("sess-settled")
+        self.assertTrue(self._wait(lambda: self._registry("sess-settled")["status"] == "armed"))
+        self.assertEqual("[mail] two [scripts/paynani event show imap:INBOX:1:2]\n",
+                         proc.stdout.readline())
+        self.assertTrue(self._wait(
+            lambda: self._registry("sess-settled").get("offset") == self.spool.stat().st_size),
+            "the skipped line still moves the cursor")
+
     def test_an_expired_registry_rearms_from_the_recorded_cursor(self):
         self.spool.write_text("a\nb\nc\n", encoding="utf-8")
         self.ss.write_registry("sess-exp", 4)
@@ -1396,6 +1426,169 @@ class WatchRegistry(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 self.ss.prompt_submit_command()
             self.assertEqual("", buf.getvalue(), "nothing to say means no output at all")
+
+
+
+class UnattendedRoster(unittest.TestCase):
+    """
+    Roster mail a session was shown and nobody closed (#271).
+
+    The cursor records that a line was seen; for Claude Code that is the moment
+    the watcher prints it. A session that ends between seeing a notice and
+    acting on it used to lose the notice for good. The ledger state is the
+    second net: open until an agent marks it handled, replied or closed.
+    """
+
+    def setUp(self):
+        import time
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = pathlib.Path(self.tmp.name)
+        sys.path.insert(0, str(ROOT / "harness"))
+        import ledger
+        import session_start as ss
+        self.ledger = ledger
+        self.ss = ss
+        self.path = self.state / "lifecycle.jsonl"
+        self.now = time.time()
+        for attr, value in (("LIFECYCLE", self.path), ("STATE_DIR", self.state),
+                            ("SPOOL", self.state / "session.spool"),
+                            ("SESSION_OFFSET", self.state / "session.offset"),
+                            ("SESSIONS_DIR", self.state / "sessions")):
+            patcher = mock.patch.object(ss, attr, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _stamp(self, age_seconds=60):
+        import time
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.now - age_seconds))
+
+    def _event(self, event_id, state="dispatched", roster=True, age=60,
+               subject="Re: pase de lista"):
+        self.ledger.observed(self.path, {
+            "event_id": event_id, "event_type": "email.received",
+            "observed_at": self._stamp(age), "roster_match": roster,
+            "sender": {"name": "Iris Claude-Tob", "address": "iris@example.test"},
+            "subject": subject, "message_id": f"<{event_id}@example.test>",
+        })
+        if state != "observed":
+            self.ledger.transition(self.path, event_id, state, runtime="claudecode")
+
+    def _ids(self, **kw):
+        return [event_id for event_id, _ in self.ss.unattended_roster(now=self.now, **kw)]
+
+    def test_a_dispatched_roster_notice_is_open(self):
+        self._event("imap:INBOX:1:10")
+        self.assertEqual(["imap:INBOX:1:10"], self._ids())
+
+    def test_a_presented_notice_is_open_too(self):
+        self._event("imap:INBOX:1:11", state="presented")
+        self.assertEqual(["imap:INBOX:1:11"], self._ids())
+
+    def test_closing_it_in_any_of_the_three_ways_takes_it_out(self):
+        for n, state in enumerate(("handled", "replied", "closed")):
+            event_id = f"imap:INBOX:1:2{n}"
+            self._event(event_id)
+            self.ledger.transition(self.path, event_id, state)
+        self.assertEqual([], self._ids())
+
+    def test_mail_that_is_not_from_the_roster_is_not_listed(self):
+        self._event("imap:INBOX:1:30", roster=False)
+        self.assertEqual([], self._ids())
+
+    def test_only_observed_never_reached_a_session(self):
+        self._event("imap:INBOX:1:31", state="observed")
+        self.assertEqual([], self._ids())
+
+    def test_older_than_the_window_is_dropped(self):
+        self._event("imap:INBOX:1:40", age=8 * 86400)
+        self._event("imap:INBOX:1:41", age=6 * 86400)
+        self.assertEqual(["imap:INBOX:1:41"], self._ids(days=7))
+
+    def test_what_the_spool_replay_already_shows_is_not_listed_twice(self):
+        self._event("imap:INBOX:1:50")
+        self._event("imap:INBOX:1:51")
+        replay = ["[mail 23:58:21, sent 23:58:06, roster] Iris — Re: x "
+                  "[scripts/paynani event show imap:INBOX:1:50]"]
+        self.assertEqual({"imap:INBOX:1:50"}, self.ss.event_ids_in(replay))
+        self.assertEqual(["imap:INBOX:1:51"],
+                         self._ids(exclude=self.ss.event_ids_in(replay)))
+
+    def test_oldest_first(self):
+        self._event("imap:INBOX:1:61", age=60)
+        self._event("imap:INBOX:1:60", age=3600)
+        self.assertEqual(["imap:INBOX:1:60", "imap:INBOX:1:61"], self._ids())
+
+    def test_a_missing_ledger_is_quiet(self):
+        self.assertEqual([], self._ids())
+
+    def _hook_context(self):
+        import contextlib, io, json
+        stubs = {
+            "unit_state": lambda unit: "active",
+            "dispatcher_faults": lambda: [],
+            "read_backlog": lambda: ([], False),
+            "read_spool_backlog": lambda: ([], False, 0),
+            "selected_runtime": lambda: "claudecode",
+            "version_line": lambda: None,
+            "local_code_line": lambda: "",
+            "read_hook_input": lambda: {"session_id": "sess-271", "hook_event_name": "SessionStart"},
+        }
+        with contextlib.ExitStack() as stack:
+            for name, value in stubs.items():
+                stack.enter_context(mock.patch.object(self.ss, name, value))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.ss.main()
+        return json.loads(buf.getvalue())
+
+    def test_acceptance_a_notice_seen_and_left_comes_back_until_it_is_closed(self):
+        """
+        #271, criterion 3. The notice reached a session (dispatched), the
+        session ended without closing it, and the spool cursor is already past
+        it: the replay is empty. The next session is still told, by event id.
+        After `event mark ... handled` it is not.
+        """
+        self._event("imap:INBOX:1:28")
+        payload = self._hook_context()
+        context = payload["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("No unseen mail since the last session armed the watch.", context)
+        self.assertIn("ROSTER MAIL NOT YET CLOSED (1 notice(s)", context)
+        self.assertIn("imap:INBOX:1:28", context)
+        self.assertIn("Iris Claude-Tob <iris@example.test>", context)
+        self.assertIn("1 roster mail notice(s) not yet closed", payload["systemMessage"])
+
+        self.ledger.transition(self.path, "imap:INBOX:1:28", "handled")
+        payload = self._hook_context()
+        self.assertNotIn("ROSTER MAIL NOT YET CLOSED",
+                         payload["hookSpecificOutput"]["additionalContext"])
+        self.assertNotIn("systemMessage", payload)
+
+    def test_the_hook_says_how_to_close_a_notice(self):
+        context = self._hook_context()["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("scripts/paynani event mark <event_id> handled", context)
+        self.assertIn("`replied`", context)
+
+    def test_unattended_prints_every_open_id_uncapped(self):
+        import contextlib, io
+        for n in range(self.ss.MAX_REPLAY + 3):
+            self._event(f"imap:INBOX:1:{100 + n}", age=3600 - n)
+        buf = io.StringIO()
+        with mock.patch.object(sys, "argv", ["session_start.py", "--unattended"]), \
+                contextlib.redirect_stdout(buf):
+            self.assertEqual(0, self.ss.main())
+        ids = buf.getvalue().split()
+        self.assertEqual(self.ss.MAX_REPLAY + 3, len(ids))
+        self.assertEqual("imap:INBOX:1:100", ids[0])
+
+    def test_settled_answers_by_exit_code(self):
+        self._event("imap:INBOX:1:70")
+        self._event("imap:INBOX:1:71")
+        self.ledger.transition(self.path, "imap:INBOX:1:71", "replied")
+        self.assertEqual(1, self.ss.settled_command([str(self.state), "imap:INBOX:1:70"]))
+        self.assertEqual(0, self.ss.settled_command([str(self.state), "imap:INBOX:1:71"]))
+        self.assertEqual(1, self.ss.settled_command([str(self.state), "imap:INBOX:1:99"]))
+        self.assertEqual(2, self.ss.settled_command([]))
 
 
 class PromptHookRegistration(unittest.TestCase):
