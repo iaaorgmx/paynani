@@ -264,6 +264,39 @@ try:
     same = up.plan("v2.0.1", "v2.0.1", repo=repo, runtime="claudecode", system="Linux")
     check("identical refs say no files differ", "no files differ" in up.render(same))
 
+    # A target --apply cannot pull (a branch, a commit) still gets its plan (#297).
+    # Before, render() called _fetch_argv() for it and died with a traceback.
+    # v2.0.0 -> v2.0.1 is the docs-only step above: no unknown files and no drift, so
+    # it reaches the apply block, which is where the traceback came from.
+    sh(repo, "branch", "release-x", "v2.0.1")
+    branch = up.plan("v2.0.0", "release-x", repo=repo, runtime="claudecode", system="Linux")
+    branch_text = up.render(branch)
+    check("a branch target renders its plan instead of raising",
+          "upgrade plan: v2.0.0 -> release-x" in branch_text and "run, in this order" in branch_text, branch_text)
+    check("... and says --apply refuses it, and why",
+          "refused: release-x is neither a release tag nor origin/main" in branch_text, branch_text)
+    check("... with no apply steps printed", "git fetch origin" not in branch_text
+          and "git merge --ff-only" not in branch_text, branch_text)
+    check("a tag target still prints its apply steps, unchanged",
+          "git fetch origin tag v2.0.1" in up.render(
+              up.plan("v2.0.0", "v2.0.1", repo=repo, runtime="claudecode", system="Linux")))
+    check("apply_target_ok accepts a release tag and origin/main only",
+          up.apply_target_ok("v0.9.0") and up.apply_target_ok("origin/main")
+          and not up.apply_target_ok("release-x") and not up.apply_target_ok("v0.9.0-rc1")
+          and not up.apply_target_ok("origin/release-0.9.0") and not up.apply_target_ok("5bd18f9"))
+    try:
+        up.apply_plan(branch, repo=repo, runner=lambda *a, **k: None, wait_seconds=0)
+        apply_branch_error = ""
+    except up.ApplyError as exc:
+        apply_branch_error = str(exc)
+    check("--apply of a branch is still refused, for the same reason (not by a side effect)",
+          "release tag or origin/main" in apply_branch_error, apply_branch_error)
+    run = subprocess.run([sys.executable, str(ROOT / "scripts" / "upgrade_plan.py"), "--repo", str(repo),
+                          "--from", "v2.0.0", "--to", "release-x", "--runtime", "claudecode"],
+                         capture_output=True, text=True, cwd=str(tmp))
+    check("CLI with a branch target exits 0 and prints no traceback",
+          run.returncode == 0 and "Traceback" not in run.stdout + run.stderr, run.stdout + run.stderr)
+
     # The CLI end to end, from inside the throwaway clone.
     script = tmp / "scripts" / "upgrade_plan.py"
     (tmp / "scripts").mkdir()
