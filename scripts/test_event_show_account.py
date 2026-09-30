@@ -126,7 +126,13 @@ with tempfile.TemporaryDirectory() as raw:
         check("... it logged in as the account, not as the agent",
               len(opened) == 1 and opened[0].get("PAYNANI_EMAIL") == "ventas@dominio.test"
               and opened[0].get("PAYNANI_PASSWORD") == "ventas-secret", str(opened))
-        check("... it was authorised by the account's roster", "ana@dominio.test" in out.split("--- authorized:")[-1], out)
+        authorized_line = out.split("--- authorized:")[-1].strip().rstrip("-").strip()
+        check("... it was authorised by the account's roster, and the reason names THAT file (Ana is only on it)",
+              authorized_line == "ana@dominio.test is a contact in rosters/ventas.md", authorized_line)
+        check("... the reason does not claim roster.md decided", "in roster.md" not in authorized_line, authorized_line)
+        check("... the envelope decision in the JSON names the account's roster too",
+              json.loads(out.split("\n--- verified body ---", 1)[0])["roster_decision"]["reason"]
+              == "ana@dominio.test is a contact in rosters/ventas.md", out)
         data = json.loads(out.split("\n--- verified body ---", 1)[0])
         check("... the output says which account", data.get("account_id") == "ventas" and data.get("account") == "ventas@dominio.test", str(data))
         check("... and the secret is nowhere in the output", "ventas-secret" not in out + err)
@@ -183,6 +189,8 @@ with tempfile.TemporaryDirectory() as raw:
         event_cli.idle_listener.connect = connect_with(conn)
         code, out, err = show(tmp, main_event["event_id"])
         check("the agent's own event still works with roster.md", code == 0 and "cuerpo privado" in out, out + err)
+        check("... and its reason still names roster.md",
+              out.rstrip().endswith("metis@example.com is a contact in roster.md ---"), out[-120:])
         check("... with the agent's own login",
               len(opened) == 1 and opened[0] == event_cli.idle_listener.load_env(tmp / ".env"), str(opened))
         data = json.loads(out.split("\n--- verified body ---", 1)[0])

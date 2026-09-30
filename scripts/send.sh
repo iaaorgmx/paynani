@@ -10,6 +10,8 @@
 # account's roster is refused with exit 2, and the other way round is allowed.
 # Without --account nothing about this script changes. The account is read from
 # accounts.json beside ENV_FILE, and it wins over a ROSTER set in the environment.
+# The agent's own signature is never added to a message from an account: it gets
+# the account's `signature_file` from accounts.json, or none.
 #
 # Anything not in roster.md (or, with --account, the account's roster) exits 2 and sends nothing. That is the point: this
 # agent reads mail all day and acts on the part of it that comes from the roster,
@@ -204,11 +206,13 @@ to=${to_recipients[0]}
 # ROSTER, ACCOUNT and the sender are different.
 account_email=""
 account_from_name=""
+account_signature=""
 if [ -n "$account_id" ]; then
     _paynani_resolved=$(python3 "$(cd "$(dirname "$0")" && pwd)/account_send.py" "$ENV_FILE" "$account_id") || exit $?
     account_email=$(printf '%s\n' "$_paynani_resolved" | sed -n 1p)
     account_from_name=$(printf '%s\n' "$_paynani_resolved" | sed -n 2p)
     ROSTER=$(printf '%s\n' "$_paynani_resolved" | sed -n 3p)
+    account_signature=$(printf '%s\n' "$_paynani_resolved" | sed -n 4p)
     ACCOUNT="paynani-$account_id"
 fi
 
@@ -384,7 +388,17 @@ signature_file=$(env_value PAYNANI_SIGNATURE_FILE)
 [ -n "$signature_file" ] || signature_file=$(env_value AGENT_EMAIL_SIGNATURE_FILE)
 signature_file=$(printf '%s' "$signature_file" | tr -d '\r\n')
 
-if [ -n "$signature_file" ] && { [ ! -f "$signature_file" ] || [ ! -r "$signature_file" ]; }; then
+# --account: a message from ventas@ is never signed by the agent. The agent's
+# PAYNANI_SIGNATURE_FILE is dropped, and the account's own `signature_file` from
+# accounts.json is used instead, if it has one (#283).
+if [ -n "$account_id" ]; then
+    signature_file=$(printf '%s' "$account_signature" | tr -d '\r\n')
+    if [ -n "$signature_file" ] && { [ ! -f "$signature_file" ] || [ ! -r "$signature_file" ]; }; then
+        echo "REFUSED: signature file $signature_file of account $account_id is not readable" >&2
+        echo "Fix signature_file in accounts.json, or remove it to send unsigned. Nothing was sent." >&2
+        exit 2
+    fi
+elif [ -n "$signature_file" ] && { [ ! -f "$signature_file" ] || [ ! -r "$signature_file" ]; }; then
     echo "signature file $signature_file is not readable - refusing to send" >&2
     echo "Fix PAYNANI_SIGNATURE_FILE in $ENV_FILE, or remove it to send unsigned." >&2
     exit 1
@@ -760,7 +774,13 @@ if [ -n "$dry_run" ]; then
         _paynani_i=$(( _paynani_i + 1 ))
     done
     printf 'Attachment bytes total: %s\n' "$attach_bytes"
-    if [ -n "$signature_file" ]; then
+    if [ -n "$account_id" ]; then
+        if [ -n "$signature_file" ]; then
+            printf 'Signature: yes (source: accounts.json signature_file)\n'
+        else
+            printf 'Signature: no (account %s has no signature_file)\n' "$account_id"
+        fi
+    elif [ -n "$signature_file" ]; then
         printf 'Signature: yes (text/plain, source: PAYNANI_SIGNATURE_FILE)\n'
     else
         printf 'Signature: no\n'

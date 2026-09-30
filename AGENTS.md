@@ -463,7 +463,9 @@ scripts/send.sh --account ventas them@example.com "Re: Cotización" body.txt
 The recipient is held to **that account's** roster (`rosters/ventas.md`), not to
 `roster.md`: someone who is only on the main roster is refused with exit 2, and
 someone who is only on the account's roster is allowed. `--dry-run` says which
-account and which roster it used. Read the body of such a notice the same way,
+account, roster and signature it used. Your own signature is never added to
+such a message; the account may have its own (`signature_file` in
+`accounts.json`). Read the body of such a notice the same way,
 with `scripts/paynani event show <event_id> --body`: it opens that account's
 mailbox and checks the sender against that account's roster. Mail from anyone
 who is not on the account's roster arrives without the `roster` mark: it is

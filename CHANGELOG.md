@@ -90,11 +90,17 @@
   principal sale con 2 y no se envía nada, y al revés se permite. Se rechazan
   con 2, sin enviar, una cuenta que no existe, una sin servidor SMTP, una sin
   roster o un `accounts.json` ilegible; un salto de línea en `from_name` no
-  puede abrir otra cabecera. `--dry-run` dice qué cuenta y qué roster usó, y
-  `sent.log` anota `account=<id>`. Sin `--account`, `send.sh` queda igual, byte
+  puede abrir otra cabecera. **La firma del agente no se agrega** a un correo
+  de una cuenta adicional: `accounts.json` acepta un `signature_file` opcional
+  por cuenta (ruta relativa dentro del directorio, con la misma regla que
+  `roster`), que `send.sh --account` agrega; si no se puede leer, no envía.
+  `--dry-run` dice qué cuenta, qué roster y qué firma usó, y `sent.log` anota
+  `account=<id>`. Sin `--account`, `send.sh` queda igual, byte
   por byte. `paynani event show <event_id> [--body]` de un evento de una
   cuenta adicional abre IMAP con **el login de esa cuenta**, verifica al
-  remitente contra **su roster** y muestra `account_id`; si la cuenta ya no está
+  remitente contra **su roster** (el motivo de la autorización nombra ese
+  archivo, `rosters/<id>.md`, y no `roster.md`) y muestra `account_id`; si la
+  cuenta ya no está
   en `accounts.json`, no lee el cuerpo y no cae al login del agente. La cuenta
   principal no cambia. `AGENTS.md` dice que la respuesta a un aviso de una
   cuenta adicional sale con `--account`.

@@ -80,7 +80,12 @@ def _safe_record(record):
     return {key: record[key] for key in allowed if key in record}
 
 
-def _authorization(record, path=None):
+def _roster_label(account) -> str:
+    """The name of the roster that decides for this account, as a reader knows it."""
+    return account["roster"] if account is not None else "roster.md"
+
+
+def _authorization(record, path=None, label="roster.md"):
     """The roster decision for a saved event. `path` is the roster of the event's
     account; None means roster.md, and for an account that is gone (`path` False),
     only what the listener recorded is left to show."""
@@ -103,6 +108,7 @@ def _authorization(record, path=None):
         roster_mod.roster_addresses(path),
         roster_mod.roster_entries(path),
         notifiers,
+        roster_label=label,
     )
     # A notifier match depends on a provider header that the legacy event does
     # not retain. The listener's original positive decision is therefore valid
@@ -251,6 +257,7 @@ def fetch_verified(record, *, include_body=False):
         roster_mod.roster_addresses(path),
         roster_mod.roster_entries(path),
         roster_mod.notifiers(path),
+        roster_label=_roster_label(account),
     )
     if not record.get("roster_match") or not decision["matched"]:
         raise PermissionError(f"body refused: {decision['reason']}")
@@ -268,8 +275,8 @@ def run_show(args) -> int:
     except RuntimeError:
         # The account is gone from accounts.json: the envelope can still be shown,
         # with what the listener recorded; fetching a body below refuses.
-        roster_path = False
-    decision = _authorization(record, roster_path)
+        account, roster_path = None, False
+    decision = _authorization(record, roster_path, _roster_label(account))
     verified = None
     if record.get("roster_match"):
         try:

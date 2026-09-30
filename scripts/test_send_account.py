@@ -81,7 +81,10 @@ exit 0
         (tmp / "roster.md").write_text(MAIN_ROSTER)
         if write_ventas_roster:
             (tmp / "rosters" / "ventas.md").write_text(VENTAS_ROSTER)
-        (tmp / ".env").write_text("PAYNANI_EMAIL=agent@main.test\nPAYNANI_FROM_NAME=Agente Principal\n")
+        (tmp / "agent-signature.txt").write_text("-- \nFIRMA DEL AGENTE\n")
+        (tmp / ".env").write_text(
+            "PAYNANI_EMAIL=agent@main.test\nPAYNANI_FROM_NAME=Agente Principal\n"
+            f"PAYNANI_SIGNATURE_FILE={tmp / 'agent-signature.txt'}\n")
         entries = accounts if accounts is not None else [account("ventas")]
         (tmp / "accounts.json").write_text(json.dumps({"schema_version": 1, "accounts": entries}))
         (tmp / "himalaya.toml").write_text("""[accounts.paynani]
@@ -211,6 +214,71 @@ try:
     check("--account: an unusable accounts.json is refused with 2", run.returncode == 2 and "REFUSED" in run.stderr, run.stderr)
 finally:
     h.close()
+
+# --- the agent's signature never goes out on an account's mail --------------------
+
+h = Home()
+try:
+    run, calls, msg, _ = h.send(METIS)
+    check("no --account: the agent's own mail still carries the agent's signature", "FIRMA DEL AGENTE" in msg, msg)
+
+    run, calls, msg, _ = h.send(ANA, "--account", "ventas")
+    check("--account with no signature_file: the agent's signature is NOT added", run.returncode == 0 and "FIRMA DEL AGENTE" not in msg, msg)
+    run, calls, msg, _ = h.send(ANA, "--account", "ventas", "--dry-run")
+    check("--account with no signature_file: dry-run says so",
+          "Signature: no (account ventas has no signature_file)" in run.stdout, run.stdout)
+    run, calls, msg, _ = h.send(METIS, "--dry-run")
+    check("no --account: dry-run still reports the agent's signature as before",
+          "Signature: yes (text/plain, source: PAYNANI_SIGNATURE_FILE)" in run.stdout, run.stdout)
+finally:
+    h.close()
+
+h = Home(accounts=[account("ventas", signature_file="signatures/ventas.txt")])
+try:
+    (h.tmp / "signatures").mkdir()
+    (h.tmp / "signatures" / "ventas.txt").write_text("-- \nVentas Dominio\nwww.dominio.test\n")
+    run, calls, msg, _ = h.send(ANA, "--account", "ventas")
+    check("--account with a signature_file: the message carries that signature",
+          run.returncode == 0 and "Ventas Dominio\nwww.dominio.test" in msg, msg)
+    check("... and not the agent's", "FIRMA DEL AGENTE" not in msg, msg)
+    run, calls, msg, _ = h.send(ANA, "--account", "ventas", "--dry-run")
+    check("--account with a signature_file: dry-run names its source",
+          "Signature: yes (source: accounts.json signature_file)" in run.stdout, run.stdout)
+finally:
+    h.close()
+
+h = Home(accounts=[account("ventas", signature_file="signatures/falta.txt")])
+try:
+    run, calls, msg, _ = h.send(ANA, "--account", "ventas")
+    check("--account with an unreadable signature_file: refused with 2, saying which",
+          run.returncode == 2 and "REFUSED" in run.stderr and "falta.txt" in run.stderr, run.stderr)
+    check("... and nothing was sent", "smtp send" not in calls and msg == "", calls)
+finally:
+    h.close()
+
+# accounts.json holds the same line on signature_file as on roster
+import sys  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "scripts"))
+from paynani_lib import accounts as accounts_mod  # noqa: E402
+
+
+def refused_signature(value):
+    try:
+        accounts_mod.validate({"accounts": [account("ventas", signature_file=value)]})
+    except accounts_mod.AccountsError as exc:
+        return str(exc)
+    return None
+
+
+for label, value in (("an absolute path", "/etc/passwd"), ("~", "~/firma.txt"), ("a path that climbs out", "../firma.txt"),
+                     ("a number", 5), ("blank", "   ")):
+    reason = refused_signature(value)
+    check(f"accounts.json: signature_file as {label} is refused, naming the field",
+          reason is not None and "signature_file" in reason, str(reason))
+check("accounts.json: a relative signature_file inside the directory is accepted", refused_signature("signatures/ventas.txt") is None)
+[normal] = accounts_mod.validate({"accounts": [account("ventas")]})
+check("accounts.json: an account without signature_file has None, not an error", normal["signature_file"] is None)
 
 # --- a display name cannot smuggle a header ---------------------------------------
 

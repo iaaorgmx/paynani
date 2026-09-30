@@ -4,8 +4,9 @@ What `send.sh --account <id>` needs to know about an additional account (#283).
 
     account_send.py ENV_FILE ACCOUNT_ID
 
-prints three lines -- the account's address, its display name (possibly empty)
-and the absolute path of its roster -- and exits 0. Anything that means the
+prints four lines -- the account's address, its display name (possibly empty),
+the absolute path of its roster, and the path of its own signature file (empty
+when it has none) -- and exits 0. Anything that means the
 message must not go out (no such account, no SMTP server, an address that is not
 one) says why on stderr and exits 2, the same code send.sh uses for a refusal.
 
@@ -50,9 +51,11 @@ def main(argv: list[str]) -> int:
         return refuse(f"account {account_id!r} has an address with whitespace in it")
     # A display name lands in a header: a newline in it would start another one.
     from_name = " ".join(str(account.get("from_name") or "").split())
+    signature = accounts.signature_path(account, path)
     print(address)
     print(from_name)
     print(accounts.roster_path(account, path))
+    print(signature if signature else "")
     return 0
 
 
