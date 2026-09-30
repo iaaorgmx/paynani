@@ -92,7 +92,17 @@ LEDGER = STATE_DIR / "lifecycle.jsonl"
 # Compact once the journal is worth compacting, and only from here: the
 # dispatcher is the only process that knows what it has delivered.
 JOURNAL_MAX = int(os.environ.get("DISPATCH_JOURNAL_MAX", 4 * 1024 * 1024))
-JOURNAL_RETENTION_DAYS = int(os.environ.get("PAYNANI_RETENTION_DAYS", "90"))
+def _retention_days(default=90):
+    # Read once at import, so a typo in the environment must not stop the
+    # dispatcher from starting: an unreadable value falls back to the default,
+    # as harness/rotate_logs.py already does.
+    try:
+        return max(0, int(os.environ.get("PAYNANI_RETENTION_DAYS", str(default))))
+    except ValueError:
+        return default
+
+
+JOURNAL_RETENTION_DAYS = _retention_days()
 
 KNOWN_RUNTIMES = ("openclaw", "hermes", "claudecode", "codex", "opencode")
 
