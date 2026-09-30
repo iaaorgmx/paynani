@@ -383,8 +383,12 @@ try:
           result["patch"] is not None and pathlib.Path(result["patch"]).read_text())
     check("apply runs the suite after restoring an overlay",
           any(argv and argv[0].endswith("scripts/test_all.sh") for argv in calls), str(calls))
-    check("apply restarts only the listener named by the plan",
-          ["systemctl", "--user", "restart", "paynani-idle.service"] in calls, str(calls))
+    # The seed changes only VERSION, and both services record the version they
+    # loaded, so both are restarted (the plan used to name only the listener,
+    # which left doctor in `warning` after an exact apply; found preparing 0.9.1).
+    check("apply restarts the services named by the plan, listener and dispatcher",
+          ["systemctl", "--user", "restart", "paynani-idle.service", "paynani-dispatch.service"] in calls,
+          str(calls))
     check("apply finishes with healthcheck",
           any(argv and argv[0].endswith("scripts/healthcheck.py") for argv in calls), str(calls))
 
@@ -397,6 +401,31 @@ try:
         refused_unknown = True
     check("apply refuses unknown files before running a command",
           refused_unknown and len(calls) == before_calls)
+    # --- a release that changes only VERSION restarts every service -------------
+    # Both services record the version they loaded and version_drift compares
+    # both, so a plan that restarted only the listener left doctor in `warning`
+    # after following it exactly. Found preparing 0.9.1, whose only runtime
+    # change was VERSION.
+    only = tmp / "only-version"
+    only.mkdir()
+    sh(only, "init", "-q")
+    write(only, "VERSION", "1.0.0\n")
+    write(only, ".gitignore", "install.manifest\n")
+    sh(only, "add", "-A")
+    sh(only, "commit", "-q", "-m", "one")
+    sh(only, "tag", "v1.0.0")
+    write(only, "VERSION", "1.0.1\n")
+    sh(only, "add", "-A")
+    sh(only, "commit", "-q", "-m", "patch")
+    sh(only, "tag", "v1.0.1")
+    manifest_for(only)
+    patch = up.plan("v1.0.0", "v1.0.1", repo=only, runtime="claudecode", system="Linux")
+    check("a VERSION-only release restarts the listener, its instances and the dispatcher",
+          [u for u, _ in patch["restart_units"]]
+          == ["paynani-idle.service", "paynani-idle@*.service", "paynani-dispatch.service"],
+          str(patch["restart_units"]))
+    check("and names both services in the commands",
+          any("paynani-dispatch.service" in c for c in up.commands(patch)))
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
