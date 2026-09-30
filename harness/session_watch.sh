@@ -34,6 +34,10 @@ registry() {   # verb [k=v ...]  -> the registry of this session, if it has one
 	PAYNANI_RUNTIME=claudecode python3 "$HOOK" --registry "$1" "$session_id" "state=$STATE_DIR" "${@:2}" 2>/dev/null 9>&-
 }
 
+settled() {   # event id -> 0 when the ledger already has it handled, replied or closed
+	PAYNANI_RUNTIME=claudecode python3 "$HOOK" --settled "$STATE_DIR" "$1" 2>/dev/null 9>&-
+}
+
 session_id="${CLAUDE_CODE_SESSION_ID:-}"
 start=${2:-0}
 if [ "$start" = "--from-hook" ]; then
@@ -414,7 +418,19 @@ while IFS= read -r -u 8 line; do
 	fi
 
 	width=$(printf '%s\n' "$line" | wc -c | tr -d ' ')
-	[ -n "$line" ] && printf '%s\n' "$line"
+	# A line whose event this session (or an earlier one) already closed is
+	# consumed without being shown. A re-arm can start behind lines that were
+	# acted on -- after /clear the hook's offset predates what the previous
+	# watcher showed -- and repeating them reads as new work (#271).
+	show=1
+	case "$line" in
+	*"event show "*"]"*)
+		event_id=${line##*event show }
+		event_id=${event_id%%]*}
+		settled "$event_id" && show=0
+		;;
+	esac
+	[ -n "$line" ] && [ "$show" = 1 ] && printf '%s\n' "$line"
 	cursor=$((cursor + width))
 	printf '%s' "$cursor" >"$OFFSET_FILE.tmp" 2>/dev/null &&
 		mv -f "$OFFSET_FILE.tmp" "$OFFSET_FILE" 2>/dev/null
