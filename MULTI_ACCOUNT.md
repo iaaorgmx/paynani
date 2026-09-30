@@ -123,7 +123,43 @@ cuenta. El de la cuenta del agente no cambia: `imap:INBOX:…`.
 Al terminar de atender un aviso, se cierra como siempre:
 `scripts/paynani event mark <event_id> handled`.
 
-### 6. Quitar una cuenta
+### 6. Leer y contestar desde la cuenta
+
+Para leer el cuerpo de un aviso de una cuenta adicional:
+
+```bash
+scripts/paynani event show imap:ventas:INBOX:1790749984:2 --body
+```
+
+Abre el buzón **de esa cuenta**, con su login, y comprueba al remitente contra
+**el roster de esa cuenta**; la salida incluye `account_id` y dice qué roster
+decidió (`… is a contact in rosters/ventas.md`). Si la cuenta ya no está en
+`accounts.json`, no lee el cuerpo y no usa el login del agente.
+
+Para contestar desde la cuenta:
+
+```bash
+scripts/send.sh --account ventas ana@dominio.com "Re: Cotización" cuerpo.txt
+```
+
+- El mensaje sale de `ventas@dominio.com`, con el nombre de la cuenta
+  (`--from-name`), por la cuenta de himalaya `paynani-ventas`.
+- **El destinatario se juzga contra el roster de `ventas`, no contra `roster.md`.**
+  Alguien que solo está en el roster del agente sale con error 2 y no se envía
+  nada; alguien que solo está en el de la cuenta, sí se permite. Por eso, en esta
+  versión, una cuenta solo contesta a quien está en su propio roster.
+- Sin `--account`, `send.sh` funciona como siempre.
+- `--dry-run` muestra la cuenta, el roster y la firma que usaría, sin enviar.
+- Una cuenta sin servidor SMTP (sin `--smtp-host` al agregarla), o sin archivo de
+  roster, no envía: sale con error 2.
+
+**La firma del agente no se agrega** a un correo de una cuenta adicional: un
+correo de `ventas@` no lo firma el agente. Si la cuenta necesita firma, se pone
+en `accounts.json` como `"signature_file": "signatures/ventas.txt"`, una ruta
+relativa dentro del mismo directorio (igual que `roster`), y `send.sh --account`
+la agrega. Si el archivo no se puede leer, no envía.
+
+### 7. Quitar una cuenta
 
 ```bash
 scripts/paynani account remove ventas
@@ -170,16 +206,19 @@ salida es la de siempre, sin filas nuevas.
 - Solo IMAP IDLE con usuario y contraseña. Microsoft 365 o Google Workspace sin
   contraseñas de aplicación piden OAuth2, que no está incluido.
 - El correo de remitentes fuera del roster de la cuenta se entrega como
-  contexto; no hay un flujo para contestarlo o reenviarlo.
+  contexto. No hay un flujo para decidir qué hacer con él (contestar a un cliente
+  nuevo, reenviarlo a alguien): una cuenta solo puede contestar a quien está en
+  su propio roster.
 
 ## Probado en campo
 
-`account add`, el servicio por cuenta, el aviso con la cuenta y `doctor` por
-cuenta se probaron de punta a punta con un servidor de correo real, en un host
+`account add`, el servicio por cuenta, el aviso con la cuenta, `doctor` por
+cuenta, `send.sh --account` y `event show` por cuenta se probaron de punta a punta con un servidor de correo real, en un host
 con Claude Code y Linux, con cuatro cuentas reales corriendo a la vez. La
 evidencia está en
-[#276](https://github.com/iaaorgmx/paynani/issues/276) y
-[#282](https://github.com/iaaorgmx/paynani/issues/282).
+[#276](https://github.com/iaaorgmx/paynani/issues/276),
+[#282](https://github.com/iaaorgmx/paynani/issues/282) y
+[#293](https://github.com/iaaorgmx/paynani/pull/293).
 
 ## Datos personales de los clientes
 

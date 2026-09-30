@@ -496,8 +496,13 @@ def sender_is_listed(message: Message, allowed: set[str],
     return explain_sender(message, allowed, entries, notifier_list)["matched"]
 
 
-def explain_sender(message: Message, allowed: set[str], entries=(), notifier_list=()) -> dict:
-    """Explain the exact decision sender_is_listed() makes, without side effects."""
+def explain_sender(message: Message, allowed: set[str], entries=(), notifier_list=(),
+                   roster_label: str = "roster.md") -> dict:
+    """Explain the exact decision sender_is_listed() makes, without side effects.
+
+    `roster_label` is only the name the reason gives to the list that decided:
+    an additional account's mail is decided by its own roster (`rosters/ventas.md`),
+    and a reason that said roster.md would state something untrue (#283)."""
     address = sender_address(message)
     answer = {"matched": False, "from": address, "kind": "none", "reason": ""}
     if not address:
@@ -506,7 +511,7 @@ def explain_sender(message: Message, allowed: set[str], entries=(), notifier_lis
     if address in allowed:
         entry = next((e for e in entries if normalise(e.get("address", "")) == address), None)
         answer.update({"matched": True, "kind": "contact", "entry": entry,
-                       "reason": f"{address} is a contact in roster.md"})
+                       "reason": f"{address} is a contact in {roster_label}"})
         return answer
 
     # A declared notifier speaks for whoever its declared header names, and only

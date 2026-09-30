@@ -18,6 +18,45 @@ import ledger  # noqa: E402
 import roster as roster_mod  # noqa: E402
 from paths import env_file, roster as roster_file, state_dir  # noqa: E402
 
+from paynani_lib import accounts  # noqa: E402  (absolute: test_event_lifecycle.py imports this file as a top-level module)
+
+
+def _accounts_file() -> Path:
+    """accounts.json beside the env file, which is where `paynani account add` writes it."""
+    return env_file().parent / accounts.FILENAME
+
+
+def _account_for(record):
+    """
+    The additional account this event came from, or None for the agent's own.
+
+    An event of `ventas@` is read with `ventas@`'s login and held to `ventas@`'s
+    roster; deciding it against the agent's roster.md would be the other
+    account's permission (#276). The account id is on the record, and for a record
+    that lost it the event id still has it. RuntimeError, saying which account,
+    when accounts.json no longer lists it: the agent's login must not stand in
+    for an account that is gone.
+    """
+    account_id = str(record.get("account_id") or "").strip()
+    path = _accounts_file()
+    if not account_id:
+        try:
+            known = {a["id"] for a in accounts.load(path)}
+            if known:
+                account_id = accounts.parse_event_id(str(record.get("event_id") or ""), known_ids=known)[0]
+        except accounts.AccountsError:
+            return None
+    if not account_id or account_id == accounts.MAIN:
+        return None
+    try:
+        return accounts.get(account_id, path)
+    except accounts.AccountsError as exc:
+        raise RuntimeError(f"this event belongs to account {account_id!r}: {exc}") from exc
+
+
+def _roster_of(account):
+    return accounts.roster_path(account, _accounts_file()) if account else roster_file()
+
 
 def _find(event_id: str, journal: Path | None = None):
     journal = journal or state_dir() / "events.jsonl"
@@ -33,7 +72,7 @@ def _find(event_id: str, journal: Path | None = None):
 
 def _safe_record(record):
     allowed = (
-        "schema_version", "event_type", "event_id", "source", "account",
+        "schema_version", "event_type", "event_id", "source", "account", "account_id",
         "mailbox", "uidvalidity", "uid", "observed_at", "sent_at", "sender",
         "subject", "roster_match", "authenticated_sender", "message_id",
         "provider_id", "recipient_role", "notifier_headers", "inspection_command",
@@ -41,9 +80,23 @@ def _safe_record(record):
     return {key: record[key] for key in allowed if key in record}
 
 
-def _authorization(record):
+def _roster_label(account) -> str:
+    """The name of the roster that decides for this account, as a reader knows it."""
+    return account["roster"] if account is not None else "roster.md"
+
+
+def _authorization(record, path=None, label="roster.md"):
+    """The roster decision for a saved event. `path` is the roster of the event's
+    account; None means roster.md, and for an account that is gone (`path` False),
+    only what the listener recorded is left to show."""
     sender = (record.get("sender") or {}).get("address", "")
-    path = roster_file()
+    if path is False:
+        return {
+            "matched": bool(record.get("roster_match")),
+            "kind": "recorded",
+            "reason": "the listener recorded this decision; the account's roster is not available any more",
+        }
+    path = roster_file() if path is None else path
     message = email.message.EmailMessage()
     message["From"] = sender
     for header, value in (record.get("notifier_headers") or {}).items():
@@ -55,6 +108,7 @@ def _authorization(record):
         roster_mod.roster_addresses(path),
         roster_mod.roster_entries(path),
         notifiers,
+        roster_label=label,
     )
     # A notifier match depends on a provider header that the legacy event does
     # not retain. The listener's original positive decision is therefore valid
@@ -98,9 +152,9 @@ def _body_text(message):
     return (payload or b"").decode(charset, errors="replace")
 
 
-def _agent_roster_entry(agent_address: str):
+def _agent_roster_entry(agent_address: str, path=None):
     agent = roster_mod.normalise(agent_address)
-    for entry in roster_mod.roster_entries(roster_file()):
+    for entry in roster_mod.roster_entries(roster_file() if path is None else path):
         if roster_mod.normalise(entry.get("address", "")) == agent:
             return entry
     return {"address": agent, "name": "", "columns": {}}
@@ -119,7 +173,7 @@ def _with_recorded_role_disagreement(summary: dict, recorded: str | None) -> dic
     return summary
 
 
-def _marker_summary(record, message, body: str) -> dict:
+def _marker_summary(record, message, body: str, roster_path=None) -> dict:
     role, recorded = _recipient_role(record, message)
     if role == "to":
         return _with_recorded_role_disagreement({
@@ -128,7 +182,7 @@ def _marker_summary(record, message, body: str) -> dict:
             "marker_lines": [],
         }, recorded)
 
-    entry = _agent_roster_entry(record.get("account", ""))
+    entry = _agent_roster_entry(record.get("account", ""), roster_path)
     markers = [entry.get("address", ""), entry.get("name", "")]
     prefixes = tuple(
         marker.casefold() + ":"
@@ -153,7 +207,12 @@ def fetch_verified(record, *, include_body=False):
         raise RuntimeError("only email.received events have a message body")
     if not record.get("roster_match"):
         raise PermissionError("body refused: the listener did not record a roster match")
+    account = _account_for(record)
     env = idle_listener.load_env(env_file())
+    if account is not None:
+        # The additional account's own login, from accounts.json and the password
+        # it names in the .env: never the agent's, which would read the wrong mailbox.
+        env = accounts.env_for(account, env)
     configured = idle_listener.lookup(env, "user").strip().lower()
     if configured != str(record.get("account") or "").strip().lower():
         raise RuntimeError("event account does not match the configured mailbox account")
@@ -192,12 +251,13 @@ def fetch_verified(record, *, include_body=False):
     if expected_mid and actual_mid != expected_mid:
         raise RuntimeError("fetched Message-ID does not match the journal envelope")
 
-    path = roster_file()
+    path = _roster_of(account)
     decision = roster_mod.explain_sender(
         message,
         roster_mod.roster_addresses(path),
         roster_mod.roster_entries(path),
         roster_mod.notifiers(path),
+        roster_label=_roster_label(account),
     )
     if not record.get("roster_match") or not decision["matched"]:
         raise PermissionError(f"body refused: {decision['reason']}")
@@ -209,7 +269,14 @@ def run_show(args) -> int:
     if record is None:
         print(f"Event not found: {args.event_id}", file=sys.stderr)
         return 1
-    decision = _authorization(record)
+    try:
+        account = _account_for(record)
+        roster_path = _roster_of(account) if account is not None else None
+    except RuntimeError:
+        # The account is gone from accounts.json: the envelope can still be shown,
+        # with what the listener recorded; fetching a body below refuses.
+        account, roster_path = None, False
+    decision = _authorization(record, roster_path, _roster_label(account))
     verified = None
     if record.get("roster_match"):
         try:
@@ -235,7 +302,7 @@ def run_show(args) -> int:
         print("body refused: the listener did not record a roster match", file=sys.stderr)
         return 2
     body = _body_text(verified)
-    output.update(_marker_summary(record, verified, body))
+    output.update(_marker_summary(record, verified, body, roster_path))
     print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     print("\n--- verified body ---")
     print(body, end="" if body.endswith("\n") else "\n")

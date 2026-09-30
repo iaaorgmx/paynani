@@ -82,12 +82,28 @@
   - Sin `accounts.json`, las dos salidas quedan idénticas a las de antes.
 
 
-- **Retención para registros de cuentas adicionales** (#276, #284, punto 2).
-  `paynani-logrotate.timer` ahora también aplica `PAYNANI_RETENTION_DAYS`
-  (default: 90) al historial de cuentas adicionales: limpia del ledger los
-  eventos viejos de esas cuentas y conserva el historial de la cuenta principal.
-  El journal se compacta desde el dispatcher, no desde el timer, cuando todo el
-  archivo ya fue entregado y el primer registro supera la retención.
+- **Varias cuentas, parte 5: `send.sh --account` y `paynani event show` por
+  cuenta** (#276, #283). `send.sh --account <id>` envía desde una cuenta
+  adicional: el remitente es el correo y el nombre de la cuenta, sale por la
+  cuenta de himalaya `paynani-<id>` y **cada destinatario se juzga contra el
+  roster de esa cuenta, no contra `roster.md`**. Quien está sólo en el roster
+  principal sale con 2 y no se envía nada, y al revés se permite. Se rechazan
+  con 2, sin enviar, una cuenta que no existe, una sin servidor SMTP, una sin
+  roster o un `accounts.json` ilegible; un salto de línea en `from_name` no
+  puede abrir otra cabecera. **La firma del agente no se agrega** a un correo
+  de una cuenta adicional: `accounts.json` acepta un `signature_file` opcional
+  por cuenta (ruta relativa dentro del directorio, con la misma regla que
+  `roster`), que `send.sh --account` agrega; si no se puede leer, no envía.
+  `--dry-run` dice qué cuenta, qué roster y qué firma usó, y `sent.log` anota
+  `account=<id>`. Sin `--account`, `send.sh` queda igual, byte
+  por byte. `paynani event show <event_id> [--body]` de un evento de una
+  cuenta adicional abre IMAP con **el login de esa cuenta**, verifica al
+  remitente contra **su roster** (el motivo de la autorización nombra ese
+  archivo, `rosters/<id>.md`, y no `roster.md`) y muestra `account_id`; si la
+  cuenta ya no está
+  en `accounts.json`, no lee el cuerpo y no cae al login del agente. La cuenta
+  principal no cambia. `AGENTS.md` dice que la respuesta a un aviso de una
+  cuenta adicional sale con `--account`.
 
 - **`MULTI_ACCOUNT.md`: cómo vigilar varias cuentas de correo** (#276, #284).
   Explica `accounts.json`, `paynani account add|list|test|remove`,
@@ -96,6 +112,13 @@
   regla de quién puede dar instrucciones en cada cuenta y los límites de esta
   versión. `send.sh --account` y `event show` por cuenta se documentan aparte,
   cuando lleguen (#283).
+
+- **Retención para registros de cuentas adicionales** (#276, #284, punto 2).
+  `paynani-logrotate.timer` ahora también aplica `PAYNANI_RETENTION_DAYS`
+  (default: 90) al historial de cuentas adicionales: limpia del ledger los
+  eventos viejos de esas cuentas y conserva el historial de la cuenta principal.
+  El journal se compacta desde el dispatcher, no desde el timer, cuando todo el
+  archivo ya fue entregado y el primer registro supera la retención.
 
 ## 0.8.1 (2026-09-30)
 
