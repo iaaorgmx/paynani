@@ -1,14 +1,19 @@
 # Changelog
 
-## Sin publicar
+## 0.9.0 (2026-09-30)
 
-- **Rearmar el vigía justo cuando el anterior se retira ya no falla con «a
-  watcher from a previous version»**. El vigía que se retira escribe `ended`
-  en su registro como último paso de la limpieza y suelta el `flock` sólo al
-  terminar. Un rearme que caía en ese hueco encontraba el lock todavía tomado
-  y se negaba con un mensaje falso. Ahora espera hasta 2 s a que se libere; un
-  vigía de una versión anterior, que no lo suelta, se sigue rechazando.
-  Apareció como falla intermitente de CI en #285.
+**Un agente puede vigilar hasta diez cuentas de correo además de la suya**
+(#276): por ejemplo `contacto@`, `ventas@` y `soporte@` de una PYME, cada una
+con su propio roster, su propio servicio y su propia firma, y todas entregando
+en la misma sesión. La cuenta del agente no cambia y no hay nada que migrar:
+sin `accounts.json`, paynani se comporta exactamente como 0.8.1. La guía
+completa, con el caso PYME paso a paso, está en `MULTI_ACCOUNT.md`. Desde
+0.8.1, 9 PRs: #285, #287, #288, #286, #289, #290, #292, #293 y #294, más el
+de esta release.
+
+Sin requisitos nuevos: himalaya **v2.x** y Python **3.10** o mayor, como en
+0.8.1. **Esta versión sí pide correr el instalador** (ver «Si actualizas»),
+porque agrega una unidad de systemd nueva.
 
 - **Varias cuentas, parte 1: `accounts.json`, `paynani account list` y
   `paynani account test`** (#276, #279). Base de la implementación del PRD de
@@ -42,6 +47,15 @@
   La cuenta principal no cambia en nada: sus eventos, sus avisos y sus fallas
   salen idénticos a los de antes.
 
+- **Base de servicio por cuenta para varias cuentas** (#281). El instalador de
+  Linux ahora instala la plantilla `paynani-idle@.service`; macOS expone la
+  forma de LaunchAgent `com.paynani.idle.<id>`; y `account_service.py` concentra
+  `enable(id)`, `disable(id)` y `state(id)` para systemd y launchd. La unidad
+  instancia `idle_listener.py --account <id> --env <env>` y deja que el
+  listener resuelva estado, roster y buzones desde `accounts.json`.
+  `upgrade_plan.py` reinicia el listener principal y las instancias
+  `paynani-idle@*` cuando cambia `idle_listener.py`, `roster.py` o `VERSION`.
+
 - **Varias cuentas, parte 4: `paynani account add` y `paynani account remove`**
   (#276, #282). `add <id> --email … --imap-host …` **prueba el login IMAP antes
   de escribir nada**: si falla, sale con 1 y no deja ningún archivo cambiado.
@@ -60,27 +74,6 @@
   archivo que `accounts.json` da como roster de alguna cuenta, no una ruta
   cualquiera. Por ahora `add` acepta un solo `--mailbox`, porque el listener
   vigila un buzón por cuenta (#280). Sin `accounts.json`, nada cambia.
-
-- **Base de servicio por cuenta para varias cuentas** (#281). El instalador de
-  Linux ahora instala la plantilla `paynani-idle@.service`; macOS expone la
-  forma de LaunchAgent `com.paynani.idle.<id>`; y `account_service.py` concentra
-  `enable(id)`, `disable(id)` y `state(id)` para systemd y launchd. La unidad
-  instancia `idle_listener.py --account <id> --env <env>` y deja que el
-  listener resuelva estado, roster y buzones desde `accounts.json`.
-  `upgrade_plan.py` reinicia el listener principal y las instancias
-  `paynani-idle@*` cuando cambia `idle_listener.py`, `roster.py` o `VERSION`.
-
-- **Varias cuentas: `doctor` y `healthcheck.py` por cuenta** (#276, #284, punto 1).
-  - Cada cuenta de `accounts.json` tiene sus propias filas en `doctor`:
-    `account:<id>:listener`, `:imap_telemetry`, `:version_drift` y `:roster`.
-  - Una cuenta caída, atrasada o con el roster vacío sale en `warning` con su
-    nombre y no cambia las filas de la cuenta principal.
-  - Una cuenta desactivada es una sola fila `ok` que lo dice, y un
-    `accounts.json` inválido es una sola fila `blocked`.
-  - `healthcheck.py` muestra una línea por cuenta y avisa de cada una caída,
-    pero su código de salida sigue dependiendo sólo de la cuenta principal.
-  - Sin `accounts.json`, las dos salidas quedan idénticas a las de antes.
-
 
 - **Varias cuentas, parte 5: `send.sh --account` y `paynani event show` por
   cuenta** (#276, #283). `send.sh --account <id>` envía desde una cuenta
@@ -105,6 +98,24 @@
   principal no cambia. `AGENTS.md` dice que la respuesta a un aviso de una
   cuenta adicional sale con `--account`.
 
+- **Varias cuentas: `doctor` y `healthcheck.py` por cuenta** (#276, #284, punto 1).
+  - Cada cuenta de `accounts.json` tiene sus propias filas en `doctor`:
+    `account:<id>:listener`, `:imap_telemetry`, `:version_drift` y `:roster`.
+  - Una cuenta caída, atrasada o con el roster vacío sale en `warning` con su
+    nombre y no cambia las filas de la cuenta principal.
+  - Una cuenta desactivada es una sola fila `ok` que lo dice, y un
+    `accounts.json` inválido es una sola fila `blocked`.
+  - `healthcheck.py` muestra una línea por cuenta y avisa de cada una caída,
+    pero su código de salida sigue dependiendo sólo de la cuenta principal.
+  - Sin `accounts.json`, las dos salidas quedan idénticas a las de antes.
+
+- **Retención para registros de cuentas adicionales** (#276, #284, punto 2).
+  `paynani-logrotate.timer` ahora también aplica `PAYNANI_RETENTION_DAYS`
+  (default: 90) al historial de cuentas adicionales: limpia del ledger los
+  eventos viejos de esas cuentas y conserva el historial de la cuenta principal.
+  El journal se compacta desde el dispatcher, no desde el timer, cuando todo el
+  archivo ya fue entregado y el primer registro supera la retención.
+
 - **`MULTI_ACCOUNT.md`: cómo vigilar varias cuentas de correo** (#276, #284).
   Explica `accounts.json`, `paynani account add|list|test|remove`,
   `paynani roster add --roster`, el servicio por cuenta y las filas de `doctor`,
@@ -113,12 +124,47 @@
   versión. `send.sh --account` y `event show` por cuenta se documentan aparte,
   cuando lleguen (#283).
 
-- **Retención para registros de cuentas adicionales** (#276, #284, punto 2).
-  `paynani-logrotate.timer` ahora también aplica `PAYNANI_RETENTION_DAYS`
-  (default: 90) al historial de cuentas adicionales: limpia del ledger los
-  eventos viejos de esas cuentas y conserva el historial de la cuenta principal.
-  El journal se compacta desde el dispatcher, no desde el timer, cuando todo el
-  archivo ya fue entregado y el primer registro supera la retención.
+- **Rearmar el vigía justo cuando el anterior se retira ya no falla con «a
+  watcher from a previous version»**. El vigía que se retira escribe `ended`
+  en su registro como último paso de la limpieza y suelta el `flock` sólo al
+  terminar. Un rearme que caía en ese hueco encontraba el lock todavía tomado
+  y se negaba con un mensaje falso. Ahora espera hasta 2 s a que se libere; un
+  vigía de una versión anterior, que no lo suelta, se sigue rechazando.
+  Apareció como falla intermitente de CI en #285.
+
+- **`PAYNANI_RETENTION_DAYS` con un valor que no es número ya no impide que
+  arranque el dispatcher.** Se leía con `int()` al importar `dispatch.py`;
+  ahora un valor ilegible usa los 90 días por omisión, igual que
+  `rotate_logs.py`. Detalle de la revisión de #294.
+
+### Si actualizas desde 0.8.1
+
+En Linux:
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.9.0
+python3 scripts/upgrade_plan.py --from v0.8.1     # y haz lo que imprima
+```
+
+El plan pide `scripts/install.sh --runtime <tu runtime> --upgrade`, que
+instala la plantilla nueva `paynani-idle@.service`, y después reiniciar el
+listener y el dispatcher. **No te saltes el instalador**: sin él, la primera
+cuenta que agregues con `paynani account add` no tiene unidad que arrancar.
+
+**Antes de reiniciar**, `scripts/paynani doctor | grep version_drift` tiene que
+dar `warning` (0.9.0 en disco y los servicios en 0.8.1). Un `ok` antes de
+reiniciar es la falla que importa reportar. **Después** de reiniciar, y tras unos
+15 segundos, `version_drift` e `imap_telemetry` tienen que estar en `ok`.
+
+En macOS, `upgrade_plan.py` todavía no puede hacer el plan (#291: el
+instalador de macOS no escribe `install.manifest`). Sigue `UPGRADE.md` a mano:
+el mismo `git pull`, `scripts/install.sh --runtime <tu runtime> --upgrade`, y
+reiniciar con `launchctl kickstart -k` los dos servicios.
+
+Sin `accounts.json` no hace falta nada más. Para agregar cuentas, sigue
+`MULTI_ACCOUNT.md`.
 
 ## 0.8.1 (2026-09-30)
 
