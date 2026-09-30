@@ -1364,6 +1364,42 @@ class WatchRegistry(unittest.TestCase):
             lambda: self._registry("sess-settled").get("offset") == self.spool.stat().st_size),
             "the skipped line still moves the cursor")
 
+    def _hold_legacy_lock(self, seconds=None):
+        """flock on the lock file, the way a watcher from before the lock
+        directory held it. Released after `seconds`, or at test cleanup."""
+        import fcntl, shutil, threading
+        if not shutil.which("flock"):
+            self.skipTest("the cross-version guard only runs where flock exists")
+        handle = open(self.state / "session.watch.lock", "w")
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        if seconds is None:
+            self.addCleanup(handle.close)
+        else:
+            threading.Timer(seconds, handle.close).start()
+        return handle
+
+    def test_a_watcher_from_a_previous_version_is_still_refused(self):
+        self.spool.write_text("a\n", encoding="utf-8")
+        self._hook("sess-legacy", spool_through=0)
+        self._hold_legacy_lock()
+        proc = self._watch("sess-legacy")
+        out, _ = proc.communicate(timeout=15)
+        self.assertIn("a watcher from a previous version still holds this spool", out)
+
+    def test_a_lock_let_go_within_two_seconds_does_not_block_the_re_arm(self):
+        """
+        A retiring watcher writes `ended` last and lets go of flock only when it
+        exits, so a re-arm can meet the lock of the watcher it replaces. Found
+        as an intermittent CI failure of the retired-watch test on 2026-09-30.
+        """
+        self.spool.write_text("a\n", encoding="utf-8")
+        self._hook("sess-gap", spool_through=0)
+        self._hold_legacy_lock(seconds=0.5)
+        proc = self._watch("sess-gap")
+        self.assertTrue(self._wait(lambda: self._registry("sess-gap")["status"] == "armed"),
+                        "the watcher waited out the gap and armed")
+        self.assertEqual("a\n", proc.stdout.readline())
+
     def test_an_expired_registry_rearms_from_the_recorded_cursor(self):
         self.spool.write_text("a\nb\nc\n", encoding="utf-8")
         self.ss.write_registry("sess-exp", 4)
