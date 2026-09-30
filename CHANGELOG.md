@@ -1,5 +1,29 @@
 # Changelog
 
+## Sin publicar
+
+- **Un corte de IMAP que se recupera solo ya no avisa** (#273). Cuando el
+  proveedor cortaba la sesión TLS a mitad de IDLE (`SSLEOFError: EOF occurred
+  in violation of protocol`), el listener escribía `connection lost` en el
+  journal a la primera falla y `listener recovered` al reconectar. El
+  dispatcher entregaba los dos como si fueran correo, así que un corte de 10
+  segundos llegaba al humano como dos mensajes, varias veces al día y en varios
+  hosts. Ahora la primera falla de un corte espera un periodo de gracia de
+  120 s, que cubre los reintentos de 5, 10, 20 y 40 s. Si la conexión vuelve
+  antes, no se escribe nada, ni la falla ni la recuperación. Si sigue caída al
+  terminar la gracia, la falla se escribe en ese momento, aunque el listener
+  esté esperando entre reintentos, y la recuperación sale después como antes.
+  La gracia se cambia con `PAYNANI_FAULT_GRACE_SECONDS`; `0` vuelve al
+  comportamiento anterior.
+
+- **Muchas reconexiones en una hora se avisan una sola vez, con los números**
+  (#273). Si `imap_reconnects_last_hour` pasa de 5 (el mismo umbral con el que
+  `healthcheck.py` ya advierte), el listener escribe un solo evento con la
+  cantidad, el último error, la última recuperación y el backoff actual. No se
+  repite antes de una hora. La telemetría de cada corte se sigue guardando como
+  antes, así que `doctor` y `healthcheck.py` muestran el patrón completo aunque
+  no se haya avisado.
+
 ## 0.8.0 (2026-09-22)
 
 **Un correo en copia ya no se atiende como uno directo, los servicios avisan
