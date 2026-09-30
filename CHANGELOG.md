@@ -1,6 +1,21 @@
 # Changelog
 
-## Sin publicar
+## 0.8.1 (2026-09-30)
+
+**Un aviso del roster ya no se pierde al cerrarse la sesión, un corte de
+IMAP que se recupera solo ya no avisa, y `doctor` vuelve a decir la verdad
+en Claude Code y en Codex.** Desde 0.8.0, 4 PRs: #270, #274, #275 y #277,
+más el de esta release.
+
+Sin requisitos nuevos: himalaya **v2.x** y Python **3.10** o mayor, como en
+0.8.0.
+
+- **`session_watch_state` ya no sale `unknown` siempre en Claude Code**
+  (#269, #270). `capabilities.py` declaraba esa observación para el runtime
+  `claudecode`, pero `doctor` no tenía cómo calcularla, así que todo host
+  Claude Code cerraba `paynani doctor` en `unknown`. Ahora sale del registro
+  del vigía que ya resume `healthcheck.py`: `ok` con la sesión que vigila y su
+  último latido, `warning` si nadie vigila y el correo espera en el spool.
 
 - **Un aviso del roster ya no se pierde si la sesión se cierra antes de
   atenderlo** (#271). En Claude Code el vigía mueve el cursor en cuanto
@@ -54,18 +69,60 @@
   commit. Así un host Codex vuelve a reportar `ok`, y un `git pull` sin
   reiniciar sigue saliendo como `warning`.
 
-### Si actualizas
+### Si actualizas desde 0.8.0
 
-La primera sesión después de actualizar puede listar muchos avisos, porque
-antes de esta versión ningún agente cerraba avisos (en el host de Metis
-salieron 202). `python3 harness/session_start.py --unattended` imprime la
-lista completa, un `event_id` por renglón. Revísala y, cuando todo lo que
-lista ya esté atendido, ciérrala de una vez:
+En todos los hosts:
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.8.1
+python3 scripts/upgrade_plan.py --from v0.8.0     # y haz lo que imprima
+```
+
+**Antes de reiniciar, corre `doctor` una vez:**
+
+```bash
+scripts/paynani doctor | grep version_drift
+```
+
+Lo esperado es un `warning` que dice que en disco está 0.8.1 y los servicios
+siguen corriendo lo anterior. **Un `ok` antes de reiniciar es la falla que
+importa**, y hay que reportarla. En un host con **Codex**, si corres `doctor`
+desde el sandbox, lo esperado antes de reiniciar es `unknown`: los procesos
+viejos no guardaron su espacio de PIDs, que es justo lo que arregla #272.
+
+Después reinicia, como diga el plan. En Linux:
+
+```bash
+systemctl --user restart paynani-idle.service paynani-dispatch.service
+# macOS: launchctl kickstart -k "gui/$(id -u)/com.paynani.idle"
+#        launchctl kickstart -k "gui/$(id -u)/com.paynani.dispatch"
+```
+
+Espera unos 15 segundos y comprueba:
+
+```bash
+scripts/paynani doctor | grep -E "version_drift|imap_telemetry"
+```
+
+Las dos filas deben salir en `ok`, también en Codex desde el sandbox.
+
+**Sólo en Claude Code:** la primera sesión después de actualizar puede listar
+muchos avisos en «ROSTER MAIL NOT YET CLOSED», porque antes de esta versión
+ningún agente cerraba avisos (en el host de Metis salieron 199).
+`python3 harness/session_start.py --unattended` imprime la lista completa, un
+`event_id` por renglón. Revísala y, cuando todo lo que lista ya esté atendido,
+ciérrala de una vez:
 
 ```bash
 python3 harness/session_start.py --unattended |
     while read -r id; do scripts/paynani event mark "$id" closed; done
 ```
+
+Desde esta versión, cada aviso del roster se cierra con
+`scripts/paynani event mark <event_id> handled` (o `replied`, o `closed`)
+después de atenderlo. Está en `AGENTS.md`, «Acting on verified mail».
 
 ## 0.8.0 (2026-09-22)
 
