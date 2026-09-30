@@ -197,7 +197,8 @@ claim_lock() {
 	printf 'watcher=%s
 session=%s
 chain=%s
-' "$watcher_pid" "$session_pid" "$session_chain" >"$OWNER_FILE"
+session_id=%s
+' "$watcher_pid" "$session_pid" "$session_chain" "${session_id:-}" >"$OWNER_FILE"
 	# Release on every ordinary exit. A hard kill skips this, and the stale
 	# branch below is what covers that.
 	trap 'rm -rf "$LOCK_DIR"; registry end "offset=${cursor:-$start}" >/dev/null 2>&1 || true' EXIT
@@ -233,6 +234,16 @@ if ! claim_lock; then
 	elif { held_chain=$(read_owner chain)
 	       if [ -n "$held_chain" ]; then chain_is_usable "$held_chain"
 	       else session_is_usable "$held_session"; fi; }; then
+		held_session_id=$(read_owner session_id)
+		if [ -n "$session_id" ] && [ "$held_session_id" = "$session_id" ]; then
+			# The holder is this very session re-arming a little early, before
+			# its own Monitor expired. Its registry already says armed, and is the
+			# only record of the watcher that is showing mail: `registry yield`
+			# below would overwrite it with "yielded", and doctor would then say
+			# nobody is watching while mail keeps arriving (#301). Leave it be.
+			echo "[watch] this session is already watching; not arming a second."
+			exit 0
+		fi
 		echo "[watch] another session is already watching this spool; not arming a second."
 		# Recorded, so no registry is left pending with an offset nobody will
 		# use: the holder's watcher covers the spool from its own offset.

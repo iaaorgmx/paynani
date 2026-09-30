@@ -2,6 +2,17 @@
 
 ## Sin publicar
 
+- **Rearmar el vigía antes de que expire el anterior ya no hace que `doctor`
+  diga que nadie vigila** (#301). Si la misma sesión rearmaba con su propio vigía
+  todavía vivo, el segundo vigía cedía, como debe, pero escribía `yielded` en el
+  registro de la sesión y pisaba el `armed` del vigía que seguía entregando
+  avisos: `session_watch_state` salía en `warning` sin que faltara nada. Ahora
+  el dueño del lock anota su `session_id`, y un segundo arranque de esa misma
+  sesión sale con 0, dice `this session is already watching; not arming a
+  second.` y no toca el registro. Con otra sesión todo sigue igual (cede y
+  registra `yielded`), y un lock de una versión anterior, sin `session_id`, se
+  trata como antes.
+
 - **`upgrade_plan.py --to <rama o commit>` ya no termina con un traceback**
   (#297). Con un destino que no fuera una etiqueta `vX.Y.Z` ni `origin/main`,
   `render()` armaba el bloque «automatic apply» y `_fetch_argv()` lanzaba
