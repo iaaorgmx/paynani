@@ -15,6 +15,7 @@ import os
 import pathlib
 import sys
 import tempfile
+from datetime import datetime, timezone
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "harness"))
@@ -63,6 +64,19 @@ def journal_with(*subjects, roster=True):
             sender_name="Dulce Mercado", sender_address="dmercado@example.com",
             subject=subject, sent_at="2026-08-18T12:00:00Z", roster_match=roster,
             notification_text=f"[mail 12:00:00] Dulce Mercado — {subject}"))
+    return j, c
+
+
+def journal_with_observed(observed_at, *subjects):
+    d = pathlib.Path(tempfile.mkdtemp())
+    j, c = d / "events.jsonl", d / "dispatch.offset"
+    for i, subject in enumerate(subjects, start=1):
+        ev.append(j, ev.mail_event(
+            account="agent@example.com", mailbox="INBOX", uidvalidity=43, uid=i,
+            sender_name="Dulce Mercado", sender_address="dmercado@example.com",
+            subject=subject, sent_at="2026-08-18T12:00:00Z", roster_match=True,
+            notification_text=f"[mail 12:00:00] Dulce Mercado — {subject}",
+            observed_at=observed_at))
     return j, c
 
 
@@ -292,6 +306,29 @@ j, c = journal_with("uno", "dos")
 ev.write_cursor(c, 0)
 check("an undelivered journal is never compacted", 0, ev.compact(j, c, min_size=1))
 check("an undelivered journal keeps its records", 2, len([r for r, _ in ev.read_from(j, 0)]))
+
+old_stamp = "2000-01-01T00:00:00Z"
+recent_stamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+j, c = journal_with_observed(old_stamp, "old delivered")
+ev.write_cursor(c, j.stat().st_size)
+dispatch.maybe_compact(j, c)
+check("retention compacts a fully delivered old journal", 0, j.stat().st_size)
+check("retention compaction resets the old journal cursor", 0, ev.read_cursor(c))
+
+j, c = journal_with_observed(old_stamp, "old pending")
+ev.write_cursor(c, 0)
+before = j.stat().st_size
+dispatch.maybe_compact(j, c)
+check("retention does not compact an old journal with undelivered records", before, j.stat().st_size)
+check("retention leaves the undelivered journal cursor alone", 0, ev.read_cursor(c))
+
+j, c = journal_with_observed(recent_stamp, "recent delivered")
+ev.write_cursor(c, j.stat().st_size)
+before = j.stat().st_size
+dispatch.maybe_compact(j, c)
+check("retention does not compact a recent small journal", before, j.stat().st_size)
+check("retention leaves the recent journal cursor alone", before, ev.read_cursor(c))
 
 j, c = journal_with("uno")
 ev.write_cursor(c, j.stat().st_size)

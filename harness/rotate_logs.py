@@ -24,16 +24,14 @@ from paths import state_dir   # noqa: E402
 STATE_DIR = state_dir()
 STATE_FILE = STATE_DIR / "rotate-state.json"
 LIFECYCLE = STATE_DIR / "lifecycle.jsonl"
-JOURNAL = STATE_DIR / "events.jsonl"
-CURSOR = STATE_DIR / "dispatch.offset"
 MAX_ROTATIONS = 4
 MIN_INTERVAL = 7 * 24 * 60 * 60
 ACCOUNT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
 
-# The event journal is deliberately not rotated here. It is a queue, not a log:
-# the cursor is a byte offset into that exact file. Retention below removes only
-# already-delivered additional-account lines, under the same journal lock, and
-# rewrites the cursor to the matching byte boundary.
+# The event journal is deliberately not rotated or pruned here. It is a queue,
+# not a log: the cursor is a byte offset into that exact file, and a timer in a
+# separate process can race a dispatcher that has the old file open. The
+# dispatcher compacts the journal instead, between delivery passes.
 
 
 def load_state() -> dict[str, float]:
@@ -185,64 +183,6 @@ def prune_lifecycle(path=LIFECYCLE, now=None, days=None):
         return removed
 
 
-def prune_journal(journal=JOURNAL, cursor=CURSOR, now=None, days=None):
-    journal = Path(journal)
-    cursor = Path(cursor)
-    if not journal.is_file():
-        return 0
-    cutoff = cutoff_time(now, days)
-
-    with ev.locked(journal):
-        cursor_offset = ev.read_cursor(cursor)
-        size = journal.stat().st_size
-        if cursor_offset > size:
-            cursor_offset = 0
-        lines = journal.read_bytes().splitlines(keepends=True)
-        pos = 0
-        kept = []
-        removed = 0
-        removed_before_cursor = 0
-
-        for line in lines:
-            end = pos + len(line)
-            complete = line.endswith(b"\n")
-            remove = False
-            if complete and end <= cursor_offset:
-                text = line.strip()
-                if text:
-                    try:
-                        record = json.loads(text.decode("utf-8"))
-                    except (ValueError, UnicodeDecodeError):
-                        record = None
-                    timestamp = record_time(record)
-                    if (
-                        isinstance(record, dict)
-                        and additional_account_id(record)
-                        and timestamp
-                        and timestamp.timestamp() < cutoff
-                    ):
-                        remove = True
-            if remove:
-                removed += 1
-                removed_before_cursor += len(line)
-            else:
-                kept.append(line)
-            pos = end
-
-        if not removed:
-            return 0
-
-        tmp = journal.with_suffix(journal.suffix + ".tmp")
-        with tmp.open("wb") as fh:
-            for line in kept:
-                fh.write(line)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, journal)
-        ev.write_cursor(cursor, max(0, cursor_offset - removed_before_cursor))
-        return removed
-
-
 def main() -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     now = time.time()
@@ -270,13 +210,7 @@ def main() -> int:
         if removed:
             print(f"retained {LIFECYCLE}: removed {removed} old additional-account record(s)")
     except OSError as exc:
-        print(f"could not retain {LIFECYCLE}: {exc}", file=os.sys.stderr)
-    try:
-        removed = prune_journal()
-        if removed:
-            print(f"retained {JOURNAL}: removed {removed} old additional-account record(s)")
-    except OSError as exc:
-        print(f"could not retain {JOURNAL}: {exc}", file=os.sys.stderr)
+        print(f"could not retain {LIFECYCLE}: {exc}", file=sys.stderr)
     return 0
 
 

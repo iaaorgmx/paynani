@@ -29,6 +29,8 @@ import subprocess
 import sys
 import json
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -90,6 +92,7 @@ LEDGER = STATE_DIR / "lifecycle.jsonl"
 # Compact once the journal is worth compacting, and only from here: the
 # dispatcher is the only process that knows what it has delivered.
 JOURNAL_MAX = int(os.environ.get("DISPATCH_JOURNAL_MAX", 4 * 1024 * 1024))
+JOURNAL_RETENTION_DAYS = int(os.environ.get("PAYNANI_RETENTION_DAYS", "90"))
 
 KNOWN_RUNTIMES = ("openclaw", "hermes", "claudecode", "codex", "opencode")
 
@@ -464,9 +467,50 @@ def maybe_compact(journal, cursor_path):
     seen. Here it runs between drains, in the only process that owns the cursor,
     and `ev.compact` re-checks under the journal lock before touching anything.
     """
-    freed = ev.compact(journal, cursor_path, min_size=JOURNAL_MAX)
+    min_size = 0 if journal_is_retained(journal) else JOURNAL_MAX
+    freed = ev.compact(journal, cursor_path, min_size=min_size)
     if freed:
         note(f"compacted the event journal ({freed} bytes, all delivered)")
+
+
+def parse_time(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(str(value))
+        except (TypeError, ValueError, IndexError, OverflowError):
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def record_time(record):
+    if not isinstance(record, dict):
+        return None
+    for key in ("observed_at", "at", "created_at"):
+        parsed = parse_time(record.get(key))
+        if parsed:
+            return parsed
+    envelope = record.get("envelope")
+    if isinstance(envelope, dict):
+        for key in ("observed_at", "at", "created_at"):
+            parsed = parse_time(envelope.get(key))
+            if parsed:
+                return parsed
+    return None
+
+
+def journal_is_retained(journal, now=None):
+    now = now or datetime.now(timezone.utc)
+    cutoff = now.timestamp() - (max(0, JOURNAL_RETENTION_DAYS) * 24 * 60 * 60)
+    for record, _offset in ev.read_from(journal, 0) or ():
+        timestamp = record_time(record)
+        return bool(timestamp and timestamp.timestamp() < cutoff)
+    return False
 
 
 def main(argv=None):

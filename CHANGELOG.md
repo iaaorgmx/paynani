@@ -85,9 +85,9 @@
 - **Retención para registros de cuentas adicionales** (#276, #284, punto 2).
   `paynani-logrotate.timer` ahora también aplica `PAYNANI_RETENTION_DAYS`
   (default: 90) al historial de cuentas adicionales: limpia del ledger los
-  eventos viejos de esas cuentas y del journal sólo las líneas viejas que el
-  dispatcher ya entregó, ajustando el cursor. La cuenta principal no se poda en
-  esta pasada.
+  eventos viejos de esas cuentas y conserva el historial de la cuenta principal.
+  El journal se compacta desde el dispatcher, no desde el timer, cuando todo el
+  archivo ya fue entregado y el primer registro supera la retención.
 
 - **`MULTI_ACCOUNT.md`: cómo vigilar varias cuentas de correo** (#276, #284).
   Explica `accounts.json`, `paynani account add|list|test|remove`,

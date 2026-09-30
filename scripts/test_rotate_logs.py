@@ -126,24 +126,8 @@ with tempfile.TemporaryDirectory() as tmp:
         }),
     ]))
 
-    delivered_additional = json_line({
-        "event_id": "imap:ventas:INBOX:1:4",
-        "account_id": "ventas",
-        "observed_at": iso(120),
-    })
-    delivered_main = json_line({"event_id": "imap:INBOX:1:5", "observed_at": iso(120)})
-    pending_additional = json_line({
-        "event_id": "imap:ventas:INBOX:1:6",
-        "account_id": "ventas",
-        "observed_at": iso(120),
-    })
-    journal = state / "events.jsonl"
-    journal.write_bytes(delivered_additional + delivered_main + pending_additional)
-    (state / "dispatch.offset").write_text(str(len(delivered_additional) + len(delivered_main)))
-
     result = run(home, state, {"PAYNANI_RETENTION_DAYS": "90"})
     lifecycle_text = lifecycle.read_text()
-    journal_bytes = journal.read_bytes()
 
     check("retention exits cleanly", 0, result.returncode)
     check("retention reports removed additional-account records", True, "retained" in result.stdout)
@@ -153,14 +137,6 @@ with tempfile.TemporaryDirectory() as tmp:
           True, "imap:soporte:INBOX:1:2" in lifecycle_text)
     check("old main-account lifecycle event was kept",
           True, "imap:INBOX:1:3" in lifecycle_text)
-    check("delivered old additional-account journal event was removed",
-          False, b"imap:ventas:INBOX:1:4" in journal_bytes)
-    check("old main-account journal event was kept",
-          True, b"imap:INBOX:1:5" in journal_bytes)
-    check("pending old additional-account journal event was kept",
-          True, b"imap:ventas:INBOX:1:6" in journal_bytes)
-    check("journal cursor was adjusted to the new delivered boundary",
-          str(len(delivered_main)), (state / "dispatch.offset").read_text())
 
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
