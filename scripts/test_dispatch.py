@@ -528,6 +528,155 @@ fl.recovered()
 check("and is written once it can be", listener.RECOVERED, faults_in(good)[-1])
 check("without duplicating the fault", 2, len(faults_in(good)))
 
+# --- a short outage is not an incident (#273) --------------------------------
+#
+# The provider drops the TLS session mid-IDLE, the first 5 s retry reconnects,
+# and until #273 a human got "connection lost" and "listener recovered" for a
+# gap nobody could act on. Several agents got several pairs a day.
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def graced(grace=120):
+    clock = FakeClock()
+    d = pathlib.Path(tempfile.mkdtemp())
+    return listener.FaultLog(d / "events.jsonl", "a@b.c", grace=grace, clock=clock), \
+        d / "events.jsonl", clock
+
+
+SSLEOF = "connection lost (SSLEOFError: EOF occurred in violation of protocol (_ssl.c:2417))"
+
+# (a) Recovered inside the grace: nothing at all.
+fl, good, clock = graced()
+fl.fault(SSLEOF)
+clock.now += 5
+fl.tick()
+clock.now += 5
+fl.recovered()
+check("an outage that recovers inside the grace writes nothing", [], faults_in(good))
+check("and leaves nothing held or owed", (None, None, None), (fl.held, fl.pending, fl.recorded))
+
+# (b) Still down after the grace: the fault, then the recovery, in that order.
+fl, good, clock = graced()
+fl.fault(SSLEOF)
+clock.now += 125
+fl.fault(SSLEOF)
+check("an outage that outlasts the grace is written at the next failure", [SSLEOF], faults_in(good))
+fl.recovered()
+check("and its recovery follows it", [SSLEOF, listener.RECOVERED], faults_in(good))
+
+# (c) The grace runs out while waiting: said by tick(), not by the next retry.
+fl, good, clock = graced()
+fl.fault(SSLEOF)
+for _ in range(119):
+    clock.now += 1
+    fl.tick()
+check("one second short of the grace, still nothing", [], faults_in(good))
+clock.now += 1
+fl.tick()
+check("at the grace, the wait itself says it", [SSLEOF], faults_in(good))
+
+# The next outage gets its own grace, measured from its own start.
+fl, good, clock = graced()
+fl.fault(SSLEOF)
+clock.now += 300
+fl.recovered()          # never said: recovered before any tick promoted it
+clock.now += 10
+fl.fault(SSLEOF)
+check("a new outage starts its own grace", ([], SSLEOF), (faults_in(good), fl.held))
+
+# (e) A promoted fault that cannot be written is still owed, as before #273.
+fl, good, clock = graced()
+wall = good.parent / "wall"
+wall.write_text("a file where a directory would need to be")
+fl.journal = wall / "events.jsonl"
+fl.fault(SSLEOF)
+clock.now += 120
+fl.tick()
+check("a fault promoted but not written stays owed", (SSLEOF, None), (fl.pending, fl.recorded))
+fl.journal = good
+fl.recovered()
+check("and is settled before the recovery", [SSLEOF, listener.RECOVERED], faults_in(good))
+
+# Grace 0 is the old behaviour, which the tests above this section rely on.
+fl, good, clock = graced(grace=0)
+fl.fault(SSLEOF)
+check("a grace of 0 writes on the first failure", [SSLEOF], faults_in(good))
+
+# (d) Many quiet outages are said once, with the numbers.
+def quiet_outage(fl, clock, seconds=5):
+    fl.fault(SSLEOF)
+    clock.now += seconds
+    fl.recovered()
+
+
+fl, good, clock = graced()
+for _ in range(5):
+    quiet_outage(fl, clock)
+    clock.now += 60
+fl.burst(SSLEOF, "2026-09-30T01:03:38Z", 0)
+check("five short outages in an hour is not yet a burst", [], faults_in(good))
+quiet_outage(fl, clock)
+fl.burst(SSLEOF, "2026-09-30T01:03:38Z", 0)
+said = faults_in(good)
+check("six is, and it is said once", 1, len(said))
+check("with the count", True, said[0].startswith("6 short IMAP outages in the last hour"))
+check("the last error and the last recovery", True,
+      "SSLEOFError" in said[0] and "2026-09-30T01:03:38Z" in said[0])
+quiet_outage(fl, clock)
+clock.now += 3000
+fl.burst(SSLEOF, "2026-09-30T01:50:00Z", 0)
+check("not again inside the hour", 1, len(faults_in(good)))
+for _ in range(6):
+    quiet_outage(fl, clock)
+clock.now += 700
+fl.burst(SSLEOF, "2026-09-30T02:03:38Z", 0)
+check("but again after it, if the pattern goes on", 2, len(faults_in(good)))
+
+# Outages older than an hour no longer count.
+fl, good, clock = graced()
+for _ in range(6):
+    quiet_outage(fl, clock)
+clock.now += 3600
+fl.burst(SSLEOF, None, 0)
+check("short outages older than an hour are not a burst", [], faults_in(good))
+
+# Found live on 2026-09-30: one long outage retries five times, and counting the
+# attempts announced "6 reconnects, each recovered within 120s" right after the
+# fault and the recovery of that same outage had been said.
+fl, good, clock = graced()
+fl.fault(SSLEOF)
+for backoff in (5, 10, 20, 40, 80):
+    for _ in range(backoff):
+        clock.now += 1
+        fl.tick()
+    fl.fault(SSLEOF)
+fl.recovered()
+fl.burst(SSLEOF, None, 0)
+check("one long outage is a fault and a recovery, not a burst",
+      [SSLEOF, listener.RECOVERED], faults_in(good))
+
+fl, good, clock = graced()
+for _ in range(6):
+    quiet_outage(fl, clock)
+fl.journal = wall / "events.jsonl"
+fl.burst(SSLEOF, None, 0)
+fl.journal = good
+fl.burst(SSLEOF, None, 0)
+check("a burst that could not be written is tried again", 1, len(faults_in(good)))
+
+# The listener is wired to the grace, not to the class default.
+check("run() uses the configured grace", True,
+      "FaultLog(journal_path, account, grace=FAULT_GRACE)" in
+      (ROOT / "scripts/idle_listener.py").read_text())
+check("the default grace covers the first four retries", True,
+      listener.FAULT_GRACE >= 5 + 10 + 20 + 40)
+
 # --- damage points at the right byte ----------------------------------------
 
 j, c = journal_with("uno")

@@ -72,6 +72,26 @@ PROCESS_COMMIT = _process_commit()
 IDLE_REFRESH = 5 * 60
 BACKOFF_MIN, BACKOFF_MAX = 5, 300
 
+
+def _env_seconds(name, default):
+    try:
+        return max(0, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# How long an outage may last before anyone is told (#273). A TLS session the
+# provider drops mid-IDLE comes back on the first 5 s retry, and announcing
+# each one meant two messages to a human for a gap nobody could act on. 120 s
+# covers the 5, 10, 20 and 40 s retries; an outage still open after that is
+# one worth hearing about. 0 restores the old behaviour.
+FAULT_GRACE = _env_seconds("PAYNANI_FAULT_GRACE_SECONDS", 120)
+# More reconnects than this in an hour is a pattern even when each one was
+# quiet, so it is said once, with the numbers. Same threshold healthcheck.py
+# warns at (RECONNECT_WARN_PER_HOUR).
+RECONNECT_BURST_PER_HOUR = 5
+BURST_EVERY = 3600
+
 # Optional: collapse GitHub notification subjects into something scannable.
 # Delete this and the branch in describe() if you do not get GitHub mail.
 GH_SUBJECT = re.compile(r"^\s*(?:Re:\s*)?\[([\w.\-]+/[\w.\-]+)\]\s*(.+?)\s*(?:\((?:(?:Issue|PR|Pull Request|Discussion)\s+)?([#!]\d+)\)\s*)?$")
@@ -168,13 +188,27 @@ class FaultLog:
     So what is owed is carried until it is written, and recovery settles that
     debt before declaring itself, which also keeps the two in the order they
     happened.
+
+    A third piece arrived with #273: `held`, a fault that has not lasted long
+    enough to be worth saying. The first failure of an outage waits out
+    `grace` seconds; if the connection comes back first, neither the fault
+    nor the recovery is written, and only the telemetry remembers it. Once
+    the grace runs out, `tick()` (called while the listener waits to retry)
+    promotes it to `pending`, and from there it is the fault it always was.
+    A grace of 0 writes on the first failure, as before.
     """
 
-    def __init__(self, journal_path, account):
+    def __init__(self, journal_path, account, grace=0, clock=time.monotonic):
         self.journal = journal_path
         self.account = account
         self.recorded = None
         self.pending = None
+        self.held = None
+        self.since = None
+        self.grace = grace
+        self.clock = clock
+        self.burst_at = None
+        self.quiet = []
 
     def flush(self):
         """Write what is owed. Safe on every pass; does nothing when nothing is."""
@@ -186,9 +220,54 @@ class FaultLog:
 
     def fault(self, message):
         """Something is wrong, and this is what it is."""
+        if self.recorded is None and self.pending is None:
+            # Nothing said yet about this outage: it waits out the grace.
+            if self.since is None:
+                self.since = self.clock()
+            if self.clock() - self.since < self.grace:
+                self.held = message
+                return
+        self.held = None
         if message != self.recorded:
             self.pending = message
         self.flush()
+
+    def tick(self):
+        """
+        Called once a second while the listener waits to retry. An outage that
+        outlasts the grace is said now, not at the next failure, which after a
+        few doublings of the backoff can be minutes away.
+        """
+        if self.held is not None and self.clock() - self.since >= self.grace:
+            message, self.held = self.held, None
+            self.pending = message
+        self.flush()
+
+    def burst(self, last_error, last_recovered, backoff):
+        """
+        Many short outages are a pattern even when none of them was said. One
+        record with the numbers, at most once per BURST_EVERY; if it cannot be
+        written, the next pass tries again.
+
+        It counts outages that ended inside their grace (`quiet`), not the
+        reconnect attempts in the telemetry: one long outage retries several
+        times, and it was already said as a fault and a recovery. Counting its
+        attempts announced a burst of short outages that never happened.
+        """
+        now = self.clock()
+        self.quiet = [t for t in self.quiet if now - t < 3600]
+        count = len(self.quiet)
+        if count <= RECONNECT_BURST_PER_HOUR:
+            return
+        if self.burst_at is not None and now - self.burst_at < BURST_EVERY:
+            return
+        message = (f"{count} short IMAP outages in the last hour, each recovered "
+                   f"within {self.grace}s without an alert; last error: "
+                   f"{last_error or 'unknown'}; last recovered at "
+                   f"{last_recovered or 'unknown'}; current backoff {backoff}s; "
+                   "mail is being seen")
+        if journal_fault(self.journal, self.account, message):
+            self.burst_at = now
 
     def recovered(self):
         """
@@ -198,6 +277,12 @@ class FaultLog:
         the recovery itself is durable: a recovery that could not be written must
         leave the outage open rather than quietly ending it.
         """
+        # An outage that ended inside its grace was never said, so its end
+        # is not said either; it is counted for burst() instead.
+        if self.held is not None and self.recorded is None and self.pending is None:
+            self.quiet.append(self.clock())
+        self.held = None
+        self.since = None
         self.flush()
         if self.recorded is None:
             return
@@ -643,7 +728,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
         "imap_current_backoff_seconds": int(state.get("imap_current_backoff_seconds") or 0),
     }
     # What the journal has been told about the listener's own health.
-    faults = FaultLog(journal_path, account)
+    faults = FaultLog(journal_path, account, grace=FAULT_GRACE)
     last_uid = state.get("last_uid") if state.get("mailbox") == mailbox else None
 
     while not _stop:
@@ -694,6 +779,9 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
             if telemetry.get("imap_last_disconnect_at") and telemetry.get("imap_current_backoff_seconds"):
                 telemetry["imap_last_recovered_at"] = timestamp()
             telemetry["imap_current_backoff_seconds"] = 0
+            faults.burst(telemetry.get("imap_last_disconnect_error"),
+                         telemetry.get("imap_last_recovered_at"),
+                         telemetry["imap_current_backoff_seconds"])
             state = save_state(state_path, mailbox, validity, last_uid, telemetry)
             backoff = BACKOFF_MIN
 
@@ -728,6 +816,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
             while slept < backoff and not _stop:
                 time.sleep(1)
                 slept += 1
+                faults.tick()
             backoff = min(backoff * 2, BACKOFF_MAX)
         except (imaplib.IMAP4.error, ConnectionError, OSError, socket.error) as exc:
             if _stop:
@@ -748,6 +837,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path):
             while slept < backoff and not _stop:
                 time.sleep(1)
                 slept += 1
+                faults.tick()
             backoff = min(backoff * 2, BACKOFF_MAX)
         finally:
             if conn is not None:
