@@ -48,6 +48,14 @@ def plist_path(name: str) -> Path:
     return launch_agent_dir() / f"{LABELS[name]}.plist"
 
 
+def account_label(account_id: str) -> str:
+    return f"{LABELS['idle']}.{account_id}"
+
+
+def account_plist_path(account_id: str) -> Path:
+    return launch_agent_dir() / f"{account_label(account_id)}.plist"
+
+
 def agent_env(runtime: str, runtime_bin: str | None = None) -> dict[str, str]:
     path_parts = [
         "/opt/homebrew/bin",
@@ -110,6 +118,31 @@ def plist_for(name: str, python: str, runtime: str, runtime_bin: str | None = No
             "StandardErrorPath": str(state / "logrotate.err.log"),
         }
     raise ValueError(name)
+
+
+def plist_for_account(account_id: str, python: str, runtime: str,
+                      runtime_bin: str | None = None) -> dict:
+    state = state_dir()
+    account_state = state / "accounts" / account_id
+    return {
+        "Label": account_label(account_id),
+        "ProgramArguments": [
+            python,
+            str(ROOT / "scripts" / "idle_listener.py"),
+            "--account",
+            account_id,
+            "--env",
+            str(env_file()),
+            "--journal",
+            str(state / "events.jsonl"),
+        ],
+        "WorkingDirectory": str(ROOT),
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "EnvironmentVariables": agent_env(runtime, runtime_bin),
+        "StandardOutPath": str(account_state / "mail.log"),
+        "StandardErrorPath": str(account_state / "idle.err.log"),
+    }
 
 
 def read_plist(path: Path) -> dict | None:

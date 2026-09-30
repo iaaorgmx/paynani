@@ -209,6 +209,38 @@ class MacOSInstallTest(unittest.TestCase):
         self.assertFalse((self.clone / "state").exists())
         self.assertFalse((self.home / "Library" / "LaunchAgents").exists())
 
+    def test_account_plist_shape_matches_listener_contract(self):
+        sys.path.insert(0, str(self.clone / "scripts"))
+        import install_macos
+
+        old = os.environ.get("PAYNANI_ENV")
+        os.environ["PAYNANI_ENV"] = str(self.env_file)
+        try:
+            plist = install_macos.plist_for_account("iris", "/usr/bin/python3", "openclaw")
+        finally:
+            if old is None:
+                os.environ.pop("PAYNANI_ENV", None)
+            else:
+                os.environ["PAYNANI_ENV"] = old
+        self.assertEqual("com.paynani.idle.iris", plist["Label"])
+        self.assertEqual(
+            [
+                "/usr/bin/python3",
+                str(self.clone / "scripts" / "idle_listener.py"),
+                "--account",
+                "iris",
+                "--env",
+                str(self.env_file),
+                "--journal",
+                str(self.clone / "state" / "events.jsonl"),
+            ],
+            plist["ProgramArguments"],
+        )
+        self.assertEqual(
+            str(self.clone / "state" / "accounts" / "iris" / "mail.log"),
+            plist["StandardOutPath"],
+        )
+
     def test_uninstall_removes_owned_launchagents_and_runtime_env(self):
         self.assertEqual(10, self.run_install("--runtime", "openclaw").returncode)
         completed = self.run_install("--runtime", "openclaw", "--uninstall")
