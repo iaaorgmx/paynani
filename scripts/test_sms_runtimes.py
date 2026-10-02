@@ -74,7 +74,7 @@ check("unattended_line: el correo sigue igual (con su asunto)", True,
 rules = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 check("AGENTS.md explica la etiqueta roster del SMS y de las llamadas", True,
       all(part in rules for part in ("[sms 03:09:45, roster]", "event show <id> --body", "sms send <number>",
-                                      "[llamada perdida", "exit 3")))
+                                      "[llamada perdida", "exit 3", "sms.gateway.offline")))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

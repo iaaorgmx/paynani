@@ -424,7 +424,9 @@ tag means the same thing:
   `[llamada contestada …, 2 min 5 s]` have no body. For a missed call, find who it
   was in `roster.md` and tell your human; for an answered one you have the context
   to log it. A call from outside the roster is information only.
-- `[sms-gateway]` problems are not mail: if the phone stops reporting, say so.
+- A `sms.gateway.offline` event means the paired phone stopped answering the
+  gateway. It is not mail and has no sender: tell your human that texts and calls
+  are not reaching you until a `sms.gateway.online` event follows.
 
 **Say "no new mail" only when something checked.** `scripts/healthcheck.py`
 answers whether mail could arrive; silence does not. Reporting a quiet mailbox
