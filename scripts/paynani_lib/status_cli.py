@@ -13,6 +13,9 @@ import ledger  # noqa: E402
 from adapters import codex as codex_adapter  # noqa: E402
 from paths import state_dir  # noqa: E402
 
+sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+from paynani_lib.sms import health as sms_health  # noqa: E402
+
 
 def _integer(path):
     try:
@@ -48,6 +51,7 @@ def facts():
     except (OSError, ValueError):
         pass
     return {
+        "sms_phone": sms_health.phone_facts(state),
         "lifecycle_counts": counts,
         "events_known": len(current),
         "events": [current[event_id] for event_id in sorted(current)],
@@ -74,6 +78,8 @@ def run(args) -> int:
         related = f" → {item['related_event_id']}" if item.get("related_event_id") else ""
         detail = f" ({item['detail']})" if item.get("detail") else ""
         print(f"  {item.get('event_id', '')}: {item.get('state', 'unknown')}{related}{detail}")
+    for line in sms_health.describe(data["sms_phone"]):
+        print(f"SMS phone: {line}")
     codex = data["codex"]
     print(f"Codex session: {'registered' if codex['session_registered'] else 'not registered'}")
     print(f"Codex spool: {codex['acknowledged_bytes']}/{codex['spool_bytes']} bytes acknowledged")

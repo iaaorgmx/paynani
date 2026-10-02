@@ -413,6 +413,26 @@ evento, así que en `notification_text`:
 | La red rechaza un envío | `sms.status` `failed` con el código de Android, en el ledger |
 | El teléfono se reinicia | La app arranca su servicio al encender y reconecta sola |
 
+### Cómo lo vigila la pasarela (SRV-5)
+
+- Cada 5 s la pasarela revisa al teléfono emparejado. Si no hay conexión y lleva
+  **90 s** (3 × latido) sin latir, escribe **un** `sms.gateway.offline` en
+  `events.jsonl` y en el ledger, con la línea `[sms-gateway HH:MM:SS] el teléfono
+  d_… lleva … sin conexión (último latido …)`. Cuando vuelve, un `sms.gateway.online`
+  con lo que duró. Sin `roster_match`: es de la instalación, no de un remitente.
+- La marca (`offline_notified` en `device.json`) hace que sea un aviso por apagón y
+  que reiniciar la pasarela no lo repita. Si el evento no se pudo escribir, la marca
+  no se pone y se reintenta a los 5 s.
+- Una pasarela recién arrancada no tiene a nadie conectado: el teléfono tiene 90 s
+  desde el arranque para volver antes de que se diga que no está. Un teléfono
+  emparejado que nunca se conectó cuenta desde el emparejamiento.
+- `paynani status` y `healthcheck` leen `state/sms/` sin crearlo: por dispositivo,
+  en línea o no, el último latido, las órdenes en cola, y si ya se avisó al agente.
+  Un `connected` con el latido de hace más de 90 s cuenta como desconectado (si la
+  pasarela murió, nadie quitó la marca). Para `healthcheck` es un aviso, no un
+  problema: la instalación en sí está bien. Una pasarela que murió del todo no puede
+  avisar de sí misma: eso lo cubre su supervisión (SRV-7).
+
 ## 8. Seguridad
 
 - **Cifrado:** `wss://` y `https://` por el túnel. La pasarela no escucha en una
