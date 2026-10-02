@@ -122,7 +122,7 @@ check("los rechazos no tocan orders.jsonl", False, ORDERS.exists())
 # --- encolar -----------------------------------------------------------------
 code, out, _ = send("55 1111 2222", "Sí,", "les apartamos mesa a las 8.", sim=1)
 oid = order_id_in(out)
-check("encola con el número del roster escrito sin +52: código 0", (0, True), (code, store_mod.valid_order_id(oid)))
+check("encola con el número del roster escrito sin +52: código 3 (sin estado final)", (3, True), (code, store_mod.valid_order_id(oid)))
 files = queued()
 check("outbox/<id>.json", [f"{oid}.json"], files)
 order = json.loads((OUTBOX / files[0]).read_text(encoding="utf-8"))
@@ -136,12 +136,19 @@ check("sin respuesta: dice cómo ver el estado", True, f"paynani sms status {oid
 code, out, _ = status(oid)
 check("status: la orden quedó 'queued'", (0, True), (code, "queued" in out))
 
+# --- sin estado final: código 3, la orden sigue en outbox ----------------------
+before = set(queued())
+code, out, _ = send("+525511112222", "Nadie contesta", wait=0)
+pending = order_id_in(out)
+check("--wait 0 sin estado final: código 3, y la orden sigue en outbox",
+      (3, True, True), (code, f"{pending}.json" in queued(), pending + ".json" not in before))
+
 # --- espera y estados ----------------------------------------------------------
 code, out, _ = send("+525511112222", "Sin SIM")
 oid2 = order_id_in(out)
 check("sin --sim la orden no lleva sim_slot", False,
       "sim_slot" in json.loads((OUTBOX / f"{oid2}.json").read_text(encoding="utf-8")))
-known = {oid, oid2}
+known = {oid, oid2, pending}
 
 
 def send_with_phone(*states):

@@ -106,7 +106,7 @@ def run_send(args) -> int:
         time.sleep(0.5)
     if final is None:
         print(f"No status from the phone yet. Check with: paynani sms status {order_id}")
-        return 0
+        return 3
     return FINAL[final]
 
 

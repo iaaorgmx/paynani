@@ -469,7 +469,8 @@ orden vencida se anota `expired` sin mandarse. `paynani sms status <id>` lee
 - Imprime el `id`, avisa si el teléfono no está conectado y espera hasta `--wait`
   segundos (20 por omisión; 0 vuelve al instante) el primer estado final. Código 0 con
   `sent` o `delivered`, 1 con `failed`, `rejected` o `expired`. Si en ese tiempo no hay
-  respuesta, sale con 0 y dice que la orden sigue en cola.
+  estado final, sale con **código 3** y dice que la orden sigue en cola;
+  `paynani sms status <id>` la sigue.
 
 ## 10. Versiones
 
