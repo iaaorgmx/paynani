@@ -37,6 +37,8 @@
 # may have a phone and no email. A number written without `+` is read in the
 # country set by PAYNANI_SMS_DEFAULT_REGION in runtime.env (MX if it is not set).
 # The Phone column is optional: a roster without it works exactly as before.
+# `paynani roster add NAME ADDRESS --phone +525511112222` fills it for a new contact;
+# the column has to exist in the table already.
 
 # 1. Approved contacts; any other contact/email address will be ignored.
 

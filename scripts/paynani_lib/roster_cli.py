@@ -426,7 +426,8 @@ def _apply_change(
     return 0
 
 
-def add_contact_noninteractive(name: str, address: str, *, type_: str = "", github: str = "") -> tuple[str, str]:
+def add_contact_noninteractive(name: str, address: str, *, type_: str = "", github: str = "",
+                               phone: str = "") -> tuple[str, str]:
     """
     Same effect as `paynani roster add`, without the interactive confirmation
     or console output — for a caller that already has the human's explicit
@@ -457,7 +458,7 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
     text, _creating = _starting_text(path)
     if type_ and not _has_column(text, "type"):
         type_ = ""
-    ok, result = roster_mod.add_contact(text, name, address, type_=type_, github=github)
+    ok, result = roster_mod.add_contact(text, name, address, type_=type_, github=github, phone_cell=phone)
     if not ok:
         status = "duplicate" if result.endswith("is already on the roster") else "rejected"
         return status, result
@@ -565,7 +566,8 @@ def run_add(args) -> int:
         return 1
     text, creating = _starting_text(path)
     ok, result = roster_mod.add_contact(
-        text, args.name, args.address, type_=args.type or "", github=args.github or ""
+        text, args.name, args.address, type_=args.type or "", github=args.github or "",
+        phone_cell=getattr(args, "phone", None) or "",
     )
     if not ok:
         print(f"Not saved: {result}", file=sys.stderr)
