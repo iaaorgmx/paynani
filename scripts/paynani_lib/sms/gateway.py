@@ -321,9 +321,18 @@ class Gateway:
             await self._error(ws, "unknown_type", ref=str(msg.get("id", ""))[:80],
                               detail=f"type {str(kind)[:40]!r} no existe")
 
+    def _region(self) -> str | None:
+        """El país de la SIM del teléfono emparejado (SMS_GATEWAY.md), o None."""
+        device = self.store.device() or {}
+        for sim in device.get("sims") or []:
+            country = str((sim or {}).get("country") or "").strip().upper()
+            if re.fullmatch(r"[A-Z]{2}", country):
+                return country
+        return None
+
     def _who(self, raw_from) -> tuple[str, str | None, str, bool]:
         raw = str((raw_from or {}).get("raw", "")) if isinstance(raw_from, dict) else ""
-        e164 = phone.to_e164(raw)
+        e164 = phone.to_e164(raw, self._region())
         phones = roster_phones(self.roster_path)
         name = phones.get(e164, "") if e164 else ""
         return raw, e164, name, bool(e164 and e164 in phones)

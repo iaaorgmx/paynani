@@ -188,6 +188,17 @@ async def main():
     check("e164 falso de la app se ignora", ("+525599990000", False),
           (e3["sender"]["address"], e3["roster_match"]))
 
+    # --- región por la SIM ---------------------------------------------------
+    st.touch(sims=[{"slot": 0, "number": None, "country": "US"}])
+    mid_us = sms_id("+15550001111", 1790000005000, "hola de EE. UU.")
+    await ws.send_text(json.dumps({"type": "sms.in", "id": mid_us, "from": {"raw": "5550001111"},
+                                   "text": "hola de EE. UU."}))
+    await recv_until(ws, "ack")
+    e_us = json.loads(journal.read_text().splitlines()[-1])
+    check("SIM de EE. UU.: 10 dígitos son +1 y coinciden con el roster", ("+15550001111", True),
+          (e_us["sender"]["address"], e_us["roster_match"]))
+    st.touch(sims=[{"slot": 0, "number": None}])
+
     # --- llamadas ----------------------------------------------------------
     cid = hashlib.sha256(b"call.answered\n5511112222\n1790000003000").hexdigest()
     await ws.send_text(json.dumps({"type": "call.answered", "id": cid, "from": {"raw": "5511112222"},

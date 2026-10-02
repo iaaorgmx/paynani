@@ -118,10 +118,11 @@ Se hace una vez por teléfono, desde la página de onboarding de paynani.
 
    {"code": "K7QW2MXP",
     "device": {"model": "Pixel 6", "android": "16", "app_version": "1.0"},
-    "sims": [{"slot": 0, "number": "+525512345678"}]}
+    "sims": [{"slot": 0, "number": "+525512345678", "country": "MX"}]}
    ```
 
-   `number` puede venir en `null`: muchas SIM no exponen su número.
+   `number` puede venir en `null`: muchas SIM no exponen su número. `country` es el
+   país de la SIM en ISO; con él se normalizan los números (ver `sms.in`).
 
 3. La pasarela contesta `201` con:
 
@@ -222,13 +223,21 @@ se cae la conexión, se reenvía con el **mismo `id`**.
 **`id`, la llave que evita duplicados:**
 
 ```
-id = hex(sha256(from.raw + "\n" + str(sent_at_en_ms) + "\n" + text))
+llave = from.e164 si no es null, si no from.raw
+id = hex(sha256(llave + "\n" + str(sent_at_en_ms) + "\n" + text))
 ```
 
 Las dos rutas de la app, el receptor en tiempo real y el barrido de respaldo de la
-bandeja, calculan **el mismo `id`** para el mismo SMS, porque usan `date_sent` y el
-remitente sin limpiar. La pasarela es **idempotente** por `id`: un `id` repetido no
-crea otro evento.
+bandeja, calculan **el mismo `id`** para el mismo SMS. Usan el E.164 y no el
+remitente original porque el mismo SMS no siempre trae el mismo texto de remitente en
+las dos rutas: en el emulador el receptor ve `5550001111` y la bandeja guarda
+`+15550001111`. La pasarela es **idempotente** por `id`: un `id` repetido no crea otro
+evento.
+
+**Región de la normalización:** la del país de la SIM (`sims[].country`, en ISO,
+por ejemplo `"US"`), que la app manda al emparejar y en el `hello`. Sin país, la de
+`PAYNANI_SMS_DEFAULT_REGION`. La pasarela recalcula `from.e164` con esa región a
+partir de `from.raw`; el `from.e164` que manda la app sólo sirve para el `id`.
 
 ### `call.missed` y `call.answered`: llamadas
 
@@ -246,7 +255,8 @@ crea otro evento.
  "started_at": "2026-10-02T03:25:10-06:00", "duration_s": 184}
 ```
 
-- `id = hex(sha256(type + "\n" + from.raw + "\n" + str(started_at_en_ms)))`.
+- `id = hex(sha256(type + "\n" + llave + "\n" + str(started_at_en_ms)))`, con la misma
+  `llave` que en `sms.in`.
 - Una llamada con número oculto llega con `from.raw = ""` y `from.e164 = null`.
 - `call.answered` se manda **al colgar**, cuando ya se conoce la duración.
 
