@@ -431,10 +431,20 @@ evento, así que en `notification_text`:
 ```bash
 PAYNANI_SMS_PUBLIC_URL=https://<túnel> python3 scripts/sms_gateway.py --port 8765
 paynani sms pair       # imprime el código y el contenido del QR
+paynani sms pair --web # lo mismo en el navegador: QR, teléfono emparejado y revocar (SRV-4)
 paynani sms devices    # el teléfono emparejado, sin su token
 paynani sms revoke     # su token deja de abrir la pasarela
 ```
 
+- **`paynani sms pair --web [--port 8765]`** (SRV-4) abre la misma página local del
+  onboarding (sólo loopback, enlace con llave, CSRF) con otro contenido. Sin teléfono
+  pide la dirección pública de la pasarela (se prellena con `PAYNANI_SMS_PUBLIC_URL`),
+  genera el código de un solo uso y muestra el QR del §1 junto con la dirección y el
+  código en texto, para escribirlos a mano. Se actualiza sola cada 3 segundos hasta
+  que el teléfono se empareja. Con teléfono emparejado lista sus datos (sin el token ni
+  su hash) y ofrece **Revocar**; mientras haya uno no deja generar otro código (DEC-3).
+  El QR lo genera `paynani_lib/sms/qr.py`, sólo con la biblioteca estándar. La
+  página sigue arriba hasta Ctrl-C.
 - La pasarela escucha sólo en `127.0.0.1` (se niega a otra dirección). El túnel
   apunta a ese puerto.
 - `GET /sms/health` responde `{"ok": true, "phone_connected": …}` sin secretos, para

@@ -195,6 +195,8 @@ def main(argv: list[str] | None = None) -> int:
     sms_pair = sms_sub.add_parser("pair", help="Print a one-time pairing code and the QR payload.")
     sms_pair.add_argument("--url", default="", help="Public tunnel URL (or PAYNANI_SMS_PUBLIC_URL).")
     sms_pair.add_argument("--replace", action="store_true", help="Revoke the paired phone first.")
+    sms_pair.add_argument("--web", action="store_true", help="Open the pairing page (QR, paired phone, revoke) in a browser instead of printing the code.")
+    sms_pair.add_argument("--port", type=int, default=8765, help="Port for --web (default 8765).")
     sms_sub.add_parser("devices", help="Show the paired phone, without its token.")
     sms_sub.add_parser("revoke", help="Revoke the paired phone.")
     sms_send = sms_sub.add_parser("send", help="Send an SMS to a roster contact through the paired phone.")
@@ -309,6 +311,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sms":
         from paynani_lib.sms import cli as sms_cli
         if args.sms_command == "pair":
+            if args.web:
+                return onboard.run(port=args.port, mode="sms_pair")
             return sms_cli.run_pair(args)
         if args.sms_command == "devices":
             return sms_cli.run_devices(args)
