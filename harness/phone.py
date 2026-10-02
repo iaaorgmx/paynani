@@ -23,7 +23,9 @@ DEFAULT_REGION = "MX"
 # Lo que se quita antes de mirar dígitos: espacios (incluido el no separable),
 # guiones, puntos y paréntesis.
 _SEPARATORS = re.compile(r"[\s \-.()]")
-_DIGITS = re.compile(r"\d+")
+# Sólo dígitos ASCII: \d de Python acepta cualquier dígito Unicode, y un número
+# en dígitos de ancho completo o arábigo-índicos se parece mucho al de un contacto.
+_DIGITS = re.compile(r"[0-9]+")
 
 # Prefijo internacional por región, para números escritos sin "+".
 _COUNTRY_CODE = {"MX": "52", "US": "1", "CA": "1"}
@@ -58,6 +60,8 @@ def to_e164(raw, region=None):
     region = (region or default_region()).upper()
 
     if plus:
+        if digits.startswith("0"):
+            return None  # ningún código de país de E.164 empieza con 0
         number = digits
     elif len(digits) <= 6:
         return None  # código corto

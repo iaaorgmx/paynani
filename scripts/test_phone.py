@@ -61,6 +61,13 @@ check("región en minúsculas", "+15550001111", phone.to_e164("5550001111", "us"
 check("canadá", "+14165550000", phone.to_e164("416 555 0000", "CA"))
 check("idempotente", "+525511112222", phone.to_e164(phone.to_e164("55 1111 2222", "MX"), "MX"))
 
+# Revisión de Iris en #315: sólo dígitos ASCII, y nada de 0 tras el +.
+check("dígitos arábigo-índicos con +", None, phone.to_e164("+\u0665\u0662\u0665\u0665\u0661\u0661\u0661\u0661\u0662\u0662\u0662\u0662", "MX"))
+check("dígitos de ancho completo con +", None, phone.to_e164("+\uff15\uff12\uff15\uff15\uff11\uff11\uff11\uff11\uff12\uff12\uff12\uff12", "MX"))
+check("dígitos arábigo-índicos sin +", None, phone.to_e164("\u0665\u0665\u0661\u0661\u0661\u0661\u0662\u0662\u0662\u0662", "MX"))
+check("0 después del +", None, phone.to_e164("+0525511112222", "MX"))
+check("00 seguido de 0", None, phone.to_e164("000525511112222", "MX"))
+
 # Región por omisión.
 check("región por omisión sin variable", "MX", phone.default_region({}))
 check("región de runtime.env", "US", phone.default_region({"PAYNANI_SMS_DEFAULT_REGION": " us "}))
