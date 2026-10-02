@@ -62,6 +62,9 @@ app va adjunto a esta release.
   un teléfono revocado seguía escribiendo eventos mientras su conexión siguiera
   abierta, y una conexión colgada impedía que la pasarela terminara con SIGTERM.
   Los dos los encontró Andy en la prueba de punta a punta (QA-4).
+- **El titular en `LICENSE`** es ahora la razón social completa, «Inteligencia
+  Artificial Aplicada en México ONG», la misma que en PaynaniApp. La licencia
+  sigue siendo MIT.
 - **Puerto 8770 por omisión** (#320). La pasarela ya no usa el 8765, que es el de
   la página local del onboarding y de `sms pair --web`.
 
