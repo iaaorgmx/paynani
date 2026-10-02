@@ -12,6 +12,8 @@ formato y de versión.
 """
 from __future__ import annotations
 
+import html
+
 # --- GF(256) y Reed-Solomon -------------------------------------------------
 _EXP = [0] * 512
 _LOG = [0] * 256
@@ -299,7 +301,7 @@ def to_svg(matrix: list[list[bool]], quiet: int = 4, label: str = "") -> str:
             else:
                 x += 1
     total = size + 2 * quiet
-    title = f"<title>{label}</title>" if label else ""
+    title = f"<title>{html.escape(label)}</title>" if label else ""
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {total} {total}" '
             f'width="256" height="256" role="img" shape-rendering="crispEdges">{title}'
             f'<rect width="{total}" height="{total}" fill="#fff"/>'

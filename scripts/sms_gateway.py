@@ -2,7 +2,7 @@
 """
 Pasarela SMS de paynani (SMS_GATEWAY.md, SRV-1).
 
-    python3 scripts/sms_gateway.py [--host 127.0.0.1] [--port 8765]
+    python3 scripts/sms_gateway.py [--host 127.0.0.1] [--port 8770]
 
 Escucha sólo en loopback; el teléfono llega por el túnel (DEC-2). La dirección
 pública que va en el QR sale de PAYNANI_SMS_PUBLIC_URL (por ejemplo
@@ -29,7 +29,7 @@ import paths  # noqa: E402
 from paynani_lib.sms import config as sms_config  # noqa: E402
 from paynani_lib.sms import gateway as gw  # noqa: E402
 
-DEFAULT_PORT = 8765
+DEFAULT_PORT = 8770  # 8765 es del onboarding y de `sms pair --web`, que corren a la vez
 
 
 def main(argv=None) -> int:
