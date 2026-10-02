@@ -71,10 +71,11 @@ estándar de Python no trae `phonenumbers`, así que estas reglas son las que ap
 3. **México:** `+521` seguido de 10 dígitos se convierte en `+52` y los mismos 10
    dígitos. Es el `1` de los móviles que se dejó de usar en 2019 y que todavía
    circula, por ejemplo en WhatsApp. Con región `MX`, 10 dígitos sin `+` son `+52`
-   y esos 10.
+   y esos 10, y 12 dígitos que empiezan con `52` son `+` y esos 12.
 4. Con región `US` o `CA`, 10 dígitos son `+1` y esos 10, y 11 dígitos que empiezan
    con `1` son `+` y esos 11.
-5. Lo que ya empieza con `+` sólo pasa por las reglas 1 y 3.
+5. Lo que ya empieza con `+` sólo pasa por las reglas 1 y 3. Sin `+` y sin una
+   regla de la región, **no se adivina** el país: el resultado es `null`.
 6. **Códigos cortos** (de 3 a 6 dígitos, los de bancos y servicios) y **remitentes
    alfanuméricos** (`AMAZON`, `O'Shop`) no son E.164: su `e164` es `null`, se
    reportan tal cual y **nunca** coinciden con el roster.
@@ -90,8 +91,9 @@ estándar de Python no trae `phonenumbers`, así que estas reglas son las que ap
 | `26262` | MX | `null` (código corto) |
 | `AMAZON` | MX | `null` (alfanumérico) |
 
-Esta tabla es el caso de prueba compartido: `test_roster.sh` en paynani y las pruebas
-de la app la corren completa.
+Esta tabla es el caso de prueba compartido. En paynani la implementa
+`harness/phone.py` (`to_e164`) y la prueba `scripts/test_phone.py`; el roster y la
+pasarela usan esa misma función, y las pruebas de la app corren la misma tabla.
 
 **En `roster.md`** la columna `Phone` acepta varios números separados por coma (por
 ejemplo `+525511112222, 55 3333 4444`). Cada uno se normaliza con estas reglas al
