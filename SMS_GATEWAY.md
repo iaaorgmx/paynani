@@ -7,7 +7,7 @@ aquí no está, el error es de esa parte o de esta página, y se corrige aquí p
 
 Es la tarea PROTO-1 ([#305](https://github.com/iaaorgmx/paynani/issues/305)) del
 PRD [iaaorgmx/PaynaniApp#15](https://github.com/iaaorgmx/PaynaniApp/issues/15).
-Todavía **no hay código** que lo implemente: esto es lo que el código va a cumplir.
+La pasarela (SRV-1) ya lo implementa en `scripts/sms_gateway.py` y `scripts/paynani_lib/sms/`; la app lo implementa en APP-2, APP-3, APP-4 y APP-11.
 
 ## Qué hace la pasarela
 
@@ -118,10 +118,11 @@ Se hace una vez por teléfono, desde la página de onboarding de paynani.
 
    {"code": "K7QW2MXP",
     "device": {"model": "Pixel 6", "android": "16", "app_version": "1.0"},
-    "sims": [{"slot": 0, "number": "+525512345678"}]}
+    "sims": [{"slot": 0, "number": "+525512345678", "country": "MX"}]}
    ```
 
-   `number` puede venir en `null`: muchas SIM no exponen su número.
+   `number` puede venir en `null`: muchas SIM no exponen su número. `country` es el
+   país de la SIM en ISO; con él se normalizan los números (ver `sms.in`).
 
 3. La pasarela contesta `201` con:
 
@@ -137,6 +138,7 @@ Se hace una vez por teléfono, desde la página de onboarding de paynani.
 |---|---|
 | `201` | Emparejado |
 | `400 bad_request` | Falta `code` o el JSON no es válido |
+| `409 device_exists` | Ya hay un teléfono emparejado (DEC-3: uno). Se revoca con `paynani sms revoke` o `paynani sms pair --replace` |
 | `410 code_expired` | El código venció o ya se usó |
 | `429 too_many_attempts` | Más de 10 códigos equivocados en 10 minutos **en total**. El emparejamiento queda bloqueado hasta generar un código nuevo. Es un tope global y no por dirección: detrás del túnel todas las peticiones llegan desde `127.0.0.1`, y un `X-Forwarded-For` se puede falsificar |
 
@@ -221,13 +223,21 @@ se cae la conexión, se reenvía con el **mismo `id`**.
 **`id`, la llave que evita duplicados:**
 
 ```
-id = hex(sha256(from.raw + "\n" + str(sent_at_en_ms) + "\n" + text))
+llave = from.e164 si no es null, si no from.raw
+id = hex(sha256(llave + "\n" + str(sent_at_en_ms) + "\n" + text))
 ```
 
 Las dos rutas de la app, el receptor en tiempo real y el barrido de respaldo de la
-bandeja, calculan **el mismo `id`** para el mismo SMS, porque usan `date_sent` y el
-remitente sin limpiar. La pasarela es **idempotente** por `id`: un `id` repetido no
-crea otro evento.
+bandeja, calculan **el mismo `id`** para el mismo SMS. Usan el E.164 y no el
+remitente original porque el mismo SMS no siempre trae el mismo texto de remitente en
+las dos rutas: en el emulador el receptor ve `5550001111` y la bandeja guarda
+`+15550001111`. La pasarela es **idempotente** por `id`: un `id` repetido no crea otro
+evento.
+
+**Región de la normalización:** la del país de la SIM (`sims[].country`, en ISO,
+por ejemplo `"US"`), que la app manda al emparejar y en el `hello`. Sin país, la de
+`PAYNANI_SMS_DEFAULT_REGION`. La pasarela recalcula `from.e164` con esa región a
+partir de `from.raw`; el `from.e164` que manda la app sólo sirve para el `id`.
 
 ### `call.missed` y `call.answered`: llamadas
 
@@ -245,7 +255,8 @@ crea otro evento.
  "started_at": "2026-10-02T03:25:10-06:00", "duration_s": 184}
 ```
 
-- `id = hex(sha256(type + "\n" + from.raw + "\n" + str(started_at_en_ms)))`.
+- `id = hex(sha256(type + "\n" + llave + "\n" + str(started_at_en_ms)))`, con la misma
+  `llave` que en `sms.in`.
 - Una llamada con número oculto llega con `from.raw = ""` y `from.e164 = null`.
 - `call.answered` se manda **al colgar**, cuando ya se conoce la duración.
 
@@ -274,8 +285,11 @@ antes, la app reenvía y la idempotencia evita el duplicado.
  "expires_at": "2026-10-02T03:40:00Z"}
 ```
 
-- `id` lo genera la pasarela (`o_` + 16 bytes al azar en hex). Es la llave de la orden
-  de principio a fin.
+- `id` lo genera la pasarela (`o_` + 16 bytes al azar en hex, `^o_[0-9a-f]{32}$`). Es la
+  llave de la orden de principio a fin, y cualquier otra forma se rechaza.
+- **La app deduplica por `id`.** Al reconectar, la pasarela vuelve a mandar las órdenes
+  que todavía no tienen ningún `sms.status`; la app no envía dos veces un `id` que ya
+  recibió, y contesta con el estado que ya conoce.
 - `sim_slot` es opcional; sin él se usa la SIM de envío predeterminada.
 - `text` tiene como máximo **1,000 caracteres**. Más largo, la pasarela no lo manda y
   `paynani sms send` sale con error `text_too_long`. La app lo divide con
@@ -412,7 +426,40 @@ evento, así que en `notification_text`:
 - **Qué se registra:** ni la app en *release* ni la pasarela escriben en su log el
   texto de los SMS. El texto vive en el diario de eventos, como el cuerpo de un correo.
 
-## 9. Versiones
+## 9. Cómo se corre (SRV-1)
+
+```bash
+PAYNANI_SMS_PUBLIC_URL=https://<túnel> python3 scripts/sms_gateway.py --port 8765
+paynani sms pair       # imprime el código y el contenido del QR
+paynani sms devices    # el teléfono emparejado, sin su token
+paynani sms revoke     # su token deja de abrir la pasarela
+```
+
+- La pasarela escucha sólo en `127.0.0.1` (se niega a otra dirección). El túnel
+  apunta a ese puerto.
+- `GET /sms/health` responde `{"ok": true, "phone_connected": …}` sin secretos, para
+  comprobar el túnel.
+- Cada SMS y llamada sale también en stdout con la misma línea que le llega al agente.
+  El texto completo no.
+- Instalarla como servicio supervisado (systemd o launchd) es SRV-7.
+
+### Interfaz local con `paynani sms send` (SRV-3)
+
+Todo bajo `state/sms/` (700, archivos 600):
+
+| Archivo | Quién escribe | Contenido |
+|---|---|---|
+| `outbox/<id>.json` | `paynani sms send` | `{"id": "o_…", "to": "+52…", "text": "…", "expires_at": "…", "sim_slot": 0}`. Se escribe atómico (temporal y `rename`) |
+| `orders.jsonl` | La pasarela | Una línea por estado: `{"id": sha256(order_id + "\n" + status), "order_id", "status", "at", "error"?, "parts"?}` |
+| `inbox/<id>.json` | La pasarela | El texto de cada SMS recibido; lo lee `paynani event show --body` |
+| `device.json` | La pasarela y `paynani sms` | El teléfono emparejado, con el SHA-256 de su token |
+
+La pasarela revisa `outbox/` cada segundo mientras el teléfono está conectado, manda
+cada orden como `sms.out` y la saca de `outbox/` con el primer `sms.status`. Una
+orden vencida se anota `expired` sin mandarse. `paynani sms status <id>` lee
+`orders.jsonl`.
+
+## 10. Versiones
 
 Este documento describe el protocolo **1**. Un campo nuevo y opcional no cambia la
 versión, y las dos partes ignoran los campos que no conocen. Un cambio que rompe a

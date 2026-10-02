@@ -430,3 +430,111 @@ def write_cursor(path, offset):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(str(int(offset)))
     os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------------------
+# SMS y llamadas (pasarela SMS, SMS_GATEWAY.md §6)
+
+SMS_RECEIVED = "sms.received"
+CALL_MISSED = "call.missed"
+CALL_ANSWERED = "call.answered"
+SMS_GATEWAY_OFFLINE = "sms.gateway.offline"
+SMS_GATEWAY_ONLINE = "sms.gateway.online"
+
+NOTIFICATION_EXCERPT = 160
+
+
+def safe_excerpt(text, limit=NOTIFICATION_EXCERPT):
+    """
+    El texto de un SMS, apto para ir en una línea de aviso.
+
+    El texto es de quien lo mandó, no confiable, y session_watch.sh imprime una
+    línea por evento: un salto de línea en el SMS fabricaría una línea falsa,
+    como un `[mail …, roster]` inventado. Se quitan saltos y caracteres de
+    control, se colapsan espacios y se corta a `limit` caracteres.
+    """
+    cleaned = []
+    for ch in str(text or ""):
+        cat = ord(ch)
+        if ch in "\r\n\t\v\f" or cat < 32 or cat == 127 or 0x80 <= cat < 0xA0 or ch in "  ":
+            cleaned.append(" ")
+        else:
+            cleaned.append(ch)
+    out = " ".join("".join(cleaned).split())
+    if len(out) > limit:
+        out = out[: limit - 1].rstrip() + "…"
+    return out
+
+
+def sms_event_id(device_id, message_id):
+    return f"sms:{device_id}:{message_id}"
+
+
+def _sender(e164, raw, name):
+    return {"name": name or "", "address": e164 or str(raw or "")}
+
+
+def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sent_at,
+              roster_match, local_time, observed_at=None):
+    """
+    Un SMS recibido, con el mismo sobre que un correo. El texto completo NO va
+    aquí: vive en state/sms/inbox/ y se ve con `paynani event show --body`,
+    como el cuerpo de un correo vive en el servidor IMAP.
+    """
+    eid = sms_event_id(device_id, message_id)
+    who = " ".join(p for p in (sender_name, e164 or safe_excerpt(raw_sender, 40)) if p)
+    if roster_match:
+        line = f"[sms {local_time}, roster] {who}: {safe_excerpt(text)}"
+    else:
+        line = f"[sms {local_time}] {who}: mensaje de un número fuera del roster"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": SMS_RECEIVED,
+        "event_id": eid,
+        "source": "paynani",
+        "account": f"sms:{device_id}",
+        "device_id": device_id,
+        "observed_at": observed_at or _now(),
+        "sent_at": sent_at or "",
+        "sender": _sender(e164, raw_sender, sender_name),
+        "roster_match": bool(roster_match),
+        "authenticated_sender": False,
+        "provider_id": f"sms:{message_id}",
+        "inspection_command": f"scripts/paynani event show {eid}",
+    }
+    record["notification_text"] = f"{line} [{record['inspection_command']}]"
+    return record
+
+
+def call_event(*, kind, device_id, call_id, e164, raw_caller, caller_name, started_at,
+               roster_match, local_time, duration_s=None, observed_at=None):
+    """Una llamada perdida o contestada (DEC-4). La saliente no se reporta."""
+    if kind not in (CALL_MISSED, CALL_ANSWERED):
+        raise ValueError(f"tipo de llamada desconocido: {kind}")
+    eid = sms_event_id(device_id, call_id)
+    who = " ".join(p for p in (caller_name, e164 or safe_excerpt(raw_caller, 40) or "número oculto") if p)
+    label = "llamada perdida" if kind == CALL_MISSED else "llamada contestada"
+    tag = ", roster" if roster_match else ""
+    line = f"[{label} {local_time}{tag}] {who}"
+    if kind == CALL_ANSWERED and duration_s is not None:
+        minutes, seconds = divmod(int(duration_s), 60)
+        line += f", {minutes} min {seconds} s" if minutes else f", {seconds} s"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": kind,
+        "event_id": eid,
+        "source": "paynani",
+        "account": f"sms:{device_id}",
+        "device_id": device_id,
+        "observed_at": observed_at or _now(),
+        "started_at": started_at or "",
+        "sender": _sender(e164, raw_caller, caller_name),
+        "roster_match": bool(roster_match),
+        "authenticated_sender": False,
+        "provider_id": f"call:{call_id}",
+        "inspection_command": f"scripts/paynani event show {eid}",
+    }
+    if kind == CALL_ANSWERED and duration_s is not None:
+        record["duration_s"] = int(duration_s)
+    record["notification_text"] = f"{line} [{record['inspection_command']}]"
+    return record
