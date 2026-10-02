@@ -125,8 +125,8 @@ check("determinista: el mismo texto da la misma matriz", m, qr.encode("hola"))
 svg = qr.to_svg(qr.encode("hola"), label="QR <de> prueba")
 check("SVG: viewBox con zona de silencio de 4 módulos",
       True, f'viewBox="0 0 {len(m) + 8} {len(m) + 8}"' in svg)
-check("SVG: sin scripts y con el título escapado a mano por quien llama", True,
-      "<script" not in svg and "<title>QR <de> prueba</title>" in svg)
+check("SVG: sin scripts y con el título escapado por to_svg", True,
+      "<script" not in svg and "<title>QR &lt;de&gt; prueba</title>" in svg)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

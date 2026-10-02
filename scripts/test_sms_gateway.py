@@ -326,6 +326,13 @@ async def main():
     await server.wait_closed()
 
 
+# La pasarela corre a la vez que la página local (onboarding y `sms pair --web`):
+# si comparten puerto por omisión, la página no arranca.
+import re as _re
+_gw = int(_re.search(r"^DEFAULT_PORT = (\d+)", (ROOT / "scripts" / "sms_gateway.py").read_text(), _re.M).group(1))
+_page = int(_re.search(r"^DEFAULT_PORT = (\d+)", (ROOT / "scripts" / "paynani").read_text(), _re.M).group(1))
+check("puerto por omisión: la pasarela no usa el de la página local", True, _gw != _page)
+
 asyncio.run(main())
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

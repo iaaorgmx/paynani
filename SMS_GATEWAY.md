@@ -429,13 +429,16 @@ evento, así que en `notification_text`:
 ## 9. Cómo se corre (SRV-1)
 
 ```bash
-PAYNANI_SMS_PUBLIC_URL=https://<túnel> python3 scripts/sms_gateway.py --port 8765
+PAYNANI_SMS_PUBLIC_URL=https://<túnel> python3 scripts/sms_gateway.py --port 8770
 paynani sms pair       # imprime el código y el contenido del QR
 paynani sms pair --web # lo mismo en el navegador: QR, teléfono emparejado y revocar (SRV-4)
 paynani sms devices    # el teléfono emparejado, sin su token
 paynani sms revoke     # su token deja de abrir la pasarela
 ```
 
+- La pasarela escucha por omisión en el puerto **8770** (`--port` o `PAYNANI_SMS_PORT`).
+  El 8765 es de la página local del onboarding y de `paynani sms pair --web`, que se
+  usan con la pasarela corriendo; por eso no comparten puerto.
 - **`paynani sms pair --web [--port 8765]`** (SRV-4) abre la misma página local del
   onboarding (sólo loopback, enlace con llave, CSRF) con otro contenido. Sin teléfono
   pide la dirección pública de la pasarela (se prellena con `PAYNANI_SMS_PUBLIC_URL`),
