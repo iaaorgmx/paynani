@@ -190,6 +190,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Use a synthetic probe event, not mail or the paynani journal.",
     )
 
+    sms_parser = subparsers.add_parser("sms", help="SMS gateway: pair, show or revoke the phone (SMS_GATEWAY.md).")
+    sms_sub = sms_parser.add_subparsers(dest="sms_command", required=True)
+    sms_pair = sms_sub.add_parser("pair", help="Print a one-time pairing code and the QR payload.")
+    sms_pair.add_argument("--url", default="", help="Public tunnel URL (or PAYNANI_SMS_PUBLIC_URL).")
+    sms_pair.add_argument("--replace", action="store_true", help="Revoke the paired phone first.")
+    sms_sub.add_parser("devices", help="Show the paired phone, without its token.")
+    sms_sub.add_parser("revoke", help="Revoke the paired phone.")
+
     account_parser = subparsers.add_parser(
         "account", help="Additional mail accounts in accounts.json (#276)."
     )
@@ -290,6 +298,14 @@ def main(argv: list[str] | None = None) -> int:
             return accounts_cli.run_add(args)
         if args.account_command == "remove":
             return accounts_cli.run_remove(args)
+    if args.command == "sms":
+        from paynani_lib.sms import cli as sms_cli
+        if args.sms_command == "pair":
+            return sms_cli.run_pair(args)
+        if args.sms_command == "devices":
+            return sms_cli.run_devices(args)
+        if args.sms_command == "revoke":
+            return sms_cli.run_revoke(args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)

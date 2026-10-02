@@ -269,6 +269,8 @@ def run_show(args) -> int:
     if record is None:
         print(f"Event not found: {args.event_id}", file=sys.stderr)
         return 1
+    if record.get("event_type") in _SMS_EVENT_TYPES:
+        return _show_sms(record, args)
     try:
         account = _account_for(record)
         roster_path = _roster_of(account) if account is not None else None
@@ -350,4 +352,51 @@ def run_mark(args) -> int:
         message_id=record.get("message_id", ""), provider_id=record.get("provider_id", ""),
     )
     print(f"{args.event_id}: {args.state}")
+    return 0
+
+
+# SMS y llamadas (SMS_GATEWAY.md §6). El texto de un SMS no está en el sobre:
+# vive en state/sms/inbox/ y sólo sale con --body, con la misma regla que el
+# cuerpo de un correo: el número tiene que haber sido del roster al llegar y
+# seguir siéndolo ahora.
+_SMS_EVENT_TYPES = ("sms.received", "call.missed", "call.answered")
+_SMS_SAFE_FIELDS = ("event_id", "event_type", "account", "device_id", "observed_at", "sent_at",
+                    "started_at", "duration_s", "sender", "roster_match", "authenticated_sender",
+                    "provider_id", "notification_text", "inspection_command")
+
+
+def _show_sms(record, args) -> int:
+    from paynani_lib.sms import gateway as sms_gateway
+    from paynani_lib.sms.store import Store
+
+    output = {k: record[k] for k in _SMS_SAFE_FIELDS if k in record}
+    address = (record.get("sender") or {}).get("address", "")
+    in_roster_now = address in sms_gateway.roster_phones(roster_file())
+    output["roster_decision"] = {
+        "matched": bool(record.get("roster_match")) and in_roster_now,
+        "reason": ("the number is on roster.md (Phone)" if in_roster_now
+                   else "the number is not on roster.md (Phone) now"),
+    }
+    output["lifecycle"] = ledger.history(state_dir() / "lifecycle.jsonl", args.event_id)
+    print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
+    if not args.body:
+        return 0
+    if record.get("event_type") != "sms.received":
+        print("calls have no body", file=sys.stderr)
+        return 2
+    if not record.get("roster_match"):
+        print("body refused: the gateway did not record a roster match", file=sys.stderr)
+        return 2
+    if not in_roster_now:
+        print("body refused: the number is no longer on roster.md", file=sys.stderr)
+        return 2
+    message_id = str(record.get("provider_id", "")).split(":", 1)[-1]
+    saved = Store(state_dir()).inbox(message_id)
+    if not saved:
+        print("body not found in state/sms/inbox/", file=sys.stderr)
+        return 1
+    text = str(saved.get("text", ""))
+    print("\n--- verified body ---")
+    print(text, end="" if text.endswith("\n") else "\n")
+    print("--- authorized: the number is on roster.md (Phone) ---")
     return 0
