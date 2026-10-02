@@ -832,7 +832,132 @@ report itself, so nothing else would say that texts stopped arriving. The unit
 writes `state/sms.log` (one line per text or call, with an excerpt only for a
 number on the roster) and `state/sms.err.log`; both rotate with the others.
 
-Next: install PaynaniApp on the phone and pair it (see the phone section below).
+Next: install PaynaniApp on the phone and pair it (§5.2 below).
+
+### 5.2 Optional: install PaynaniApp on the phone and pair it
+
+This needs §5.1 done first: the gateway running and the tunnel answering
+`/sms/health`. The phone needs Android 8.0 or later and a SIM that sends and
+receives texts.
+
+**1. Download the app and check it.** The APK rides on each paynani release,
+next to its checksum. Take both from the latest release and check the download:
+
+```bash
+gh release download --repo iaaorgmx/paynani --pattern 'PaynaniApp-*'
+sha256sum -c PaynaniApp-*.apk.sha256      # must print: PaynaniApp-<version>.apk: OK
+```
+
+Without `gh`, download `PaynaniApp-<version>.apk` and
+`PaynaniApp-<version>.apk.sha256` from
+<https://github.com/iaaorgmx/paynani/releases/latest> and run the same
+`sha256sum -c`.
+
+Then check who signed it. The release is signed with this certificate:
+
+```
+5e:db:93:e3:ae:86:b6:aa:2f:38:dc:ca:b0:01:f9:c1:9e:22:bc:a9:b8:db:bb:8d:fc:10:ab:fc:3f:67:9c:2f
+```
+
+`apksigner` comes with the Android SDK build tools
+(`~/Android/Sdk/build-tools/<version>/apksigner`) and prints the same digest
+without the colons:
+
+```bash
+apksigner verify --print-certs PaynaniApp-*.apk | grep 'SHA-256'
+# Signer #1 certificate SHA-256 digest: 5edb93e3ae86b6aa2f38dccab001f9c19e22bca9b8dbbb8dfc10abfc3f679c2f
+```
+
+A different digest means the file is not the published app: do not install it.
+
+**2. Install it.** With the phone connected over USB and USB debugging on:
+
+```bash
+adb install PaynaniApp-*.apk
+```
+
+Or copy the APK to the phone and open it there; Android asks once to allow
+installing apps from that source (the file manager or browser you opened it
+with).
+
+If the phone has a debug build of PaynaniApp (one built from source), uninstall
+it first. Both use the package `com.iaaorgmx.paynani` and are signed with
+different keys, so Android refuses to install one over the other
+(`INSTALL_FAILED_UPDATE_INCOMPATIBLE`):
+
+```bash
+adb uninstall com.iaaorgmx.paynani
+```
+
+Uninstalling also deletes its pairing, so the phone has to be paired again
+(step 4), and if it was paired, revoke the old one on the agent's machine first.
+
+**3. First run: permissions and battery.** The app opens on a Permissions screen
+that says what each one is for. Grant all of them; without them nothing reaches
+paynani.
+
+- **SMS:** receive texts, read the inbox to recover any the app missed, and send
+  the agent's replies.
+- **Phone:** detect incoming calls and know which SIM a text arrived on.
+- **Call log:** see the number of a missed or answered call.
+- **Notifications:** show whether the phone is connected to paynani.
+- **Battery:** run without battery optimization, so Android does not cut the
+  connection to paynani. Android shows its own dialog for this one; allow it.
+
+The camera is asked for only when you scan the pairing QR. If something is
+missing later, the app's **Status** screen (**Estado** on a phone in Spanish)
+lists it under Permissions, with a **Fix permissions** button.
+
+**4. Pair it.** On the agent's machine, from the clone, with the tunnel address
+in `PAYNANI_SMS_PUBLIC_URL` (§5.1):
+
+```bash
+scripts/paynani sms pair --web    # a local page with the QR, the address and the code
+scripts/paynani sms pair          # or the code and the QR contents in the terminal
+```
+
+In the app, scan the QR, or type the gateway address (`https://…`) and the code.
+
+- The code is good for **10 minutes** and **one** use. If it expired or was
+  already used, the app says so: generate a new one.
+- More than 10 wrong codes in 10 minutes block pairing until a new code is
+  generated.
+- This version pairs **one phone per gateway**. To change phones, revoke the
+  current one first, then pair the new one:
+
+```bash
+scripts/paynani sms revoke
+scripts/paynani sms pair --web
+```
+
+(`scripts/paynani sms pair --replace` does both in one step.)
+
+**5. Check it is connected.**
+
+```bash
+scripts/paynani sms devices
+```
+
+prints the paired phone (without its token) and must say `"connected": true`.
+In the app, the Status screen must say «Connected since …» under Connection
+(«Conectado desde …» under Conexión in Spanish).
+`scripts/paynani status` shows the last heartbeat too; after 90 s without one,
+the agent gets a `sms.gateway.offline` notice.
+
+**6. Tell the roster which numbers count.** A text or call from a number on
+`roster.md` is work for the agent and may be answered; any other number is only
+reported, and `scripts/paynani sms send` refuses it with exit 2. The numbers go
+in the `Phone` column, in E.164 (`+` and the country code), several per cell
+separated by commas. If `roster.md` has no `Phone` column yet, add it to the
+table header (see the comment in `roster.md.example`). For a new contact:
+
+```bash
+scripts/paynani roster add "Ana López" ana@example.com --phone +525511112222 --yes
+```
+
+For a contact already on the list, add the number to their row by hand, then
+run `scripts/test_roster.sh` and `scripts/test_listener.py`. Like every row,
+which numbers go here is your human's decision.
 
 ---
 
