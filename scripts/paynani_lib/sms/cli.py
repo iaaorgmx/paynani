@@ -20,6 +20,7 @@ import paths  # noqa: E402
 import phone  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
+from . import pairing  # noqa: E402
 from .gateway import status_id  # noqa: E402
 from .store import CODE_TTL_S, Store, now_utc, valid_order_id  # noqa: E402
 
@@ -138,8 +139,7 @@ def run_pair(args) -> int:
               "PAYNANI_SMS_PUBLIC_URL.", file=sys.stderr)
         return 2
     code = store.new_code()
-    ws = base.replace("https://", "wss://").replace("http://", "ws://") + "/sms/ws"
-    payload = {"v": 1, "pair": base + "/sms/pair", "ws": ws, "code": code}
+    payload = pairing.payload(base, code)
     print(f"Código de emparejamiento: {code}  (vence en {CODE_TTL_S // 60} minutos, un solo uso)")
     print("Contenido del QR:")
     print(json.dumps(payload, ensure_ascii=False))
