@@ -41,6 +41,7 @@ HELLO_TIMEOUT_S = 10
 MAX_OUT_PER_HOUR = 60
 OFFLINE_AFTER_S = 90       # 3 x HEARTBEAT_S: SMS_GATEWAY.md §7
 HEALTH_EVERY_S = 5
+REVOKE_CHECK_S = 1         # cuánto tarda en cortarse la conexión de un teléfono revocado
 MAX_HEAD = 8192
 MAX_PAIR_BODY = 8192
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -91,6 +92,8 @@ class Gateway:
         self.health_every_s = health_every_s
         self.conn: WebSocket | None = None
         self.last_frame = 0.0
+        self.health_task = None
+        self._writers: set = set()   # toda conexión abierta, para poder cerrarlas al apagar
         # Un proceso nuevo no tiene a nadie conectado, diga lo que diga device.json
         # de la vida anterior; y el teléfono tiene `offline_after_s` para volver
         # antes de que se diga que no está.
@@ -99,6 +102,31 @@ class Gateway:
 
     # --- HTTP -------------------------------------------------------------
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._writers.add(writer)
+        try:
+            await self._handle(reader, writer)
+        finally:
+            self._writers.discard(writer)
+
+    async def shutdown(self) -> None:
+        """
+        Apagado: la vigilancia deja de escribir, el teléfono recibe un cierre limpio
+        y se cierran las conexiones que queden. Desde Python 3.12,
+        `Server.wait_closed()` espera a todas; sin esto, una conexión colgada
+        dejaba el proceso vivo, y su vigilancia escribiendo eventos, después de un
+        SIGTERM.
+        """
+        if self.health_task is not None:
+            self.health_task.cancel()
+        if self.conn is not None:
+            try:
+                await self.conn.close(1001, "la pasarela se apaga")
+            except Exception:  # noqa: BLE001 -- apagando: lo que no se pueda cerrar se cierra abajo
+                pass
+        for writer in list(self._writers):
+            writer.close()
+
+    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 10)
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError):
@@ -269,6 +297,7 @@ class Gateway:
         writer.write(("\r\n".join(lines) + "\r\n\r\n").encode("latin-1"))
         await writer.drain()
         ws = WebSocket(reader, writer, on_frame=lambda _op: self._saw_frame())
+        ws.token_hash = device.get("token_sha256", "")
         if self.conn is not None:
             old, self.conn = self.conn, None
             await old.close(4409, "reemplazada por otra conexión del mismo teléfono")
@@ -314,7 +343,8 @@ class Gateway:
                               "max_out_per_hour": self.max_out_per_hour})
         tasks = [asyncio.create_task(self._pump_outbox(ws)),
                  asyncio.create_task(self._watch_roster(ws, allowed)),
-                 asyncio.create_task(self._watchdog(ws))]
+                 asyncio.create_task(self._watchdog(ws)),
+                 asyncio.create_task(self._watch_revocation(ws))]
         try:
             while True:
                 raw = await ws.recv()
@@ -326,7 +356,22 @@ class Gateway:
                 t.cancel()
             if self.conn is ws:
                 self.conn = None
-                self.store.touch(connected=False, last_seen=store_mod.now_utc())
+                if not self._revoked(ws):  # un teléfono nuevo no hereda el apagado del revocado
+                    self.store.touch(connected=False, last_seen=store_mod.now_utc())
+
+    def _revoked(self, ws: WebSocket) -> bool:
+        """El teléfono de esta conexión ya no es el emparejado (revocado, o reemplazado)."""
+        current = self.store.device()
+        return not current or current.get("token_sha256", "") != getattr(ws, "token_hash", None)
+
+    async def _watch_revocation(self, ws: WebSocket) -> None:
+        """`paynani sms revoke` corta la conexión abierta, no sólo la siguiente (§1, código 4401)."""
+        while not ws.closed:
+            await asyncio.sleep(REVOKE_CHECK_S)
+            if self._revoked(ws):
+                log("teléfono revocado; se cierra su conexión")
+                await ws.close(4401, "teléfono revocado")
+                return
 
     async def _watchdog(self, ws: WebSocket) -> None:
         """Sin ningún frame en 3 × heartbeat, la conexión se da por muerta."""
@@ -369,6 +414,10 @@ class Gateway:
 
     # --- mensajes del teléfono ---------------------------------------------
     async def _dispatch(self, ws: WebSocket, device_id: str, raw: str) -> None:
+        if self._revoked(ws):
+            # Entre una revisión y otra no entra nada de un teléfono revocado.
+            await ws.close(4401, "teléfono revocado")
+            return
         try:
             msg = json.loads(raw)
             if not isinstance(msg, dict):

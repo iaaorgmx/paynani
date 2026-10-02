@@ -132,7 +132,7 @@ def run_pair(args) -> int:
         return 2
     if device and args.replace:
         store.revoke()
-        print(f"Teléfono {device['device_id']} revocado. Si estaba conectado, se cierra al reconectar.")
+        print(f"Teléfono {device['device_id']} revocado. Si estaba conectado, la pasarela corta su conexión en un segundo.")
     base = (args.url or os.environ.get("PAYNANI_SMS_PUBLIC_URL", "")).rstrip("/")
     if not base:
         print("Falta la dirección pública de la pasarela: --url https://<túnel> o "
@@ -161,5 +161,5 @@ def run_revoke(args) -> int:
     if not device:
         print("No había teléfono emparejado.")
         return 0
-    print(f"Teléfono {device['device_id']} revocado: su token ya no abre la pasarela.")
+    print(f"Teléfono {device['device_id']} revocado: su token ya no abre la pasarela y, si estaba conectado, se corta su conexión en un segundo.")
     return 0
