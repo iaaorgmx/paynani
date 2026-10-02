@@ -245,6 +245,24 @@ async def main():
           [s["status"] for s in st.order_statuses(order["id"])])
     check("la orden sale del outbox", False, (state / "sms" / "outbox" / f"{order['id']}.json").exists())
 
+    victim = state / "sms" / "device.json"
+    await ws.send_text(json.dumps({"type": "sms.status", "id": gw.status_id("../device", "sent"),
+                                   "order_id": "../device", "status": "sent"}))
+    check("order_id con ../ -> missing_field", "missing_field", (await recv_until(ws, "error")).get("code"))
+    check("y ack rejected", "rejected", (await recv_until(ws, "ack")).get("result"))
+    check("device.json sigue ahí", True, victim.exists())
+    try:
+        st.finish_order("../device")
+        raised = False
+    except ValueError:
+        raised = True
+    check("Store.finish_order rechaza ../", True, raised)
+    check("Store.order_statuses ignora ids inválidos", [], st.order_statuses("../device"))
+    check("Store.inbox ignora ids inválidos", None, st.inbox("../device"))
+    st._write(state / "sms" / "outbox" / "o_malo.json", {"id": "../device", "to": "+525511112222", "text": "x"})
+    check("pending_orders ignora una orden con id inválido", [], [o for o in st.pending_orders() if o.get("id") == "../device"])
+    (state / "sms" / "outbox" / "o_malo.json").unlink()
+
     expired = {"id": "o_" + "b" * 32, "to": "+525511112222", "text": "tarde", "expires_at": "2000-01-01T00:00:00Z"}
     st._write(state / "sms" / "outbox" / f"{expired['id']}.json", expired)
     await asyncio.sleep(1.6)

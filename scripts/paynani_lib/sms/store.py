@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import time
 from pathlib import Path
@@ -25,6 +26,22 @@ CODE_LENGTH = 8
 CODE_TTL_S = 600
 FAIL_WINDOW_S = 600
 FAIL_LIMIT = 10
+
+# Los ids que terminan en nombres de archivo. Validados aquí también, aunque la
+# pasarela ya los valide: el almacén no confía en quien lo llame (un order_id
+# "../device" borraba device.json; lo encontró Iris en #316).
+ORDER_ID = re.compile(r"^o_[0-9a-f]{32}$")
+MESSAGE_ID = re.compile(r"^[0-9a-f]{64}$")
+
+
+def valid_order_id(order_id) -> bool:
+    return bool(ORDER_ID.match(str(order_id or "")))
+
+
+def _check_message_id(message_id) -> str:
+    if not MESSAGE_ID.match(str(message_id or "")):
+        raise ValueError("id de mensaje inválido")
+    return str(message_id)
 
 
 def _sha256(text: str) -> str:
@@ -127,9 +144,11 @@ class Store:
 
     # --- SMS recibidos ------------------------------------------------------
     def inbox_path(self, message_id: str) -> Path:
-        return self.root / "inbox" / f"{message_id}.json"
+        return self.root / "inbox" / f"{_check_message_id(message_id)}.json"
 
     def inbox(self, message_id: str) -> dict | None:
+        if not MESSAGE_ID.match(str(message_id or "")):
+            return None
         try:
             return json.loads(self.inbox_path(message_id).read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -143,19 +162,28 @@ class Store:
         orders = []
         for path in sorted((self.root / "outbox").glob("o_*.json")):
             try:
-                orders.append(json.loads(path.read_text(encoding="utf-8")))
+                order = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
+            if valid_order_id(order.get("id")) and path.stem == order["id"]:
+                orders.append(order)
         return orders
 
     def finish_order(self, order_id: str) -> None:
+        if not valid_order_id(order_id):
+            raise ValueError("order_id inválido")
         try:
             (self.root / "outbox" / f"{order_id}.json").unlink()
         except FileNotFoundError:
             pass
 
     def append_status(self, record: dict) -> bool:
-        """Agrega un estado de orden. False si ese id de estado ya estaba (idempotente)."""
+        """
+        Agrega un estado de orden. False si ese id de estado ya estaba (idempotente).
+
+        Lee todo orders.jsonl para encontrar el id: O(n) por estado. Con el volumen
+        de un teléfono no importa; si crece, un índice de ids vistos lo resuelve.
+        """
         path = self.root / "orders.jsonl"
         sid = record.get("id")
         if sid and path.exists():
@@ -173,6 +201,8 @@ class Store:
         return True
 
     def order_statuses(self, order_id: str) -> list[dict]:
+        if not valid_order_id(order_id):
+            return []
         path = self.root / "orders.jsonl"
         out = []
         if path.exists():

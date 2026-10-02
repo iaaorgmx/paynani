@@ -285,8 +285,11 @@ antes, la app reenvía y la idempotencia evita el duplicado.
  "expires_at": "2026-10-02T03:40:00Z"}
 ```
 
-- `id` lo genera la pasarela (`o_` + 16 bytes al azar en hex). Es la llave de la orden
-  de principio a fin.
+- `id` lo genera la pasarela (`o_` + 16 bytes al azar en hex, `^o_[0-9a-f]{32}$`). Es la
+  llave de la orden de principio a fin, y cualquier otra forma se rechaza.
+- **La app deduplica por `id`.** Al reconectar, la pasarela vuelve a mandar las órdenes
+  que todavía no tienen ningún `sms.status`; la app no envía dos veces un `id` que ya
+  recibió, y contesta con el estado que ya conoce.
 - `sim_slot` es opcional; sin él se usa la SIM de envío predeterminada.
 - `text` tiene como máximo **1,000 caracteres**. Más largo, la pasarela no lo manda y
   `paynani sms send` sale con error `text_too_long`. La app lo divide con

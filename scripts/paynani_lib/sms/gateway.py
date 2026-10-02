@@ -54,22 +54,13 @@ def status_id(order_id: str, status: str) -> str:
 
 
 def roster_phones(path: Path) -> dict[str, str]:
-    """{e164: nombre}. Usa roster.roster_phones (SRV-2) si existe."""
-    func = getattr(roster_mod, "roster_phones", None)
-    if func is not None:
-        return dict(func(path))
-    # Respaldo hasta SRV-2: la columna Phone de las filas que roster_entries lee.
+    """{e164: nombre} de la columna Phone de roster.md (SRV-2, roster.py)."""
     out: dict[str, str] = {}
     try:
-        entries = roster_mod.roster_entries(path)
+        for entry in roster_mod.roster_phone_entries(path):
+            out.setdefault(entry["phone"], entry.get("name", ""))
     except OSError:
-        return out
-    for entry in entries:
-        cols = {k.lower(): v for k, v in (entry.get("columns") or {}).items()}
-        for raw in phone.split_cell(cols.get("phone", "")):
-            e164 = phone.to_e164(raw)
-            if e164:
-                out.setdefault(e164, entry.get("name", ""))
+        return {}
     return out
 
 
@@ -406,7 +397,7 @@ class Gateway:
 
     async def _sms_status(self, ws, msg) -> None:
         sid, oid, status = str(msg.get("id", "")), str(msg.get("order_id", "")), msg.get("status")
-        if not HEX64.match(sid) or not oid or status not in STATUSES:
+        if not HEX64.match(sid) or not store_mod.valid_order_id(oid) or status not in STATUSES:
             await self._error(ws, "missing_field", ref=sid[:80], detail="sms.status necesita id, order_id y status")
             await self._send(ws, {"type": "ack", "id": sid, "result": "rejected"})
             return
