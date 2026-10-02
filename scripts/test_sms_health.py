@@ -188,5 +188,29 @@ async def loop_test():
 
 check("serve() arranca el ciclo de salud y escribe el aviso", ["sms.gateway.offline"], asyncio.run(loop_test()))
 
+# --- la unidad de la pasarela (SRV-7) ------------------------------------------------------------
+home = Path(tempfile.mkdtemp())
+check("sin unidad instalada no hay sección de pasarela", None, healthcheck.sms_gateway_facts(home=home, system="Linux"))
+check("y no hay hallazgos", ([], []), healthcheck.sms_gateway_findings(None))
+unit = home / ".config" / "systemd" / "user" / "paynani-sms.service"
+unit.parent.mkdir(parents=True)
+unit.write_text("[Unit]\n")
+for state_name, expect in (("active", ([], [])), ("failed", (1, 0)), ("inactive", (1, 0)), ("unknown", (0, 1))):
+    healthcheck.unit_state = lambda name, _s=state_name: _s
+    facts = healthcheck.sms_gateway_facts(home=home, system="Linux")
+    found = healthcheck.sms_gateway_findings(facts)
+    got = found if expect == ([], []) else (len(found[0]), len(found[1]))
+    check(f"unidad instalada y {state_name}", expect, got)
+healthcheck.unit_state = lambda name: "failed"
+problem = healthcheck.sms_gateway_findings(healthcheck.sms_gateway_facts(home=home, system="Linux"))[0][0]
+check("el problema dice que la pasarela caída no puede avisar de sí misma y dónde mirar", True,
+      "paynani-sms.service is failed" in problem and "cannot report itself" in problem and "sms.err.log" in problem)
+agents = home / "Library" / "LaunchAgents"
+agents.mkdir(parents=True)
+(agents / "com.paynani.sms.plist").write_text("x")
+healthcheck.unit_state = lambda name: "inactive"
+mac = healthcheck.sms_gateway_facts(home=home, system="Darwin")
+check("en macOS busca el LaunchAgent y lo nombra por su etiqueta", ("com.paynani.sms", "inactive"), (mac["name"], mac["unit"]))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

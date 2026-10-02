@@ -271,6 +271,18 @@ systemctl --user restart paynani-idle.service
 systemctl --user restart paynani-dispatch.service
 ```
 
+If you installed the SMS gateway (`install.sh --with-sms`, INSTALL.md 5.1),
+restart it too. `scripts/version.sh --plan` names it when the upgrade touches
+what it runs, and only on a host that has it:
+
+```bash
+systemctl --user enable paynani-sms.service
+systemctl --user restart paynani-sms.service
+```
+
+An `install.sh --upgrade` keeps an installed gateway converged without the flag;
+add `--with-sms` to install it on a host that does not have it yet.
+
 With additional accounts (`MULTI_ACCOUNT.md`), restart their instances as well:
 
 ```bash
@@ -290,6 +302,10 @@ for label in com.paynani.idle com.paynani.dispatch com.paynani.logrotate; do
     launchctl enable "gui/$(id -u)/$label"
 done
 ```
+
+With the SMS gateway installed there is a fourth agent, `com.paynani.sms`:
+load and enable it in the loop above the same way, and `kickstart -k` it with
+the others.
 
 Then restart the listener and the dispatcher. `-k` stops the running process
 before starting it again; `com.paynani.logrotate` runs on a calendar and has

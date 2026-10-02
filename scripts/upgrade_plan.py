@@ -80,6 +80,11 @@ VERBS = ("restart", "reinstall-and-restart", "restart-runtime", "next-session",
 LISTENER = ("paynani-idle.service", "com.paynani.idle")
 LISTENER_INSTANCES = ("paynani-idle@*.service", "com.paynani.idle.*")
 DISPATCHER = ("paynani-dispatch.service", "com.paynani.dispatch")
+# The optional SMS gateway (SRV-7). A pattern, not a name: `restart` of a unit
+# that is not installed fails, and most hosts never install this one, so the
+# plan restarts whatever matches and nothing when nothing does (the same way the
+# per-account listeners are found).
+SMS_GATEWAY = ("paynani-sms*.service", "com.paynani.sms*")
 INSTALLER = None
 OPENCODE_PLUGIN = "python3 scripts/opencode_plugin.py --install"
 OPENCODE_RESTART = "OpenCode (close and reopen it)"
@@ -96,10 +101,11 @@ RULES = (
     (r"^scripts/openclaw_rules\.py$", "reinstall-and-restart", "OpenClaw standing rule (~/.openclaw/workspace/AGENTS.md)", None, None, {"openclaw"}, "python3 scripts/openclaw_rules.py --install"),
     # Long-running services.
     (r"^scripts/idle_listener\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
-    (r"^scripts/roster\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
+    (r"^scripts/roster\.py$", "restart", "listener and SMS gateway", "listener-all", "listener-all", None, None),
+    (r"^scripts/(sms_gateway\.py|paynani_lib/sms/(__init__|gateway|store|websocket)\.py)$", "restart", "SMS gateway", *SMS_GATEWAY, None, None),
     (r"^harness/dispatch\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
     (r"^harness/adapters/.*\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
-    (r"^harness/(event|paths|ledger|python_floor|phone)\.py$", "restart", "listener and dispatcher", "both", "both", None, None),
+    (r"^harness/(event|paths|ledger|python_floor|phone)\.py$", "restart", "listener, dispatcher and SMS gateway", "both", "both", None, None),
     # Read when a session starts or a watch is armed.
     (r"^harness/(session_start\.py|session_watch\.sh)$", "next-session", "session hook and watcher", None, None, {"claudecode", "codex"}, None),
     # Both services record this value at process start, and version_drift
@@ -316,9 +322,9 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
             continue
         if f["verb"] == "restart":
             if f["unit"] == "both":
-                units.extend([LISTENER, DISPATCHER])
+                units.extend([LISTENER, DISPATCHER, SMS_GATEWAY])
             elif f["unit"] == "listener-all":
-                units.extend([LISTENER, LISTENER_INSTANCES])
+                units.extend([LISTENER, LISTENER_INSTANCES, SMS_GATEWAY])
             elif f["unit"] == "all":
                 units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER])
             else:

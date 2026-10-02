@@ -39,6 +39,7 @@ Usage:
   scripts/install.sh --runtime claudecode [--upgrade|--uninstall] [--dry-run]
   scripts/install.sh --runtime codex [--upgrade|--uninstall] [--dry-run]
   scripts/install.sh --runtime opencode [--upgrade|--uninstall] [--dry-run]
+  scripts/install.sh --runtime RUNTIME [--upgrade] --with-sms     (adds the SMS gateway service)
                      [--upgrade|--uninstall] [--non-interactive]
                      [--notify-secret-file PATH --roster-secret-file PATH]
                      [--dry-run]
@@ -56,6 +57,9 @@ Options:
   --non-interactive          Never create or print route secrets
   --notify-secret-file PATH  Pre-provisioned Hermes notification-route secret
   --roster-secret-file PATH  Pre-provisioned Hermes roster-route secret
+  --with-sms                 Also install and supervise the SMS gateway (SMS_GATEWAY.md).
+                             Optional: without it nothing about SMS is installed, upgraded or
+                             removed unless this installer already owns the unit
   --dry-run                  Discover and plan without executing runtimes or changing host
   -h, --help                 Show this help
 
@@ -450,6 +454,15 @@ validate_container_chain() {
     printf 'inventory existing-container=%s policy=revalidate-before-write\n' "$target"
 }
 
+# The SMS gateway unit is optional. It is in play when this run asked for it
+# (--with-sms) or when this installer already owns it, so an upgrade or an
+# uninstall keeps handling a gateway that was installed earlier, and a host that
+# never asked for one never sees it. Needs owned_digests, so call it after
+# load_ownership_manifest.
+sms_enabled() {
+    ((with_sms)) || [[ -n "${owned_digests[$unit_dir/paynani-sms.service]+present}" ]]
+}
+
 set_managed_paths() {
     # The clone is the install: config, state, credentials, secrets and roster
     # all hang off it.
@@ -466,6 +479,7 @@ set_managed_paths() {
         "$unit_dir/paynani-dispatch.service"
         "$unit_dir/paynani-logrotate.service"
         "$unit_dir/paynani-logrotate.timer"
+        "$unit_dir/paynani-sms.service"
         "$config_dir/runtime.env"
         # Generated Hermes secrets remain installer-owned across an explicit
         # runtime migration so rollback can reuse them and uninstall can still
@@ -734,8 +748,12 @@ print_managed_inventory() {
         fi
     fi
 
-    for unit in paynani-idle.service paynani-idle@.service paynani-dispatch.service \
-        paynani-logrotate.service paynani-logrotate.timer; do
+    local -a plan_units=(paynani-idle.service paynani-idle@.service paynani-dispatch.service \
+        paynani-logrotate.service paynani-logrotate.timer)
+    if sms_enabled; then
+        plan_units+=(paynani-sms.service)
+    fi
+    for unit in "${plan_units[@]}"; do
         if ((unit_container_safe)); then
             classify_planned_artifact file "$unit_dir/$unit" "$ROOT/systemd/$unit"
         else
@@ -929,7 +947,7 @@ deactivate_owned_services() {
         return 0
     fi
     for unit in paynani-idle.service paynani-dispatch.service \
-        paynani-logrotate.timer; do
+        paynani-logrotate.timer paynani-sms.service; do
         unit_path="$unit_dir/$unit"
         [[ -n "${owned_digests[$unit_path]+present}" ]] || continue
         if "$discovered_systemctl" --user is-enabled --quiet "$unit" 2>/dev/null ||
@@ -1019,8 +1037,12 @@ initialize_ownership_manifest() {
 
 converge_runtime_filesystem() {
     local unit
-    for unit in paynani-idle.service paynani-idle@.service paynani-dispatch.service \
-        paynani-logrotate.service paynani-logrotate.timer; do
+    local -a converge_units=(paynani-idle.service paynani-idle@.service paynani-dispatch.service \
+        paynani-logrotate.service paynani-logrotate.timer)
+    if sms_enabled; then
+        converge_units+=(paynani-sms.service)
+    fi
+    for unit in "${converge_units[@]}"; do
         converge_artifact file "$unit_dir/$unit" "$ROOT/systemd/$unit" 0644
     done
     converge_artifact file "$config_dir/runtime.env" generated-runtime-config 0600
@@ -1114,15 +1136,20 @@ probe_hermes_routes() {
 
 verify_installed_units() {
     local systemd_analyze output
+    local -a verify_paths=(
+        "$unit_dir/paynani-idle.service"
+        "$unit_dir/paynani-idle@.service"
+        "$unit_dir/paynani-dispatch.service"
+        "$unit_dir/paynani-logrotate.service"
+        "$unit_dir/paynani-logrotate.timer"
+    )
+    if sms_enabled; then
+        verify_paths+=("$unit_dir/paynani-sms.service")
+    fi
     systemd_analyze=$(resolve_command systemd-analyze || true)
     [[ -n "$systemd_analyze" ]] || \
         die_config 'systemd-analyze executable not found; installed units were not activated'
-    if ! output=$("$systemd_analyze" verify \
-        "$unit_dir/paynani-idle.service" \
-        "$unit_dir/paynani-idle@.service" \
-        "$unit_dir/paynani-dispatch.service" \
-        "$unit_dir/paynani-logrotate.service" \
-        "$unit_dir/paynani-logrotate.timer" 2>&1); then
+    if ! output=$("$systemd_analyze" verify "${verify_paths[@]}" 2>&1); then
         printf '%s\n' "$output" >&2
         die_config 'systemd-analyze verify rejected the installed units; no service state was changed'
     fi
@@ -1224,8 +1251,12 @@ print_final_verification_report() {
     local unit label secret_path secret_mode
     printf 'verification_report_begin\n'
     printf 'verification_runtime=%s\n' "$runtime"
-    for unit in paynani-idle.service paynani-idle@.service paynani-dispatch.service \
-        paynani-logrotate.service paynani-logrotate.timer; do
+    local -a report_units=(paynani-idle.service paynani-idle@.service paynani-dispatch.service \
+        paynani-logrotate.service paynani-logrotate.timer)
+    if sms_enabled; then
+        report_units+=(paynani-sms.service)
+    fi
+    for unit in "${report_units[@]}"; do
         printf 'verification_unit=%s/%s validated=true\n' "$unit_dir" "$unit"
     done
     if [[ "$runtime" == hermes ]]; then
@@ -1295,8 +1326,11 @@ converge_required_services() {
     local unit
     "$discovered_systemctl" --user daemon-reload || \
         die_config 'systemctl --user daemon-reload failed; no service was enabled'
-    for unit in paynani-idle.service paynani-dispatch.service \
-        paynani-logrotate.timer; do
+    local -a service_units=(paynani-idle.service paynani-dispatch.service paynani-logrotate.timer)
+    if sms_enabled; then
+        service_units+=(paynani-sms.service)
+    fi
+    for unit in "${service_units[@]}"; do
         if "$discovered_systemctl" --user is-enabled --quiet "$unit" && \
            "$discovered_systemctl" --user is-active --quiet "$unit"; then
             if ((runtime_filesystem_changed)); then
@@ -1337,6 +1371,7 @@ upgrade=0
 uninstall=0
 non_interactive=0
 dry_run=0
+with_sms=0
 declare -A seen_options=()
 
 mark_option_once() {
@@ -1382,6 +1417,11 @@ while (($#)); do
             dry_run=1
             shift
             ;;
+        --with-sms)
+            mark_option_once "$1"
+            with_sms=1
+            shift
+            ;;
         -h|--help)
             usage
             exit "$EX_OK"
@@ -1397,6 +1437,10 @@ case "$runtime" in
     openclaw|hermes|claudecode|codex|opencode) ;;
     *) die_usage "unsupported runtime: $runtime" ;;
 esac
+
+if ((with_sms && uninstall)); then
+    die_usage '--with-sms does not apply to --uninstall: it removes the gateway unit when this installer owns it'
+fi
 
 if ((upgrade + uninstall > 1)); then
     die_usage '--upgrade and --uninstall are mutually exclusive'
