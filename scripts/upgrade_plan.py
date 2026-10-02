@@ -99,7 +99,7 @@ RULES = (
     (r"^scripts/roster\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
     (r"^harness/dispatch\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
     (r"^harness/adapters/.*\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
-    (r"^harness/(event|paths|ledger|python_floor)\.py$", "restart", "listener and dispatcher", "both", "both", None, None),
+    (r"^harness/(event|paths|ledger|python_floor|phone)\.py$", "restart", "listener and dispatcher", "both", "both", None, None),
     # Read when a session starts or a watch is armed.
     (r"^harness/(session_start\.py|session_watch\.sh)$", "next-session", "session hook and watcher", None, None, {"claudecode", "codex"}, None),
     # Both services record this value at process start, and version_drift
