@@ -636,12 +636,17 @@ def unattended_roster(ledger_path=None, now=None, days=None, exclude=()):
     return [(event_id, envelope) for _, event_id, envelope in out]
 
 
+_UNATTENDED_KINDS = {"sms.received": "SMS", "call.missed": "llamada perdida", "call.answered": "llamada contestada"}
+
+
 def unattended_line(event_id, envelope):
     sender = envelope.get("sender") or {}
     who = sender.get("name") or sender.get("address") or "?"
     if sender.get("name") and sender.get("address"):
         who = f"{sender['name']} <{sender['address']}>"
-    return f"{event_id}  {envelope.get('observed_at', '')}  {who} — {envelope.get('subject', '')}"
+    # An SMS or a call has no subject: say what it was instead of leaving a dangling dash.
+    what = envelope.get("subject") or _UNATTENDED_KINDS.get(envelope.get("event_type"), "")
+    return f"{event_id}  {envelope.get('observed_at', '')}  {who} — {what}"
 
 
 def settled_command(args):
