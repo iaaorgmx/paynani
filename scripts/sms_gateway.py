@@ -56,10 +56,12 @@ def main(argv=None) -> int:
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, stop.set)
         await stop.wait()
-        if gateway.conn is not None:
-            await gateway.conn.close(1001, "la pasarela se apaga")
         server.close()
-        await server.wait_closed()
+        await gateway.shutdown()
+        try:
+            await asyncio.wait_for(server.wait_closed(), 5)
+        except asyncio.TimeoutError:
+            pass
 
     asyncio.run(run())
     return 0

@@ -142,8 +142,12 @@ Se hace una vez por teléfono, desde la página de onboarding de paynani.
 | `410 code_expired` | El código venció o ya se usó |
 | `429 too_many_attempts` | Más de 10 códigos equivocados en 10 minutos **en total**. El emparejamiento queda bloqueado hasta generar un código nuevo. Es un tope global y no por dirección: detrás del túnel todas las peticiones llegan desde `127.0.0.1`, y un `X-Forwarded-For` se puede falsificar |
 
-**Revocar** un teléfono (desde el onboarding o con `paynani sms devices revoke
-<device_id>`) borra el hash del token y cierra su WebSocket con el código `4401`.
+**Revocar** un teléfono (desde `paynani sms pair --web` o con `paynani sms revoke`)
+borra el hash del token y cierra su WebSocket con el código `4401`. La revocación se
+hace desde otro proceso, así que la pasarela la nota en la siguiente revisión de la
+conexión (cada `heartbeat_s / 3`, 10 s por omisión) o con el siguiente mensaje del
+teléfono, lo que pase primero. Un mensaje que llega después de revocar no entra al
+diario y no recibe `ack`. Emparejar otro teléfono corta igual al anterior.
 
 ## 2. Conexión
 
