@@ -89,8 +89,8 @@ check("plist: sms_gateway.py de este clon, siempre vivo", (True, True, True),
        plist["KeepAlive"], plist["RunAtLoad"]))
 check("plist: registros sms.log y sms.err.log en state/", (str(state / "sms.log"), str(state / "sms.err.log")),
       (plist["StandardOutPath"], plist["StandardErrorPath"]))
-check("plist: el puerto y la URL del entorno de la instalación van al LaunchAgent", ("8771", "https://x.ngrok.io"),
-      (plist["EnvironmentVariables"]["PAYNANI_SMS_PORT"], plist["EnvironmentVariables"]["PAYNANI_SMS_PUBLIC_URL"]))
+check("plist: el puerto y la URL no se escriben en el LaunchAgent (los lee sms.env)", (False, False),
+      ("PAYNANI_SMS_PORT" in plist["EnvironmentVariables"], "PAYNANI_SMS_PUBLIC_URL" in plist["EnvironmentVariables"]))
 with mock.patch.object(m, "state_dir", lambda: state), mock.patch.object(m, "env_file", lambda: env_file), \
      mock.patch.dict(os.environ, {}, clear=False):
     os.environ.pop("PAYNANI_SMS_PORT", None)

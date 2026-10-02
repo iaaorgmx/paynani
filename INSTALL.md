@@ -783,25 +783,22 @@ systemctl --user daemon-reload
 systemctl --user enable --now paynani-sms.service
 ```
 
-The gateway listens on `127.0.0.1` only, on port **8770** unless you change it. The
-two settings live in `runtime.env` as comments; uncomment what you need and
-restart the unit:
+The gateway listens on `127.0.0.1` only, on port **8770** unless you change it.
+The settings go in `sms.env`, next to `runtime.env`, which is yours: the installer
+never creates, edits, records or removes it, so editing it does not stop a later
+`--upgrade` (hand-editing `runtime.env` does). Write only what you need:
 
 ```
-# PAYNANI_SMS_PORT=8770
-# PAYNANI_SMS_PUBLIC_URL=https://<tu túnel>
+PAYNANI_SMS_PORT=8770
+PAYNANI_SMS_PUBLIC_URL=https://<your tunnel>
 ```
 
-```bash
-systemctl --user restart paynani-sms.service
-```
-
-`runtime.env` belongs to the installer, so a later `install.sh --upgrade` reports
-a hand-edited copy as changed outside the installer and stops with the recovery it
-prints; put your lines back after it regenerates the file. On macOS there is no
-`EnvironmentFile`: the values are read from the environment of the
-`install.sh --with-sms` command and written into the LaunchAgent, so set them
-there (`PAYNANI_SMS_PORT=8771 scripts/install.sh --runtime <runtime> --with-sms`).
+The gateway, `scripts/paynani sms pair` and `scripts/paynani sms send` all read it
+themselves, on Linux and on macOS. A variable already set in the environment of
+the process wins over the file, and only `PAYNANI_SMS_PORT`,
+`PAYNANI_SMS_PUBLIC_URL` and `PAYNANI_SMS_DEFAULT_REGION` are read. After editing
+it, restart the gateway: `systemctl --user restart paynani-sms.service`, or on
+macOS `launchctl kickstart -k gui/$(id -u)/com.paynani.sms`.
 
 **The phone reaches the gateway through a tunnel you run yourself.** paynani does
 not start or supervise it: that takes a third-party binary and its credentials,
@@ -827,7 +824,7 @@ Each `curl` must answer `{"ok": true, "phone_connected": false}` (`false` until 
 phone connects). Anything else means the tunnel does not reach the gateway:
 check that the unit is active (`systemctl --user status paynani-sms.service`) and
 that the tunnel points at the same port. Put the tunnel's `https://` address in
-`PAYNANI_SMS_PUBLIC_URL`.
+`PAYNANI_SMS_PUBLIC_URL` in `sms.env`.
 
 **Verifying it.** `scripts/healthcheck.py` shows `sms gateway  paynani-sms.service
 active` and reports it as a problem when it is not: a stopped gateway cannot

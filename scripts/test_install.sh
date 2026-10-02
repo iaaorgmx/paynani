@@ -1051,6 +1051,10 @@ check_status 'a plain upgrade still does not install it' 0 --runtime codex --upg
     fail=$((fail + 1))
 }
 
+# sms.env is the user's: the installer never creates, edits, records or removes it.
+printf 'PAYNANI_SMS_PORT=8771\n' >"$clone/sms.env"
+sms_env_bytes=$(<"$clone/sms.env")
+plain_runtime_env=$(<"$clone/runtime.env")
 check_status '--with-sms adds the gateway to a converged install' 10 --runtime codex --with-sms
 [[ -f "$sms_unit" && "$(file_mode "$sms_unit")" == 644 ]] || {
     printf 'FAIL --with-sms did not write the unit as a 0644 file\n'
@@ -1076,13 +1080,14 @@ grep -q -- "$sms_unit" "$FAKE_SYSTEMD_LOG" || {
     printf 'FAIL the SMS unit was not verified and enabled\n'
     fail=$((fail + 1))
 }
-[[ "$(<"$clone/runtime.env")" == *'PAYNANI_RUNTIME=codex'* &&
-   "$(<"$clone/runtime.env")" == *'# PAYNANI_SMS_PORT=8770'* &&
-   "$(<"$clone/runtime.env")" == *'# PAYNANI_SMS_PUBLIC_URL=https://<tu túnel>'* &&
-   "$(grep -vc '^#' "$clone/runtime.env")" == 1 ]] || {
-    printf 'FAIL runtime.env should keep its line and add the two SMS settings as comments only\n'
+[[ "$(<"$clone/runtime.env")" == "$plain_runtime_env" ]] || {
+    printf 'FAIL --with-sms changed runtime.env: it must be identical to a plain install\n'
     fail=$((fail + 1))
 }
+if grep -q 'sms.env' "$clone/install.manifest"; then
+    printf 'FAIL the ownership manifest records the user'"'"'s sms.env\n'
+    fail=$((fail + 1))
+fi
 [[ "$LAST_OUTPUT" == *"verification_unit=$sandbox/.config/systemd/user/paynani-sms.service validated=true"* ]] || {
     printf 'FAIL the verification report does not list the SMS unit\n'
     fail=$((fail + 1))
@@ -1090,8 +1095,12 @@ grep -q -- "$sms_unit" "$FAKE_SYSTEMD_LOG" || {
 check_status 'the SMS gateway install is idempotent' 0 --runtime codex --with-sms
 
 check_status 'a later upgrade without the flag keeps handling the owned gateway' 0 --runtime codex --upgrade
-[[ -f "$sms_unit" && "$(<"$clone/runtime.env")" == *'# PAYNANI_SMS_PORT=8770'* ]] || {
-    printf 'FAIL an upgrade without --with-sms dropped the owned SMS unit or its runtime.env lines\n'
+[[ -f "$sms_unit" && "$(<"$clone/runtime.env")" == "$plain_runtime_env" ]] || {
+    printf 'FAIL an upgrade without --with-sms dropped the owned SMS unit or changed runtime.env\n'
+    fail=$((fail + 1))
+}
+[[ "$(cat "$clone/sms.env" 2>/dev/null)" == "$sms_env_bytes" ]] || {
+    printf 'FAIL install or upgrade touched the user'"'"'s sms.env\n'
     fail=$((fail + 1))
 }
 
@@ -1101,6 +1110,11 @@ check_status 'uninstall removes the owned SMS unit and stops it' 10 --runtime co
     printf 'FAIL uninstall left the SMS unit behind or did not stop it\n'
     fail=$((fail + 1))
 }
+[[ "$(cat "$clone/sms.env" 2>/dev/null)" == "$sms_env_bytes" ]] || {
+    printf 'FAIL uninstall removed or changed the user'"'"'s sms.env\n'
+    fail=$((fail + 1))
+}
+rm -f "$clone/sms.env"
 reset_install; rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
 
 printf '

@@ -36,9 +36,8 @@ LABELS = {
 # LaunchAgent exists and belongs to this checkout.
 SMS_LABEL = "com.paynani.sms"
 ALL_LABELS = {**LABELS, "sms": SMS_LABEL}
-# launchd has no EnvironmentFile: these are read from the environment of the
-# install command and written into the LaunchAgent.
-SMS_ENV_VARS = ("PAYNANI_SMS_PORT", "PAYNANI_SMS_PUBLIC_URL", "PAYNANI_SMS_DEFAULT_REGION")
+# The port and the tunnel address are not written into the LaunchAgent: the gateway
+# reads them from the user's sms.env itself (paynani_lib/sms/config.py).
 
 
 def die(message: str, code: int = EX_CONFIG) -> None:
@@ -123,14 +122,13 @@ def plist_for(name: str, python: str, runtime: str, runtime_bin: str | None = No
             "StandardErrorPath": str(state / "dispatch.err.log"),
         }
     if name == "sms":
-        sms_env = {**env, **{k: os.environ[k] for k in SMS_ENV_VARS if os.environ.get(k)}}
         return {
             "Label": SMS_LABEL,
             "ProgramArguments": [python, str(ROOT / "scripts" / "sms_gateway.py")],
             "WorkingDirectory": str(ROOT),
             "RunAtLoad": True,
             "KeepAlive": True,
-            "EnvironmentVariables": sms_env,
+            "EnvironmentVariables": env,
             "StandardOutPath": str(state / "sms.log"),
             "StandardErrorPath": str(state / "sms.err.log"),
         }

@@ -554,16 +554,6 @@ migrate_ownership_manifest() {
 
 render_artifact() {
     local destination=$1 source=$2
-    if [[ "$source" == generated-runtime-config && -z "${rendering_base_env:-}" ]] && sms_enabled; then
-        # The usual generated file, then the two SMS settings as comments: an
-        # install without the gateway renders exactly what it always did.
-        rendering_base_env=1 render_artifact "$destination" "$source"
-        printf '%s\n' \
-            '# SMS gateway (SMS_GATEWAY.md). Uncomment to change, then: systemctl --user restart paynani-sms' \
-            '# PAYNANI_SMS_PORT=8770' \
-            '# PAYNANI_SMS_PUBLIC_URL=https://<tu túnel>'
-        return
-    fi
     if [[ "$source" == generated-runtime-config ]]; then
         # Record the credentials file when this install was told which one it is.
         # On a host with two harnesses the resolution is deliberately ambiguous,
