@@ -16,7 +16,7 @@ paynani CLI.
     paynani roster explain --from ADDRESS [--header NAME=VALUE]
     paynani roster migrate --plan|--apply [--yes]
     paynani roster apply --file CONTACTS.json [--dry-run] [--yes]
-    paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--roster PATH] [--yes]
+    paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--phone NUMBER] [--roster PATH] [--yes]
     paynani roster remove ADDRESS [--roster PATH] [--yes]
     paynani paths [--json]
     paynani doctor [--json]
@@ -146,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     roster_add.add_argument("address")
     roster_add.add_argument("--type", help='e.g. "Human" or "AI Agent" (only if roster.md has a Type column).')
     roster_add.add_argument("--github", help="GitHub login (only if roster.md has a GitHub column).")
+    roster_add.add_argument("--phone", help="Phone number(s), comma separated, for SMS (only if roster.md has a Phone column). Stored in E.164.")
     roster_add.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
     roster_add.add_argument("--roster", help="An additional account's roster, as `paynani account add` prints it "
                                              "(e.g. rosters/ventas.md). Default: roster.md.")
