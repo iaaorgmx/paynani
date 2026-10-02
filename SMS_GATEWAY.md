@@ -459,6 +459,18 @@ cada orden como `sms.out` y la saca de `outbox/` con el primer `sms.status`. Una
 orden vencida se anota `expired` sin mandarse. `paynani sms status <id>` lee
 `orders.jsonl`.
 
+`paynani sms send [--wait S] [--ttl MIN] [--sim N] <número> <texto…>` (SRV-3):
+
+- Sale con **código 2**, sin crear nada, si el número no es un teléfono, no está en la
+  columna `Phone` de `roster.md`, el texto está vacío (`empty_text`) o pasa de 1,000
+  caracteres (`text_too_long`). Con **código 1** si no hay teléfono emparejado.
+- Escribe `outbox/<id>.json` y anota el estado `queued` en `orders.jsonl` (el único
+  estado que escribe la CLI; los demás los escribe la pasarela cuando la app reporta).
+- Imprime el `id`, avisa si el teléfono no está conectado y espera hasta `--wait`
+  segundos (20 por omisión; 0 vuelve al instante) el primer estado final. Código 0 con
+  `sent` o `delivered`, 1 con `failed`, `rejected` o `expired`. Si en ese tiempo no hay
+  respuesta, sale con 0 y dice que la orden sigue en cola.
+
 ## 10. Versiones
 
 Este documento describe el protocolo **1**. Un campo nuevo y opcional no cambia la

@@ -197,6 +197,14 @@ def main(argv: list[str] | None = None) -> int:
     sms_pair.add_argument("--replace", action="store_true", help="Revoke the paired phone first.")
     sms_sub.add_parser("devices", help="Show the paired phone, without its token.")
     sms_sub.add_parser("revoke", help="Revoke the paired phone.")
+    sms_send = sms_sub.add_parser("send", help="Send an SMS to a roster contact through the paired phone.")
+    sms_send.add_argument("number", help="Recipient phone number; it must be in roster.md.")
+    sms_send.add_argument("text", nargs="+", help="Message text (max 1000 characters).")
+    sms_send.add_argument("--wait", type=int, default=20, help="Seconds to wait for the phone's status (default 20; 0 returns at once).")
+    sms_send.add_argument("--ttl", type=int, default=15, help="Minutes the order may wait for a connected phone (default 15).")
+    sms_send.add_argument("--sim", type=int, default=None, help="SIM slot to send from.")
+    sms_status = sms_sub.add_parser("status", help="Show the states of an SMS order.")
+    sms_status.add_argument("order_id")
 
     account_parser = subparsers.add_parser(
         "account", help="Additional mail accounts in accounts.json (#276)."
@@ -306,6 +314,10 @@ def main(argv: list[str] | None = None) -> int:
             return sms_cli.run_devices(args)
         if args.sms_command == "revoke":
             return sms_cli.run_revoke(args)
+        if args.sms_command == "send":
+            return sms_cli.run_send(args)
+        if args.sms_command == "status":
+            return sms_cli.run_status(args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)

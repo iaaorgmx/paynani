@@ -169,6 +169,12 @@ class Store:
                 orders.append(order)
         return orders
 
+    def queue_order(self, order: dict) -> None:
+        """Deja la orden en outbox/ (atómico, 600). Lo usa `paynani sms send`."""
+        if not valid_order_id(order.get("id")):
+            raise ValueError("order_id inválido")
+        self._write(self.root / "outbox" / f"{order['id']}.json", order)
+
     def finish_order(self, order_id: str) -> None:
         if not valid_order_id(order_id):
             raise ValueError("order_id inválido")
