@@ -77,6 +77,134 @@ def envelope(from_addr="Someone <someone@example.org>", subject="Asunto",
     return msg
 
 
+def check_phone_numbers():
+    """SRV-2: the `Phone` column, normalised and matched the way mail is."""
+    # How a number is normalised (the table in SMS_GATEWAY.md and its edges) is
+    # tested where it lives, in test_phone.py. Here: what the roster does with it.
+    saved = os.environ.pop("PAYNANI_SMS_DEFAULT_REGION", None)
+    try:
+        os.environ["PAYNANI_SMS_DEFAULT_REGION"] = " us "
+        with tempfile.TemporaryDirectory() as envdir:
+            by_env = pathlib.Path(envdir) / "roster.md"
+            by_env.write_text("| Name | Email | Phone |\n|---|---|---|\n"
+                              "| Ana | ana@example.org | (555) 000-1111 |\n", encoding="utf-8")
+            check(roster_mod.roster_phones(by_env) == {"+15550001111"},
+                  "the roster reads a national number in the region from PAYNANI_SMS_DEFAULT_REGION")
+            check(roster_mod.roster_phones(by_env, "MX") == {"+525550001111"},
+                  "a region passed by the caller wins over the environment")
+    finally:
+        os.environ.pop("PAYNANI_SMS_DEFAULT_REGION", None)
+        if saved is not None:
+            os.environ["PAYNANI_SMS_DEFAULT_REGION"] = saved
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = pathlib.Path(tmpdir)
+        roster = tmp / "roster.md"
+        roster.write_text(
+            "# 1. Approved contacts\n"
+            "| Name | Email | Type | Phone |\n"
+            "|---|---|---|---|\n"
+            "| Ana López | ana@example.org | Human | +52 1 55 1111 2222, 55 3333 4444 |\n"
+            "| Solo Teléfono | | Human | (555) 000-1111 |\n"
+            "| Sin Teléfono | sin@example.org | Human | |\n"
+            "| Basura | basura@example.org | AI Agent | AMAZON, 26262, no es número |\n"
+            "| Fuera de región | lejos@example.org | Human | +33 6 12 34 56 78 |\n",
+            encoding="utf-8")
+        phones = roster_mod.roster_phones(roster, "MX")
+        check(phones == {"+525511112222", "+525533334444", "+525550001111", "+33612345678"},
+              f"the Phone column parsed to {sorted(phones)}")
+        check("+15550001111" not in phones,
+              "a national number is read in the region's country: under MX it is not a US number")
+        check(roster_mod.roster_phones(roster, "US") == {"+525511112222", "+15533334444", "+15550001111", "+33612345678"},
+              "the same roster read under region US")
+
+        entries = roster_mod.roster_phone_entries(roster, "US")
+        solo = [e for e in entries if e["phone"] == "+15550001111"]
+        check(len(solo) == 1 and solo[0]["name"] == "Solo Teléfono" and solo[0]["address"] == "",
+              "a row with a phone and no email is a valid contact, with an empty address")
+        mx = roster_mod.roster_phone_entries(roster, "MX")
+        two = [e["phone"] for e in mx if e["address"] == "ana@example.org"]
+        check(sorted(two) == ["+525511112222", "+525533334444"],
+              "an email row keeps its address next to its phones, several in one cell separated by commas")
+        check(not any(e["name"] == "Basura" for e in entries),
+              "an alphanumeric sender, a short code and text in the cell contribute nobody")
+
+        # Mail is exactly what it was: a phone-only row has no address, a Phone column changes nothing.
+        check(roster_addresses(roster) == {"ana@example.org", "sin@example.org", "basura@example.org",
+                                           "lejos@example.org"},
+              f"mail addresses are untouched by the Phone column: {sorted(roster_addresses(roster))}")
+        check(not any(e["address"] == "" for e in roster_entries(roster)),
+              "roster_entries() still lists only contacts with an email")
+
+        # Exact matching, never a prefix or a substring, and `None` never matches.
+        check(roster_mod.phone_listed("+525511112222", phones), "a listed number matches")
+        check(not roster_mod.phone_listed("+52551111222", phones), "a prefix of a listed number does not match")
+        check(not roster_mod.phone_listed("+5255111122223", phones), "a listed number plus a digit does not match")
+        check(not roster_mod.phone_listed(None, phones), "None (an alphanumeric sender) never matches")
+        check(not roster_mod.phone_listed("", phones), "an empty number never matches")
+
+        # The explanation says why, for the person debugging a message that was not tagged.
+        why = roster_mod.explain_phone("+52 1 55 1111 2222", phones, entries, "MX")
+        check(why["matched"] and why["e164"] == "+525511112222" and why["entry"]["name"] == "Ana López",
+              f"explain_phone matches the legacy +521 form to its contact: {why}")
+        why = roster_mod.explain_phone("AMAZON", phones, entries, "MX")
+        check(not why["matched"] and why["e164"] is None and "alphanumeric" in why["reason"],
+              f"explain_phone says an alphanumeric sender can never match: {why}")
+        why = roster_mod.explain_phone("5599998888", phones, entries, "MX")
+        check(not why["matched"] and why["e164"] == "+525599998888" and "not on the roster" in why["reason"],
+              f"explain_phone says an unlisted number is not on the roster: {why}")
+
+        # `paynani roster list` shows the numbers next to their contact, and a phone-only
+        # row is a contact too. A roster with neither still says there is nobody.
+        import contextlib
+        import io
+        from paynani_lib import roster_cli
+
+        def listed(path):
+            real = roster_cli.roster_file
+            roster_cli.roster_file = lambda: path
+            out, err = io.StringIO(), io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    roster_cli.run_list(None)
+            finally:
+                roster_cli.roster_file = real
+            listed.stderr = err.getvalue()
+            return out.getvalue()
+
+        shown = listed(roster)
+        problems = roster_mod.roster_phone_problems(roster, "MX")
+        check({(x["name"], x["value"]) for x in problems} == {("Basura", "AMAZON"), ("Basura", "26262"),
+                                                              ("Basura", "no es número")},
+              f"roster_phone_problems names the cells that are not numbers: {problems}")
+        check(roster_mod.roster_phone_problems(tmp / "missing.md") == [], "a missing roster has no phone problems")
+        listed(roster)
+        check("Basura has a Phone value that is not a phone number and is ignored: 'AMAZON'" in listed.stderr,
+              f"roster list warns about a Phone value it ignores: {listed.stderr!r}")
+        check("Ana López <ana@example.org> (Human) phone: +525511112222, +525533334444" in shown,
+              f"roster list shows an email contact's numbers: {shown!r}")
+        check("Solo Teléfono <no email> (Human) phone: +525550001111" in shown,
+              f"roster list shows a contact that has only a phone: {shown!r}")
+        check("Sin Teléfono <sin@example.org> (Human)\n" in shown and "Sin Teléfono <sin@example.org> (Human) phone" not in shown,
+              "roster list adds nothing to a contact with no numbers")
+        empty = tmp / "empty.md"
+        empty.write_text("| Name | Email | Phone |\n|---|---|---|\n", encoding="utf-8")
+        check(listed(empty).strip() == "No contacts on the roster.", "an empty roster still says so")
+
+        # Rosters written before the column existed keep working exactly as they did.
+        legacy = tmp / "legacy.md"
+        legacy.write_text("| Name | Email | Type |\n|---|---|---|\n"
+                          "| Ana | ana@example.org | Human |\n", encoding="utf-8")
+        check(roster_mod.roster_phones(legacy) == set() and roster_mod.roster_phone_entries(legacy) == [],
+              "a roster with no Phone column has no phones")
+        check(roster_mod.roster_phones(tmp / "missing.md") == set(), "a missing roster has no phones")
+
+        # Not a roster column to guess at: add_contact leaves Phone blank, like any column it does not know.
+        ok, new_text = roster_mod.add_contact(roster.read_text(encoding="utf-8"), "Nuevo", "nuevo@example.org")
+        check(ok and "| Nuevo | nuevo@example.org |  |  |" in new_text,
+              f"add_contact leaves the Phone cell blank: {new_text.splitlines()[-1]!r}")
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = pathlib.Path(tmpdir)
@@ -482,6 +610,8 @@ def main():
             check(got == value, f"{name} is {value} after keepalive(), got {got}")
     finally:
         probe.close()
+
+    check_phone_numbers()
 
     print("listener tests passed")
     return 0

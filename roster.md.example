@@ -26,6 +26,17 @@
 #
 # The Type column is informational. Being on this list is the whole permission:
 # a row is exactly as authorised whether it says Human, AI Agent, or nothing.
+#
+# Phone numbers, for the SMS gateway (SMS_GATEWAY.md). To let a contact reach the
+# agent by text message, add a `Phone` column to the table below and put their
+# number in E.164, with the `+` and the country code: +525511112222. Several
+# numbers go in one cell, separated by commas. It works like the address does: a
+# number on this list is an instruction and may be answered, any other number is
+# only reported. Matching is exact on the normalised number, never a prefix, and an
+# alphanumeric sender such as AMAZON or a short code never matches anyone. A row
+# may have a phone and no email. A number written without `+` is read in the
+# country set by PAYNANI_SMS_DEFAULT_REGION in runtime.env (MX if it is not set).
+# The Phone column is optional: a roster without it works exactly as before.
 
 # 1. Approved contacts; any other contact/email address will be ignored.
 

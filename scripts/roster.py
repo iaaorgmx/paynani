@@ -17,8 +17,12 @@ from __future__ import annotations
 
 import pathlib
 import re
+import sys
 from email.message import Message
 from email.utils import getaddresses
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "harness"))
+import phone  # noqa: E402  (E.164 compartido con la pasarela SMS, SRV-1)
 
 DEFAULT_ROSTER = pathlib.Path(__file__).resolve().parents[1] / "roster.md"
 
@@ -177,6 +181,117 @@ def _addresses_from_text(text: str) -> set[str]:
                 break
     allowed.discard("")
     return allowed
+
+
+# --- Phone numbers (the SMS gateway) -------------------------------------------
+#
+# A contact may also be reachable by phone. The `Phone` column of the contacts
+# table holds one E.164 number or several, separated by commas, and it works for
+# the SMS gateway exactly as the address does for mail: a number on the roster is
+# an instruction and may be answered, any other number is only reported. The
+# rules are SMS_GATEWAY.md's "Números de teléfono"; the app applies the same ones
+# and both run that file's table of cases, so a number never means one thing here
+# and another on the phone.
+#
+# The rules live in one place, harness/phone.py (`to_e164`, `split_cell`), which
+# the SMS gateway uses too, so a number on the roster and the same number arriving
+# by text can never normalise differently. This file only reads the column and
+# decides who is listed.
+#
+# Phones are matched on the *normalised* number, exactly. Nothing here is a
+# substring or a prefix match, and a sender that is not a number at all (an
+# alphanumeric name like AMAZON, or a bank's 5-digit short code) normalises to
+# `None`, which never matches anyone: that is what keeps a spoofable sender id
+# from borrowing a contact's identity.
+#
+# The bash half (`roster_extract.sh`, which feeds `send.sh`) is deliberately not
+# taught about phones: `send.sh` writes mail, and SMS is only ever sent from
+# Python (`paynani sms send`). Reimplementing the normalisation in awk would be
+# exactly the second copy that drifted once already (#91), so
+# `test_roster_agree.sh` pins instead that a Phone column and a phone-only row
+# change nothing about the addresses the two halves agree on.
+
+PHONE_COLUMN = "phone"
+
+
+def roster_phone_entries(path: pathlib.Path, region: str | None = None) -> list[dict]:
+    """One `{name, phone, address, type}` per valid number in the `Phone` column.
+
+    `address` is the row's email, or `""` for a row that has only a phone, which
+    is a valid contact. A number that does not normalise is skipped: it can never
+    be a sender, so ignoring it only makes the list stricter. A table without a
+    `Phone` column yields nothing, and a roster written before the column
+    existed keeps working exactly as it did.
+    """
+    out: list[dict] = []
+    headers: list[str] = []
+    for fields, is_header, _ in _rows(_read(path), "contacts"):
+        if is_header:
+            headers = [canonical_column(f) for f in fields]
+            continue
+        if PHONE_COLUMN not in headers:
+            continue
+        columns = {name: value.strip() for name, value in zip(headers, fields) if name}
+        address = next((normalise(f) for f in fields if "@" in normalise(f)), "")
+        for raw in phone.split_cell(columns.get(PHONE_COLUMN, "")):
+            number = phone.to_e164(raw, region)
+            if number:
+                out.append({"name": columns.get("name", ""), "phone": number,
+                            "address": address, "type": columns.get("type", "")})
+    return out
+
+
+def roster_phone_problems(path: pathlib.Path, region: str | None = None) -> list[dict]:
+    """The `Phone` cells that do not read as a phone number, as `{name, value}`.
+
+    Ignoring a bad cell is right for matching, but silent: the contact is then
+    unreachable by SMS and nothing says why, the same trap the address parser
+    documents above. Whatever lists the roster should show these.
+    """
+    problems: list[dict] = []
+    headers: list[str] = []
+    for fields, is_header, _ in _rows(_read(path), "contacts"):
+        if is_header:
+            headers = [canonical_column(f) for f in fields]
+            continue
+        if PHONE_COLUMN not in headers:
+            continue
+        columns = {name: value.strip() for name, value in zip(headers, fields) if name}
+        for raw in phone.split_cell(columns.get(PHONE_COLUMN, "")):
+            if not phone.to_e164(raw, region):
+                problems.append({"name": columns.get("name", ""), "value": raw})
+    return problems
+
+
+def roster_phones(path: pathlib.Path, region: str | None = None) -> set[str]:
+    """Every E.164 number the roster authorises. Missing file or column means none."""
+    return {entry["phone"] for entry in roster_phone_entries(path, region)}
+
+
+def phone_listed(e164: str | None, phones: set[str]) -> bool:
+    """True only for a real E.164 number that is on the list. `None` never is."""
+    return bool(e164) and e164 in phones
+
+
+def explain_phone(raw: str, phones: set[str], entries=(), region: str | None = None) -> dict:
+    """Explain the decision phone_listed() makes for a sender, without side effects.
+
+    The phone counterpart of explain_sender(): `raw` is what Android reported,
+    `phones` and `entries` come from roster_phones() and roster_phone_entries().
+    """
+    number = phone.to_e164(raw, region)
+    answer = {"matched": False, "raw": raw, "e164": number, "kind": "none", "reason": ""}
+    if number is None:
+        answer["reason"] = (f"{raw!r} is not a phone number (an alphanumeric sender or a short "
+                            "code), so it can never be on the roster")
+        return answer
+    if number in phones:
+        entry = next((e for e in entries if e.get("phone") == number), None)
+        answer.update({"matched": True, "kind": "contact", "entry": entry,
+                       "reason": f"{number} is a contact in roster.md"})
+        return answer
+    answer["reason"] = f"{number} is not on the roster"
+    return answer
 
 
 def roster_entries(path: pathlib.Path) -> list[dict]:
