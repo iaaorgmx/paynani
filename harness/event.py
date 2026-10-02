@@ -506,6 +506,46 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
     return record
 
 
+GATEWAY_OFFLINE = "sms.gateway.offline"
+GATEWAY_ONLINE = "sms.gateway.online"
+
+
+def gateway_health_event(*, kind, device_id, local_time, offline_for_s, last_seen_local="", observed_at=None):
+    """
+    The phone stopped (or resumed) reporting (SMS_GATEWAY.md §7, SRV-5).
+
+    The same envelope and path as everything else, on purpose: a phone that went
+    quiet is exactly the failure that looks like nobody having written. No
+    `roster_match`: this is about the install, not about a sender.
+    """
+    if kind not in (GATEWAY_OFFLINE, GATEWAY_ONLINE):
+        raise ValueError(f"tipo de evento de la pasarela desconocido: {kind}")
+    observed_at = observed_at or _now()
+    minutes, seconds = divmod(int(offline_for_s), 60)
+    span = f"{minutes} min {seconds} s" if minutes else f"{seconds} s"
+    if kind == GATEWAY_OFFLINE:
+        line = (f"[sms-gateway {local_time}] el teléfono {device_id} lleva {span} sin conexión"
+                f" (último latido {last_seen_local or 'nunca'}). Los SMS que lleguen esperan en el"
+                " teléfono; los envíos pendientes vencen si no vuelve a tiempo")
+        tag = "offline"
+    else:
+        line = f"[sms-gateway {local_time}] el teléfono {device_id} volvió a conectarse tras {span}"
+        tag = "online"
+    eid = f"sms:{device_id}:gateway-{tag}:{hashlib.sha256(observed_at.encode()).hexdigest()[:12]}"
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": kind,
+        "event_id": eid,
+        "source": "paynani",
+        "account": f"sms:{device_id}",
+        "device_id": device_id,
+        "observed_at": observed_at,
+        "offline_for_s": int(offline_for_s),
+        "inspection_command": "scripts/paynani status",
+        "notification_text": f"{line} [scripts/paynani status]",
+    }
+
+
 def call_event(*, kind, device_id, call_id, e164, raw_caller, caller_name, started_at,
                roster_match, local_time, duration_s=None, observed_at=None):
     """Una llamada perdida o contestada (DEC-4). La saliente no se reporta."""

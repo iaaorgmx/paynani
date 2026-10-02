@@ -42,6 +42,7 @@ from adapters import ACCEPTED, CONFIG   # noqa: E402
 from paths import (env_file, harness_env_files, install_root,   # noqa: E402
                    recorded_env, repo_root, roster, runtime_env, state_dir)
 from roster import notifiers, roster_addresses   # noqa: E402
+from paynani_lib.sms import health as sms_health   # noqa: E402
 
 # Taken at import, before runtime_facts() calls load_runtime_env() and layers
 # runtime.env into os.environ. After that call, PAYNANI_ENV is in the environment
@@ -959,6 +960,25 @@ def roster_facts():
     return out
 
 
+def sms_phone_facts():
+    """
+    The paired phone, if any (SRV-5). An install without SMS has nothing here, and
+    that is not a fault: the section is absent rather than green.
+    """
+    return sms_health.phone_facts(state_dir())
+
+
+def sms_phone_warnings(phone):
+    """A paired phone that is not reporting. Not a problem: the install itself is fine."""
+    if phone is None or phone["online"]:
+        return []
+    since = ("has never connected" if phone["last_seen_age_s"] is None
+             else f"last reported {phone['last_seen_age_s']}s ago")
+    return [f"the paired phone {phone['device_id']} is offline ({since}): texts and calls are not "
+            "arriving, and queued sends wait or expire. If the gateway is running, the phone or its "
+            "network is the problem; `paynani status` shows the last heartbeat"]
+
+
 def himalaya_facts():
     """
     Whether the account `send.sh` sends with exists.
@@ -1235,6 +1255,8 @@ def assess(facts):
         warnings.append(f"credentials at {config['env']} are mode {config['env_mode']}, "
                         "which is more readable than they should be")
 
+    warnings.extend(sms_phone_warnings(facts.get("sms_phone")))
+
     # The last two are a different kind of failure from everything above, and
     # they are problems rather than warnings for one reason: mail does not move.
     # Above, something that should be running is not. Here, everything runs
@@ -1437,6 +1459,9 @@ def render(facts, problems, warnings):
     out.append(f"credentials  {config['env']}"
                + (f"  mode {config['env_mode']}" if config["env_present"] else "  MISSING"))
     out.append(f"             from {config['env_source']}")
+    if facts.get("sms_phone") is not None:
+        for i, line in enumerate(sms_health.describe(facts["sms_phone"])):
+            out.append(("sms phone    " if i == 0 else "             ") + line)
     ros = facts["roster"]
     out.append(f"roster       {ros['path']}"
                + (f"  {ros['addresses']} address(es)" if ros["present"] else "  MISSING"))
@@ -1518,6 +1543,7 @@ def main(argv=None):
         "roster": roster_facts(),
         "himalaya": himalaya_facts(),
         "git": git_facts(),
+        "sms_phone": sms_phone_facts(),
     }
     facts["dispatcher_unit"] = facts["dispatcher"]["unit"]
     facts["python"] = python_facts(facts["listener"], facts["dispatcher"])

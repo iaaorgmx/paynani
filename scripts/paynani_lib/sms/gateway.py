@@ -11,6 +11,7 @@ Sólo biblioteca estándar (asyncio).
 from __future__ import annotations
 
 import asyncio
+import calendar
 import hashlib
 import json
 import re
@@ -38,6 +39,8 @@ SUBPROTOCOL = "paynani-sms.v1"
 HEARTBEAT_S = 30
 HELLO_TIMEOUT_S = 10
 MAX_OUT_PER_HOUR = 60
+OFFLINE_AFTER_S = 90       # 3 x HEARTBEAT_S: SMS_GATEWAY.md §7
+HEALTH_EVERY_S = 5
 MAX_HEAD = 8192
 MAX_PAIR_BODY = 8192
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -47,6 +50,14 @@ STATUSES = {"accepted", "sent", "delivered", "failed", "rejected", "expired"}
 def log(line: str) -> None:
     """Para el operador. Nunca texto de SMS, tokens ni códigos."""
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} sms-gateway: {line}", flush=True)
+
+
+def _epoch(stamp) -> float | None:
+    """Un `YYYY-MM-DDTHH:MM:SSZ` de store.now_utc() como segundos, o None."""
+    try:
+        return float(calendar.timegm(time.strptime(str(stamp), "%Y-%m-%dT%H:%M:%SZ")))
+    except (TypeError, ValueError):
+        return None
 
 
 def status_id(order_id: str, status: str) -> str:
@@ -67,7 +78,8 @@ def roster_phones(path: Path) -> dict[str, str]:
 class Gateway:
     def __init__(self, state_dir: Path, journal: Path, roster_path: Path, *,
                  public_url: str = "", heartbeat_s: int = HEARTBEAT_S,
-                 max_out_per_hour: int = MAX_OUT_PER_HOUR):
+                 max_out_per_hour: int = MAX_OUT_PER_HOUR,
+                 offline_after_s: int = OFFLINE_AFTER_S, health_every_s: float = HEALTH_EVERY_S):
         self.store = store_mod.Store(state_dir)
         self.journal = Path(journal)
         self.ledger_path = ledger.path_for(self.journal)
@@ -75,8 +87,15 @@ class Gateway:
         self.public_url = public_url.rstrip("/")
         self.heartbeat_s = heartbeat_s
         self.max_out_per_hour = max_out_per_hour
+        self.offline_after_s = offline_after_s
+        self.health_every_s = health_every_s
         self.conn: WebSocket | None = None
         self.last_frame = 0.0
+        # Un proceso nuevo no tiene a nadie conectado, diga lo que diga device.json
+        # de la vida anterior; y el teléfono tiene `offline_after_s` para volver
+        # antes de que se diga que no está.
+        self.started_at = time.time()
+        self.store.touch(connected=False)
 
     # --- HTTP -------------------------------------------------------------
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -172,6 +191,64 @@ class Gateway:
         })
         log(f"teléfono emparejado: {device_id}")
         await self._respond(writer, 201, {"device_id": device_id, "token": token, "ws": self._ws_url(headers)})
+
+    # --- salud del teléfono (SRV-5) ------------------------------------------
+    def health_tick(self, now: float | None = None) -> str | None:
+        """
+        Una revisión: escribe `sms.gateway.offline` cuando el teléfono lleva
+        `offline_after_s` sin conexión, y `sms.gateway.online` cuando vuelve.
+        Cada uno una sola vez por apagón: la marca vive en device.json, así que
+        reiniciar la pasarela no repite el aviso. Si el evento no se pudo
+        escribir, la marca no se pone y se reintenta en la siguiente revisión.
+        Devuelve "offline", "online" o None.
+        """
+        now = time.time() if now is None else now
+        device = self.store.device()
+        if not device:
+            return None
+        device_id = device.get("device_id", "")
+        local = time.strftime("%H:%M:%S", time.localtime(now))
+        if self.conn is not None:
+            if not device.get("offline_notified"):
+                return None
+            began = _epoch(device.get("offline_at")) or now
+            envelope = ev.gateway_health_event(kind=ev.GATEWAY_ONLINE, device_id=device_id, local_time=local,
+                                               offline_for_s=max(0, now - began))
+            if self._publish(envelope):
+                self.store.touch(offline_notified=False, offline_at=None)
+                return "online"
+            return None
+        if device.get("offline_notified"):
+            return None
+        seen = _epoch(device.get("last_seen")) or _epoch(device.get("paired_at")) or 0.0
+        since = max(seen, self.started_at)
+        if now - since < self.offline_after_s:
+            return None
+        last = time.strftime("%H:%M:%S", time.localtime(seen)) if _epoch(device.get("last_seen")) else ""
+        envelope = ev.gateway_health_event(kind=ev.GATEWAY_OFFLINE, device_id=device_id, local_time=local,
+                                           offline_for_s=now - since, last_seen_local=last)
+        if self._publish(envelope):
+            self.store.touch(offline_notified=True, offline_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since)))
+            return "offline"
+        return None
+
+    def _publish(self, envelope: dict) -> bool:
+        try:
+            ev.append(self.journal, envelope)
+            ledger.observed(self.ledger_path, envelope)
+        except (OSError, ValueError) as exc:
+            log(f"no se pudo escribir el evento de salud ({exc}); se reintenta")
+            return False
+        print(envelope["notification_text"], flush=True)
+        return True
+
+    async def health_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.health_every_s)
+            try:
+                self.health_tick()
+            except Exception as exc:  # noqa: BLE001 -- la vigilancia no debe morir por un error suelto
+                log(f"revisión de salud falló: {exc}")
 
     # --- WebSocket ----------------------------------------------------------
     async def _websocket(self, reader, writer, headers) -> None:
@@ -420,5 +497,6 @@ class Gateway:
 
 async def serve(gateway: Gateway, host: str, port: int):
     server = await asyncio.start_server(gateway.handle, host, port, limit=MAX_HEAD)
+    gateway.health_task = asyncio.ensure_future(gateway.health_loop())
     log(f"escuchando en {host}:{port}")
     return server
