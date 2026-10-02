@@ -52,9 +52,50 @@ en medio, salvo el túnel que se elija para que el teléfono llegue a esa máqui
   `wss://` y `https://`. La pasarela escucha en `127.0.0.1` y nunca en una interfaz
   pública. Sin túnel, el teléfono sólo llega en la misma red local y se usa `ws://`
   únicamente para pruebas.
-- **Varios teléfonos por agente.** Cada teléfono emparejado tiene su `device_id` y
-  aparece como una cuenta propia (`sms:<device_id>`), igual que una cuenta de correo
-  en [MULTI_ACCOUNT.md](MULTI_ACCOUNT.md). La primera versión se prueba con uno.
+- **Un teléfono por agente en esta versión** (DEC-3). Igual que se hizo con el
+  correo, primero funciona bien con uno solo; varios teléfonos se consideran después,
+  ya probado. Emparejar un teléfono nuevo pide revocar antes el actual. El
+  `device_id` ya viaja en los mensajes y en la cuenta (`sms:<device_id>`) para que
+  sumar teléfonos después no cambie el protocolo.
+- **El roster es `roster.md`**, el mismo del correo, con su columna `Phone`.
+
+## Números de teléfono
+
+Todo número se guarda y se compara en **E.164** (`+` y sólo dígitos). La biblioteca
+estándar de Python no trae `phonenumbers`, así que estas reglas son las que aplican
+**las dos partes** (la app y paynani), con la región por omisión
+`PAYNANI_SMS_DEFAULT_REGION` de `runtime.env` (`MX` si no está):
+
+1. Se quitan espacios, guiones, puntos y paréntesis.
+2. `00` al inicio equivale a `+`.
+3. **México:** `+521` seguido de 10 dígitos se convierte en `+52` y los mismos 10
+   dígitos. Es el `1` de los móviles que se dejó de usar en 2019 y que todavía
+   circula, por ejemplo en WhatsApp. Con región `MX`, 10 dígitos sin `+` son `+52`
+   y esos 10.
+4. Con región `US` o `CA`, 10 dígitos son `+1` y esos 10, y 11 dígitos que empiezan
+   con `1` son `+` y esos 11.
+5. Lo que ya empieza con `+` sólo pasa por las reglas 1 y 3.
+6. **Códigos cortos** (de 3 a 6 dígitos, los de bancos y servicios) y **remitentes
+   alfanuméricos** (`AMAZON`, `O'Shop`) no son E.164: su `e164` es `null`, se
+   reportan tal cual y **nunca** coinciden con el roster.
+
+| Entrada | Región | E.164 |
+|---|---|---|
+| `55 1111 2222` | MX | `+525511112222` |
+| `+52 1 55 1111 2222` | MX | `+525511112222` |
+| `0052 55 1111-2222` | MX | `+525511112222` |
+| `(555) 000-1111` | US | `+15550001111` |
+| `1 555 000 1111` | US | `+15550001111` |
+| `+15550001111` | MX | `+15550001111` |
+| `26262` | MX | `null` (código corto) |
+| `AMAZON` | MX | `null` (alfanumérico) |
+
+Esta tabla es el caso de prueba compartido: `test_roster.sh` en paynani y las pruebas
+de la app la corren completa.
+
+**En `roster.md`** la columna `Phone` acepta varios números separados por coma (por
+ejemplo `+525511112222, 55 3333 4444`). Cada uno se normaliza con estas reglas al
+leer el roster.
 
 ## 1. Emparejamiento
 
@@ -75,7 +116,7 @@ Se hace una vez por teléfono, desde la página de onboarding de paynani.
 
    {"code": "K7QW2MXP",
     "device": {"model": "Pixel 6", "android": "16", "app_version": "1.0"},
-    "sims": [{"slot": 0, "number": "+5215512345678"}]}
+    "sims": [{"slot": 0, "number": "+525512345678"}]}
    ```
 
    `number` puede venir en `null`: muchas SIM no exponen su número.
@@ -95,7 +136,7 @@ Se hace una vez por teléfono, desde la página de onboarding de paynani.
 | `201` | Emparejado |
 | `400 bad_request` | Falta `code` o el JSON no es válido |
 | `410 code_expired` | El código venció o ya se usó |
-| `429 too_many_attempts` | Más de 5 códigos equivocados en 10 minutos desde la misma dirección |
+| `429 too_many_attempts` | Más de 10 códigos equivocados en 10 minutos **en total**. El emparejamiento queda bloqueado hasta generar un código nuevo. Es un tope global y no por dirección: detrás del túnel todas las peticiones llegan desde `127.0.0.1`, y un `X-Forwarded-For` se puede falsificar |
 
 **Revocar** un teléfono (desde el onboarding o con `paynani sms devices revoke
 <device_id>`) borra el hash del token y cierra su WebSocket con el código `4401`.
@@ -120,7 +161,7 @@ Lo primero que manda la app:
 
 ```json
 {"type": "hello", "protocol": 1, "device_id": "d_3f9a1c", "app_version": "1.0",
- "sims": [{"slot": 0, "number": "+5215512345678"}],
+ "sims": [{"slot": 0, "number": "+525512345678"}],
  "pending": {"in": 3, "status": 0}}
 ```
 
@@ -128,7 +169,7 @@ La pasarela contesta:
 
 ```json
 {"type": "welcome", "protocol": 1, "server_time": "2026-10-02T03:10:00Z",
- "heartbeat_s": 30, "allowed": ["+5215511112222", "+15550001111"], "max_out_per_hour": 60}
+ "heartbeat_s": 30, "allowed": ["+525511112222", "+15550001111"], "max_out_per_hour": 60}
 ```
 
 - `allowed` es la lista de teléfonos de `roster.md`. La app **sólo** envía SMS a esos
@@ -157,8 +198,8 @@ se cae la conexión, se reenvía con el **mismo `id`**.
 
 ```json
 {"type": "sms.in", "id": "9f2c…(64 hex)",
- "from": {"e164": "+5215511112222", "raw": "+5215511112222"},
- "sim": {"slot": 0, "number": "+5215512345678"},
+ "from": {"e164": "+525511112222", "raw": "+525511112222"},
+ "sim": {"slot": 0, "number": "+525512345678"},
  "text": "Hola, ¿tienen mesa para 4 hoy?",
  "sent_at": "2026-10-02T03:09:41-06:00",
  "received_at": "2026-10-02T03:09:44-06:00",
@@ -190,15 +231,15 @@ crea otro evento.
 
 ```json
 {"type": "call.missed", "id": "…(64 hex)",
- "from": {"e164": "+5215511112222", "raw": "5511112222"},
- "sim": {"slot": 0, "number": "+5215512345678"},
+ "from": {"e164": "+525511112222", "raw": "5511112222"},
+ "sim": {"slot": 0, "number": "+525512345678"},
  "started_at": "2026-10-02T03:20:05-06:00"}
 ```
 
 ```json
 {"type": "call.answered", "id": "…(64 hex)",
- "from": {"e164": "+5215511112222", "raw": "5511112222"},
- "sim": {"slot": 0, "number": "+5215512345678"},
+ "from": {"e164": "+525511112222", "raw": "5511112222"},
+ "sim": {"slot": 0, "number": "+525512345678"},
  "started_at": "2026-10-02T03:25:10-06:00", "duration_s": 184}
 ```
 
@@ -226,7 +267,7 @@ antes, la app reenvía y la idempotencia evita el duplicado.
 ### `sms.out`: enviar un SMS
 
 ```json
-{"type": "sms.out", "id": "o_6b1e…", "to": "+5215511112222",
+{"type": "sms.out", "id": "o_6b1e…", "to": "+525511112222",
  "text": "Sí, les apartamos mesa a las 8.", "sim_slot": 0,
  "expires_at": "2026-10-02T03:40:00Z"}
 ```
@@ -234,15 +275,27 @@ antes, la app reenvía y la idempotencia evita el duplicado.
 - `id` lo genera la pasarela (`o_` + 16 bytes al azar en hex). Es la llave de la orden
   de principio a fin.
 - `sim_slot` es opcional; sin él se usa la SIM de envío predeterminada.
-- Si la orden llega después de `expires_at`, la app no la envía y contesta `expired`.
+- `text` tiene como máximo **1,000 caracteres**. Más largo, la pasarela no lo manda y
+  `paynani sms send` sale con error `text_too_long`. La app lo divide con
+  `SmsManager.divideMessage` y reporta en `parts` cuántos SMS fueron.
+- `expires_at` se compara con el reloj **de la pasarela**: la app calcula la
+  diferencia entre su reloj y `server_time` del `welcome` y la aplica, para no
+  depender de que la hora del teléfono esté bien. Si ya venció, no envía y contesta
+  `expired`.
 
 ### `sms.status`: qué pasó con el envío
 
 La app contesta a cada `sms.out`, en este orden, con lo que vaya sabiendo:
 
 ```json
-{"type": "sms.status", "id": "o_6b1e…", "status": "sent", "at": "2026-10-02T03:31:12-06:00", "parts": 1}
+{"type": "sms.status", "id": "…(64 hex)", "order_id": "o_6b1e…", "status": "sent",
+ "at": "2026-10-02T03:31:12-06:00", "parts": 1}
 ```
+
+Una orden produce **varios** `sms.status`, así que cada uno lleva su propio `id`:
+`id = hex(sha256(order_id + "\n" + status))`. El `ack` y la idempotencia van por ese
+`id`, y `order_id` dice a qué orden pertenece. Así `sent` y `delivered` de la misma
+orden no se confunden ni uno descarta al otro como `duplicate`.
 
 | `status` | Significado |
 |---|---|
@@ -262,8 +315,8 @@ estado no se pierde si se cae la conexión.
 
 1. Normaliza el número a E.164. Si no está en `roster.md`, sale con **código 2** sin
    tocar la red, igual que `send.sh`.
-2. Si hay más de un teléfono emparejado, se elige con `--device <device_id>`; sin él
-   se usa el predeterminado.
+2. Se manda por el teléfono emparejado. Cuando se agreguen más teléfonos
+   (DEC-3), se elegirá con `--device <device_id>`.
 3. Crea la orden, la anota en el ledger y la manda si el teléfono está conectado. Si
    no lo está, la orden **espera** hasta `expires_at` (por omisión 15 minutos) y
    después queda `expired`. En los dos casos se informa en pantalla, no en silencio.
@@ -283,6 +336,7 @@ estado no se pierde si se cae la conexión.
 | `unsupported_protocol` | `hello.protocol` distinto | Se cierra con `4400` |
 | `not_allowed` | Número fuera del roster | Sigue abierta |
 | `rate_limited` | Se pasó `max_out_per_hour` | Sigue abierta |
+| `text_too_long` | `text` de más de 1,000 caracteres | Sigue abierta |
 
 **Códigos de cierre propios:** `4400` protocolo, `4401` token revocado o inválido,
 `4409` otra conexión del mismo teléfono la reemplazó. `1001` se usa cuando la
@@ -299,9 +353,9 @@ camino aparte. Ejemplo de `sms.received`:
  "event_id": "sms:d_3f9a1c:9f2c…", "source": "paynani",
  "account": "sms:d_3f9a1c",
  "observed_at": "2026-10-02T09:09:45Z", "sent_at": "2026-10-02T09:09:41Z",
- "sender": {"name": "Ana López", "address": "+5215511112222"},
+ "sender": {"name": "Ana López", "address": "+525511112222"},
  "roster_match": true,
- "notification_text": "[sms 03:09:45, roster] Ana López +5215511112222: Hola, ¿tienen mesa para 4 hoy? [paynani event show sms:d_3f9a1c:9f2c…]",
+ "notification_text": "[sms 03:09:45, roster] Ana López +525511112222: Hola, ¿tienen mesa para 4 hoy? [paynani event show sms:d_3f9a1c:9f2c…]",
  "provider_id": "sms:9f2c…"}
 ```
 
@@ -318,7 +372,19 @@ camino aparte. Ejemplo de `sms.received`:
 - `roster_match` compara el **E.164 exacto** contra la columna `Phone` del roster. Un
   remitente alfanumérico nunca coincide.
 - `sms.gateway.offline` y `online` son de la pasarela, no de una persona: no llevan
-  `roster_match` y siempre se le muestran al agente.
+  `roster_match` y siempre se le muestran al agente. Para que una conexión inestable
+  no inunde al agente: a lo más un `offline` cada 10 minutos, y `online` sólo si
+  estuvo fuera de línea más de 2 minutos.
+
+**El texto del SMS no es confiable** y `session_watch.sh` imprime una línea por
+evento, así que en `notification_text`:
+
+- se quitan saltos de línea y caracteres de control, y el extracto se corta a
+  **160 caracteres**. Un SMS no puede fabricar una línea falsa como
+  `[mail …, roster]`;
+- si `roster_match` es `false`, **no va el texto**, sólo el remitente y «mensaje de
+  un número fuera del roster». `paynani event show --body` se niega a mostrarlo, igual
+  que hoy con el correo de un remitente no reconocido.
 
 ## 7. Lo que no se permite que falle en silencio
 
