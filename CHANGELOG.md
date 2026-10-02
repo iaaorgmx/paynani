@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.10.0 (2026-10-02)
+
+**SMS y llamadas: el agente recibe y contesta mensajes de texto con el número real
+de un teléfono Android.** Desde 0.9.1, 12 PRs: #314 a #324 y #326, de Metis e
+Iris, más el de esta release. Con un teléfono que corre PaynaniApp, emparejado con
+esta máquina, los SMS y las llamadas de ese número llegan al agente igual que el
+correo: una línea por evento, con la etiqueta `roster` cuando el número está en
+`roster.md`. El agente contesta con `paynani sms send`. Todo es **opcional**: sin
+teléfono emparejado no cambia nada, ni siquiera se abre un puerto. Sin requisitos
+nuevos: himalaya **v2.x** y Python **3.10** o mayor, como en 0.9.1. El APK de la
+app va adjunto a esta release.
+
+- **El protocolo** (#314). `SMS_GATEWAY.md` describe cómo se empareja el
+  teléfono, cómo habla con la pasarela por WebSocket, qué manda en cada caso
+  (`sms.in`, `call.missed`, `call.answered`, `sms.status`) y qué recibe
+  (`sms.out`). Cada mensaje tiene un `id` estable y la pasarela confirma con un
+  `ack` sólo después de escribir el evento, así que un corte no pierde ni repite
+  nada.
+- **Los números de teléfono en E.164** (#315). `harness/phone.py` normaliza los
+  números de la misma forma para el roster y para la pasarela: `+521` pasa a
+  `+52`, los códigos cortos y los remitentes alfanuméricos no son números, y la
+  región sale del país de la SIM o de `PAYNANI_SMS_DEFAULT_REGION` (MX por
+  omisión).
+- **La pasarela** (#316). `scripts/sms_gateway.py`, sólo con la biblioteca
+  estándar, escucha nada más en `127.0.0.1`; el teléfono llega por un túnel https
+  (ngrok o cloudflared). Escribe `sms.received`, `call.missed` y `call.answered`
+  en `events.jsonl` con el mismo sobre que el correo. El texto completo de un SMS
+  se lee con `paynani event show <id> --body`, sólo si el número está en el
+  roster. `paynani sms pair`, `sms devices` y `sms revoke` manejan el
+  emparejamiento.
+- **La columna `Phone` del roster** (#317, #321). Un contacto puede tener uno o
+  varios números, separados por coma. Una fila sólo con teléfono, sin correo, es
+  un contacto válido; esa fila se escribe a mano, porque `roster add` todavía pide
+  el correo. `paynani roster add … --phone` agrega uno y rechaza un
+  número que ya es de otro contacto. Un roster sin la columna funciona igual que
+  antes.
+- **Contestar** (#318). `paynani sms send <número> "<texto>"` sale con código 2,
+  sin crear nada, si el número no está en el roster, igual que `send.sh`.
+  Espera hasta `--wait` segundos el estado del teléfono: 0 con `sent` o
+  `delivered`, 1 con `failed`, `rejected` o `expired`, y **3 si el teléfono
+  todavía no confirmó**, para que un agente no lo dé por enviado.
+  `paynani sms status <id>` muestra cada estado.
+- **Emparejar desde el navegador** (#319). `paynani sms pair --web` abre la página
+  local del onboarding con el QR, generado con la biblioteca estándar, y la
+  dirección y el código en texto; muestra el teléfono emparejado y permite
+  revocarlo.
+- **Las líneas en todos los runtimes** (#322). OpenClaw recibe con un SMS del
+  roster la instrucción de leerlo y contestarlo; Codex trata el texto de un SMS
+  como no confiable, igual que un correo; `AGENTS.md` dice qué hacer con
+  `[sms …, roster]` y con las llamadas.
+- **La salud del teléfono** (#323). Si el teléfono pasa 90 s sin latir, la
+  pasarela escribe **una** vez `sms.gateway.offline`, y `sms.gateway.online`
+  cuando vuelve. `paynani status` y `healthcheck` muestran el último latido y
+  las órdenes en cola.
+- **Instalar la pasarela como servicio** (#324). `install.sh --with-sms`
+  (y su equivalente en macOS) instala `paynani-sms.service` o `com.paynani.sms`.
+  Sin la bandera no se instala nada. El puerto y la dirección del túnel van en
+  `sms.env`, junto a `runtime.env`: el instalador nunca toca ese archivo.
+  `INSTALL.md` §5.1 trae las recetas de ngrok y cloudflared.
+- **Revocar corta al teléfono conectado, y SIGTERM apaga siempre** (#326). Antes,
+  un teléfono revocado seguía escribiendo eventos mientras su conexión siguiera
+  abierta, y una conexión colgada impedía que la pasarela terminara con SIGTERM.
+  Los dos los encontró Andy en la prueba de punta a punta (QA-4).
+- **El titular en `LICENSE`** es ahora la razón social completa, «Inteligencia
+  Artificial Aplicada en México ONG», la misma que en PaynaniApp. La licencia
+  sigue siendo MIT.
+- **Puerto 8770 por omisión** (#320). La pasarela ya no usa el 8765, que es el de
+  la página local del onboarding y de `sms pair --web`.
+
+### Si actualizas desde 0.9.1
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.10.0
+python3 scripts/upgrade_plan.py --from v0.9.1     # y haz lo que imprima
+```
+
+El plan pide **el instalador** (`scripts/install.sh --runtime <tu runtime>
+--upgrade`), porque cambió, y reiniciar el listener y el dispatcher. Sin
+`--with-sms` el instalador no agrega la pasarela ni cambia `runtime.env`. Si no
+vas a usar SMS, con eso terminas.
+
+Para usar SMS: corre el instalador con `--with-sms`, escribe `sms.env` con el
+puerto y la dirección de tu túnel (`INSTALL.md` §5.1), agrega la columna `Phone`
+a tu roster, instala la app en el teléfono y empareja con
+`paynani sms pair --web`.
+
+En macOS, `upgrade_plan.py` todavía no puede hacer el plan (#291): el mismo
+`git pull`, `python3 scripts/install_macos.py --upgrade` y `launchctl kickstart -k`
+de `com.paynani.idle`, `com.paynani.dispatch` y cada `com.paynani.idle.<id>`.
+
 ## 0.9.1 (2026-09-30)
 
 **Correcciones pequeñas después de 0.9.0, y la documentación al día.** Desde
