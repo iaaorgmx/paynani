@@ -223,9 +223,13 @@ def roster_phone_entries(path: pathlib.Path, region: str | None = None) -> list[
     `Phone` column yields nothing, and a roster written before the column
     existed keeps working exactly as it did.
     """
+    return _phone_entries_from_text(_read(path), region)
+
+
+def _phone_entries_from_text(text: str, region: str | None = None) -> list[dict]:
     out: list[dict] = []
     headers: list[str] = []
-    for fields, is_header, _ in _rows(_read(path), "contacts"):
+    for fields, is_header, _ in _rows(text, "contacts"):
         if is_header:
             headers = [canonical_column(f) for f in fields]
             continue
@@ -360,10 +364,12 @@ _KNOWN_COLUMNS = {
     "address": "address",
     "type": "type",
     "github": "github",
+    "phone": "phone",
 }
 
 
-def add_contact(text: str, name: str, address: str, *, type_: str = "", github: str = "") -> tuple[bool, str]:
+def add_contact(text: str, name: str, address: str, *, type_: str = "", github: str = "",
+                phone_cell: str = "") -> tuple[bool, str]:
     """
     Add one row to the contacts table.
 
@@ -395,12 +401,30 @@ def add_contact(text: str, name: str, address: str, *, type_: str = "", github: 
 
     lower_headers = [h.strip().lower() for h in header_fields]
     canonical_headers = [canonical_column(h) for h in header_fields]
+    phones = ""
+    if phone_cell.strip():
+        numbers = []
+        for raw in phone.split_cell(phone_cell):
+            number = phone.to_e164(raw)
+            if number is None:
+                return False, (f"{raw!r} is not a phone number. Write it in E.164, "
+                               "for example +525511112222")
+            if number not in numbers:
+                numbers.append(number)
+        taken = {e["phone"]: e["name"] for e in _phone_entries_from_text(text)}
+        for number in numbers:
+            if number in taken:
+                return False, f"{number} is already the phone of {taken[number] or 'another contact'}"
+        if PHONE_COLUMN not in canonical_headers:
+            return False, ("roster.md's contacts table has no Phone column; add one by hand first "
+                           "(see roster.md.example)")
+        phones = ", ".join(numbers)
     if github and "github" not in lower_headers:
         return False, "roster.md's contacts table has no GitHub column; add one by hand first"
     if type_ and "type" not in canonical_headers:
         return False, "roster.md's contacts table has no Type column; add one by hand first"
 
-    provided = {"name": name, "address": address, "type": type_, "github": github}
+    provided = {"name": name, "address": address, "type": type_, "github": github, "phone": phones}
     cells = []
     for raw_column in header_fields:
         column = canonical_column(raw_column)
