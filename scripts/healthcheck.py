@@ -42,6 +42,7 @@ from adapters import ACCEPTED, CONFIG   # noqa: E402
 from paths import (env_file, harness_env_files, install_root,   # noqa: E402
                    recorded_env, repo_root, roster, runtime_env, state_dir)
 from roster import notifiers, roster_addresses   # noqa: E402
+from paynani_lib.sms import health as sms_health   # noqa: E402
 
 # Taken at import, before runtime_facts() calls load_runtime_env() and layers
 # runtime.env into os.environ. After that call, PAYNANI_ENV is in the environment
@@ -85,6 +86,8 @@ LISTENER_UNIT = "paynani-idle.service"
 DISPATCH_UNIT = "paynani-dispatch.service"
 LISTENER_LAUNCHD_LABEL = "com.paynani.idle"
 DISPATCH_LAUNCHD_LABEL = "com.paynani.dispatch"
+SMS_UNIT = "paynani-sms.service"
+SMS_LAUNCHD_LABEL = "com.paynani.sms"
 
 # Long enough that a slow delivery is not a fault, short enough that a queue
 # nobody is draining is noticed within a working session.
@@ -169,6 +172,7 @@ def unit_state(unit):
         labels = {
             LISTENER_UNIT: LISTENER_LAUNCHD_LABEL,
             DISPATCH_UNIT: DISPATCH_LAUNCHD_LABEL,
+            SMS_UNIT: SMS_LAUNCHD_LABEL,
         }
         return launchd_state(labels.get(unit, unit))
     try:
@@ -959,6 +963,58 @@ def roster_facts():
     return out
 
 
+def sms_gateway_facts(home=None, system=None):
+    """
+    Whether the optional SMS gateway service is installed and running (SRV-7).
+
+    Absent unless an installer put it there (`install.sh --with-sms`): an install
+    without a phone has nothing to check. When it is installed it is expected to
+    run, and a dead gateway cannot report itself (SMS_GATEWAY.md §7), so this is
+    the only place that notices.
+    """
+    home = Path.home() if home is None else Path(home)
+    if (system or platform.system()) == "Darwin":
+        installed = (home / "Library" / "LaunchAgents" / f"{SMS_LAUNCHD_LABEL}.plist").is_file()
+    else:
+        installed = (home / ".config" / "systemd" / "user" / SMS_UNIT).is_file()
+    if not installed:
+        return None
+    return {"unit": unit_state(SMS_UNIT), "name": SMS_LAUNCHD_LABEL if (system or platform.system()) == "Darwin" else SMS_UNIT}
+
+
+def sms_gateway_findings(gateway):
+    """(problems, warnings) for `sms_gateway_facts()`."""
+    if gateway is None:
+        return [], []
+    if gateway["unit"] == "unknown":
+        return [], [f"the SMS gateway {gateway['name']} cannot be queried on this host "
+                    "(no observable service manager); its state is unknown, not stopped"]
+    if gateway["unit"] != "active":
+        return [f"the SMS gateway {gateway['name']} is {gateway['unit']}: texts and calls are "
+                "not arriving and nothing else will say so, because a stopped gateway cannot "
+                "report itself. See state/sms.err.log"], []
+    return [], []
+
+
+def sms_phone_facts():
+    """
+    The paired phone, if any (SRV-5). An install without SMS has nothing here, and
+    that is not a fault: the section is absent rather than green.
+    """
+    return sms_health.phone_facts(state_dir())
+
+
+def sms_phone_warnings(phone):
+    """A paired phone that is not reporting. Not a problem: the install itself is fine."""
+    if phone is None or phone["online"]:
+        return []
+    since = ("has never connected" if phone["last_seen_age_s"] is None
+             else f"last reported {phone['last_seen_age_s']}s ago")
+    return [f"the paired phone {phone['device_id']} is offline ({since}): texts and calls are not "
+            "arriving, and queued sends wait or expire. If the gateway is running, the phone or its "
+            "network is the problem; `paynani status` shows the last heartbeat"]
+
+
 def himalaya_facts():
     """
     Whether the account `send.sh` sends with exists.
@@ -1235,6 +1291,11 @@ def assess(facts):
         warnings.append(f"credentials at {config['env']} are mode {config['env_mode']}, "
                         "which is more readable than they should be")
 
+    gateway_problems, gateway_warnings = sms_gateway_findings(facts.get("sms_gateway"))
+    problems.extend(gateway_problems)
+    warnings.extend(gateway_warnings)
+    warnings.extend(sms_phone_warnings(facts.get("sms_phone")))
+
     # The last two are a different kind of failure from everything above, and
     # they are problems rather than warnings for one reason: mail does not move.
     # Above, something that should be running is not. Here, everything runs
@@ -1437,6 +1498,11 @@ def render(facts, problems, warnings):
     out.append(f"credentials  {config['env']}"
                + (f"  mode {config['env_mode']}" if config["env_present"] else "  MISSING"))
     out.append(f"             from {config['env_source']}")
+    if facts.get("sms_gateway") is not None:
+        out.append(f"sms gateway  {facts['sms_gateway']['name']}  {facts['sms_gateway']['unit']}")
+    if facts.get("sms_phone") is not None:
+        for i, line in enumerate(sms_health.describe(facts["sms_phone"])):
+            out.append(("sms phone    " if i == 0 else "             ") + line)
     ros = facts["roster"]
     out.append(f"roster       {ros['path']}"
                + (f"  {ros['addresses']} address(es)" if ros["present"] else "  MISSING"))
@@ -1518,6 +1584,8 @@ def main(argv=None):
         "roster": roster_facts(),
         "himalaya": himalaya_facts(),
         "git": git_facts(),
+        "sms_phone": sms_phone_facts(),
+        "sms_gateway": sms_gateway_facts(),
     }
     facts["dispatcher_unit"] = facts["dispatcher"]["unit"]
     facts["python"] = python_facts(facts["listener"], facts["dispatcher"])

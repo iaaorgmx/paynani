@@ -69,9 +69,11 @@ Manual equivalent:
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.paynani.idle.plist 2>/dev/null || true
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.paynani.dispatch.plist 2>/dev/null || true
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.paynani.logrotate.plist 2>/dev/null || true
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.paynani.sms.plist 2>/dev/null || true
 rm -f ~/Library/LaunchAgents/com.paynani.idle.plist
 rm -f ~/Library/LaunchAgents/com.paynani.dispatch.plist
 rm -f ~/Library/LaunchAgents/com.paynani.logrotate.plist
+rm -f ~/Library/LaunchAgents/com.paynani.sms.plist
 ```
 
 Credentials, roster, state, journal, cursor and logs are preserved unless you
@@ -87,13 +89,16 @@ systemctl --user list-unit-files | grep -i paynani
 ```
 
 A full install has four: `idle.service`, `dispatch.service`, `logrotate.service`
-and `logrotate.timer`. The logrotate *service* is typically `static`; it has no
+and `logrotate.timer`, and a fifth, `sms.service`, if you installed the SMS gateway
+with `--with-sms`. The logrotate *service* is typically `static`; it has no
 `[Install]` section, so `disable` does nothing and it is simply deleted with the
 rest. That is expected, not an error.
 
 ```bash
 systemctl --user stop    paynani-idle.service paynani-dispatch.service
 systemctl --user disable paynani-idle.service paynani-dispatch.service
+systemctl --user stop    paynani-sms.service 2>/dev/null || true
+systemctl --user disable paynani-sms.service 2>/dev/null || true
 systemctl --user stop    paynani-logrotate.timer
 systemctl --user disable paynani-logrotate.timer
 

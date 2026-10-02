@@ -1019,6 +1019,104 @@ fi
 reset_install; rm -f "$clone/hermes-notify.secret" "$clone/hermes-roster.secret"
 rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
 
+# ---------------------------------------------------------------------------
+# The SMS gateway unit (SRV-7) is optional: nothing about it is installed,
+# upgraded or removed unless --with-sms asked for it or this installer already
+# owns it.
+reset_install; rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
+: >"$FAKE_SYSTEMD_LOG"
+sms_unit="$sandbox/.config/systemd/user/paynani-sms.service"
+
+check_status '--with-sms does not apply to --uninstall' 64 --runtime codex --uninstall --with-sms
+check_status 'a plain install does not plan the SMS gateway' 10 --runtime codex --dry-run
+[[ "$LAST_OUTPUT" != *paynani-sms* ]] || {
+    printf 'FAIL a dry-run without --with-sms mentioned the SMS gateway\n'
+    fail=$((fail + 1))
+}
+check_status 'a dry-run with --with-sms plans the SMS unit' 10 --runtime codex --dry-run --with-sms
+[[ "$LAST_OUTPUT" == *paynani-sms.service* && ! -e "$sms_unit" ]] || {
+    printf 'FAIL --with-sms --dry-run did not plan the unit, or wrote it\n'
+    fail=$((fail + 1))
+}
+
+check_status 'a plain install converges without the SMS gateway' 10 --runtime codex
+[[ ! -e "$sms_unit" && "$(<"$clone/runtime.env")" == 'PAYNANI_RUNTIME=codex' ]] &&
+    ! grep -q 'paynani-sms' "$clone/install.manifest" "$FAKE_SYSTEMD_LOG" || {
+    printf 'FAIL a plain install touched the SMS gateway (unit, runtime.env, manifest or services)\n'
+    fail=$((fail + 1))
+}
+check_status 'a plain upgrade still does not install it' 0 --runtime codex --upgrade
+[[ ! -e "$sms_unit" ]] || {
+    printf 'FAIL an upgrade without --with-sms installed the SMS gateway\n'
+    fail=$((fail + 1))
+}
+
+# sms.env is the user's: the installer never creates, edits, records or removes it.
+printf 'PAYNANI_SMS_PORT=8771\n' >"$clone/sms.env"
+sms_env_bytes=$(<"$clone/sms.env")
+plain_runtime_env=$(<"$clone/runtime.env")
+check_status '--with-sms adds the gateway to a converged install' 10 --runtime codex --with-sms
+[[ -f "$sms_unit" && "$(file_mode "$sms_unit")" == 644 ]] || {
+    printf 'FAIL --with-sms did not write the unit as a 0644 file\n'
+    fail=$((fail + 1))
+}
+if grep -q '/path/to' "$sms_unit"; then
+    printf 'FAIL the rendered SMS unit still has placeholders\n'
+    fail=$((fail + 1))
+fi
+grep -q "^ExecStart=/usr/bin/python3 $clone/scripts/sms_gateway.py\$" "$sms_unit" &&
+grep -q "^EnvironmentFile=-$clone/runtime.env\$" "$sms_unit" &&
+grep -q "^StandardOutput=append:$clone/state/sms.log\$" "$sms_unit" &&
+grep -q "^StandardError=append:$clone/state/sms.err.log\$" "$sms_unit" || {
+    printf 'FAIL the rendered SMS unit has the wrong ExecStart, EnvironmentFile or log paths\n'
+    fail=$((fail + 1))
+}
+grep -q "$sms_unit" "$clone/install.manifest" || {
+    printf 'FAIL the ownership manifest does not record the SMS unit\n'
+    fail=$((fail + 1))
+}
+grep -q -- 'enable --now paynani-sms.service' "$FAKE_SYSTEMD_LOG" &&
+grep -q -- "$sms_unit" "$FAKE_SYSTEMD_LOG" || {
+    printf 'FAIL the SMS unit was not verified and enabled\n'
+    fail=$((fail + 1))
+}
+[[ "$(<"$clone/runtime.env")" == "$plain_runtime_env" ]] || {
+    printf 'FAIL --with-sms changed runtime.env: it must be identical to a plain install\n'
+    fail=$((fail + 1))
+}
+if grep -q 'sms.env' "$clone/install.manifest"; then
+    printf 'FAIL the ownership manifest records the user'"'"'s sms.env\n'
+    fail=$((fail + 1))
+fi
+[[ "$LAST_OUTPUT" == *"verification_unit=$sandbox/.config/systemd/user/paynani-sms.service validated=true"* ]] || {
+    printf 'FAIL the verification report does not list the SMS unit\n'
+    fail=$((fail + 1))
+}
+check_status 'the SMS gateway install is idempotent' 0 --runtime codex --with-sms
+
+check_status 'a later upgrade without the flag keeps handling the owned gateway' 0 --runtime codex --upgrade
+[[ -f "$sms_unit" && "$(<"$clone/runtime.env")" == "$plain_runtime_env" ]] || {
+    printf 'FAIL an upgrade without --with-sms dropped the owned SMS unit or changed runtime.env\n'
+    fail=$((fail + 1))
+}
+[[ "$(cat "$clone/sms.env" 2>/dev/null)" == "$sms_env_bytes" ]] || {
+    printf 'FAIL install or upgrade touched the user'"'"'s sms.env\n'
+    fail=$((fail + 1))
+}
+
+check_status 'uninstall removes the owned SMS unit and stops it' 10 --runtime codex --uninstall
+[[ ! -e "$sms_unit" && ! -e "$FAKE_SYSTEMD_STATE/paynani-sms.service.enabled" ]] &&
+    grep -q -- 'disable --now paynani-sms.service' "$FAKE_SYSTEMD_LOG" || {
+    printf 'FAIL uninstall left the SMS unit behind or did not stop it\n'
+    fail=$((fail + 1))
+}
+[[ "$(cat "$clone/sms.env" 2>/dev/null)" == "$sms_env_bytes" ]] || {
+    printf 'FAIL uninstall removed or changed the user'"'"'s sms.env\n'
+    fail=$((fail + 1))
+}
+rm -f "$clone/sms.env"
+reset_install; rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
+
 printf '
 %d passed, %d failed
 ' "$pass" "$fail"

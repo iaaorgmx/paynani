@@ -76,10 +76,12 @@ for plist in ~/Library/LaunchAgents/com.paynani.idle.*.plist; do
 done
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.paynani.dispatch.plist 2>/dev/null || true
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.paynani.logrotate.plist 2>/dev/null || true
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.paynani.sms.plist 2>/dev/null || true
 rm -f ~/Library/LaunchAgents/com.paynani.idle.plist
 rm -f ~/Library/LaunchAgents/com.paynani.idle.*.plist
 rm -f ~/Library/LaunchAgents/com.paynani.dispatch.plist
 rm -f ~/Library/LaunchAgents/com.paynani.logrotate.plist
+rm -f ~/Library/LaunchAgents/com.paynani.sms.plist
 ```
 
 Las credenciales, el roster, el estado, el diario, el cursor y las bitácoras se
@@ -95,13 +97,16 @@ systemctl --user list-unit-files | grep -i paynani
 ```
 
 Una instalación completa tiene cuatro: `idle.service`, `dispatch.service`,
-`logrotate.service` y `logrotate.timer`. El *servicio* de logrotate normalmente
+`logrotate.service` y `logrotate.timer`, y una quinta, `sms.service`, si instalaste
+la pasarela SMS con `--with-sms`. El *servicio* de logrotate normalmente
 es `static`: no tiene sección `[Install]`, así que `disable` no hace nada y
 simplemente se borra con los demás. Eso es lo esperado, no un error.
 
 ```bash
 systemctl --user stop    paynani-idle.service paynani-dispatch.service
 systemctl --user disable paynani-idle.service paynani-dispatch.service
+systemctl --user stop    paynani-sms.service 2>/dev/null || true
+systemctl --user disable paynani-sms.service 2>/dev/null || true
 systemctl --user stop    'paynani-idle@*.service' 2>/dev/null || true
 systemctl --user disable 'paynani-idle@*.service' 2>/dev/null || true
 systemctl --user stop    paynani-logrotate.timer

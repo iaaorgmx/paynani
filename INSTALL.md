@@ -753,6 +753,87 @@ disappearing at the end of a session.
 Set up rotation too: `harness/rotate_logs.py` driven by a user timer. It uses
 `copytruncate`, which is required rather than stylistic; DESIGN.md says why.
 
+### 5.1 Optional: the SMS gateway (texts and calls through a phone)
+
+Skip this unless your human wants the agent to receive and send text messages
+and hear about calls through an Android phone (`SMS_GATEWAY.md` is the protocol).
+It is **optional on purpose**: an install with no phone does not need another
+process, even one that listens on the loopback only. Nothing about it is
+installed, upgraded or removed unless you ask for it.
+
+**Install it** with the same runtime you installed with, on a fresh install or on
+one that is already converged:
+
+```bash
+scripts/install.sh --runtime <runtime> --with-sms --dry-run   # what it would add
+scripts/install.sh --runtime <runtime> --with-sms
+```
+
+That adds one more unit to the ones above, `paynani-sms.service` (a LaunchAgent,
+`com.paynani.sms`, on macOS), enables it and records it in the ownership
+manifest. From then on `--upgrade` keeps it current and `--uninstall` removes it,
+with or without the flag.
+
+A manual install copies the unit like the others, replaces its placeholders
+(`/path/to/paynani`, `/path/to/state`, `/path/to/config`) and enables it:
+
+```bash
+install -Dm644 systemd/paynani-sms.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now paynani-sms.service
+```
+
+The gateway listens on `127.0.0.1` only, on port **8770** unless you change it.
+The settings go in `sms.env`, next to `runtime.env`, which is yours: the installer
+never creates, edits, records or removes it, so editing it does not stop a later
+`--upgrade` (hand-editing `runtime.env` does). Write only what you need:
+
+```
+PAYNANI_SMS_PORT=8770
+PAYNANI_SMS_PUBLIC_URL=https://<your tunnel>
+```
+
+The gateway, `scripts/paynani sms pair` and `scripts/paynani sms send` all read it
+themselves, on Linux and on macOS. A variable already set in the environment of
+the process wins over the file, and only `PAYNANI_SMS_PORT`,
+`PAYNANI_SMS_PUBLIC_URL` and `PAYNANI_SMS_DEFAULT_REGION` are read. After editing
+it, restart the gateway: `systemctl --user restart paynani-sms.service`, or on
+macOS `launchctl kickstart -k gui/$(id -u)/com.paynani.sms`.
+
+**The phone reaches the gateway through a tunnel you run yourself.** paynani does
+not start or supervise it: that takes a third-party binary and its credentials,
+and it is the one piece that differs by host. Use either of these, pointed at the
+gateway's port, and keep it running with whatever you already use for that.
+
+*ngrok* (a reserved domain keeps the address stable, which the phone needs):
+
+```bash
+ngrok http 8770 --url <your-reserved-domain>.ngrok.io
+curl -s https://<your-reserved-domain>.ngrok.io/sms/health
+```
+
+*cloudflared* (a quick tunnel prints a `trycloudflare.com` address that changes
+every run; a named tunnel keeps one):
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8770
+curl -s https://<the-address-it-printed>/sms/health
+```
+
+Each `curl` must answer `{"ok": true, "phone_connected": false}` (`false` until a
+phone connects). Anything else means the tunnel does not reach the gateway:
+check that the unit is active (`systemctl --user status paynani-sms.service`) and
+that the tunnel points at the same port. Put the tunnel's `https://` address in
+`PAYNANI_SMS_PUBLIC_URL` in `sms.env`.
+
+**Verifying it.** `scripts/healthcheck.py` shows `sms gateway  paynani-sms.service
+active` and reports it as a problem when it is not: a stopped gateway cannot
+report itself, so nothing else would say that texts stopped arriving. The unit
+writes `state/sms.log` (one line per text or call, with an excerpt only for a
+number on the roster) and `state/sms.err.log`; both rotate with the others.
+
+Next: install PaynaniApp on the phone and pair it (see the phone section below).
+
 ---
 
 ## 6. Harness wiring

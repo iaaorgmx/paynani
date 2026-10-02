@@ -310,6 +310,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.account_command == "remove":
             return accounts_cli.run_remove(args)
     if args.command == "sms":
+        from paynani_lib.sms import config as sms_config
+        sms_config.load_sms_env()
         from paynani_lib.sms import cli as sms_cli
         if args.sms_command == "pair":
             if args.web:

@@ -26,12 +26,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "harness"))
 
 import paths  # noqa: E402
+from paynani_lib.sms import config as sms_config  # noqa: E402
 from paynani_lib.sms import gateway as gw  # noqa: E402
 
 DEFAULT_PORT = 8770  # 8765 es del onboarding y de `sms pair --web`, que corren a la vez
 
 
 def main(argv=None) -> int:
+    sms_config.load_sms_env()  # antes de leer los valores por omisión de argparse
     parser = argparse.ArgumentParser(description="Pasarela SMS de paynani")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PAYNANI_SMS_PORT", DEFAULT_PORT)))
