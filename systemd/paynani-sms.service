@@ -1,0 +1,39 @@
+# Template. scripts/install.sh renders it when asked (`--with-sms`); a manual
+# install edits it by hand. Four placeholders:
+#
+#   /path/to/paynani  your clone's absolute path, which is also the install
+#   /path/to/state    the state tree, normally <clone>/state
+#   /path/to/config   where runtime.env lives, normally the clone itself
+#
+# The SMS gateway (SMS_GATEWAY.md) is optional: an install with no phone does not
+# need another process, so nothing installs this unless asked. It listens on
+# 127.0.0.1 only (PAYNANI_SMS_PORT in runtime.env, 8770 if unset); the phone
+# reaches it through a tunnel you run yourself (INSTALL.md, "SMS gateway").
+#
+#   install -Dm644 systemd/paynani-sms.service ~/.config/systemd/user/
+#   then replace the placeholders.
+
+[Unit]
+Description=paynani SMS gateway (phone WebSocket, loopback only)
+Documentation=file:///path/to/paynani/SMS_GATEWAY.md
+
+[Service]
+Type=simple
+EnvironmentFile=-/path/to/config/runtime.env
+ExecStart=/usr/bin/python3 /path/to/paynani/scripts/sms_gateway.py
+WorkingDirectory=/path/to/paynani
+
+# The gateway keeps the phone's connection itself; this only matters if the
+# process dies outright. A dead gateway cannot report itself, which is why
+# healthcheck looks at this unit.
+Restart=always
+RestartSec=10
+
+# stdout carries one line per text or call (the same line the agent gets, with
+# an excerpt of a roster message and never the full text); stderr is diagnostics.
+StandardOutput=append:/path/to/state/sms.log
+StandardError=append:/path/to/state/sms.err.log
+SyslogIdentifier=paynani-sms
+
+[Install]
+WantedBy=default.target

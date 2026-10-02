@@ -141,6 +141,22 @@ try:
     unclassified = [p for p in shipped if up.classify(p)["verb"] == "unknown"]
     check("every file under harness/ has a row in the upgrade table", not unclassified,
           ", ".join(unclassified))
+    # SRV-7: the optional SMS gateway. What it imports restarts it; what only a
+    # command reads does not. A unit that is not installed must never be named
+    # outright (restarting it would fail the whole --apply), only by pattern.
+    for path in ("scripts/sms_gateway.py", "scripts/paynani_lib/sms/gateway.py",
+                 "scripts/paynani_lib/sms/store.py", "scripts/paynani_lib/sms/websocket.py"):
+        c = up.classify(path)
+        check(f"{path} -> restart the SMS gateway", (c["verb"], c["unit"]) == ("restart", "paynani-sms*.service"),
+              str(c))
+    for path in ("scripts/paynani_lib/sms/cli.py", "scripts/paynani_lib/sms/qr.py",
+                 "scripts/paynani_lib/sms/pairing.py", "scripts/paynani_lib/sms/health.py"):
+        check(f"{path} -> none (read on each call)", up.classify(path)["verb"] == "none")
+    check("the gateway unit is a pattern, so a host without it is not asked to restart it",
+          "*" in up.SMS_GATEWAY[0] and "*" in up.SMS_GATEWAY[1])
+    check("roster.py and the shared harness modules restart the gateway too",
+          all(up.classify(p)["verb"] == "restart" for p in ("scripts/roster.py", "harness/event.py", "harness/phone.py")))
+    check("paynani-sms.service has its systemd row", up.classify("systemd/paynani-sms.service")["verb"] == "reinstall-and-restart")
     check("systemd unit -> reinstall-and-restart", verbs.get("systemd/paynani-idle.service") == "reinstall-and-restart")
     check("opencode plugin -> reinstall-and-restart", verbs.get("harness/opencode/paynani.js") == "reinstall-and-restart")
     check("session watcher -> next-session", verbs.get("harness/session_watch.sh") == "next-session")

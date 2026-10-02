@@ -30,6 +30,16 @@ LABELS = {
     "logrotate": "com.paynani.logrotate",
 }
 
+# The SMS gateway (SMS_GATEWAY.md, SRV-7) is optional, so it is not in LABELS,
+# which is what every install and uninstall loop walks. It is installed when this
+# run says --with-sms, and kept up to date or removed afterwards while its
+# LaunchAgent exists and belongs to this checkout.
+SMS_LABEL = "com.paynani.sms"
+ALL_LABELS = {**LABELS, "sms": SMS_LABEL}
+# launchd has no EnvironmentFile: these are read from the environment of the
+# install command and written into the LaunchAgent.
+SMS_ENV_VARS = ("PAYNANI_SMS_PORT", "PAYNANI_SMS_PUBLIC_URL", "PAYNANI_SMS_DEFAULT_REGION")
+
 
 def die(message: str, code: int = EX_CONFIG) -> None:
     print(f"install: {message}", file=sys.stderr)
@@ -45,7 +55,12 @@ def launch_agent_dir() -> Path:
 
 
 def plist_path(name: str) -> Path:
-    return launch_agent_dir() / f"{LABELS[name]}.plist"
+    return launch_agent_dir() / f"{ALL_LABELS[name]}.plist"
+
+
+def sms_wanted(args: argparse.Namespace) -> bool:
+    """--with-sms, or a gateway LaunchAgent that is already here (and so is ours to keep)."""
+    return bool(getattr(args, "with_sms", False)) or plist_path("sms").exists()
 
 
 def account_label(account_id: str) -> str:
@@ -106,6 +121,18 @@ def plist_for(name: str, python: str, runtime: str, runtime_bin: str | None = No
             "EnvironmentVariables": env,
             "StandardOutPath": str(state / "dispatch.log"),
             "StandardErrorPath": str(state / "dispatch.err.log"),
+        }
+    if name == "sms":
+        sms_env = {**env, **{k: os.environ[k] for k in SMS_ENV_VARS if os.environ.get(k)}}
+        return {
+            "Label": SMS_LABEL,
+            "ProgramArguments": [python, str(ROOT / "scripts" / "sms_gateway.py")],
+            "WorkingDirectory": str(ROOT),
+            "RunAtLoad": True,
+            "KeepAlive": True,
+            "EnvironmentVariables": sms_env,
+            "StandardOutPath": str(state / "sms.log"),
+            "StandardErrorPath": str(state / "sms.err.log"),
         }
     if name == "logrotate":
         return {
@@ -243,12 +270,15 @@ def parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--non-interactive", action="store_true")
     parser.add_argument("--notify-secret-file")
     parser.add_argument("--roster-secret-file")
+    parser.add_argument("--with-sms", action="store_true")
     args = parser.parse_args(argv)
     if args.runtime == "hermes":
         die("macOS install currently supports --runtime openclaw, codex and opencode only", EX_USAGE)
     modes = sum(bool(x) for x in (args.upgrade, args.uninstall))
     if modes > 1:
         die("--upgrade and --uninstall are mutually exclusive", EX_USAGE)
+    if args.with_sms and args.uninstall:
+        die("--with-sms does not apply to --uninstall: it removes the gateway LaunchAgent when it is this checkout's", EX_USAGE)
     return args
 
 
@@ -262,21 +292,24 @@ def print_plan(runtime: str, runtime_bin: str | None, python: str, args: argpars
     print(f"state_dir={state_dir()}")
     print(f"launch_agent_dir={launch_agent_dir()}")
     print("runtime_probe=deferred (dry-run never executes runtime code)" if args.dry_run else "runtime_probe=launchd")
-    for name in ("idle", "dispatch", "logrotate"):
+    names = ["idle", "dispatch", "logrotate"] + (["sms"] if sms_wanted(args) else [])
+    for name in names:
         path = plist_path(name)
         if not plist_owned_by_this_checkout(path):
             print(f"inventory conflict-preserve-file={path} reason=unproven-ownership")
             return EX_CONFIG
         state = "existing" if path.exists() else "planned"
-        print(f"inventory {state}-launchagent={path} label={LABELS[name]}")
+        print(f"inventory {state}-launchagent={path} label={ALL_LABELS[name]}")
     print(f"inventory planned-runtime-env={runtime_env()}")
     return EX_CHANGED
 
 
 def uninstall(args: argparse.Namespace) -> int:
     changed = False
-    for name, label in LABELS.items():
+    for name, label in ALL_LABELS.items():
         path = plist_path(name)
+        if name == "sms" and not path.exists():
+            continue  # optional: nothing to remove on a host that never had the gateway
         if path.exists() and not plist_owned_by_this_checkout(path):
             die(f"refusing to remove unowned LaunchAgent: {path}")
         if args.dry_run:
@@ -336,7 +369,9 @@ def install(args: argparse.Namespace) -> int:
     os.chmod(state_dir(), 0o700)
     launch_agent_dir().mkdir(parents=True, exist_ok=True)
     changed = write_runtime_env(args.runtime, runtime_bin) or changed
-    for name, label in LABELS.items():
+    install_names = list(LABELS) + (["sms"] if sms_wanted(args) else [])
+    for name in install_names:
+        label = ALL_LABELS[name]
         path = plist_path(name)
         if not plist_owned_by_this_checkout(path):
             die(f"refusing to overwrite unowned LaunchAgent: {path}")
