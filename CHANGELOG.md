@@ -32,7 +32,8 @@ app va adjunto a esta release.
   emparejamiento.
 - **La columna `Phone` del roster** (#317, #321). Un contacto puede tener uno o
   varios números, separados por coma. Una fila sólo con teléfono, sin correo, es
-  un contacto válido. `paynani roster add … --phone` agrega uno y rechaza un
+  un contacto válido; esa fila se escribe a mano, porque `roster add` todavía pide
+  el correo. `paynani roster add … --phone` agrega uno y rechaza un
   número que ya es de otro contacto. Un roster sin la columna funciona igual que
   antes.
 - **Contestar** (#318). `paynani sms send <número> "<texto>"` sale con código 2,
