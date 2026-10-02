@@ -118,9 +118,11 @@ def find_live_server(state: Path) -> dict | None:
 
 
 def run(port: int = 8765, mode: str = "setup") -> int:
-    """mode is "setup" (first-run wizard, printed by `setup`/`onboard`) or
+    """mode is "setup" (first-run wizard, printed by `setup`/`onboard`),
     "config_web" (editing an install that already works, printed by
-    `config web`) -- same server, same form, different banner."""
+    `config web`) -- same server, same form, different banner -- or
+    "sms_pair" (`sms pair --web`, SRV-4): the same local server and link, but
+    the page pairs the phone, and it stays up until Ctrl-C."""
     state = state_dir()
     state.mkdir(parents=True, exist_ok=True)
     try:
@@ -154,7 +156,7 @@ def run(port: int = 8765, mode: str = "setup") -> int:
 
     target = env_file()
     saved_event = threading.Event()
-    handler_cls = make_handler(state, saved_event)
+    handler_cls = make_handler(state, saved_event, page="sms" if mode == "sms_pair" else "onboard")
 
     # A plain `kill` (SIGTERM, no signal named) used to skip the `finally`
     # below entirely -- Python does not treat SIGTERM as KeyboardInterrupt on
@@ -166,7 +168,7 @@ def run(port: int = 8765, mode: str = "setup") -> int:
 
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
-    command = "onboard" if mode == "setup" else "config web"
+    command = {"setup": "onboard", "sms_pair": "sms pair --web"}.get(mode, "config web")
     try:
         httpd = _LoopbackServer(("127.0.0.1", port), handler_cls)
     except OSError as exc:
@@ -214,6 +216,11 @@ def run(port: int = 8765, mode: str = "setup") -> int:
             print("  " + "─" * 60)
             print()
             print("  Send this link to whoever is setting up the mailbox:")
+        elif mode == "sms_pair":
+            print("  paynani — pair the phone")
+            print("  " + "─" * 60)
+            print()
+            print("  Open this link to show the pairing QR and the paired phone:")
         else:
             print("  paynani — edit configuration")
             print("  " + "─" * 60)

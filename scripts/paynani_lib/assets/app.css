@@ -345,3 +345,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .langpick button:hover { border-color: var(--accent); }
 .langpick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* SRV-4: pairing page */
+.qr { text-align: center; margin: 1rem 0; }
+.qr svg { max-width: 100%; height: auto; border: 1px solid var(--line, #ccc); border-radius: .5rem; }
+dl.device { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1rem; margin: .75rem 0; }
+dl.device dt { color: var(--quiet); }
+dl.device dd { margin: 0; overflow-wrap: anywhere; }
+code.pairing-code { font-size: 1.6rem; letter-spacing: .15em; }

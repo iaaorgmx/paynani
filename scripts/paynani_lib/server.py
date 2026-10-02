@@ -24,6 +24,8 @@ from . import guard, i18n, roster_cli
 from .brand import brand_svg
 from .envfile import ENV_FIELDS, read_env, render_env, write_env
 from .probe import probe_imap, probe_smtp
+from .sms import pairing as sms_pairing
+from .sms import store as sms_store
 from .validate import validate
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -74,7 +76,7 @@ def _resolve_lang(session: dict, post: dict, query: dict) -> str:
     return i18n.LANG_DEFAULT
 
 
-def make_handler(state_dir: Path, saved_event=None):
+def make_handler(state_dir: Path, saved_event=None, page: str = "onboard"):
     """
     A BaseHTTPRequestHandler bound to one state directory (where the one-time
     token lives) and, optionally, a threading.Event to set the moment a save
@@ -96,6 +98,7 @@ def make_handler(state_dir: Path, saved_event=None):
     class Handler(BaseHTTPRequestHandler):
         STATE_DIR = state_dir
         SAVED_EVENT = saved_event
+        PAGE = page  # "onboard" (the mailbox form) or "sms" (pair the phone, SRV-4)
         server_version = "paynani-onboard/1.0"
 
         # ---- plumbing -----------------------------------------------------
@@ -279,7 +282,41 @@ def make_handler(state_dir: Path, saved_event=None):
 
         # ---- the form itself ------------------------------------------------
 
+        def _render_sms(self, session: dict, method: str, post: dict, query: dict):
+            lang = _resolve_lang(session, post, query)
+            i18n.set_current(lang)
+            action = post.get("action", "") if method == "POST" else ""
+            _get_or_create_csrf(session)
+            body, refresh = sms_pairing.build(
+                session, post, action if action in ("revoke", "new_code") else "",
+                sms_store.Store(self.STATE_DIR))
+            th = i18n.th
+            body = f"""
+<div class="topbar">
+  <h1>{th('sms.h1')}</h1>
+  <form method="get" action="/" class="langpick">
+    <span class="combo">
+      <select id="lang" name="lang" aria-label="{th('lang.label')}">
+        {_lang_options(lang)}
+      </select>
+    </span>
+    <button type="submit" id="langgo">{th('lang.apply')}</button>
+  </form>
+</div>
+
+<p class="lead">{th('sms.lead')}</p>
+
+{body}
+
+<p class="quiet">{th('sms.stop_hint')}</p>
+"""
+            self._html(200, _document(lang, th("sms.title"), body,
+                                      refresh=sms_pairing.REFRESH_S if refresh else 0))
+
         def _render(self, session: dict, method: str, post: dict, query: dict):
+            if self.PAGE == "sms":
+                self._render_sms(session, method, post, query)
+                return
             lang = _resolve_lang(session, post, query)
             i18n.set_current(lang)
 
@@ -584,7 +621,6 @@ def _support_summary(values: dict, saved: str | None, checklist: list[dict]) -> 
 
 def _page(*, lang, saved, notice, report, errors, values, has_password, csrf, roster_notice=None) -> str:
     t, th = i18n.t, i18n.th
-    logo = brand_svg("paynani-horizontal.svg")
 
     if saved is not None:
         checklist = _onboard_checklist(values, saved, roster_notice)
@@ -798,12 +834,21 @@ def _page(*, lang, saved, notice, report, errors, values, has_password, csrf, ro
 </form>
 """
 
+    return _document(lang, th("page.title"), body)
+
+
+def _document(lang: str, title: str, body: str, refresh: int = 0) -> str:
+    """The page shell shared by the mailbox form and the phone pairing page."""
+    logo = brand_svg("paynani-horizontal.svg")
+    # A meta refresh, not a script: the CSP allows no inline script, and the
+    # pairing page only needs to look again for the phone every few seconds.
+    refresh_tag = f'<meta http-equiv="refresh" content="{int(refresh)}">\n' if refresh else ""
     return f"""<!doctype html>
 <html lang="{e(lang)}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{th('page.title')}</title>
+{refresh_tag}<title>{e(title)}</title>
 <link rel="stylesheet" href="/assets/app.css">
 <script src="/assets/lang.js" defer></script>
 </head>
