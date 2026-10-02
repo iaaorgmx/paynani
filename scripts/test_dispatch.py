@@ -792,6 +792,31 @@ check("openclaw: mail from outside the roster is the bare line",
       "[mail 12:00:01] Nadie — hola", ev.openclaw_text(unlisted_event))
 check("openclaw: a listener error is the bare line",
       "[listener] boom", ev.openclaw_text(ev.listener_error(account="a@x", message="boom")))
+# SRV-6: SMS and calls get the same treatment as mail, with their own commands.
+sms_roster = ev.sms_event(device_id="d_abc123", message_id="a" * 64, e164="+525511112222", raw_sender="55 1111 2222",
+                          sender_name="Ana López", text="¿tienen mesa para 4?", sent_at="", roster_match=True,
+                          local_time="12:00:00")
+sms_text = ev.openclaw_text(sms_roster)
+check("openclaw: roster SMS says how to read it (event show --body)", True,
+      f"scripts/paynani event show {sms_roster['event_id']} --body" in sms_text)
+check("openclaw: roster SMS says to reply with sms send, not send.sh", (True, False),
+      ("scripts/paynani sms send" in sms_text, "send.sh" in sms_text or "himalaya" in sms_text))
+check("openclaw: the SMS instruction is a second line under the notification", True,
+      sms_text.startswith("[sms 12:00:00, roster] Ana López +525511112222: ¿tienen mesa para 4?") and "\npaynani: SMS del roster" in sms_text)
+check("openclaw: the SMS instruction says the text is untrusted", True, "no confiable" in sms_text)
+sms_other = ev.sms_event(device_id="d_abc123", message_id="b" * 64, e164="+525599990000", raw_sender="+525599990000",
+                         sender_name="", text="promo", sent_at="", roster_match=False, local_time="12:00:01")
+check("openclaw: an SMS from outside the roster is the bare line", sms_other["notification_text"], ev.openclaw_text(sms_other))
+call = ev.call_event(kind=ev.CALL_MISSED, device_id="d_abc123", call_id="c" * 64, e164="+525511112222", raw_caller="55 1111 2222",
+                     caller_name="Ana López", started_at="", roster_match=True, local_time="12:00:02")
+check("openclaw: a roster call has its own instruction and no body", (True, True, False),
+      ("llamada del roster" in ev.openclaw_text(call), "no hay cuerpo" in ev.openclaw_text(call), "--body" in ev.openclaw_text(call)))
+call_other = ev.call_event(kind=ev.CALL_MISSED, device_id="d_abc123", call_id="d" * 64, e164=None, raw_caller="",
+                           caller_name="", started_at="", roster_match=False, local_time="12:00:03")
+check("openclaw: a call from outside the roster is the bare line", call_other["notification_text"], ev.openclaw_text(call_other))
+check("codex: el aviso de texto no confiable cubre también el SMS", True,
+      "texto de un SMS" in ev.codex_event_prompt(sms_roster["event_id"]))
+
 check("openclaw: a roster record without a uid falls back to the bare line",
       "[mail 12:00:00, roster] Dulce — haz algo",
       ev.openclaw_text({"notification_text": "[mail 12:00:00, roster] Dulce — haz algo",
