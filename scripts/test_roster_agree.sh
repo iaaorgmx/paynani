@@ -104,6 +104,28 @@ f="$tmp/bare.md"
 printf 'bare-address@example.com\n' >"$f"
 agree "bare address" "$f" "bare-address@example.com"
 
+# --- A Phone column, and a row with a phone and no email (SRV-2). ------------
+# `send.sh` writes mail and SMS is only ever sent from Python, so this half is not
+# taught about phones on purpose. What it must do is keep ignoring them: a phone is
+# not an address, and a row with only a phone contributes nothing, exactly as a
+# row with no "@" always did. Both halves must still agree, and the address of a
+# row that also carries a phone must still come out.
+f="$tmp/phone.md"
+cat >"$f" <<'EOF'
+| Name | Email | Type | Phone |
+|---|---|---|---|
+| Ana López | ana@example.org | Human | +52 1 55 1111 2222, 55 3333 4444 |
+| Solo Teléfono | | Human | +525599998888 |
+| Sin Teléfono | sin@example.org | AI Agent | |
+EOF
+agree "Phone column, one row with only a phone" "$f" "ana@example.org"
+if [ "$("$EXTRACT" "$f" | sort -u | tr '\n' ' ')" = "ana@example.org sin@example.org " ]; then
+    pass=$((pass + 1))
+else
+    printf 'FAIL the Phone column changed the addresses send.sh extracts: %s\n' "$("$EXTRACT" "$f" | tr '\n' ',')"
+    fail=$((fail + 1))
+fi
+
 # --- CRLF-terminated rows -- real installs have shipped these. --------------
 f="$tmp/crlf.md"
 printf '| Name | Email | Type |\r\n|---|---|---|\r\n| Julian Flores | jjulianfe@gmail.com | Human |\r\n' >"$f"

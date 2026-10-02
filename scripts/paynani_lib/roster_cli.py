@@ -199,12 +199,33 @@ def run_list(args) -> int:
     if roster_mod.needs_migration(text):
         print("Warning: roster.md has a legacy schema. Run: paynani roster migrate --apply", file=sys.stderr)
     entries = roster_mod.roster_entries(roster_file())
-    if not entries:
+    # The Phone column (SRV-2): numbers next to the contact they belong to, and a
+    # row with a phone and no email is a contact too, listed after the others.
+    phones_by_address: dict[str, list[str]] = {}
+    phone_only: dict[str, dict] = {}
+    for p in roster_mod.roster_phone_entries(roster_file()):
+        if p["address"]:
+            phones_by_address.setdefault(p["address"], []).append(p["phone"])
+        else:
+            row = phone_only.setdefault(p["name"], {"type": p["type"], "phones": []})
+            row["phones"].append(p["phone"])
+    # A cell that is not a phone number is ignored when matching, so say so here:
+    # otherwise the contact is silently unreachable by SMS and nobody knows why.
+    for bad in roster_mod.roster_phone_problems(roster_file()):
+        who = bad["name"] or "a contact"
+        print(f"Warning: {who} has a Phone value that is not a phone number and is ignored: "
+              f"{bad['value']!r}. Write it in E.164, for example +525511112222.", file=sys.stderr)
+    if not entries and not phone_only:
         print("No contacts on the roster.")
         return 0
     for e in entries:
         extra = f" ({e['type']})" if e.get("type") else ""
-        print(f"{e['name']} <{e['address']}>{extra}")
+        phones = phones_by_address.get(e["address"])
+        tail = f" phone: {', '.join(phones)}" if phones else ""
+        print(f"{e['name']} <{e['address']}>{extra}{tail}")
+    for name, row in phone_only.items():
+        extra = f" ({row['type']})" if row["type"] else ""
+        print(f"{name} <no email>{extra} phone: {', '.join(row['phones'])}")
     return 0
 
 

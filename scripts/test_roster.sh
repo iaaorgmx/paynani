@@ -669,6 +669,40 @@ assert names == [\"informe café €.csv\"], names
 assert "a missing attachment exits 2"      '[ "${arc:-0}" -eq 2 ]'
 assert "a missing attachment sends nothing" '[ ! -s "$CAPTURE" ]'
 
+# --- A Phone column: SMS numbers are not mail recipients (SRV-2) --------------
+#
+# The roster now lets a contact carry phone numbers for the SMS gateway. send.sh
+# writes mail, so it must neither accept a number as a recipient nor change who
+# it accepts because the column exists. The phone side (normalisation, with the
+# table in SMS_GATEWAY.md, and the roster's matching) is exercised by
+# test_phone.py and test_listener.py.
+cat >"$roster" <<'EOF'
+| Name | Email | Type | Phone |
+|---|---|---|---|
+| Ana López | ana@example.org | Human | +525511112222, 55 3333 4444 |
+| Solo Teléfono | | Human | +525599998888 |
+EOF
+check allow  "ana@example.org"       "with a Phone column, the email row still authorises its address"
+check refuse "+525511112222"         "a listed phone number is not a mail recipient"
+check refuse "+525599998888"         "a phone-only row authorises nobody to send mail to"
+check refuse "Solo Teléfono"         "the name of a phone-only row is not a recipient"
+check refuse "other@example.org"     "an address that is not on the roster is still refused"
+
+# Put the fixture roster back for what follows.
+cat >"$roster" <<'EOF'
+# Comment that should never match.
+#
+# Format: | Name | Email | Type |
+
+# 1. Approved contacts; any other contact/email address will be ignored.
+| Name | Email | Type |
+| --- | --- | --- |
+| Julian Flores | jjulianfe@gmail.com | Human |
+| Second Contact | second_contact@example.org | AI Agent |
+| AI Agent | Reordered Contact | reordered@example.net |
+bare-address-still-works@example.com
+EOF
+
 # --- The shipped template authorises nobody -----------------------------------
 #
 # roster.md.example used to carry two real, working addresses as data rows, so
