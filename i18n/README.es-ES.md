@@ -183,6 +183,12 @@ que el remitente coincide con tu lista.
 - **Vigilar también los buzones de tu negocio**, como `ventas@` o `soporte@`
   (hasta 10), cada uno con su propia lista de quién puede darle instrucciones.
   Ver [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (en español de México).
+- **Recibir y enviar SMS, y enterarse de las llamadas, con el número de un
+  teléfono Android**, si lo pides. El teléfono ejecuta
+  [PaynaniApp](https://github.com/iaaorgmx/PaynaniApp) y se empareja con un QR.
+  Los SMS siguen la misma lista que el correo: solo los números aprobados le dan
+  instrucciones y solo a ellos les puede escribir. Sin teléfono no se instala
+  nada de esto. Ver [`SMS_GATEWAY.md`](../SMS_GATEWAY.md) (en español de México).
 
 ## ¿Qué cambia en el ordenador?
 
@@ -203,6 +209,9 @@ informarte de todo esto cuando termine, y puedes exigirle la lista:
   escribe y la quita el mismo script.
 - **En OpenCode, un fichero más:** el plugin que le pasa el correo a tu sesión,
   en `~/.config/opencode/plugins/paynani.js`.
+- **Si pediste SMS, un servicio más:** la pasarela que habla con el teléfono.
+  Solo escucha dentro del propio ordenador; el teléfono llega a ella por un túnel
+  que tú eliges.
 
 Todo esto es reversible; [`UNINSTALL.md`](../UNINSTALL.md) quita cada punto de esa
 lista, en un orden que no te deja trabajando de memoria.
@@ -216,7 +225,8 @@ se reinician solas si fallan: el escucha (`paynani-idle.service`) y el repartido
 `paynani-logrotate.timer`, que se activa solo, y `paynani-logrotate.service`, que
 es `static` porque lo dispara el temporizador y no se habilita por su cuenta. En
 macOS son tres *LaunchAgents* equivalentes: `com.paynani.idle`,
-`com.paynani.dispatch` y `com.paynani.logrotate`.
+`com.paynani.dispatch` y `com.paynani.logrotate`. Con SMS se añade
+`paynani-sms.service` (en macOS, `com.paynani.sms`).
 
 El fichero de credenciales lleva permisos `600`: el `.env` del workspace de tu
 harness si lo guardas ahí, y si no, `.env` dentro del clon. Los registros y el
@@ -332,6 +342,9 @@ propio criterio sobre a quién le das entrada.
 | Ver cambios por versión | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Autorizar remitentes | `roster.md` y [`roster.md.example`](../roster.md.example) |
 | Vigilar varias cuentas de correo | [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (en español de México) |
+| Recibir y enviar SMS con un teléfono Android | [`INSTALL.md` §5.1](../INSTALL.md#51-optional-the-sms-gateway-texts-and-calls-through-a-phone) (la pasarela) y [§5.2](../INSTALL.md#52-optional-install-paynaniapp-on-the-phone-and-pair-it) (PaynaniApp en el teléfono) |
+| Entender cómo se hablan el teléfono y Paynani | [`SMS_GATEWAY.md`](../SMS_GATEWAY.md) (en español de México) |
+| Ver el código de la app del teléfono | [iaaorgmx/PaynaniApp](https://github.com/iaaorgmx/PaynaniApp) |
 | Enviar correo desde la frontera segura | [`scripts/send.sh`](../scripts/send.sh) |
 | Ver qué garantiza cada harness | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
 
