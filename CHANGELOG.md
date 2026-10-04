@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Sin publicar
 
 - `paynani sms pair` ahora aclara en la terminal que un código vencido no es un
   error, y que basta con volver a correr el comando para usar un código nuevo
