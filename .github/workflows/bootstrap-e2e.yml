@@ -30,10 +30,6 @@ jobs:
       FAKE_SMTP_PORT: "9465"
     steps:
       - uses: actions/checkout@v4
-        with:
-          # bootstrap.sh clones --ref $GITHUB_SHA, so that commit has to be
-          # reachable from the clone it makes; full history keeps tags too.
-          fetch-depth: 0
 
       - name: A throwaway CA and a certificate for localhost, trusted system-wide
         run: |
@@ -69,7 +65,13 @@ jobs:
           echo "the fake server answers IMAPS with the system trust store"
 
       - name: bootstrap.sh, three runs (B1, B2, B3)
-        run: sudo --preserve-env=FAKE_MAIL_PASSWORD,FAKE_IMAP_PORT,FAKE_SMTP_PORT bash scripts/bootstrap_e2e.sh "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+        # --ref is the branch, not $GITHUB_SHA: bootstrap.sh clones with
+        # `git clone --branch`, which takes a branch or a tag but not a commit.
+        # On a pull request that is the PR's branch, so a PR from a fork (whose
+        # branch is not on iaaorgmx/paynani) cannot run this job.
+        env:
+          E2E_REF: ${{ github.head_ref || github.ref_name }}
+        run: sudo --preserve-env=FAKE_MAIL_PASSWORD,FAKE_IMAP_PORT,FAKE_SMTP_PORT bash scripts/bootstrap_e2e.sh "$GITHUB_WORKSPACE" "$E2E_REF"
 
       - name: What the fake server saw
         if: always()

@@ -7,14 +7,14 @@
 # (scripts/fake_mail_server.py) already listening and its CA already trusted;
 # the workflow does both before calling this.
 #
-#   sudo bash scripts/bootstrap_e2e.sh <repo checkout> <ref>
+#   sudo bash scripts/bootstrap_e2e.sh <repo checkout> <branch or tag>
 #
 # B4 (--dry-run) is not here: B5 and B6 are covered by the unit tests of BOOT-1
 # and BOOT-2, as the issue says, and B4 is BOOT-1's.
 set -euo pipefail
 
 REPO=${1:?repo checkout}
-REF=${2:?git ref}
+REF=${2:?branch or tag for --ref}
 USER_NAME=agente
 OWNER_NAME=Prueba
 OWNER_EMAIL=prueba@example.com
