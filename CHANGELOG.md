@@ -59,9 +59,10 @@ python3 scripts/upgrade_plan.py --from v0.10.0     # y haz lo que imprima
 ```
 
 No hace falta el instalador. El plan pide reiniciar el listener, el dispatcher y
-la pasarela SMS si la tienes. **Y además, a mano:** si tienes cuentas adicionales,
-reinicia sus instancias, porque el plan de 0.10.0 todavía no las incluye (es el
-defecto que arregla #338):
+la pasarela SMS si la tienes. El plan que corre después del `git pull` ya es el de
+0.11.0 y reinicia también las cuentas adicionales (#338). Si lo calculaste
+**antes** del pull (por ejemplo con el `version.sh --plan` de 0.10.0), no las
+incluye: reinicia sus instancias a mano.
 
 ```bash
 systemctl --user list-units --all --plain --no-legend 'paynani-idle@*.service' | awk '{print $1}' | xargs -r systemctl --user restart
