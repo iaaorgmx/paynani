@@ -40,6 +40,8 @@
 # Test hooks, used by scripts/test_bootstrap.sh and for field trials:
 #   BOOTSTRAP_OS_RELEASE  path of the os-release file (default /etc/os-release)
 #   BOOTSTRAP_REPO_URL    clone source (default https://github.com/iaaorgmx/paynani.git)
+#   BOOTSTRAP_RUN_USER_DIR  where the user's runtime dirs live (default /run/user)
+#   BOOTSTRAP_BUS_WAIT    seconds to wait for the user's systemd bus (default 10)
 
 set -euo pipefail
 
@@ -127,7 +129,14 @@ run() {
     "$@"
 }
 
-as_user() { sudo -u "$user" -H "$@"; }
+# Everything that runs as the user starts from an environment built here, not
+# inherited: `sudo -u USER -H` changes HOME and leaves the caller's XDG_CONFIG_HOME
+# (and whatever else an `env_keep` or a CI runner passes) pointing at someone
+# else's home, so himalaya and git read or write the wrong user's files. The
+# systemd user session needs XDG_RUNTIME_DIR and its bus, which exist once linger
+# has started user@UID.service (wait_for_user_bus).
+user_env=()
+as_user() { sudo -u "$user" -H "${user_env[@]}" "$@"; }
 
 # Same as run, for what runs as the user.
 run_user() {
@@ -159,6 +168,24 @@ id "$user" >/dev/null 2>&1 || die "$EX_USAGE" "the user $user does not exist"
 
 home=$(getent passwd "$user" | cut -d: -f6)
 [[ -n "$home" && -d "$home" ]] || die "$EX_USAGE" "cannot find the home directory of $user"
+
+uid=$(id -u "$user")
+RUN_USER_DIR=${BOOTSTRAP_RUN_USER_DIR:-/run/user}
+BUS_WAIT=${BOOTSTRAP_BUS_WAIT:-10}
+user_env=(env -i
+    "HOME=$home" "USER=$user" "LOGNAME=$user" "SHELL=/bin/bash"
+    "PATH=$home/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
+    "LANG=${LANG:-C.UTF-8}"
+    "XDG_RUNTIME_DIR=$RUN_USER_DIR/$uid"
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=$RUN_USER_DIR/$uid/bus")
+# What a clean environment must not lose: the network path (proxies, CA bundles)
+# and the terminal, which the owner's questions need.
+for passed in http_proxy https_proxy no_proxy all_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY \
+              SSL_CERT_FILE SSL_CERT_DIR CURL_CA_BUNDLE GIT_SSL_CAINFO REQUESTS_CA_BUNDLE TERM; do
+    if [[ -n "${!passed:-}" ]]; then
+        user_env+=("$passed=${!passed}")
+    fi
+done
 
 if [[ ! -r "$OS_RELEASE" ]]; then
     die "$EX_UNSUPPORTED" "cannot read $OS_RELEASE: only Ubuntu and Debian are supported"
@@ -196,7 +223,7 @@ fi
 
 himalaya_major() {
     local out
-    out=$(as_user env "PATH=$home/.local/bin:$PATH" himalaya --version 2>/dev/null || true)
+    out=$(as_user himalaya --version 2>/dev/null || true)
     if [[ "$out" =~ ([0-9]+)\.[0-9]+ ]]; then
         printf '%s' "${BASH_REMATCH[1]}"
     fi
@@ -220,6 +247,24 @@ else
     say "enabling linger for $user"
     run loginctl enable-linger "$user"
 fi
+
+# linger starts user@UID.service; install.sh talks to that user's systemd, so wait
+# for its bus before going on.
+wait_for_user_bus() {
+    local waited=0
+    if [[ $dry_run -eq 1 ]]; then
+        printf 'would: wait up to %ss for %s/%s/bus\n' "$BUS_WAIT" "$RUN_USER_DIR" "$uid"
+        return 0
+    fi
+    while [[ ! -S "$RUN_USER_DIR/$uid/bus" ]]; do
+        if [[ $waited -ge $BUS_WAIT ]]; then
+            die "$EX_STEP" "the systemd user session of $user did not come up: $RUN_USER_DIR/$uid/bus is missing after ${BUS_WAIT}s (is systemd running, and logind enabled?)"
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+}
+wait_for_user_bus
 
 # --- 5. the clone ----------------------------------------------------------
 
@@ -324,8 +369,8 @@ say "handing over to $user: bootstrap_user.py"
 if [[ $dry_run -eq 1 ]]; then
     # Nothing runs in a dry run, and the user half may not exist yet (the clone is
     # only announced above). Run scripts/bootstrap_user.py --dry-run for its part.
-    printf 'would: sudo -u %s -H env LANG=%s python3 %s %s\n' \
-        "$user" "${LANG:-}" "$user_script" "${args[*]}"
+    printf 'would: sudo -u %s -H env -i <clean environment, LANG=%s> python3 %s %s\n' \
+        "$user" "${LANG:-C.UTF-8}" "$user_script" "${args[*]}"
     exit "$EX_OK"
 fi
-as_user env "LANG=${LANG:-}" python3 "$user_script" "${args[@]}"
+as_user python3 "$user_script" "${args[@]}"
