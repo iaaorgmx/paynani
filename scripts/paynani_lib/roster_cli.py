@@ -324,7 +324,7 @@ def _revert(path: Path, original: str, reason: str) -> int:
     return 1
 
 
-def _apply_change_core(path: Path, new_text: str, expected_addresses) -> tuple[str, str]:
+def _apply_change_core(path: Path, new_text: str, expected_addresses, run_tests: bool = True) -> tuple[str, str]:
     """
     The non-interactive heart of add()/remove(): run the regression suite,
     write, verify, revert on failure. Shared by the CLI (_apply_change below,
@@ -341,6 +341,13 @@ def _apply_change_core(path: Path, new_text: str, expected_addresses) -> tuple[s
     "reverted" is real time during which the live file already is the
     rejected version.
 
+    `run_tests=False` skips the regression suite and keeps everything else: the
+    atomic write, the check that the file parses back to the expected addresses,
+    and the revert. It is for a caller that installs from a release tag, where
+    that code already passed both suites in CI and the suites, which run on
+    synthetic rosters and never on this one, would only add tens of seconds and the
+    chance of a false "test_failed" on a machine that has nothing wrong (#361).
+
     Returns (status, detail):
       "ok"             — written and verified; detail is the path.
       "test_failed"    — nothing written; detail is the combined test output.
@@ -354,9 +361,10 @@ def _apply_change_core(path: Path, new_text: str, expected_addresses) -> tuple[s
     # undoing a creation means removing the file.
     existed = path.exists()
 
-    ok, output = _run_regression_tests()
-    if not ok:
-        return "test_failed", output
+    if run_tests:
+        ok, output = _run_regression_tests()
+        if not ok:
+            return "test_failed", output
 
     _write_atomic(path, new_text)
 
@@ -427,7 +435,7 @@ def _apply_change(
 
 
 def add_contact_noninteractive(name: str, address: str, *, type_: str = "", github: str = "",
-                               phone: str = "") -> tuple[str, str]:
+                               phone: str = "", run_tests: bool = True) -> tuple[str, str]:
     """
     Same effect as `paynani roster add`, without the interactive confirmation
     or console output — for a caller that already has the human's explicit
@@ -439,6 +447,9 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
     is still "rejected" (see _starting_text). The form runs at AGENTS.md step
     2, before anything else has touched roster.md, so on a new install that
     is the usual case (#134).
+
+    `run_tests` is True by default, so nothing changes for the form; the sudo
+    installer passes False (see _apply_change_core).
 
     It differs from `paynani roster add` in one way: `type_` is informational
     (see roster.md.example), so on an older roster whose table has no Type
@@ -463,7 +474,7 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
         status = "duplicate" if result.endswith("is already on the roster") else "rejected"
         return status, result
     expected = roster_mod.roster_addresses(path) | {roster_mod.normalise(address)}
-    status, detail = _apply_change_core(path, result, expected)
+    status, detail = _apply_change_core(path, result, expected, run_tests=run_tests)
     return ("added", detail) if status == "ok" else (status, detail)
 
 

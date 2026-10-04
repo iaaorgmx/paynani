@@ -361,9 +361,17 @@ def step_roster(ctx: Ctx):
         problems.append("the owner's address cannot be the agent's own mailbox")
     if problems:
         return False, "\n".join(problems)
-    status, detail = roster_cli.add_contact_noninteractive(name, email, type_="Human")
+    # No regression suites here: this installs from a release tag whose code already passed
+    # them in CI, they run on synthetic rosters and not on this one, and on this machine they
+    # only add tens of seconds and the chance of a false failure (#361). What does check this
+    # roster is below: it is read back with the reader the listener and send.sh use.
+    status, detail = roster_cli.add_contact_noninteractive(name, email, type_="Human", run_tests=False)
     if status not in ("added", "duplicate"):
         return False, f"roster {status}: {detail}"
+    known = roster_cli.roster_mod.roster_addresses(path) if path.exists() else set()
+    if roster_cli.roster_mod.normalise(email) not in known:
+        return False, f"the roster.md written at {path} could not be read back with the owner in it ({email}): " \
+                      "the file is not usable, so the agent would ignore the owner's mail"
     ctx.owner = f"{name} <{email}>"
     return True, f"{name} <{email}> in {path}"
 
