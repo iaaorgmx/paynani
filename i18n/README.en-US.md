@@ -334,6 +334,7 @@ and to your own judgement about who gets in.
 |---|---|
 | Prepare the mailbox without exposing passwords | [`MAILBOX_SETUP.en-US.md`](MAILBOX_SETUP.en-US.md) |
 | Install Paynani | [`AGENTS.md`](../AGENTS.md) and [`INSTALL.md`](../INSTALL.md) |
+| Install it with one command (sudo, Ubuntu or Debian) | [`INSTALL.md`](../INSTALL.md#install-with-one-command-sudo) |
 | Integrate it with Hermes Agent | [`HERMES.md`](../HERMES.md) |
 | Understand why it must not fail silently | [`DESIGN.md`](../DESIGN.md) |
 | Migrate from agenteiamail | [`MIGRATION.md`](../MIGRATION.md) |

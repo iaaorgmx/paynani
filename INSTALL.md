@@ -4,6 +4,76 @@
 for either OpenClaw or Hermes Agent, with access to a systemd user session, or
 deploying it on macOS for OpenClaw with access to launchd.
 
+## Install with one command (sudo)
+
+On **Ubuntu or Debian**, a human can install paynani for the agent's user with
+one command and no further steps in the terminal. This is for hosts where the
+harness keeps the agent from running the install itself (Claude Code in auto
+mode, OpenClaw without `tools.profile: full`). The rest of this document is the
+agent's own path, and it still works the same.
+
+From a release (0.12.0 and later), checking the file before running it:
+
+```bash
+curl -fsSLO https://github.com/iaaorgmx/paynani/releases/latest/download/bootstrap.sh
+curl -fsSLO https://github.com/iaaorgmx/paynani/releases/latest/download/bootstrap.sh.sha256
+sha256sum -c bootstrap.sh.sha256      # must print: bootstrap.sh: OK
+sudo bash bootstrap.sh
+```
+
+The shortcut, without the check:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iaaorgmx/paynani/main/bootstrap.sh | sudo bash
+```
+
+Run it with `sudo` from the agent's user: paynani is installed for
+`$SUDO_USER` (or `--user U`). Root is used only for `apt-get` and
+`loginctl enable-linger`; the clone, the credentials, `roster.md`, the user
+services and the harness rules all belong to that user. It confirms the
+runtime it detects (or asks which one, if there are several), asks for the
+mailbox (password hidden) and the owner's name and address, and it says **Ready** only when `paynani doctor` and
+`healthcheck.py` both pass. With Claude Code or Codex the last step is yours:
+open a session, which arms the mail watch.
+
+| Option | What it does |
+|---|---|
+| `--runtime R` | `openclaw`, `hermes`, `claudecode`, `codex` or `opencode`; otherwise detected and confirmed |
+| `--user U` | Who to install for; default `$SUDO_USER` |
+| `--dir PATH` | Where to clone; default `<harness root>/workspace/paynani` |
+| `--ref REF` | Tag or branch; default the newest release tag |
+| `--env-file PATH` | Mailbox credentials already written, for the no-questions mode |
+| `--owner-name N --owner-email E` | The owner's row in `roster.md` |
+| `--yes` | Ask nothing; exits 2 if something is missing |
+| `--with-sms` | Also install the SMS gateway (the tunnel is still yours, §5.1) |
+| `--upgrade` | Upgrade an existing install (it runs `version.sh --apply`) |
+| `--dry-run` | Print every action as `would:` and change nothing |
+| `--test-mail` | At the end, send a test message to the owner |
+
+It never replaces an existing `.env`, `roster.md`, himalaya account or clone:
+it uses them and says so, so running it again is safe. Exit codes: `0` ready,
+`1` a step failed (it names the step and the command to repeat it), `2`
+missing data or a bad option, `3` unsupported system, `4` not run as root.
+
+**If the path is unsafe.** Whenever it stops, it exits 1 and has changed nothing on that path:
+- A directory on the clone's path has a default ACL that lets another user
+  write (common on CI images, rare on a stock Ubuntu): it changes nothing and
+  stops, naming the directory and the entries. Remove it with `setfacl -k DIR`
+  or pick another `--dir`. Without the `acl` package it cannot read the ACL, so
+  it only warns (`DIR has an ACL`) and goes on; `install.sh` may then refuse
+  the path.
+- A directory on the path is writable by group or others: if it belongs to the
+  user, it removes only that write bit, says so, and goes on. If it belongs to
+  someone else (root, for example), it changes nothing and stops, naming the
+  directory: `chown` it to the user or pick another `--dir`.
+
+**Upgrades.** `--upgrade` runs the installed copy of the user half until
+`version.sh --apply` has moved the clone. If a release changes the install
+steps themselves, run `--upgrade` twice.
+
+macOS is not covered yet (#347). Additional mailboxes are still added with
+`paynani account add` (`MULTI_ACCOUNT.md`).
+
 `scripts/install.sh` is the runtime-neutral, idempotent path for the owned
 supervision boundary. On Ubuntu it owns systemd-user units; on macOS with
 OpenClaw it owns per-user launchd LaunchAgents. The established manual procedure

@@ -355,6 +355,7 @@ fichier `.env` et à votre propre jugement sur qui entre.
 |---|---|
 | Préparer la boîte sans exposer de mots de passe | [`MAILBOX_SETUP.fr-FR.md`](MAILBOX_SETUP.fr-FR.md) |
 | Installer Paynani | [`AGENTS.md`](../AGENTS.md) et [`INSTALL.md`](../INSTALL.md) |
+| L’installer en une seule commande (sudo, Ubuntu ou Debian) | [`INSTALL.md`](../INSTALL.md#install-with-one-command-sudo) |
 | L'intégrer à Hermes Agent | [`HERMES.md`](../HERMES.md) |
 | Comprendre pourquoi il ne doit pas échouer en silence | [`DESIGN.md`](../DESIGN.md) |
 | Migrer depuis agenteiamail | [`MIGRATION.md`](../MIGRATION.md) |
