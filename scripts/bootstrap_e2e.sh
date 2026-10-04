@@ -19,12 +19,16 @@ USER_NAME=agente
 OWNER_NAME=Prueba
 OWNER_EMAIL=prueba@example.com
 WORK=/tmp/paynani-e2e
-# doctor rows that may be something other than ok here, and why. Empty on
-# purpose: bootstrap.sh only says it is ready with every row ok, so the job asks
+# doctor rows that may be something other than ok here, as row=status, and why.
+# bootstrap.sh only says it is ready with every other row ok, so the job asks
 # the same. (Claude Code's runtime row is ok without a `claude` binary: its
 # check is that the spool can be written.) A row added here is a check the job
 # stops making, so each one needs its reason written next to it.
-ALLOWED_NOT_OK=""
+#   session_watch_state=unknown: no Claude Code session has armed the mail watch
+#     yet, which is true of every fresh install; doctor says unknown exactly when
+#     no watch was ever armed (warning if one was and lapsed, and that still
+#     fails). bootstrap.sh accepts the same single exception (Metis, #358).
+ALLOWED_NOT_OK="session_watch_state=unknown"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok   $*"; }
@@ -142,15 +146,16 @@ check_b1() {
     python3 - "$WORK/doctor.json" "$ALLOWED_NOT_OK" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
-allowed = set(sys.argv[2].split())
+allowed = set(sys.argv[2].split())   # "row=status", the exact status only
 checks = data.get("checks", data) if isinstance(data, dict) else data
 bad = []
 for c in checks:
     name, status = c.get("name"), c.get("status")
-    mark = "ok  " if status == "ok" else ("skip" if name in allowed else "FAIL")
+    expected = f"{name}={status}" in allowed
+    mark = "ok  " if status == "ok" else ("expd" if expected else "FAIL")
     print(f"  {mark} doctor {name}: {status} - {c.get('summary', '')}")
-    if status != "ok" and name not in allowed:
-        bad.append(name)
+    if status != "ok" and not expected:
+        bad.append(f"{name}={status}")
 if bad:
     sys.exit("doctor rows not ok: " + ", ".join(bad))
 PY
