@@ -76,6 +76,12 @@ ENV_KEY = {
     "smtp_port": "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT",
 }
 ONBOARD_WAIT_SECONDS = 15 * 60
+# install.sh has just restarted the listener and the dispatcher, and for a few seconds
+# `paynani doctor` answers "unknown" while the new processes have not written their
+# state yet (version_drift since #266: unknown right after a restart, ok about 10 s
+# later). Only "unknown" is waited for; "warning" and "blocked" do not fix themselves.
+DOCTOR_WAIT_SECONDS = 60
+DOCTOR_POLL_SECONDS = 2
 
 
 class NeedData(Exception):
@@ -396,18 +402,34 @@ def step_rules(ctx: Ctx):
 
 # --- 13. verification -----------------------------------------------------------------
 
+def doctor_failure(status: str, report: dict, waited: int) -> str:
+    """Every row that is not ok, with its state and detail, so a failed run can be diagnosed from its log."""
+    rows = [f"  {c.get('name', '?')}: {c.get('status', '?')} - {c.get('summary', '')}"
+            + (f" (next: {c['next_command']})" if c.get("next_command") else "")
+            for c in report.get("checks", []) if isinstance(c, dict) and c.get("status") != "ok"]
+    head = f"paynani doctor says {status}" + (f" after waiting {waited}s" if waited else "") + ":"
+    return "\n".join([head, *rows, "run scripts/paynani doctor"])
+
+
 def step_verify(ctx: Ctx):
     if ctx.args.dry_run:
         ctx.would("scripts/paynani doctor --json and scripts/healthcheck.py"
                   + (", then a test message to the owner" if ctx.args.test_mail else ""))
         return True, "dry run"
-    doctor = run_quiet(ctx, [ROOT / "scripts" / "paynani", "doctor", "--json"], cwd=str(ROOT))
-    try:
-        status = json.loads(doctor.stdout)["status"]
-    except (ValueError, KeyError, TypeError):
-        return False, f"paynani doctor gave no status:\n{first_lines(doctor.stderr or doctor.stdout)}"
-    if status != "ok":
-        return False, f"paynani doctor says {status}: run scripts/paynani doctor"
+    waited = 0
+    while True:
+        doctor = run_quiet(ctx, [ROOT / "scripts" / "paynani", "doctor", "--json"], cwd=str(ROOT))
+        try:
+            report = json.loads(doctor.stdout)
+            status = report["status"]
+        except (ValueError, KeyError, TypeError):
+            return False, f"paynani doctor gave no status:\n{first_lines(doctor.stderr or doctor.stdout)}"
+        if status == "ok":
+            break
+        if status != "unknown" or waited >= DOCTOR_WAIT_SECONDS:
+            return False, doctor_failure(status, report, waited)
+        ctx.sleep(DOCTOR_POLL_SECONDS)
+        waited += DOCTOR_POLL_SECONDS
     health = run_quiet(ctx, [sys.executable, ROOT / "scripts" / "healthcheck.py"], cwd=str(ROOT))
     if health.returncode != 0:
         return False, f"healthcheck.py failed:\n{first_lines(health.stdout or health.stderr)}"

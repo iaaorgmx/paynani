@@ -80,6 +80,8 @@ class Runner:
             if matcher(argv):
                 if effect:
                     effect()
+                if callable(out):
+                    out = out()   # a rule can answer differently each time it is asked
                 return subprocess.CompletedProcess(argv, rc, out, err)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
@@ -125,6 +127,7 @@ class World:
         probe.probe_imap = lambda *a: self.probe_calls.append(("imap", a[0])) or ok_probe()
         probe.probe_smtp = lambda *a: self.probe_calls.append(("smtp", a[0])) or ok_probe()
         self.runner = Runner()
+        self.sleeps = []
         self.lines = []
 
     def close(self):
@@ -141,7 +144,7 @@ class World:
         os.environ["LANG"] = lang
         self.lines = []
         overrides = {"run": self.runner, "out": lambda *a: self.lines.append(" ".join(str(x) for x in a)),
-                     "interactive": interactive, "sleep": lambda _s: None}
+                     "interactive": interactive, "sleep": lambda seconds: self.sleeps.append(seconds)}
         if ask:
             overrides["ask"] = ask
         if secret:
@@ -484,6 +487,68 @@ def doctor_not_ok(w):
 
 
 with_world(doctor_not_ok)
+
+
+def doctor_json(status, rows=()):
+    return json.dumps({"status": status, "checks": list(rows)})
+
+
+def doctor_unknown_then_ok(w):
+    answers = iter([doctor_json("unknown"), doctor_json("unknown"), doctor_json("ok")])
+    w.runner.add(has("scripts/paynani", "doctor"), 0, lambda: next(answers))
+    code = w.run(*w.full())
+    check("doctor unknown right after the restart: it waits, and then says ready",
+          code == 0 and "Ready." in w.text, w.text)
+    check("...asking three times and sleeping two between them", len(w.runner.ran("doctor", "--json")) == 3 and w.sleeps == [2, 2], str(w.sleeps))
+    check("...and healthcheck runs once, after doctor is ok", len(w.runner.ran("healthcheck.py")) == 1)
+
+
+with_world(doctor_unknown_then_ok)
+
+
+def doctor_always_unknown(w):
+    rows = [{"name": "listener", "status": "ok", "summary": "listener service is active"},
+            {"name": "version_drift", "status": "unknown", "summary": "no state written yet", "next_command": "scripts/healthcheck.py"}]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", rows))
+    code = w.run(*w.full())
+    check("doctor unknown for good: it gives up after 60 s with exit 1", code == 1 and sum(w.sleeps) == 60 and "Ready." not in w.text, f"{w.sleeps[:3]} {w.text}")
+    check("...and lists the rows that are not ok, with their detail",
+          "version_drift: unknown - no state written yet" in w.text and "next: scripts/healthcheck.py" in w.text, w.text)
+    check("...and not the ones that are", "listener:" not in w.text, w.text)
+    check("...saying how long it waited", "after waiting 60s" in w.text, w.text)
+    check("...and healthcheck never ran", not w.runner.ran("healthcheck.py"))
+
+
+with_world(doctor_always_unknown)
+
+
+def doctor_warning_does_not_wait(w):
+    rows = [{"name": "version_drift", "status": "warning", "summary": "listener is on the old version"}]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("warning", rows))
+    code = w.run(*w.full())
+    check("doctor warning fails at once, without waiting", code == 1 and w.sleeps == [] and len(w.runner.ran("doctor", "--json")) == 1, str(w.sleeps))
+    check("...and names the row", "version_drift: warning - listener is on the old version" in w.text, w.text)
+
+
+with_world(doctor_warning_does_not_wait)
+
+
+def doctor_blocked_does_not_wait(w):
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("blocked", [{"name": "runtime", "status": "blocked", "summary": "no runtime"}]))
+    code = w.run(*w.full())
+    check("doctor blocked fails at once too", code == 1 and w.sleeps == [] and "runtime: blocked - no runtime" in w.text, w.text)
+
+
+with_world(doctor_blocked_does_not_wait)
+
+
+def doctor_garbage(w):
+    w.runner.add(has("scripts/paynani", "doctor"), 1, "not json at all")
+    code = w.run(*w.full())
+    check("doctor output that is not JSON fails without waiting", code == 1 and w.sleeps == [] and "gave no status" in w.text, w.text)
+
+
+with_world(doctor_garbage)
 
 
 def healthcheck_fails(w):
