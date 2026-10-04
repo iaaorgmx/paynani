@@ -522,6 +522,58 @@ def doctor_always_unknown(w):
 with_world(doctor_always_unknown)
 
 
+def doctor_only_the_session_watch_pending(w):
+    rows = [{"name": "listener", "status": "ok", "summary": "active"},
+            {"name": "session_watch_state", "status": "unknown", "summary": "Claude Code session watcher state is observable"}]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", rows))
+    code = w.run(*w.full())
+    check("a fresh install: session_watch_state unknown (no session has armed the watch yet) does not stop the run",
+          code == 0 and "Ready." in w.text, w.text)
+    check("...it is not waited for (nothing else is unknown)", w.sleeps == [] and len(w.runner.ran("doctor", "--json")) == 1, str(w.sleeps))
+    check("...and the closing message says what is pending and what the owner does",
+          "pending: session_watch_state" in w.text and "Pending: open Claude Code once" in w.text, w.text)
+    check("...healthcheck still runs", len(w.runner.ran("healthcheck.py")) == 1)
+
+
+with_world(doctor_only_the_session_watch_pending)
+
+
+def doctor_pending_plus_a_real_unknown(w):
+    pending = {"name": "session_watch_state", "status": "unknown", "summary": "watcher state"}
+    answers = iter([doctor_json("unknown", [pending, {"name": "version_drift", "status": "unknown", "summary": "no state yet"}]),
+                    doctor_json("unknown", [pending])])
+    w.runner.add(has("scripts/paynani", "doctor"), 0, lambda: next(answers))
+    code = w.run(*w.full())
+    check("another row that is unknown is still waited for, and the pending one does not keep it waiting after that",
+          code == 0 and w.sleeps == [2] and "pending: session_watch_state" in w.text, f"{w.sleeps} {w.text}")
+
+
+with_world(doctor_pending_plus_a_real_unknown)
+
+
+def doctor_stale_watch_is_a_failure(w):
+    rows = [{"name": "session_watch_state", "status": "warning", "summary": "no Claude Code session is watching mail"}]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("warning", rows))
+    code = w.run(*w.full())
+    check("a watch that WAS armed and went stale is a warning, and that fails (only unknown is pending)",
+          code == 1 and w.sleeps == [] and "session_watch_state: warning" in w.text and "Ready." not in w.text, w.text)
+
+
+with_world(doctor_stale_watch_is_a_failure)
+
+
+def doctor_pending_but_blocked_elsewhere(w):
+    rows = [{"name": "session_watch_state", "status": "unknown", "summary": "watcher state"},
+            {"name": "smtp", "status": "blocked", "summary": "himalaya config is missing"}]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("blocked", rows))
+    code = w.run(*w.full())
+    check("pending does not hide a real failure: smtp blocked fails at once, and only it is listed",
+          code == 1 and w.sleeps == [] and "smtp: blocked" in w.text and "session_watch_state:" not in w.text, w.text)
+
+
+with_world(doctor_pending_but_blocked_elsewhere)
+
+
 def doctor_warning_does_not_wait(w):
     rows = [{"name": "version_drift", "status": "warning", "summary": "listener is on the old version"}]
     w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("warning", rows))

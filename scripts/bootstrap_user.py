@@ -82,6 +82,12 @@ ONBOARD_WAIT_SECONDS = 15 * 60
 # later). Only "unknown" is waited for; "warning" and "blocked" do not fix themselves.
 DOCTOR_WAIT_SECONDS = 60
 DOCTOR_POLL_SECONDS = 2
+# doctor rows that are `unknown` on purpose in a fresh install and fix themselves later, so
+# they do not stop the run from saying ready. session_watch_state is unknown until a Claude
+# Code session has armed the mail watch, and that happens when the owner opens Claude Code,
+# which is what the closing message asks for. Only `unknown` counts: a watch that was armed
+# and went stale is a `warning`, and that does fail.
+PENDING_AT_INSTALL = ("session_watch_state",)
 
 
 class NeedData(Exception):
@@ -103,6 +109,7 @@ class Ctx:
     mailbox: dict = field(default_factory=dict)   # the pieces of SCHEMA; holds the password
     password_key: str = "AGENT_EMAIL_PASSWORD"
     owner: str = ""
+    pending: list = field(default_factory=list)   # doctor rows left unknown on purpose
 
     def say(self, text: str) -> None:
         self.out(text)
@@ -402,11 +409,24 @@ def step_rules(ctx: Ctx):
 
 # --- 13. verification -----------------------------------------------------------------
 
-def doctor_failure(status: str, report: dict, waited: int) -> str:
-    """Every row that is not ok, with its state and detail, so a failed run can be diagnosed from its log."""
+def split_doctor_rows(report: dict):
+    """(rows that are not ok and block, rows that are unknown on purpose in a fresh install)."""
+    blocking, pending = [], []
+    for row in report.get("checks", []):
+        if not isinstance(row, dict) or row.get("status") == "ok":
+            continue
+        if row.get("name") in PENDING_AT_INSTALL and row.get("status") == "unknown":
+            pending.append(row)
+        else:
+            blocking.append(row)
+    return blocking, pending
+
+
+def doctor_failure(status: str, blocking: list, waited: int) -> str:
+    """Every row that blocks, with its state and detail, so a failed run can be diagnosed from its log."""
     rows = [f"  {c.get('name', '?')}: {c.get('status', '?')} - {c.get('summary', '')}"
             + (f" (next: {c['next_command']})" if c.get("next_command") else "")
-            for c in report.get("checks", []) if isinstance(c, dict) and c.get("status") != "ok"]
+            for c in blocking]
     head = f"paynani doctor says {status}" + (f" after waiting {waited}s" if waited else "") + ":"
     return "\n".join([head, *rows, "run scripts/paynani doctor"])
 
@@ -424,10 +444,16 @@ def step_verify(ctx: Ctx):
             status = report["status"]
         except (ValueError, KeyError, TypeError):
             return False, f"paynani doctor gave no status:\n{first_lines(doctor.stderr or doctor.stdout)}"
-        if status == "ok":
+        blocking, pending = split_doctor_rows(report)
+        if status == "ok" or (not blocking and report.get("checks")):
+            ctx.pending = [row.get("name") for row in pending]
             break
-        if status != "unknown" or waited >= DOCTOR_WAIT_SECONDS:
-            return False, doctor_failure(status, report, waited)
+        # What decides is the worst row that is not pending; the overall status only when
+        # there are no rows to read.
+        worst = status if not report.get("checks") else (
+            "unknown" if all(row.get("status") == "unknown" for row in blocking) else "failing")
+        if worst != "unknown" or waited >= DOCTOR_WAIT_SECONDS:
+            return False, doctor_failure(status, blocking, waited)
         ctx.sleep(DOCTOR_POLL_SECONDS)
         waited += DOCTOR_POLL_SECONDS
     health = run_quiet(ctx, [sys.executable, ROOT / "scripts" / "healthcheck.py"], cwd=str(ROOT))
@@ -446,7 +472,8 @@ def step_verify(ctx: Ctx):
             Path(body.name).unlink(missing_ok=True)
         if sent.returncode != 0:
             return False, f"send.sh to the owner failed:\n{first_lines(sent.stderr or sent.stdout)}"
-    return True, "doctor ok, healthcheck ok" + (", test message sent" if ctx.args.test_mail else "")
+    note = f" (pending: {', '.join(ctx.pending)})" if ctx.pending else ""
+    return True, f"doctor ok{note}, healthcheck ok" + (", test message sent" if ctx.args.test_mail else "")
 
 
 # --- driver ----------------------------------------------------------------------------
@@ -518,6 +545,8 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
     ctx.say(ctx.L("b.sum_clone", value=ROOT))
     if ctx.owner:
         ctx.say(ctx.L("b.sum_owner", value=ctx.owner))
+    if ctx.pending:
+        ctx.say(ctx.L("b.sum_pending"))
     return EX_OK
 
 

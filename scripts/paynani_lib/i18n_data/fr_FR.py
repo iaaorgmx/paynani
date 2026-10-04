@@ -217,4 +217,5 @@ STRINGS = {
     'b.sum_owner': 'Propriétaire dans roster.md : {value}',
     'b.not_ready': "Pas prêt : l'étape « {step} » a échoué.",
     'b.repeat': 'Pour la relancer : {command}',
+    'b.sum_pending': "En attente : ouvrez Claude Code une fois, pour qu'il arme la surveillance du courrier.",
 }
