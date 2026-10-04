@@ -30,9 +30,9 @@ curl -fsSL https://raw.githubusercontent.com/iaaorgmx/paynani/main/bootstrap.sh 
 Run it with `sudo` from the agent's user: paynani is installed for
 `$SUDO_USER` (or `--user U`). Root is used only for `apt-get` and
 `loginctl enable-linger`; the clone, the credentials, `roster.md`, the user
-services and the harness rules all belong to that user. It asks for the
-runtime (when more than one is present), the mailbox (password hidden) and the
-owner's name and address, and it says **Ready** only when `paynani doctor` and
+services and the harness rules all belong to that user. It confirms the
+runtime it detects (or asks which one, if there are several), asks for the
+mailbox (password hidden) and the owner's name and address, and it says **Ready** only when `paynani doctor` and
 `healthcheck.py` both pass. With Claude Code or Codex the last step is yours:
 open a session, which arms the mail watch.
 
@@ -55,12 +55,17 @@ it uses them and says so, so running it again is safe. Exit codes: `0` ready,
 `1` a step failed (it names the step and the command to repeat it), `2`
 missing data or a bad option, `3` unsupported system, `4` not run as root.
 
-**If it refuses:**
-- A directory on the clone's path has an ACL that lets another user write
-  (common on CI images, rare on a stock Ubuntu): it names the directory. Remove
-  it with `setfacl -k DIR` or pick another `--dir`.
-- A directory on the path is writable by group or others: it removes only that
-  write bit itself, says so, and goes on.
+**If it refuses**, it exits 1 without having changed anything on that path:
+- A directory on the clone's path has a default ACL that lets another user
+  write (common on CI images, rare on a stock Ubuntu): it changes nothing and
+  stops, naming the directory and the entries. Remove it with `setfacl -k DIR`
+  or pick another `--dir`. Without the `acl` package it cannot read the ACL, so
+  it only warns (`DIR has an ACL`) and goes on; `install.sh` may then refuse
+  the path.
+- A directory on the path is writable by group or others: if it belongs to the
+  user, it removes only that write bit, says so, and goes on. If it belongs to
+  someone else (root, for example), it changes nothing and stops, naming the
+  directory: `chown` it to the user or pick another `--dir`.
 - `--upgrade` runs the installed copy of the user half until `version.sh
   --apply` has moved the clone. If a release changes the install steps
   themselves, run `--upgrade` twice.
