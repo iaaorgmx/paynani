@@ -458,6 +458,24 @@ try:
         os.environ.pop("PAYNANI_STATE", None)
         if kept is not None:
             os.environ["PAYNANI_STATE"] = kept
+
+    # --- a shared harness module restarts the account listeners too (#336) ------
+    # harness/event.py is imported by paynani-idle@<id> as well; the 0c3c907
+    # plan restarted only the main listener and doctor stayed in `warning` for
+    # every account until they were restarted by hand.
+    write(only, "harness/event.py", "# v1.0.2\n")
+    write(only, "VERSION", "1.0.1\n")
+    sh(only, "add", "-A")
+    sh(only, "commit", "-q", "-m", "event")
+    sh(only, "tag", "v1.0.2")
+    shared = up.plan("v1.0.1", "v1.0.2", repo=only, runtime="claudecode", system="Linux")
+    units = [u for u, _ in shared["restart_units"]]
+    check("harness/event.py restarts the listener, its instances, the dispatcher and the gateway",
+          all(u in units for u in ("paynani-idle.service", "paynani-idle@*.service",
+                                   "paynani-dispatch.service", "paynani-sms*.service")), str(units))
+    check("and the commands restart the account instances",
+          any("paynani-idle@*.service" in c and "xargs -r systemctl --user restart" in c
+              for c in up.commands(shared)), str(up.commands(shared)))
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
