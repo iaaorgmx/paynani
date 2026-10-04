@@ -322,7 +322,10 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
             continue
         if f["verb"] == "restart":
             if f["unit"] == "both":
-                units.extend([LISTENER, DISPATCHER, SMS_GATEWAY])
+                # The per-account listeners (paynani-idle@<id>) import the same
+                # harness modules as the main one; leaving them out kept doctor
+                # in `warning` after following the plan exactly (#336).
+                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY])
             elif f["unit"] == "listener-all":
                 units.extend([LISTENER, LISTENER_INSTANCES, SMS_GATEWAY])
             elif f["unit"] == "all":

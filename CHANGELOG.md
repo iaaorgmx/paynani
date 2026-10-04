@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **El plan de actualización reinicia también las cuentas adicionales** (#336).
+  Cuando cambia un módulo compartido de `harness/` (`event.py`, `paths.py`,
+  `ledger.py`, `python_floor.py` o `phone.py`), `upgrade_plan.py` ya incluye las
+  instancias `paynani-idle@<id>`. Antes, `doctor` se quedaba en `warning` en cada
+  cuenta aunque se siguiera el plan al pie de la letra.
 - **Aviso de un mensaje que PaynaniApp no pudo leer** (#332). La pasarela acepta
   `sms.unseen`: cuando Google Messages recibe un mensaje (casi siempre un RCS, que
   no pasa por SMS) y la app no ve el SMS correspondiente en 60 s, el agente recibe
