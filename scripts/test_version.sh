@@ -339,6 +339,72 @@ assert "corrupt cache re-checks"         '[ "$rc" -eq 2 ]'
 # what "replaced with something well-formed" means.
 assert "corrupt cache is replaced"       '[ "$(sed -n 1p "$state/version.check" | cut -d" " -f2)" = "1.10.0" ] && [ "$(sed -n 2p "$state/version.check")" = "1.0.0" ]'
 
+# ---- --plan / --apply plan with the destination's table (#329) -------------
+#
+# A release that adds a file adds the rule for it in the same release. The
+# installed table has never heard of the new file and answers "unknown", so the
+# plan has to be computed by the planner that ships in the target tag, taken out
+# of that tag's own tree and pointed back at this clone with --repo.
+here="$(cd "$(dirname "$VERSION_SH")" && pwd)"
+remote2="$tmp/origin2.git"
+git init -q --bare "$remote2"
+seed2="$tmp/seed2"
+git init -q "$seed2"
+g2() { git -C "$seed2" -c user.email=t@t -c user.name=t "$@"; }
+mkdir -p "$seed2/scripts" "$seed2/harness"
+cp "$VERSION_SH" "$seed2/scripts/version.sh"
+cp "$here/envpath.sh" "$seed2/scripts/envpath.sh"
+cp "$here/upgrade_plan.py" "$seed2/scripts/upgrade_plan.py"
+cp "$here/../harness/paths.py" "$seed2/harness/paths.py"
+printf '0.0.1\n' >"$seed2/VERSION"
+g2 add -A; g2 commit -q -m one; g2 tag v0.0.1
+# v0.0.2 adds harness/nuevo.py and, in the same release, the rule that knows it.
+printf 'x = 1\n' >"$seed2/harness/nuevo.py"
+python3 - "$seed2/scripts/upgrade_plan.py" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+anchor = '    (r"^harness/dispatch\\.py$"'
+rule = '    (r"^harness/nuevo\\.py$", "restart", "the new module", *DISPATCHER, None, None),\n'
+assert anchor in text, "anchor rule moved: update this fixture"
+open(path, "w").write(text.replace(anchor, rule + anchor, 1))
+PY
+printf '0.0.2\n' >"$seed2/VERSION"
+g2 add -A; g2 commit -q -m two; g2 tag v0.0.2
+# v0.0.3 carries no planner at all.
+g2 rm -q -r scripts/upgrade_plan.py
+printf '0.0.3\n' >"$seed2/VERSION"
+printf 'y = 2\n' >"$seed2/harness/otro.py"
+g2 add -A; g2 commit -q -m three; g2 tag v0.0.3
+g2 push -q "$remote2" HEAD:main --tags
+
+clone2="$tmp/clone2"
+git clone -q "$remote2" "$clone2"
+git -C "$clone2" checkout -q v0.0.1
+printf 'runtime\tclaudecode\n' >"$clone2/install.manifest"
+export PAYNANI_STATE="$tmp/state2"
+
+out=$("$clone2/scripts/version.sh" --plan v0.0.2 2>&1); rc=$?
+assert "--plan to a tag that adds a file and its rule exits 0"  '[ "$rc" -eq 0 ]'
+assert "--plan uses the destination's table, not unknown"        '! grep -qi "unknown" <<<"$out"'
+assert "--plan knows the file the target added"                  'grep -q "harness/nuevo.py" <<<"$out"'
+assert "--plan applies the rule the target added"                'grep -q "harness/nuevo.py -> paynani-dispatch.service" <<<"$out"'
+assert "--plan did not touch the clone's own planner"            'cmp -s "$clone2/scripts/upgrade_plan.py" <(git -C "$clone2" show v0.0.1:scripts/upgrade_plan.py)'
+
+out=$("$clone2/scripts/version.sh" --plan v0.0.3 2>&1); rc=$?
+assert "a destination without a planner says so on stderr" \
+    'grep -q "version.sh: v0.0.3 has no upgrade_plan.py; planning with the installed table" <<<"$out"'
+assert "and still plans, with the installed table" 'grep -q "^upgrade plan: v0.0.1 -> v0.0.3" <<<"$out"'
+
+# Nothing is left behind in the temp directory after either run.
+leftover_before=$(ls -d "${TMPDIR:-/tmp}"/tmp.* 2>/dev/null | sort)
+"$clone2/scripts/version.sh" --plan v0.0.2 >/dev/null 2>&1
+leftover_after=$(ls -d "${TMPDIR:-/tmp}"/tmp.* 2>/dev/null | sort)
+assert "the extracted planner's directory is removed" '[ "$leftover_before" = "$leftover_after" ]'
+
+export PAYNANI_STATE="$state"
+rm -rf "$clone2" "$seed2" "$remote2"
+
 # ---- --installed ----------------------------------------------------------
 
 run 1.2.0 --installed

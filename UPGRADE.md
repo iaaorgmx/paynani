@@ -92,7 +92,10 @@ copy the installer names but does not write (`opencode_plugin.py --install`,
 `claude_hook.py --install`, `codex_hook.py --install`, `openclaw_rules.py
 --install`), then the service restarts, then the harness restart. `unknown`
 means the table behind the plan does not know that file; fall back to this
-document for it.
+document for it. The plan, and `--apply`, use the table that ships in the target
+tag, so a release that adds a file also teaches the plan about it. A tag with no
+`scripts/upgrade_plan.py` is planned with the installed table, and `version.sh`
+says so on stderr.
 
 "could not compute" has two causes and names which: one of the two tags is
 not in the clone yet, and the `git fetch` above is the fix; or there is no

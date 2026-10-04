@@ -442,6 +442,22 @@ try:
           str(patch["restart_units"]))
     check("and names both services in the commands",
           any("paynani-dispatch.service" in c for c in up.commands(patch)))
+    # --- #329: a planner run from the target's tree still honours PAYNANI_STATE --
+    import os
+    other = tmp / "other-clone"
+    kept = os.environ.pop("PAYNANI_STATE", None)
+    try:
+        check("another repo's state dir is <repo>/state without an override",
+              up._state_dir(other) == other / "state")
+        os.environ["PAYNANI_STATE"] = str(tmp / "elsewhere")
+        check("another repo's state dir follows PAYNANI_STATE when it is set",
+              up._state_dir(other) == tmp / "elsewhere")
+        check("and the installed clone's state dir is unchanged by that rule",
+              up._state_dir(up.ROOT) == up.harness_paths.state_dir())
+    finally:
+        os.environ.pop("PAYNANI_STATE", None)
+        if kept is not None:
+            os.environ["PAYNANI_STATE"] = kept
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
