@@ -324,6 +324,18 @@ reset; mkdir -p "$tmp/run/1000"; "$REAL_PYTHON3" -c 'import socket,sys; socket.s
 FAKE_LINGER=yes bs --runtime claudecode
 assert "linger already on and the bus there: it goes on without waiting" '[ "$rc" -eq 0 ] && ! called "enable-linger"'
 
+# ---- what the script creates in the user's home is private (BOOT-2 finding by Andy, #358) ---
+
+reset
+oldmask=$(umask); umask 002      # the usual Ubuntu umask: group-writable by default
+bs --runtime claudecode
+umask "$oldmask"
+assert "the run succeeds with a group-writable umask" '[ "$rc" -eq 0 ]'
+assert "~/.claude, which the script creates for the clone, is not group or world writable" \
+    '[ "$(stat -c %a "$home/.claude")" = 700 ] && [ "$(stat -c %a "$home/.claude/workspace")" = 700 ]'
+assert "...and neither is the himalaya installer's target nor anything else it made" \
+    '! find "$home" -perm /022 | grep -q .'
+
 # ---- B3: what exists is not replaced ----------------------------------------
 
 reset

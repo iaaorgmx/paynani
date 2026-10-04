@@ -138,13 +138,18 @@ run() {
 user_env=()
 as_user() { sudo -u "$user" -H "${user_env[@]}" "$@"; }
 
-# Same as run, for what runs as the user.
+# Same as run, for what runs as the user, and for what this script CREATES in the
+# user's home (the directories above the clone, the clone, ~/.local/bin). Those are
+# made with umask 077 and not with whatever the account has: on Ubuntu a user's
+# umask is usually 002 (USERGROUPS_ENAB), which leaves ~/.claude group-writable, and
+# install.sh then refuses it as an unsafe container (found by the end-to-end job).
+# A umask is not an environment variable, so env -i does not fix it.
 run_user() {
     if [[ $dry_run -eq 1 ]]; then
         printf 'would: sudo -u %s -H %s\n' "$user" "$*"
         return 0
     fi
-    as_user "$@"
+    as_user sh -c 'umask 077; exec "$@"' sh "$@"
 }
 
 cleanup() {
