@@ -87,3 +87,7 @@ jobs:
           uid=$(id -u agente 2>/dev/null) || exit 0
           sudo -u agente XDG_RUNTIME_DIR=/run/user/$uid journalctl --user --no-pager -n 200 || true
           sudo cat /tmp/paynani-e2e/doctor.json 2>/dev/null || true
+          echo "modes of what install.sh validates, and where they came from:"
+          sudo stat -c '%a %U:%G %n' /home/agente /home/agente/.claude /home/agente/.claude/workspace \
+            /home/agente/.config /home/agente/.config/systemd 2>&1 || true
+          ls -la /etc/skel || true
