@@ -126,7 +126,7 @@ jobs:
         # repository cares about most.
         if: always()
         run: |
-          expected="test_install.sh"
+          expected="test_install.sh test_bootstrap.sh"
           actual=$(sort /tmp/skipped.txt 2>/dev/null || true)
           expected=$(printf '%s' "$expected" | tr ' ' '\n' | sed '/^$/d' | sort)
           if [ "$actual" != "$expected" ]; then
