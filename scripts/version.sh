@@ -177,20 +177,49 @@ if [ "$mode" = "--line" ]; then
     exit 0
 fi
 
+# The plan has to be computed with the table of the version being installed, not
+# the one already on disk: a release that adds a file adds the rule for it in the
+# same release, and the installed copy answers "unknown" for a file it has never
+# heard of. So the planner is taken out of the target's own tree. scripts/ and
+# harness/ both come along because upgrade_plan.py finds its harness import from
+# its own location, and --repo points it back at this clone for everything else.
+run_planner() {   # run_planner <extra planner args...>; "$target" may be empty
+    local target tmp rc
+    if [ -n "${PLAN_TARGET:-}" ]; then
+        target=$PLAN_TARGET
+    else
+        git -C "$REPO" fetch --tags origin >/dev/null 2>&1 || true
+        target=$(git -C "$REPO" tag --list 'v*' --sort=-v:refname 2>/dev/null | head -n1)
+    fi
+
+    if [ -n "$target" ] && git -C "$REPO" cat-file -e "$target:scripts/upgrade_plan.py" 2>/dev/null; then
+        tmp=$(mktemp -d) || exit 1
+        trap 'rm -rf "$tmp"' EXIT
+        if git -C "$REPO" archive "$target" scripts harness | tar -x -C "$tmp"; then
+            python3 "$tmp/scripts/upgrade_plan.py" --repo "$REPO" --to "$target" "$@"
+            exit $?
+        fi
+        echo "version.sh: could not read scripts/ and harness/ from $target; planning with the installed table" >&2
+    elif [ -n "$target" ]; then
+        echo "version.sh: $target has no upgrade_plan.py; planning with the installed table" >&2
+    fi
+
+    if [ -n "${PLAN_TARGET:-}" ]; then
+        exec python3 "$REPO/scripts/upgrade_plan.py" "$@" --to "$PLAN_TARGET"
+    fi
+    exec python3 "$REPO/scripts/upgrade_plan.py" "$@"
+}
+
 if [ "$mode" = "--plan" ]; then
     shift
-    if [ $# -gt 0 ]; then
-        exec python3 "$REPO/scripts/upgrade_plan.py" --to "$1"
-    fi
-    exec python3 "$REPO/scripts/upgrade_plan.py"
+    PLAN_TARGET=${1:-}
+    run_planner
 fi
 
 if [ "$mode" = "--apply" ]; then
     shift
-    if [ $# -gt 0 ]; then
-        exec python3 "$REPO/scripts/upgrade_plan.py" --apply --to "$1"
-    fi
-    exec python3 "$REPO/scripts/upgrade_plan.py" --apply
+    PLAN_TARGET=${1:-}
+    run_planner --apply
 fi
 
 if [ "$mode" != "--report" ]; then

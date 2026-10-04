@@ -402,7 +402,15 @@ def _safe_ref_name(value):
 
 
 def _state_dir(repo):
-    return harness_paths.state_dir() if pathlib.Path(repo) == ROOT else pathlib.Path(repo) / "state"
+    if pathlib.Path(repo) == ROOT:
+        return harness_paths.state_dir()
+    # A planner running from the target's own tree (version.sh extracts it) points
+    # --repo back at the real clone, and has to honour the same PAYNANI_STATE
+    # override paths.state_dir() does.
+    override = os.environ.get("PAYNANI_STATE")
+    if override:
+        return pathlib.Path(override).expanduser()
+    return pathlib.Path(repo) / "state"
 
 
 def _run(argv, repo, runner=subprocess.run, capture=False):
