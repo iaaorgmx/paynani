@@ -388,7 +388,7 @@ out=$("$clone2/scripts/version.sh" --plan v0.0.2 2>&1); rc=$?
 assert "--plan to a tag that adds a file and its rule exits 0"  '[ "$rc" -eq 0 ]'
 assert "--plan uses the destination's table, not unknown"        '! grep -qi "unknown" <<<"$out"'
 assert "--plan knows the file the target added"                  'grep -q "harness/nuevo.py" <<<"$out"'
-assert "--plan applies the rule the target added"                'grep -q "harness/nuevo.py -> paynani-dispatch.service" <<<"$out"'
+assert "--plan applies the rule the target added"                'grep -Eq "harness/nuevo\.py -> (paynani-dispatch\.service|com\.paynani\.dispatch)" <<<"$out"'
 assert "--plan did not touch the clone's own planner"            'cmp -s "$clone2/scripts/upgrade_plan.py" <(git -C "$clone2" show v0.0.1:scripts/upgrade_plan.py)'
 
 out=$("$clone2/scripts/version.sh" --plan v0.0.3 2>&1); rc=$?
