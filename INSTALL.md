@@ -66,6 +66,7 @@ missing data or a bad option, `3` unsupported system, `4` not run as root.
   user, it removes only that write bit, says so, and goes on. If it belongs to
   someone else (root, for example), it changes nothing and stops, naming the
   directory: `chown` it to the user or pick another `--dir`.
+
 **Upgrades.** `--upgrade` runs the installed copy of the user half until
 `version.sh --apply` has moved the clone. If a release changes the install
 steps themselves, run `--upgrade` twice.
