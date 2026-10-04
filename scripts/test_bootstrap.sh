@@ -1,0 +1,315 @@
+#!/usr/bin/env bash
+# Exercises bootstrap.sh (the root half, BOOT-1) without root and without a network.
+#
+# apt-get, dpkg, loginctl, git, sudo, id, getent, curl, install and himalaya are
+# replaced by fakes in a directory at the front of PATH. Each fake appends its
+# arguments to one log, so a case can say what was called, in what order, and
+# above all what was NOT called: the whole point of --dry-run (B4) is the absence
+# of calls, and a test that only checks the exit code would pass for a script that
+# ran everything and then exited 0.
+#
+#   scripts/test_bootstrap.sh
+
+set -uo pipefail
+
+# bootstrap.sh is the Ubuntu and Debian installer and uses bash 4 (associative
+# arrays, mapfile); macOS ships bash 3.2 and has its own installer. Say so out
+# loud, in the form the macOS job in .github/workflows/tests.yml counts as a skip,
+# rather than failing there or passing silently.
+if [ "$(uname -s)" != Linux ]; then
+    printf 'skip bootstrap (bootstrap.sh is the Ubuntu/Debian installer; this host is %s)\n' "$(uname -s)"
+    printf '\n0 passed, 0 failed, 1 suite skipped (not Linux)\n'
+    exit 0
+fi
+
+BOOTSTRAP="$(cd "$(dirname "$0")/.." && pwd)/bootstrap.sh"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+pass=0
+fail=0
+assert() {
+    local desc=$1 cond=$2
+    if eval "$cond"; then
+        printf '  PASS  %-9s %s\n' "bootstrap" "$desc"; pass=$((pass+1))
+    else
+        printf '  FAIL  %-9s %s\n' "bootstrap" "$desc"; fail=$((fail+1))
+    fi
+}
+
+fake="$tmp/bin"
+home="$tmp/home/owner"
+log="$tmp/calls.log"
+mkdir -p "$fake" "$home"
+
+# --- the fakes -------------------------------------------------------------
+
+cat >"$fake/id" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "-u" ] && [ $# -eq 1 ]; then echo "${FAKE_UID:-0}"; exit 0; fi
+[ "$1" = "${FAKE_USER:-owner}" ] && exit 0
+exit 1
+EOF
+cat >"$fake/getent" <<'EOF'
+#!/usr/bin/env bash
+echo "$2:x:1000:1000::${FAKE_HOME}:/bin/bash"
+EOF
+cat >"$fake/dpkg" <<'EOF'
+#!/usr/bin/env bash
+case " ${FAKE_INSTALLED-git python3 curl ca-certificates} " in *" $2 "*) exit 0 ;; esac
+exit 1
+EOF
+cat >"$fake/apt-get" <<'EOF'
+#!/usr/bin/env bash
+echo "apt-get $*" >>"$FAKE_LOG"
+EOF
+cat >"$fake/loginctl" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "show-user" ]; then echo "${FAKE_LINGER:-no}"; exit 0; fi
+echo "loginctl $*" >>"$FAKE_LOG"
+EOF
+# The "installer" the pipe feeds to sh leaves a mark; himalaya then reports v2.
+cat >"$fake/curl" <<'EOF'
+#!/usr/bin/env bash
+echo "curl $*" >>"$FAKE_LOG"
+echo ': > "$FAKE_MARK"'
+EOF
+cat >"$fake/install" <<'EOF'
+#!/usr/bin/env bash
+echo "install $*" >>"$FAKE_LOG"
+src="" dst=""
+for a in "$@"; do
+    case "$a" in -m|-o|--|[0-9][0-9][0-9]|owner) ;; *) [ -z "$src" ] && src=$a || dst=$a ;; esac
+done
+cp "$src" "$dst" && chmod 600 "$dst"
+EOF
+cat >"$fake/himalaya" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${FAKE_HIMALAYA-}" ]; then echo "himalaya $FAKE_HIMALAYA"
+elif [ -e "$FAKE_MARK" ]; then echo "himalaya v2.0.0"
+else exit 127; fi
+EOF
+cat >"$fake/python3" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1-}" = "-c" ] && [[ "${2-}" == *version_info* ]]; then
+    [ -z "${FAKE_PY_OLD-}" ]; exit $?
+fi
+exec "$REAL_PYTHON3" "$@"
+EOF
+# sudo -u USER -H CMD...: log it, then run CMD as ourselves.
+cat >"$fake/sudo" <<'EOF'
+#!/usr/bin/env bash
+echo "sudo $*" >>"$FAKE_LOG"
+[ "$1" = "-u" ] && shift 2
+[ "$1" = "-H" ] && shift
+exec "$@"
+EOF
+cat >"$fake/git" <<'EOF'
+#!/usr/bin/env bash
+echo "git $*" >>"$FAKE_LOG"
+if [ "$1" = "-C" ]; then
+    case "$3" in
+        remote) echo "https://github.com/iaaorgmx/paynani.git" ;;
+    esac
+    exit 0
+fi
+case "$1" in
+    ls-remote)
+        printf 'aaa\trefs/tags/v0.9.1\nbbb\trefs/tags/v0.10.0\nccc\trefs/tags/v0.11.0\nddd\trefs/tags/v0.2.0\n' ;;
+    clone)
+        target=${!#}
+        mkdir -p "$target/scripts" "$target/.git"
+        if [ -z "${FAKE_NO_USER_PY-}" ]; then
+            cat >"$target/scripts/bootstrap_user.py" <<'PY'
+import os, sys
+with open(os.environ["FAKE_LOG"], "a") as f:
+    f.write("bootstrap_user.py " + " ".join(sys.argv[1:]) + " LANG=" + os.environ.get("LANG", "") + "\n")
+raise SystemExit(int(os.environ.get("FAKE_USER_RC", "0")))
+PY
+        fi ;;
+esac
+exit 0
+EOF
+chmod +x "$fake"/*
+
+# The Ubuntu and Fedora files bootstrap.sh reads through BOOTSTRAP_OS_RELEASE.
+printf 'ID=ubuntu\nID_LIKE=debian\n' >"$tmp/os-ubuntu"
+printf 'ID=debian\n' >"$tmp/os-debian"
+printf 'ID=linuxmint\nID_LIKE="ubuntu debian"\n' >"$tmp/os-mint"
+printf 'ID=fedora\nID_LIKE="rhel centos"\n' >"$tmp/os-fedora"
+
+export REAL_PYTHON3
+REAL_PYTHON3=$(command -v python3)
+export PATH="$fake:$PATH"
+export FAKE_LOG="$log" FAKE_HOME="$home" FAKE_USER=owner FAKE_MARK="$tmp/himalaya-installed"
+export BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
+export BOOTSTRAP_REPO_URL="https://example.invalid/paynani.git"
+export SUDO_USER=owner
+export LANG=en_US.UTF-8
+
+reset() {   # a clean host for the next case
+    : >"$log"
+    rm -rf "$home" "$FAKE_MARK"
+    mkdir -p "$home"
+    unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC
+    export SUDO_USER=owner BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
+}
+
+bs() {   # bs <args...>  -> sets $out and $rc
+    out=$(bash "$BOOTSTRAP" "$@" 2>&1); rc=$?
+}
+called() { grep -q -- "$1" "$log"; }
+
+listing() { (cd "$tmp" && find home -mindepth 1 | sort); }
+
+# ---- B5: who may run it, and on what ---------------------------------------
+
+reset; FAKE_UID=1000 bs --runtime claudecode
+assert "not root: exit 4"                                   '[ "$rc" -eq 4 ]'
+assert "not root: says to use sudo"                         'grep -q "sudo" <<<"$out"'
+assert "not root: nothing was called"                       '[ ! -s "$log" ]'
+
+reset; unset SUDO_USER; bs --runtime claudecode
+assert "root without sudo and without --user: exit 4 (B5)"  '[ "$rc" -eq 4 ]'
+assert "...and the message names --user"                    'grep -q -- "--user" <<<"$out"'
+
+reset; SUDO_USER=root bs --runtime claudecode
+assert "SUDO_USER=root is not a target: exit 4"             '[ "$rc" -eq 4 ]'
+
+reset; unset SUDO_USER; bs --runtime claudecode --user owner --dry-run
+assert "root without sudo but with --user is accepted"      '[ "$rc" -eq 0 ]'
+
+reset; bs --runtime claudecode --user nobody-here --dry-run
+assert "a user that does not exist: exit 2"                 '[ "$rc" -eq 2 ]'
+
+reset; BOOTSTRAP_OS_RELEASE="$tmp/os-fedora" bs --runtime claudecode
+assert "Fedora: exit 3 (B5)"                                '[ "$rc" -eq 3 ]'
+assert "Fedora: nothing was installed or cloned"            '[ ! -s "$log" ]'
+reset; BOOTSTRAP_OS_RELEASE="$tmp/os-debian" bs --runtime claudecode --dry-run
+assert "Debian is accepted"                                 '[ "$rc" -eq 0 ]'
+reset; BOOTSTRAP_OS_RELEASE="$tmp/os-mint" bs --runtime claudecode --dry-run
+assert "a derivative (ID_LIKE contains debian) is accepted" '[ "$rc" -eq 0 ]'
+
+reset; FAKE_PY_OLD=1 bs --runtime claudecode --dry-run
+assert "python3 older than 3.10: exit 3"                    '[ "$rc" -eq 3 ]'
+
+# ---- options ----------------------------------------------------------------
+
+reset; bs --frobnicate
+assert "an unknown option: exit 2"                          '[ "$rc" -eq 2 ]'
+reset; bs --runtime
+assert "an option without its value: exit 2"                '[ "$rc" -eq 2 ]'
+reset; bs --runtime emacs
+assert "an unknown runtime: exit 2"                         '[ "$rc" -eq 2 ]'
+reset; bs --runtime claudecode --owner-name Someone
+assert "--owner-name alone: exit 2"                         '[ "$rc" -eq 2 ]'
+reset; bs --runtime claudecode --env-file "$tmp/nope"
+assert "an --env-file that is not a file: exit 2"           '[ "$rc" -eq 2 ]'
+reset; bs --help
+assert "--help exits 0 and shows the exit codes"            '[ "$rc" -eq 0 ] && grep -q "Exit codes" <<<"$out"'
+
+# ---- B4: --dry-run changes nothing ------------------------------------------
+
+reset; FAKE_INSTALLED="" ; export FAKE_INSTALLED
+before=$(listing)
+bs --runtime claudecode --yes --with-sms --test-mail --owner-name "Ada" --owner-email ada@example.com --dry-run
+after=$(listing)
+assert "--dry-run exits 0"                                  '[ "$rc" -eq 0 ]'
+assert "--dry-run prints the actions with would:"           'grep -q "^would: apt-get install -y git python3 curl ca-certificates" <<<"$out"'
+assert "--dry-run names the clone and the linger"           'grep -q "^would: sudo -u owner -H git clone --branch v0.11.0" <<<"$out" && grep -q "^would: loginctl enable-linger owner" <<<"$out"'
+assert "--dry-run names the himalaya install"               'grep -q "^would: sudo -u owner -H env PREFIX=.*/.local sh -c" <<<"$out"'
+assert "--dry-run names the hand over"                      'grep -q "^would: sudo -u owner -H env LANG=en_US.UTF-8 python3 .*/scripts/bootstrap_user.py --runtime claudecode --ref v0.11.0" <<<"$out"'
+assert "--dry-run did not touch the disk (B4)"              '[ "$before" = "$after" ]'
+assert "--dry-run called no mutating command"               '! called "apt-get" && ! called "loginctl" && ! called "git clone" && ! called "curl" && ! called "bootstrap_user.py"'
+unset FAKE_INSTALLED
+
+# ---- the real run: packages, himalaya, linger, clone, hand over -------------
+
+reset
+bs --runtime claudecode
+assert "a run exits 0"                                      '[ "$rc" -eq 0 ]'
+assert "present packages are not installed again"           '! called "apt-get"'
+assert "himalaya missing: the official installer runs as the user into ~/.local" \
+    'called "sudo -u owner -H env PREFIX=$home/.local sh -c"'
+assert "linger is enabled"                                  'called "loginctl enable-linger owner"'
+assert "the clone goes to the harness workspace, as the user, at the newest tag" \
+    'called "sudo -u owner -H git clone --branch v0.11.0 https://example.invalid/paynani.git $home/.claude/workspace/paynani"'
+assert "v0.11.0 beats v0.9.1 and v0.10.0 (version sort, not text sort)" '! called "branch v0.9.1" && ! called "branch v0.10.0"'
+assert "the hand over is the one BOOT-2 relies on" \
+    'called "sudo -u owner -H env LANG=en_US.UTF-8 python3 $home/.claude/workspace/paynani/scripts/bootstrap_user.py --runtime claudecode --ref v0.11.0"'
+
+reset; FAKE_HIMALAYA="v2.1.0" FAKE_LINGER=yes bs --runtime claudecode
+assert "himalaya 2.x present: no installer"                 '! called "PREFIX="'
+assert "linger already yes: not enabled again"              '! called "enable-linger"'
+reset; FAKE_HIMALAYA="v1.4.0" bs --runtime claudecode
+assert "himalaya 1.x counts as missing: the installer runs" 'called "PREFIX="'
+assert "...and it fails the run when v2 is still missing (exit 1)" '[ "$rc" -eq 1 ] && grep -q "himalaya v2.x is still missing" <<<"$out"'
+
+reset; FAKE_INSTALLED="git curl" bs --runtime claudecode
+assert "only the missing packages are installed"            'called "apt-get install -y python3 ca-certificates"'
+
+reset
+bs --runtime codex --dir "$home/where/paynani" --ref main --with-sms --upgrade --yes --test-mail \
+    --owner-name "Ada Lovelace" --owner-email ada@example.com
+assert "every option reaches the user half" \
+    'called "bootstrap_user.py --runtime codex --ref main --owner-name Ada Lovelace --owner-email ada@example.com --yes --with-sms --upgrade --test-mail"'
+assert "--dir and --ref are honoured by the clone"          'called "git clone --branch main https://example.invalid/paynani.git $home/where/paynani"'
+reset; LANG=es_MX.UTF-8 bs --runtime claudecode
+assert "LANG is handed to the user half"                    'called "LANG=es_MX.UTF-8"'
+
+# --env-file: copied private, handed over, and the copy is gone afterwards.
+reset
+printf 'PAYNANI_EMAIL=agent@example.com\nPAYNANI_PASSWORD=not-a-real-secret\n' >"$tmp/creds.env"
+chmod 640 "$tmp/creds.env"
+bs --runtime claudecode --env-file "$tmp/creds.env"
+copy=$(grep -o -- '--env-file [^ ]*' "$log" | tail -1 | cut -d' ' -f2)
+assert "--env-file: the user half gets a copy, not the original" '[ -n "$copy" ] && [ "$copy" != "$tmp/creds.env" ]'
+assert "--env-file: the copy was made with mode 600"        'called "install -m 600"'
+assert "--env-file: the copy is removed when the script ends" '[ -n "$copy" ] && [ ! -e "$copy" ]'
+assert "--env-file: the secret never appears in the output or the log" '! grep -q "not-a-real-secret" <<<"$out" && ! grep -q "not-a-real-secret" "$log"'
+
+# ---- B3: what exists is not replaced ----------------------------------------
+
+reset
+bs --runtime claudecode >/dev/null
+reset
+mkdir -p "$home/.claude/workspace/paynani/.git" "$home/.claude/workspace/paynani/scripts"
+printf 'import sys\nsys.exit(0)\n' >"$home/.claude/workspace/paynani/scripts/bootstrap_user.py"
+bs --runtime claudecode
+assert "an existing clone is used, not cloned over (B3)"    '[ "$rc" -eq 0 ] && ! called "git clone" && grep -q "existing clone" <<<"$out"'
+assert "...and without --upgrade the tags are not fetched"  '! called "fetch"'
+bs --runtime claudecode --upgrade
+assert "--upgrade on an existing clone fetches the tags"    'called "git -C $home/.claude/workspace/paynani fetch --tags --force origin"'
+
+reset; mkdir -p "$home/.claude/workspace/paynani"; echo x >"$home/.claude/workspace/paynani/file"
+bs --runtime claudecode
+assert "a non-empty directory that is not a clone: exit 2"  '[ "$rc" -eq 2 ] && ! called "git clone"'
+
+# ---- which harness, when --runtime is not given -----------------------------
+
+reset; mkdir -p "$home/.openclaw" "$home/.claude"
+bs --yes
+assert "two harnesses and --yes without --runtime or --dir: exit 2, no choice (B6)" \
+    '[ "$rc" -eq 2 ] && grep -q "openclaw claudecode\|several harnesses" <<<"$out" && ! called "git clone"'
+reset; mkdir -p "$home/.hermes"
+bs
+assert "one harness and no --runtime: its workspace, and --runtime goes empty to the user half" \
+    'called "git clone --branch v0.11.0 https://example.invalid/paynani.git $home/.hermes/workspace/paynani" && called "bootstrap_user.py --runtime  --ref v0.11.0"'
+reset
+bs
+assert "no harness, no --runtime, no --dir: exit 2"         '[ "$rc" -eq 2 ] && ! called "git clone"'
+reset; mkdir -p "$home/.openclaw" "$home/.claude"
+bs --yes --dir "$home/p"
+assert "with --dir the user half picks (runtime empty)"     '[ "$rc" -eq 0 ] && called "bootstrap_user.py --runtime  --ref v0.11.0"'
+
+# ---- hand over failures ------------------------------------------------------
+
+reset; FAKE_NO_USER_PY=1 bs --runtime claudecode
+assert "no scripts/bootstrap_user.py in the ref: exit 1 and says so" \
+    '[ "$rc" -eq 1 ] && grep -q "bootstrap_user.py not found in this ref" <<<"$out"'
+reset; FAKE_USER_RC=1 bs --runtime claudecode
+assert "the user half failing fails the run with its status" '[ "$rc" -eq 1 ]'
+
+echo
+echo "$pass passed, $fail failed"
+[ "$fail" -eq 0 ]
