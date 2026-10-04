@@ -890,7 +890,7 @@ adb uninstall com.iaaorgmx.paynani
 ```
 
 Uninstalling also deletes its pairing, so the phone has to be paired again
-(step 4), and if it was paired, revoke the old one on the agent's machine first.
+(step 5), and if it was paired, revoke the old one on the agent's machine first.
 
 **3. First run: permissions and battery.** The app opens on a Permissions screen
 that says what each one is for. Grant all of them; without them nothing reaches
@@ -908,7 +908,22 @@ The camera is asked for only when you scan the pairing QR. If something is
 missing later, the app's **Status** screen (**Estado** on a phone in Spanish)
 lists it under Permissions, with a **Fix permissions** button.
 
-**4. Pair it.** On the agent's machine, from the clone, with the tunnel address
+**4. Turn off RCS chats.** Do this before pairing. RCS messages travel over
+data inside Google Messages, never as SMS, so the app cannot see them. On the
+phone:
+
+1. Open Google Messages.
+2. Tap your profile picture, then **Messages settings**.
+3. Tap **RCS chats** and turn off **Turn on RCS chats**.
+
+If the number used RCS before, also deregister it at
+<https://messages.google.com/disable-chat>, so other phones stop sending it RCS.
+Google warns that turning RCS off takes you out of RCS group chats.
+
+The app's **Status** screen shows **RCS chats** as pending until you confirm it
+there: tap the row and choose **I turned them off**.
+
+**5. Pair it.** On the agent's machine, from the clone, with the tunnel address
 in `PAYNANI_SMS_PUBLIC_URL` (§5.1):
 
 ```bash
@@ -932,7 +947,7 @@ scripts/paynani sms pair --web
 
 (`scripts/paynani sms pair --replace` does both in one step.)
 
-**5. Check it is connected.**
+**6. Check it is connected.**
 
 ```bash
 scripts/paynani sms devices
@@ -944,7 +959,7 @@ In the app, the Status screen must say «Connected since …» under Connection
 `scripts/paynani status` shows the last heartbeat too; after 90 s without one,
 the agent gets a `sms.gateway.offline` notice.
 
-**6. Tell the roster which numbers count.** A text or call from a number on
+**7. Tell the roster which numbers count.** A text or call from a number on
 `roster.md` is work for the agent and may be answered; any other number is only
 reported, and `scripts/paynani sms send` refuses it with exit 2. The numbers go
 in the `Phone` column, in E.164 (`+` and the country code), several per cell
