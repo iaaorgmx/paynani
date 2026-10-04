@@ -933,6 +933,11 @@ scripts/paynani sms pair          # or the code and the QR contents in the termi
 
 In the app, scan the QR, or type the gateway address (`https://…`) and the code.
 
+To change gateway later (a new tunnel address, for example), there is no need
+to reinstall the app: menu → **Pair again** (**Emparejar de nuevo** on a phone
+in Spanish), then pair with a new code. Status also offers it when the
+connection has been down for more than 10 minutes.
+
 - The code is good for **10 minutes** and **one** use. If it expired or was
   already used, the app says so: generate a new one.
 - More than 10 wrong codes in 10 minutes block pairing until a new code is
