@@ -338,6 +338,30 @@ assert "...and neither is the himalaya installer's target nor anything else it m
 assert "with umask 002 in the caller, every command handed to sudo carries umask 077" \
     '[ "$(grep -c "^sudo -u owner -H " "$log")" -gt 3 ] && [ "$(grep "^sudo -u owner -H " "$log" | grep -vc "umask 077; exec")" -eq 0 ]'
 
+# ---- directories that already exist on the way to the clone (install.sh refuses g/o-writable ones) ---
+
+reset
+mkdir -p "$home/.claude/workspace" "$home/.claude/other"
+chmod 775 "$home/.claude"; chmod 777 "$home/.claude/workspace"; chmod 777 "$home/.claude/other"
+bs --runtime claudecode
+assert "a group-writable ~/.claude on the way to the clone no longer blocks the run" '[ "$rc" -eq 0 ]'
+assert "...~/.claude and ~/.claude/workspace lose group and world write (775 -> 755, 777 -> 755)" \
+    '[ "$(stat -c %a "$home/.claude")" = 755 ] && [ "$(stat -c %a "$home/.claude/workspace")" = 755 ]'
+assert "...and each is announced" 'grep -q "removing group and world write from $home/.claude " <<<"$out" && grep -q "removing group and world write from $home/.claude/workspace " <<<"$out"'
+assert "...a directory that is not on the way to the clone is left alone" '[ "$(stat -c %a "$home/.claude/other")" = 777 ]'
+assert "...and the home itself is never touched" '! called "chmod go-w -- $home$"'
+
+reset
+mkdir -p "$home/.claude"; chmod 700 "$home/.claude"
+bs --runtime claudecode
+assert "directories that are already private are not touched" '! called "chmod"'
+
+reset
+mkdir -p "$home/.claude"; chmod 775 "$home/.claude"
+bs --runtime claudecode --dry-run
+assert "--dry-run says it would tighten, and does not" \
+    'grep -q "^would: sudo -u owner -H chmod go-w -- $home/.claude" <<<"$out" && [ "$(stat -c %a "$home/.claude")" = 775 ]'
+
 # ---- B3: what exists is not replaced ----------------------------------------
 
 reset

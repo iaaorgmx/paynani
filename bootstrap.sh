@@ -330,6 +330,34 @@ elif [[ -e "$dir" && -n "$(ls -A "$dir" 2>/dev/null)" ]]; then
     die "$EX_USAGE" "$dir exists and is not empty: pass another --dir"
 fi
 
+# install.sh refuses an install whose path from $HOME down to the clone has a
+# directory that group or others can write to (its own advice is "chmod go-w").
+# Such a directory is not always ours to blame: /etc/skel and a tool that made
+# ~/.claude under umask 002 both leave one behind, and the umask above only
+# governs what this script creates. So the directories that already exist between
+# the home and the clone lose group and world write, and each one is said out loud.
+# Only those two bits, only on that path, never on $HOME itself.
+tighten_path() {
+    local current=$dir
+    local -a chain=()
+    [[ "$dir" == "$home"/* ]] || return 0
+    while [[ "$current" != "$home" && "$current" != / && -n "$current" ]]; do
+        chain+=("$current")
+        current=$(dirname "$current")
+    done
+    local entry mode
+    for entry in "${chain[@]}"; do
+        [[ -d "$entry" && ! -L "$entry" ]] || continue
+        mode=$(stat -c %a -- "$entry" 2>/dev/null || true)
+        [[ -n "$mode" ]] || continue
+        if (( 8#$mode & 8#022 )); then
+            say "removing group and world write from $entry (mode $mode): install.sh refuses it otherwise"
+            run_user chmod go-w -- "$entry" || die "$EX_STEP" "cannot run chmod go-w on $entry: fix it by hand"
+        fi
+    done
+}
+tighten_path
+
 if [[ $existing_clone -eq 1 ]]; then
     if [[ $upgrade -eq 1 ]]; then
         say "updating the tags of the existing clone at $dir"
