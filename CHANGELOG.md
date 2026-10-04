@@ -5,6 +5,8 @@
 - `paynani sms pair` ahora aclara en la terminal que un código vencido no es un
   error, y que basta con volver a correr el comando para usar un código nuevo
   (#355).
+- La pasarela SMS anuncia `server_version` en el `welcome`, para que PaynaniApp
+  pueda mostrar en Estado la versión de paynani a la que está conectada (#367).
 
 ## 0.11.0 (2026-10-04)
 
