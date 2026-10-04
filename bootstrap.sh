@@ -340,13 +340,45 @@ fi
 # that path that does not belong to the user is not touched at all: install.sh
 # would refuse it too (unsafe-owner), and a chmod by a user who does not own it
 # cannot work, so the script stops and names it.
+#
+# A default ACL is the one thing neither the umask nor chmod can fix: mkdir ignores
+# the umask under it and gives new directories the ACL's entries, and chmod go-w only
+# lowers the mask. It is put there on purpose by an administrator (or, on GitHub's
+# runner image, on /home), so it is not removed here: refuse, and say where it is.
+# Only a default entry that lets someone other than the owner write counts; the usual
+# "user::rwx, group::r-x, other::r-x" does not.
+writable_default_acl() {   # writable_default_acl DIR: prints each offending entry
+    command -v getfacl >/dev/null 2>&1 || return 0
+    getfacl -p -- "$1" 2>/dev/null | awk '
+        /^default:/ {
+            n = split($0, f, ":")
+            rest = f[4]
+            for (i = 5; i <= n; i++) rest = rest ":" f[i]
+            perms = rest; sub(/[ \t].*/, "", perms)
+            effective = perms
+            if (match(rest, /#effective:[rwx-]+/)) effective = substr(rest, RSTART + 11, RLENGTH - 11)
+            if ((f[2] == "user" && f[3] == "") || f[2] == "mask") next
+            if (effective ~ /w/) print $0
+        }'
+}
+
 tighten_path() {
-    local current=$dir
+    local current=$dir offending
     local -a chain=()
     [[ "$dir" == "$home"/* ]] || return 0
     while [[ "$current" != "$home" && "$current" != / && -n "$current" ]]; do
         chain+=("$current")
         current=$(dirname "$current")
+    done
+    # The ACL of the home counts too (what is created below inherits from it), though
+    # its mode and owner are install.sh's to judge.
+    for current in "$home" "${chain[@]}"; do
+        [[ -d "$current" && ! -L "$current" ]] || continue
+        offending=$(writable_default_acl "$current")
+        if [[ -n "$offending" ]]; then
+            die "$EX_STEP" "$current has a default ACL that lets others write to everything created under it, and install.sh refuses such a path. I do not change ACLs an administrator set. Remove it (setfacl -k $current) or choose another --dir, and run this again. The entries:
+$offending"
+        fi
     done
     local entry mode owner
     for entry in "${chain[@]}"; do

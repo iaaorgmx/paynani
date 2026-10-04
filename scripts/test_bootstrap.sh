@@ -164,6 +164,24 @@ if [ "$1" = "-c" ] && [ "$2" = "%U" ]; then
 fi
 exec "$REAL_STAT" "$@"
 EOF
+# getfacl: a standard default ACL (no extra write) for every path, or the GitHub runner's one,
+# which gives user "runner" rwx on everything created below, for the paths in FAKE_ACL_BAD.
+# FAKE_ACL_MASKED lists paths with that same entry but a mask that leaves it read-only.
+cat >"$fake/getfacl" <<'EOF'
+#!/usr/bin/env bash
+target=${!#}
+echo "# file: $target"
+echo "user::rwx"; echo "group::r-x"; echo "other::r-x"
+echo "default:user::rwx"
+case " ${FAKE_ACL_BAD-} " in
+    *" $target "*) echo "default:user:runner:rwx"; echo "default:group::r-x"; echo "default:mask::rwx" ;;
+    *) case " ${FAKE_ACL_MASKED-} " in
+        *" $target "*) printf 'default:user:runner:rwx\t\t#effective:r-x\n'; echo "default:group::r-x"; echo "default:mask::r-x" ;;
+        *) echo "default:group::r-x"; echo "default:mask::r-x" ;;
+    esac ;;
+esac
+echo "default:other::r-x"
+EOF
 chmod +x "$fake"/*
 
 # The Ubuntu and Fedora files bootstrap.sh reads through BOOTSTRAP_OS_RELEASE.
@@ -187,7 +205,7 @@ reset() {   # a clean host for the next case
     : >"$log"
     rm -rf "$home" "$FAKE_MARK" "$tmp/run"
     mkdir -p "$home"
-    unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC FAKE_NO_BUS FAKE_ROOT_OWNED
+    unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC FAKE_NO_BUS FAKE_ROOT_OWNED FAKE_ACL_BAD FAKE_ACL_MASKED
     unset XDG_CONFIG_HOME XDG_DATA_HOME CALLER_SECRET_TOKEN https_proxy
     export SUDO_USER=owner BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
 }
@@ -391,6 +409,30 @@ reset
 mkdir -p "$home/.claude"; chmod 775 "$home/.claude"
 FAKE_ROOT_OWNED="$home" bs --runtime claudecode
 assert "the home itself is never inspected, so a home that is not the user's is install.sh's to report" '[ "$rc" -eq 0 ]'
+
+# ---- default ACLs: neither the umask nor chmod can fix them, so the script refuses (BOOT-3 finding) ---
+
+reset
+mkdir -p "$home/.claude"
+FAKE_ACL_BAD="$home/.claude" bs --runtime claudecode
+assert "a default ACL that lets another user write on the way to the clone: exit 1, naming it" \
+    '[ "$rc" -eq 1 ] && grep -q "$home/.claude has a default ACL" <<<"$out" && grep -q "default:user:runner:rwx" <<<"$out"'
+assert "...it does not change the ACL or anything else: no chmod, no clone, nothing handed over" \
+    '! called "chmod" && ! called "setfacl" && ! called "git clone" && ! called "bootstrap_user.py"'
+assert "...and says how to remove it, or to choose another --dir" 'grep -q "setfacl -k $home/.claude" <<<"$out" && grep -q -- "--dir" <<<"$out"'
+
+reset
+FAKE_ACL_BAD="$home" bs --runtime claudecode
+assert "the same ACL on the home itself (where the runner image puts it) refuses too" \
+    '[ "$rc" -eq 1 ] && grep -q "$home has a default ACL" <<<"$out" && ! called "git clone"'
+
+reset
+mkdir -p "$home/.claude"
+FAKE_ACL_MASKED="$home/.claude $home" bs --runtime claudecode
+assert "an entry the mask leaves read-only is not a problem" '[ "$rc" -eq 0 ]'
+reset
+bs --runtime claudecode
+assert "the usual default ACL (user::rwx, group::r-x, other::r-x) does not block" '[ "$rc" -eq 0 ]'
 
 # ---- B3: what exists is not replaced ----------------------------------------
 
