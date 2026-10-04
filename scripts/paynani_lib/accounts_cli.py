@@ -19,7 +19,6 @@ import getpass
 import json
 import os
 import re
-import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -30,7 +29,7 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 from paths import env_file  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
-from . import accounts, envfile  # noqa: E402
+from . import accounts, envfile, himalaya_config  # noqa: E402
 from .probe import probe_imap  # noqa: E402
 
 try:
@@ -224,34 +223,16 @@ def _env_edit(key: str, value) -> tuple[bool, str]:
     return envfile.write_env(newline.join(out) + newline if out else "")
 
 
-def _toml(value: str) -> str:
-    return json.dumps(value)  # a TOML basic string is a JSON string for the text used here
-
-
 def _himalaya_name(account_id: str) -> str:
     return f"paynani-{account_id}"
 
 
 def _himalaya_block(entry: dict) -> str:
     """The [accounts.paynani-<id>] tables, in the shape INSTALL.md 4.3 gives for the main account."""
-    name = _himalaya_name(entry["id"])
-    secret = ("python3 " + shlex.quote(str(_REPO_ROOT / "scripts" / "env_secret.py")) + " "
-              + shlex.quote(str(envfile.env_path())) + " " + entry["password_env"])
-    lines = [f"[accounts.{name}]", f"email = {_toml(entry['email'])}", 'mailbox.alias.inbox = "INBOX"', ""]
-    for protocol, scheme, default_port in (("imap", "imaps", 993), ("smtp", "smtps", 465)):
-        server = entry.get(protocol)
-        if not server:
-            continue
-        url = f"{scheme}://{server['host']}:{server.get('port') or default_port}"
-        lines += [
-            f"[accounts.{name}.{protocol}]",
-            f"server = {_toml(url)}",
-            f"[accounts.{name}.{protocol}.sasl.plain]",
-            f"authcid = {_toml(entry['email'])}",
-            f"password.cmd = {_toml(secret)}",
-            "",
-        ]
-    return "\n".join(lines)
+    secret = himalaya_config.secret_command(_REPO_ROOT / "scripts" / "env_secret.py",
+                                            envfile.env_path(), entry["password_env"])
+    return himalaya_config.account_block(_himalaya_name(entry["id"]), entry["email"],
+                                         entry.get("imap"), entry.get("smtp"), secret)
 
 
 def _has_himalaya_section(text: str, name: str) -> bool:

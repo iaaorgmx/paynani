@@ -46,7 +46,11 @@ mkdir -p "$fake" "$home"
 
 cat >"$fake/id" <<'EOF'
 #!/usr/bin/env bash
-if [ "$1" = "-u" ] && [ $# -eq 1 ]; then echo "${FAKE_UID:-0}"; exit 0; fi
+if [ "$1" = "-u" ]; then
+    if [ $# -eq 1 ]; then echo "${FAKE_UID:-0}"; exit 0; fi
+    [ "$2" = "${FAKE_USER:-owner}" ] && { echo 1000; exit 0; }
+    exit 1
+fi
 [ "$1" = "${FAKE_USER:-owner}" ] && exit 0
 exit 1
 EOF
@@ -67,6 +71,11 @@ cat >"$fake/loginctl" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1" = "show-user" ]; then echo "${FAKE_LINGER:-no}"; exit 0; fi
 echo "loginctl $*" >>"$FAKE_LOG"
+if [ "$1" = "enable-linger" ] && [ -z "${FAKE_NO_BUS-}" ]; then
+    mkdir -p "$BOOTSTRAP_RUN_USER_DIR/1000"
+    "$REAL_PYTHON3" -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$BOOTSTRAP_RUN_USER_DIR/1000/bus" 2>/dev/null || true   # already there: enable-linger is idempotent
+fi
+exit 0
 EOF
 # The "installer" the pipe feeds to sh leaves a mark; himalaya then reports v2.
 cat >"$fake/curl" <<'EOF'
@@ -96,12 +105,24 @@ if [ "${1-}" = "-c" ] && [[ "${2-}" == *version_info* ]]; then
 fi
 exec "$REAL_PYTHON3" "$@"
 EOF
-# sudo -u USER -H CMD...: log it, then run CMD as ourselves.
+# sudo -u USER -H env -i VAR=value... CMD...: log it, then run CMD with exactly that environment
+# (what a real sudo hands over), plus the FAKE_* plumbing and the fakes' directory on PATH.
 cat >"$fake/sudo" <<'EOF'
 #!/usr/bin/env bash
 echo "sudo $*" >>"$FAKE_LOG"
 [ "$1" = "-u" ] && shift 2
 [ "$1" = "-H" ] && shift
+if [ "$1" = env ] && [ "$2" = -i ]; then
+    shift 2
+    pairs=()
+    while [ $# -gt 0 ] && [[ "$1" == [A-Za-z_]*=* ]]; do
+        case "$1" in PATH=*) pairs+=("PATH=$FAKE_BIN:${1#PATH=}") ;; *) pairs+=("$1") ;; esac
+        shift
+    done
+    plumbing=()
+    while IFS= read -r line; do plumbing+=("$line"); done < <(env | grep -E '^(FAKE_|REAL_PYTHON3=|BOOTSTRAP_)')
+    exec env -i "${pairs[@]}" "${plumbing[@]}" "$@"
+fi
 exec "$@"
 EOF
 cat >"$fake/git" <<'EOF'
@@ -117,6 +138,7 @@ case "$1" in
     ls-remote)
         printf 'aaa\trefs/tags/v0.9.1\nbbb\trefs/tags/v0.10.0\nccc\trefs/tags/v0.11.0\nddd\trefs/tags/v0.2.0\n' ;;
     clone)
+        echo "env HOME=${HOME-UNSET} XDG_CONFIG_HOME=${XDG_CONFIG_HOME-UNSET} XDG_DATA_HOME=${XDG_DATA_HOME-UNSET} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR-UNSET} DBUS=${DBUS_SESSION_BUS_ADDRESS-UNSET} LEAK=${CALLER_SECRET_TOKEN-UNSET} PROXY=${https_proxy-UNSET}" >>"$FAKE_LOG"
         target=${!#}
         mkdir -p "$target/scripts" "$target/.git"
         if [ -z "${FAKE_NO_USER_PY-}" ]; then
@@ -130,6 +152,47 @@ PY
 esac
 exit 0
 EOF
+# stat: the real one, except that %U (the owner's name) is "owner" for every path of the fake
+# world, or "root" for the ones listed in FAKE_ROOT_OWNED. The files really belong to whoever runs
+# the tests, so the owner has to be faked to say something about ownership at all.
+cat >"$fake/stat" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "-c" ] && [ "$2" = "%U" ]; then
+    target=${!#}
+    case " ${FAKE_ROOT_OWNED-} " in *" $target "*) echo root ;; *) echo owner ;; esac
+    exit 0
+fi
+exec "$REAL_STAT" "$@"
+EOF
+# getfacl: a standard default ACL (no extra write) for every path, or the GitHub runner's one,
+# which gives user "runner" rwx on everything created below, for the paths in FAKE_ACL_BAD.
+# FAKE_ACL_MASKED lists paths with that same entry but a mask that leaves it read-only.
+cat >"$fake/getfacl" <<'EOF'
+#!/usr/bin/env bash
+target=${!#}
+echo "# file: $target"
+echo "user::rwx"; echo "group::r-x"; echo "other::r-x"
+echo "default:user::rwx"
+case " ${FAKE_ACL_BAD-} " in
+    *" $target "*) echo "default:user:runner:rwx"; echo "default:group::r-x"; echo "default:mask::rwx" ;;
+    *) case " ${FAKE_ACL_MASKED-} " in
+        *" $target "*) printf 'default:user:runner:rwx\t\t#effective:r-x\n'; echo "default:group::r-x"; echo "default:mask::r-x" ;;
+        *) echo "default:group::r-x"; echo "default:mask::r-x" ;;
+    esac ;;
+esac
+echo "default:other::r-x"
+EOF
+# ls: the real one, except that `ls -ld PATH` shows the "+" of an ACL on the paths in FAKE_LS_ACL.
+cat >"$fake/ls" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "-ld" ] || [ "$1" = "-dl" ]; then
+    target=${!#}
+    case " ${FAKE_LS_ACL-} " in
+        *" $target "*) echo "drwxrwxr-x+ 2 owner owner 4096 Oct  4 05:00 $target"; exit 0 ;;
+    esac
+fi
+exec "$REAL_LS" "$@"
+EOF
 chmod +x "$fake"/*
 
 # The Ubuntu and Fedora files bootstrap.sh reads through BOOTSTRAP_OS_RELEASE.
@@ -138,20 +201,24 @@ printf 'ID=debian\n' >"$tmp/os-debian"
 printf 'ID=linuxmint\nID_LIKE="ubuntu debian"\n' >"$tmp/os-mint"
 printf 'ID=fedora\nID_LIKE="rhel centos"\n' >"$tmp/os-fedora"
 
-export REAL_PYTHON3
+export REAL_PYTHON3 REAL_STAT REAL_LS
 REAL_PYTHON3=$(command -v python3)
+REAL_STAT=$(command -v stat)
+REAL_LS=$(command -v ls)
 export PATH="$fake:$PATH"
 export FAKE_LOG="$log" FAKE_HOME="$home" FAKE_USER=owner FAKE_MARK="$tmp/himalaya-installed"
 export BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
+export BOOTSTRAP_RUN_USER_DIR="$tmp/run" BOOTSTRAP_BUS_WAIT=1 FAKE_BIN="$fake"
 export BOOTSTRAP_REPO_URL="https://example.invalid/paynani.git"
 export SUDO_USER=owner
 export LANG=en_US.UTF-8
 
 reset() {   # a clean host for the next case
     : >"$log"
-    rm -rf "$home" "$FAKE_MARK"
+    rm -rf "$home" "$FAKE_MARK" "$tmp/run"
     mkdir -p "$home"
-    unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC
+    unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC FAKE_NO_BUS FAKE_ROOT_OWNED FAKE_ACL_BAD FAKE_ACL_MASKED FAKE_LS_ACL FAKE_NO_GETFACL
+    unset XDG_CONFIG_HOME XDG_DATA_HOME CALLER_SECRET_TOKEN https_proxy
     export SUDO_USER=owner BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
 }
 
@@ -159,6 +226,7 @@ bs() {   # bs <args...>  -> sets $out and $rc
     out=$(bash "$BOOTSTRAP" "$@" 2>&1); rc=$?
 }
 called() { grep -q -- "$1" "$log"; }
+calledE() { grep -Eq -- "$1" "$log"; }
 
 listing() { (cd "$tmp" && find home -mindepth 1 | sort); }
 
@@ -218,8 +286,9 @@ assert "--dry-run exits 0"                                  '[ "$rc" -eq 0 ]'
 assert "--dry-run prints the actions with would:"           'grep -q "^would: apt-get install -y git python3 curl ca-certificates" <<<"$out"'
 assert "--dry-run names the clone and the linger"           'grep -q "^would: sudo -u owner -H git clone --branch v0.11.0" <<<"$out" && grep -q "^would: loginctl enable-linger owner" <<<"$out"'
 assert "--dry-run names the himalaya install"               'grep -q "^would: sudo -u owner -H env PREFIX=.*/.local sh -c" <<<"$out"'
-assert "--dry-run names the hand over"                      'grep -q "^would: sudo -u owner -H env LANG=en_US.UTF-8 python3 .*/scripts/bootstrap_user.py --runtime claudecode --ref v0.11.0" <<<"$out"'
+assert "--dry-run names the hand over"                      'grep -q "^would: sudo -u owner -H env -i <clean environment, LANG=en_US.UTF-8> python3 .*/scripts/bootstrap_user.py --runtime claudecode --ref v0.11.0" <<<"$out"'
 assert "--dry-run did not touch the disk (B4)"              '[ "$before" = "$after" ]'
+assert "--dry-run says it would wait for the user's bus" 'grep -q "^would: wait up to 1s for $tmp/run/1000/bus" <<<"$out"'
 assert "--dry-run called no mutating command"               '! called "apt-get" && ! called "loginctl" && ! called "git clone" && ! called "curl" && ! called "bootstrap_user.py"'
 unset FAKE_INSTALLED
 
@@ -230,13 +299,13 @@ bs --runtime claudecode
 assert "a run exits 0"                                      '[ "$rc" -eq 0 ]'
 assert "present packages are not installed again"           '! called "apt-get"'
 assert "himalaya missing: the official installer runs as the user into ~/.local" \
-    'called "sudo -u owner -H env PREFIX=$home/.local sh -c"'
+    'calledE "sudo -u owner -H env -i .* env PREFIX=$home/.local sh -c"'
 assert "linger is enabled"                                  'called "loginctl enable-linger owner"'
 assert "the clone goes to the harness workspace, as the user, at the newest tag" \
-    'called "sudo -u owner -H git clone --branch v0.11.0 https://example.invalid/paynani.git $home/.claude/workspace/paynani"'
+    'calledE "sudo -u owner -H env -i .* git clone --branch v0.11.0 https://example.invalid/paynani.git $home/.claude/workspace/paynani"'
 assert "v0.11.0 beats v0.9.1 and v0.10.0 (version sort, not text sort)" '! called "branch v0.9.1" && ! called "branch v0.10.0"'
 assert "the hand over is the one BOOT-2 relies on" \
-    'called "sudo -u owner -H env LANG=en_US.UTF-8 python3 $home/.claude/workspace/paynani/scripts/bootstrap_user.py --runtime claudecode --ref v0.11.0"'
+    'calledE "sudo -u owner -H env -i .* LANG=en_US.UTF-8 .* python3 $home/.claude/workspace/paynani/scripts/bootstrap_user.py --runtime claudecode --ref v0.11.0"'
 
 reset; FAKE_HIMALAYA="v2.1.0" FAKE_LINGER=yes bs --runtime claudecode
 assert "himalaya 2.x present: no installer"                 '! called "PREFIX="'
@@ -267,6 +336,131 @@ assert "--env-file: the user half gets a copy, not the original" '[ -n "$copy" ]
 assert "--env-file: the copy was made with mode 600"        'called "install -m 600"'
 assert "--env-file: the copy is removed when the script ends" '[ -n "$copy" ] && [ ! -e "$copy" ]'
 assert "--env-file: the secret never appears in the output or the log" '! grep -q "not-a-real-secret" <<<"$out" && ! grep -q "not-a-real-secret" "$log"'
+
+# ---- the environment the user's commands get (BOOT-2 finding by Andy, #358) ---
+
+reset
+export XDG_CONFIG_HOME=/root/.config XDG_DATA_HOME=/root/.local/share CALLER_SECRET_TOKEN=leak-me
+bs --runtime claudecode
+assert "a run with the caller's XDG_* exported still exits 0" '[ "$rc" -eq 0 ]'
+assert "every command as the user starts from env -i (never the caller's environment)" \
+    '[ "$(grep -c "^sudo -u owner -H " "$log")" -gt 3 ] && [ "$(grep "^sudo -u owner -H " "$log" | grep -vc "^sudo -u owner -H env -i ")" -eq 0 ]'
+assert "the sudo line carries neither XDG_CONFIG_HOME nor XDG_DATA_HOME of the caller" \
+    '! grep "^sudo " "$log" | grep -q "XDG_CONFIG_HOME=/root\|XDG_DATA_HOME=/root"'
+assert "the clone, as the user, sees no XDG_CONFIG_HOME, XDG_DATA_HOME or caller secret" \
+    'calledE "^env HOME=$home XDG_CONFIG_HOME=UNSET XDG_DATA_HOME=UNSET .* LEAK=UNSET"'
+assert "...and sees the user's HOME, runtime dir and session bus" \
+    'called "XDG_RUNTIME_DIR=$tmp/run/1000 DBUS=unix:path=$tmp/run/1000/bus"'
+unset XDG_CONFIG_HOME XDG_DATA_HOME CALLER_SECRET_TOKEN
+
+reset; export https_proxy=http://proxy.invalid:3128
+bs --runtime claudecode
+assert "a proxy of the caller still reaches the user's commands (git, curl need it)" 'called "PROXY=http://proxy.invalid:3128"'
+unset https_proxy
+
+# linger starts the user's systemd; install.sh needs its bus, so the script waits for it.
+reset; FAKE_NO_BUS=1 bs --runtime claudecode
+assert "no user bus after linger: exit 1, and it says why" \
+    '[ "$rc" -eq 1 ] && grep -q "systemd user session of owner did not come up" <<<"$out"'
+assert "...and nothing was cloned or handed over" '! called "git clone" && ! called "bootstrap_user.py"'
+reset; mkdir -p "$tmp/run/1000"; "$REAL_PYTHON3" -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$tmp/run/1000/bus"
+FAKE_LINGER=yes bs --runtime claudecode
+assert "linger already on and the bus there: it goes on without waiting" '[ "$rc" -eq 0 ] && ! called "enable-linger"'
+
+# ---- what the script creates in the user's home is private (BOOT-2 finding by Andy, #358) ---
+
+reset
+oldmask=$(umask); umask 002      # the usual Ubuntu umask: group-writable by default
+bs --runtime claudecode
+umask "$oldmask"
+assert "the run succeeds with a group-writable umask" '[ "$rc" -eq 0 ]'
+assert "~/.claude, which the script creates for the clone, is not group or world writable" \
+    '[ "$(stat -c %a "$home/.claude")" = 700 ] && [ "$(stat -c %a "$home/.claude/workspace")" = 700 ]'
+assert "...and neither is the himalaya installer's target nor anything else it made" \
+    '! find "$home" -perm /022 | grep -q .'
+assert "with umask 002 in the caller, every command handed to sudo carries umask 077" \
+    '[ "$(grep -c "^sudo -u owner -H " "$log")" -gt 3 ] && [ "$(grep "^sudo -u owner -H " "$log" | grep -vc "umask 077; exec")" -eq 0 ]'
+
+# ---- directories that already exist on the way to the clone (install.sh refuses g/o-writable ones) ---
+
+reset
+mkdir -p "$home/.claude/workspace" "$home/.claude/other"
+chmod 775 "$home/.claude"; chmod 777 "$home/.claude/workspace"; chmod 777 "$home/.claude/other"
+bs --runtime claudecode
+assert "a group-writable ~/.claude on the way to the clone no longer blocks the run" '[ "$rc" -eq 0 ]'
+assert "...~/.claude and ~/.claude/workspace lose group and world write (775 -> 755, 777 -> 755)" \
+    '[ "$(stat -c %a "$home/.claude")" = 755 ] && [ "$(stat -c %a "$home/.claude/workspace")" = 755 ]'
+assert "...and each is announced" 'grep -q "removing group and world write from $home/.claude " <<<"$out" && grep -q "removing group and world write from $home/.claude/workspace " <<<"$out"'
+assert "...a directory that is not on the way to the clone is left alone" '[ "$(stat -c %a "$home/.claude/other")" = 777 ]'
+assert "...and the home itself is never touched" '! called "chmod go-w -- $home$"'
+
+reset
+mkdir -p "$home/.claude"; chmod 700 "$home/.claude"
+bs --runtime claudecode
+assert "directories that are already private are not touched" '! called "chmod"'
+
+reset
+mkdir -p "$home/.claude"; chmod 775 "$home/.claude"
+bs --runtime claudecode --dry-run
+assert "--dry-run says it would tighten, and does not" \
+    'grep -q "^would: sudo -u owner -H chmod go-w -- $home/.claude" <<<"$out" && [ "$(stat -c %a "$home/.claude")" = 775 ]'
+
+reset
+mkdir -p "$home/.claude/workspace"; chmod 777 "$home/.claude/workspace"
+FAKE_ROOT_OWNED="$home/.claude/workspace" bs --runtime claudecode
+assert "a directory on the way that is not the user's: exit 1, naming it" \
+    '[ "$rc" -eq 1 ] && grep -q "$home/.claude/workspace belongs to root, not to owner" <<<"$out"'
+assert "...it is not touched: no chmod, no clone, nothing handed over" \
+    '! called "chmod" && ! called "git clone" && ! called "bootstrap_user.py" && [ "$(stat -c %a "$home/.claude/workspace")" = 777 ]'
+reset
+mkdir -p "$home/.claude/workspace"; chmod 755 "$home/.claude/workspace"
+FAKE_ROOT_OWNED="$home/.claude" bs --runtime claudecode
+assert "a root-owned directory on the way fails even when it is not writable (install.sh would refuse it)" \
+    '[ "$rc" -eq 1 ] && grep -q "$home/.claude belongs to root" <<<"$out" && ! called "git clone"'
+reset
+mkdir -p "$home/.claude"; chmod 775 "$home/.claude"
+FAKE_ROOT_OWNED="$home" bs --runtime claudecode
+assert "the home itself is never inspected, so a home that is not the user's is install.sh's to report" '[ "$rc" -eq 0 ]'
+
+# ---- default ACLs: neither the umask nor chmod can fix them, so the script refuses (BOOT-3 finding) ---
+
+reset
+mkdir -p "$home/.claude"
+FAKE_ACL_BAD="$home/.claude" bs --runtime claudecode
+assert "a default ACL that lets another user write on the way to the clone: exit 1, naming it" \
+    '[ "$rc" -eq 1 ] && grep -q "$home/.claude has a default ACL" <<<"$out" && grep -q "default:user:runner:rwx" <<<"$out"'
+assert "...it does not change the ACL or anything else: no chmod, no clone, nothing handed over" \
+    '! called "chmod" && ! called "setfacl" && ! called "git clone" && ! called "bootstrap_user.py"'
+assert "...and says how to remove it, or to choose another --dir" 'grep -q "setfacl -k $home/.claude" <<<"$out" && grep -q -- "--dir" <<<"$out"'
+
+reset
+FAKE_ACL_BAD="$home" bs --runtime claudecode
+assert "the same ACL on the home itself (where the runner image puts it) refuses too" \
+    '[ "$rc" -eq 1 ] && grep -q "$home has a default ACL" <<<"$out" && ! called "git clone"'
+
+reset
+mkdir -p "$home/.claude"
+FAKE_ACL_MASKED="$home/.claude $home" bs --runtime claudecode
+assert "an entry the mask leaves read-only is not a problem" '[ "$rc" -eq 0 ]'
+reset
+bs --runtime claudecode
+assert "the usual default ACL (user::rwx, group::r-x, other::r-x) does not block" '[ "$rc" -eq 0 ]'
+
+# ---- without getfacl nothing can be judged: a "+" earns a warning, not a refusal ---
+
+reset
+mkdir -p "$home/.claude"
+# BOOTSTRAP_GETFACL points at nothing: a system without the acl package, whatever the host has installed.
+BOOTSTRAP_GETFACL=/nonexistent/getfacl FAKE_LS_ACL="$home/.claude" bs --runtime claudecode
+assert "without getfacl, a directory with an ACL ('+') on the way is a warning and the run goes on" \
+    '[ "$rc" -eq 0 ] && grep -q "warning: $home/.claude has an ACL; install acl (getfacl) to check it, or expect install.sh to refuse it" <<<"$out"'
+reset
+BOOTSTRAP_GETFACL=/nonexistent/getfacl bs --runtime claudecode
+assert "...and with no ACL anywhere there is no warning" '[ "$rc" -eq 0 ] && ! grep -q "warning:" <<<"$out"'
+reset
+mkdir -p "$home/.claude"
+FAKE_LS_ACL="$home/.claude" bs --runtime claudecode
+assert "with getfacl present the \"+\" alone is not a reason to refuse (the standard default ACL is judged by its entries)" '[ "$rc" -eq 0 ] && ! grep -q "warning:" <<<"$out"'
 
 # ---- B3: what exists is not replaced ----------------------------------------
 

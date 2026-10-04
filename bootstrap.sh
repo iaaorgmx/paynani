@@ -40,6 +40,10 @@
 # Test hooks, used by scripts/test_bootstrap.sh and for field trials:
 #   BOOTSTRAP_OS_RELEASE  path of the os-release file (default /etc/os-release)
 #   BOOTSTRAP_REPO_URL    clone source (default https://github.com/iaaorgmx/paynani.git)
+#   BOOTSTRAP_RUN_USER_DIR  where the user's runtime dirs live (default /run/user)
+#   BOOTSTRAP_BUS_WAIT    seconds to wait for the user's systemd bus (default 10)
+#   BOOTSTRAP_GETFACL     the getfacl command (default getfacl); a path that does not exist
+#                         simulates a system without the acl package
 
 set -euo pipefail
 
@@ -51,6 +55,7 @@ readonly EX_NOT_ROOT=4
 
 REPO_URL=${BOOTSTRAP_REPO_URL:-https://github.com/iaaorgmx/paynani.git}
 OS_RELEASE=${BOOTSTRAP_OS_RELEASE:-/etc/os-release}
+GETFACL=${BOOTSTRAP_GETFACL:-getfacl}
 HIMALAYA_INSTALLER=https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh
 
 # The runtime names, in the order of HARNESS_ROOTS in harness/paths.py.
@@ -127,7 +132,21 @@ run() {
     "$@"
 }
 
-as_user() { sudo -u "$user" -H "$@"; }
+# Everything that runs as the user starts from an environment built here, not
+# inherited: `sudo -u USER -H` changes HOME and leaves the caller's XDG_CONFIG_HOME
+# (and whatever else an `env_keep` or a CI runner passes) pointing at someone
+# else's home, so himalaya and git read or write the wrong user's files. The
+# systemd user session needs XDG_RUNTIME_DIR and its bus, which exist once linger
+# has started user@UID.service (wait_for_user_bus).
+#
+# Everything as the user also runs under umask 077, not under the account's own:
+# on Ubuntu that is usually 002 (USERGROUPS_ENAB), which leaves what this script
+# creates in the home (the directories above the clone, the clone, ~/.local/bin)
+# group-writable, and install.sh then refuses ~/.claude as an unsafe container
+# (found by the end-to-end job). A umask is not an environment variable, so
+# `env -i` does not fix it.
+user_env=()
+as_user() { sudo -u "$user" -H "${user_env[@]}" sh -c 'umask 077; exec "$@"' sh "$@"; }
 
 # Same as run, for what runs as the user.
 run_user() {
@@ -159,6 +178,24 @@ id "$user" >/dev/null 2>&1 || die "$EX_USAGE" "the user $user does not exist"
 
 home=$(getent passwd "$user" | cut -d: -f6)
 [[ -n "$home" && -d "$home" ]] || die "$EX_USAGE" "cannot find the home directory of $user"
+
+uid=$(id -u "$user")
+RUN_USER_DIR=${BOOTSTRAP_RUN_USER_DIR:-/run/user}
+BUS_WAIT=${BOOTSTRAP_BUS_WAIT:-10}
+user_env=(env -i
+    "HOME=$home" "USER=$user" "LOGNAME=$user" "SHELL=/bin/bash"
+    "PATH=$home/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
+    "LANG=${LANG:-C.UTF-8}"
+    "XDG_RUNTIME_DIR=$RUN_USER_DIR/$uid"
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=$RUN_USER_DIR/$uid/bus")
+# What a clean environment must not lose: the network path (proxies, CA bundles)
+# and the terminal, which the owner's questions need.
+for passed in http_proxy https_proxy no_proxy all_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY \
+              SSL_CERT_FILE SSL_CERT_DIR CURL_CA_BUNDLE GIT_SSL_CAINFO REQUESTS_CA_BUNDLE TERM; do
+    if [[ -n "${!passed:-}" ]]; then
+        user_env+=("$passed=${!passed}")
+    fi
+done
 
 if [[ ! -r "$OS_RELEASE" ]]; then
     die "$EX_UNSUPPORTED" "cannot read $OS_RELEASE: only Ubuntu and Debian are supported"
@@ -196,7 +233,7 @@ fi
 
 himalaya_major() {
     local out
-    out=$(as_user env "PATH=$home/.local/bin:$PATH" himalaya --version 2>/dev/null || true)
+    out=$(as_user himalaya --version 2>/dev/null || true)
     if [[ "$out" =~ ([0-9]+)\.[0-9]+ ]]; then
         printf '%s' "${BASH_REMATCH[1]}"
     fi
@@ -220,6 +257,24 @@ else
     say "enabling linger for $user"
     run loginctl enable-linger "$user"
 fi
+
+# linger starts user@UID.service; install.sh talks to that user's systemd, so wait
+# for its bus before going on.
+wait_for_user_bus() {
+    local waited=0
+    if [[ $dry_run -eq 1 ]]; then
+        printf 'would: wait up to %ss for %s/%s/bus\n' "$BUS_WAIT" "$RUN_USER_DIR" "$uid"
+        return 0
+    fi
+    while [[ ! -S "$RUN_USER_DIR/$uid/bus" ]]; do
+        if [[ $waited -ge $BUS_WAIT ]]; then
+            die "$EX_STEP" "the systemd user session of $user did not come up: $RUN_USER_DIR/$uid/bus is missing after ${BUS_WAIT}s (is systemd running, and logind enabled?)"
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+}
+wait_for_user_bus
 
 # --- 5. the clone ----------------------------------------------------------
 
@@ -278,6 +333,87 @@ elif [[ -e "$dir" && -n "$(ls -A "$dir" 2>/dev/null)" ]]; then
     die "$EX_USAGE" "$dir exists and is not empty: pass another --dir"
 fi
 
+# install.sh refuses an install whose path from $HOME down to the clone has a
+# directory that group or others can write to (its own advice is "chmod go-w").
+# Such a directory is not always ours to blame: /etc/skel and a tool that made
+# ~/.claude under umask 002 both leave one behind, and the umask above only
+# governs what this script creates. So the directories that already exist between
+# the home and the clone lose group and world write, and each one is said out loud.
+# Only those two bits, only on that path, never on $HOME itself. A directory on
+# that path that does not belong to the user is not touched at all: install.sh
+# would refuse it too (unsafe-owner), and a chmod by a user who does not own it
+# cannot work, so the script stops and names it.
+#
+# A default ACL is the one thing neither the umask nor chmod can fix: mkdir ignores
+# the umask under it and gives new directories the ACL's entries, and chmod go-w only
+# lowers the mask. It is put there on purpose by an administrator (or, on GitHub's
+# runner image, on /home), so it is not removed here: refuse, and say where it is.
+# Only a default entry that lets someone other than the owner write counts; the usual
+# "user::rwx, group::r-x, other::r-x" does not. Without getfacl nothing can be judged,
+# so a "+" on a directory only earns a warning, and install.sh's own refusal stays as
+# the safety net.
+has_acl() {   # has_acl DIR: the "+" ls -ld appends to the mode; needs no `acl` package
+    local listing
+    listing=$(ls -ld -- "$1" 2>/dev/null) || return 1
+    [[ "${listing%%[[:space:]]*}" == *+ ]]
+}
+
+writable_default_acl() {   # writable_default_acl DIR: prints each offending entry
+    command -v "$GETFACL" >/dev/null 2>&1 || return 0
+    "$GETFACL" -p -- "$1" 2>/dev/null | awk '
+        /^default:/ {
+            n = split($0, f, ":")
+            rest = f[4]
+            for (i = 5; i <= n; i++) rest = rest ":" f[i]
+            perms = rest; sub(/[ \t].*/, "", perms)
+            effective = perms
+            if (match(rest, /#effective:[rwx-]+/)) effective = substr(rest, RSTART + 11, RLENGTH - 11)
+            if ((f[2] == "user" && f[3] == "") || f[2] == "mask") next
+            if (effective ~ /w/) print $0
+        }'
+}
+
+tighten_path() {
+    local current=$dir offending
+    local -a chain=()
+    [[ "$dir" == "$home"/* ]] || return 0
+    while [[ "$current" != "$home" && "$current" != / && -n "$current" ]]; do
+        chain+=("$current")
+        current=$(dirname "$current")
+    done
+    # The ACL of the home counts too (what is created below inherits from it), though
+    # its mode and owner are install.sh's to judge.
+    for current in "$home" "${chain[@]}"; do
+        [[ -d "$current" && ! -L "$current" ]] || continue
+        if ! command -v "$GETFACL" >/dev/null 2>&1; then
+            if has_acl "$current"; then
+                say "warning: $current has an ACL; install acl (getfacl) to check it, or expect install.sh to refuse it"
+            fi
+            continue
+        fi
+        offending=$(writable_default_acl "$current")
+        if [[ -n "$offending" ]]; then
+            die "$EX_STEP" "$current has a default ACL that lets others write to everything created under it, and install.sh refuses such a path. I do not change ACLs an administrator set. Remove it (setfacl -k $current) or choose another --dir, and run this again. The entries:
+$offending"
+        fi
+    done
+    local entry mode owner
+    for entry in "${chain[@]}"; do
+        [[ -d "$entry" && ! -L "$entry" ]] || continue
+        owner=$(stat -c %U -- "$entry" 2>/dev/null || true)
+        if [[ -n "$owner" && "$owner" != "$user" ]]; then
+            die "$EX_STEP" "$entry belongs to $owner, not to $user, and install.sh refuses a path it does not own: fix it (chown $user: $entry, or choose another --dir) and run this again"
+        fi
+        mode=$(stat -c %a -- "$entry" 2>/dev/null || true)
+        [[ -n "$mode" ]] || continue
+        if (( 8#$mode & 8#022 )); then
+            say "removing group and world write from $entry (mode $mode): install.sh refuses it otherwise"
+            run_user chmod go-w -- "$entry" || die "$EX_STEP" "cannot run chmod go-w on $entry: fix it by hand"
+        fi
+    done
+}
+tighten_path
+
 if [[ $existing_clone -eq 1 ]]; then
     if [[ $upgrade -eq 1 ]]; then
         say "updating the tags of the existing clone at $dir"
@@ -324,8 +460,8 @@ say "handing over to $user: bootstrap_user.py"
 if [[ $dry_run -eq 1 ]]; then
     # Nothing runs in a dry run, and the user half may not exist yet (the clone is
     # only announced above). Run scripts/bootstrap_user.py --dry-run for its part.
-    printf 'would: sudo -u %s -H env LANG=%s python3 %s %s\n' \
-        "$user" "${LANG:-}" "$user_script" "${args[*]}"
+    printf 'would: sudo -u %s -H env -i <clean environment, LANG=%s> python3 %s %s\n' \
+        "$user" "${LANG:-C.UTF-8}" "$user_script" "${args[*]}"
     exit "$EX_OK"
 fi
-as_user env "LANG=${LANG:-}" python3 "$user_script" "${args[@]}"
+as_user python3 "$user_script" "${args[@]}"
