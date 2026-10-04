@@ -174,9 +174,10 @@ try:
     check("a test file -> none", verbs.get("scripts/test_x.py") == "none")
     check("a file outside the table -> unknown", verbs.get("tools/new_thing.py") == "unknown")
     check("unknown files are listed by name", p["unknown"] == ["tools/new_thing.py"])
-    check("VERSION restarts the listener and dispatch.py restarts the dispatcher",
+    check("VERSION restarts the listener, dispatcher and SMS gateway",
           [u for u, _ in p["restart_units"]]
-          == ["paynani-idle.service", "paynani-idle@*.service", "paynani-dispatch.service"])
+          == ["paynani-idle.service", "paynani-idle@*.service", "paynani-dispatch.service",
+              "paynani-sms*.service"])
     check("a copied unit sets reinstall", p["reinstall"] is True)
 
     here = {f["path"]: f["here"] for f in p["files"]}
@@ -446,9 +447,10 @@ try:
     sh(only, "tag", "v1.0.1")
     manifest_for(only)
     patch = up.plan("v1.0.0", "v1.0.1", repo=only, runtime="claudecode", system="Linux")
-    check("a VERSION-only release restarts the listener, its instances and the dispatcher",
+    check("a VERSION-only release restarts the listener, its instances, dispatcher and SMS gateway",
           [u for u, _ in patch["restart_units"]]
-          == ["paynani-idle.service", "paynani-idle@*.service", "paynani-dispatch.service"],
+          == ["paynani-idle.service", "paynani-idle@*.service", "paynani-dispatch.service",
+              "paynani-sms*.service"],
           str(patch["restart_units"]))
     check("and names both services in the commands",
           any("paynani-dispatch.service" in c for c in up.commands(patch)))

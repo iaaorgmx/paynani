@@ -59,6 +59,9 @@ def server_version() -> str | None:
     return version or None
 
 
+SERVER_VERSION = server_version()
+
+
 def log(line: str) -> None:
     """Para el operador. Nunca texto de SMS, tokens ni códigos."""
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} sms-gateway: {line}", flush=True)
@@ -360,9 +363,8 @@ class Gateway:
         welcome = {"type": "welcome", "protocol": PROTOCOL, "server_time": store_mod.now_utc(),
                    "heartbeat_s": self.heartbeat_s, "allowed": allowed,
                    "max_out_per_hour": self.max_out_per_hour, "accepts": list(ACCEPTS)}
-        version = server_version()
-        if version:
-            welcome["server_version"] = version
+        if SERVER_VERSION:
+            welcome["server_version"] = SERVER_VERSION
         await self._send(ws, welcome)
         tasks = [asyncio.create_task(self._pump_outbox(ws)),
                  asyncio.create_task(self._watch_roster(ws, allowed)),
