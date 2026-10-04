@@ -1,19 +1,83 @@
 # Changelog
 
-## Sin publicar
+## 0.11.0 (2026-10-04)
 
-- **El plan de actualización reinicia también las cuentas adicionales** (#336).
-  Cuando cambia un módulo compartido de `harness/` (`event.py`, `paths.py`,
-  `ledger.py`, `python_floor.py` o `phone.py`), `upgrade_plan.py` ya incluye las
+**RCS: lo que la app no puede leer ya no se pierde en silencio, y PaynaniApp 0.3.0.**
+Desde 0.10.0, 7 PRs en paynani (#328, #331, #333, #334, #337, #338, #339) de
+Metis, Iris y Andy, más el de esta release, y 7 en PaynaniApp. Google Messages
+entrega los mensajes RCS por datos, nunca como SMS, así que la app no los ve
+(PRD en PaynaniApp#46). Esta versión hace tres cosas con eso: guía para
+apagarlo, avisa cuando llega algo que la app no pudo leer, y deja de duplicar el
+SMS que la app lee por sus dos rutas. Sin requisitos nuevos: himalaya **v2.x** y
+Python **3.10** o mayor. El APK de PaynaniApp 0.3.0 va adjunto a esta release.
+
+- **Aviso de un mensaje que PaynaniApp no pudo leer** (#333, cierra #332). La
+  pasarela acepta `sms.unseen`: cuando Google Messages recibe un mensaje (casi
+  siempre un RCS, a veces un MMS) y la app no ve el SMS correspondiente en 60 s,
+  el agente recibe una línea fija, sin el texto ni el remitente:
+  `[sms HH:MM:SS] Google Messages recibió un mensaje que PaynaniApp no pudo leer
+  (posible RCS)`. El nombre que mostró la notificación queda limpio en el sobre
+  (`paynani event show`) y nunca en la línea. `welcome` anuncia en `accepts` los
+  tipos que acepta la pasarela, y la app sólo manda `sms.unseen` a una pasarela
+  que lo anuncia. `SMS_GATEWAY.md` lo documenta, MMS y doble SIM incluidos (#339).
+- **INSTALL.md §5.2**: instalar PaynaniApp en el teléfono y emparejarlo (#328, de
+  Andy), y el paso nuevo «Turn off RCS chats» antes de emparejar (#334, de Andy).
+- **README** menciona PaynaniApp, en el original y en las cuatro traducciones
+  (#331, cierra #330).
+- **`version.sh --plan` y `--apply` usan la tabla de la versión destino** (#337,
+  de Iris, cierra #329). Una release que agrega un archivo agrega su regla en la
+  misma release, y la tabla instalada lo daba por `unknown` y se negaba a aplicar;
+  le pasó a Ares de 0.9.1 a 0.10.0. Vale **a partir de esta versión**: desde
+  0.10.0 todavía corre la tabla de 0.10.0.
+- **El plan reinicia también las cuentas adicionales** (#338, cierra #336).
+  Cuando cambia un módulo compartido de `harness/`, `upgrade_plan.py` incluye las
   instancias `paynani-idle@<id>`. Antes, `doctor` se quedaba en `warning` en cada
   cuenta aunque se siguiera el plan al pie de la letra.
-- **Aviso de un mensaje que PaynaniApp no pudo leer** (#332). La pasarela acepta
-  `sms.unseen`: cuando Google Messages recibe un mensaje (casi siempre un RCS, que
-  no pasa por SMS) y la app no ve el SMS correspondiente en 60 s, el agente recibe
-  una línea fija, sin el texto ni el remitente, para que no se pierda en silencio.
-  `welcome` anuncia en `accepts` los tipos que la pasarela acepta, y la app sólo
-  manda `sms.unseen` a una pasarela que lo anuncia. Necesita PaynaniApp con el
-  detector (PaynaniApp#55); sin él no cambia nada.
+
+**PaynaniApp 0.3.0** (adjunto, firmado con el mismo certificado que la 0.2.0, así
+que se instala encima sin desemparejar):
+- El mismo SMS leído por el receptor y por el barrido con el texto un poco
+  distinto da **un** evento, no dos (PaynaniApp#53, el caso del sufijo
+  `*/=0QcMMQ`).
+- **Estado** tiene la fila «Chats RCS» con la guía para apagarlos y la fila
+  «Detector de RCS» para activar el acceso a notificaciones (PaynaniApp#56 y #58).
+- El detector: con el acceso a notificaciones, una notificación de Google
+  Messages sin SMS en 60 s manda `sms.unseen`. Nunca lee el texto de la
+  notificación (PaynaniApp#58).
+- El registro de eventos se actualiza mientras está abierto (PaynaniApp#57), y el
+  barrido sólo cuenta lo que encoló nuevo (PaynaniApp#60).
+- Manifiesto sin `hardwareAccelerated="false"` ni `largeHeap`, y el registro sin
+  `AsyncTask` (PaynaniApp#49 y #50, de Iris).
+
+### Si actualizas desde 0.10.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.11.0
+python3 scripts/upgrade_plan.py --from v0.10.0     # y haz lo que imprima
+```
+
+No hace falta el instalador. El plan pide reiniciar el listener, el dispatcher y
+la pasarela SMS si la tienes. El plan que corre después del `git pull` ya es el de
+0.11.0 y reinicia también las cuentas adicionales (#338). Si lo calculaste
+**antes** del pull (por ejemplo con el `version.sh --plan` de 0.10.0), no las
+incluye: reinicia sus instancias a mano.
+
+```bash
+systemctl --user list-units --all --plain --no-legend 'paynani-idle@*.service' | awk '{print $1}' | xargs -r systemctl --user restart
+```
+
+Después, `scripts/paynani doctor | grep version_drift` tiene que dar `ok` en
+todas las líneas, las `account:<id>` incluidas.
+
+Si usas el teléfono: instala `PaynaniApp-0.3.0.apk` encima de la 0.2.0 (comprueba
+el SHA-256 y el certificado como en `INSTALL.md` §5.2). Sigue emparejado. Luego,
+en Estado, toca «Chats RCS» y sigue la guía, y activa el detector.
+
+En macOS, `upgrade_plan.py` todavía no puede hacer el plan (#291): el mismo
+`git pull` y `launchctl kickstart -k` de `com.paynani.idle`, `com.paynani.dispatch`,
+cada `com.paynani.idle.<id>` y `com.paynani.sms` si lo tienes.
 
 ## 0.10.0 (2026-10-02)
 
