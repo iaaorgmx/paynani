@@ -118,8 +118,11 @@ RULES = (
     (r"^harness/rotate_logs\.py$", "none", "logrotate (runs fresh on each timer tick)", None, None, None, None),
     (r"^harness/capabilities\.py$", "none", "capability data (read on each call)", None, None, None, None),
     (r"^scripts/test_.*|^harness/.*\.test\.mjs$|^harness/opencode/.*\.test\..*$", "none", "tests", None, None, None, None),
+    # The sudo installer (#335) runs by hand, once, from a download or a pipe;
+    # nothing on a host loads the clone's copy, so a change to it restarts nothing.
+    (r"^bootstrap\.sh$", "none", "sudo installer (run by hand, not loaded)", None, None, None, None),
     (r"^scripts/paynani_lib/|^scripts/paynani$|^scripts/.*\.(sh|py)$", "none", "command-line scripts (read on each call)", None, None, None, None),
-    (r"^(i18n/|\.github/|examples/)|\.md$|^LICENSE$|^\.gitignore$|^roster\.md\.example$", "none", "documentation and repository files", None, None, None, None),
+    (r"^(i18n/|\.github/|examples/|brand/)|\.md$|^LICENSE$|^\.gitignore$|^roster\.md\.example$|^\.env\.example$", "none", "documentation and repository files", None, None, None, None),
 )
 
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
