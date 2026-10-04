@@ -1311,6 +1311,27 @@ try:
         roster_path.read_text(encoding="utf-8") == before,
     )
 
+    # #361: the sudo installer skips the regression suites; nothing else does. Default stays True.
+    runs = []
+    counting_stub = roster_cli._run_regression_tests
+    roster_cli._run_regression_tests = lambda: runs.append(1) or (True, "counted")
+    try:
+        roster_cli.add_contact_noninteractive("Default Runs", "default-runs@example.com")
+        check("add_contact_noninteractive: by default it still runs the regression suites", len(runs) == 1)
+        roster_cli._run_regression_tests = lambda: runs.append(1) or (False, "would fail the install")
+        status, detail = roster_cli.add_contact_noninteractive("Skips", "skips@example.com", run_tests=False)
+        check("add_contact_noninteractive(run_tests=False): the suites do not run (not even a failing one)",
+              len(runs) == 1 and status == "added")
+        check("...and the contact is written, and parses back",
+              "skips@example.com" in roster_path.read_text(encoding="utf-8")
+              and "skips@example.com" in roster_cli.roster_mod.roster_addresses(roster_path))
+        status, _ = roster_cli.add_contact_noninteractive("Still Fails", "still-fails@example.com")
+        check("...while the default path with a failing suite still refuses (test_failed)", status == "test_failed")
+        run_add_result = roster_cli.run_add(RArgs(name="Cli Too", address="cli-too@example.com", yes=True))
+        check("paynani roster add itself still refuses on a failing suite", run_add_result == 1)
+    finally:
+        roster_cli._run_regression_tests = counting_stub
+
     r = roster_cli.run_remove(RArgs(address="new@example.com", yes=True))
     check("roster_cli.run_remove: --yes succeeds without a prompt", r == 0)
     check("roster_cli.run_remove: the contact is gone from disk", "new@example.com" not in roster_path.read_text(encoding="utf-8"))
