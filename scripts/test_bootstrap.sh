@@ -152,6 +152,18 @@ PY
 esac
 exit 0
 EOF
+# stat: the real one, except that %U (the owner's name) is "owner" for every path of the fake
+# world, or "root" for the ones listed in FAKE_ROOT_OWNED. The files really belong to whoever runs
+# the tests, so the owner has to be faked to say something about ownership at all.
+cat >"$fake/stat" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "-c" ] && [ "$2" = "%U" ]; then
+    target=${!#}
+    case " ${FAKE_ROOT_OWNED-} " in *" $target "*) echo root ;; *) echo owner ;; esac
+    exit 0
+fi
+exec "$REAL_STAT" "$@"
+EOF
 chmod +x "$fake"/*
 
 # The Ubuntu and Fedora files bootstrap.sh reads through BOOTSTRAP_OS_RELEASE.
@@ -160,8 +172,9 @@ printf 'ID=debian\n' >"$tmp/os-debian"
 printf 'ID=linuxmint\nID_LIKE="ubuntu debian"\n' >"$tmp/os-mint"
 printf 'ID=fedora\nID_LIKE="rhel centos"\n' >"$tmp/os-fedora"
 
-export REAL_PYTHON3
+export REAL_PYTHON3 REAL_STAT
 REAL_PYTHON3=$(command -v python3)
+REAL_STAT=$(command -v stat)
 export PATH="$fake:$PATH"
 export FAKE_LOG="$log" FAKE_HOME="$home" FAKE_USER=owner FAKE_MARK="$tmp/himalaya-installed"
 export BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
@@ -174,7 +187,7 @@ reset() {   # a clean host for the next case
     : >"$log"
     rm -rf "$home" "$FAKE_MARK" "$tmp/run"
     mkdir -p "$home"
-    unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC FAKE_NO_BUS
+    unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC FAKE_NO_BUS FAKE_ROOT_OWNED
     unset XDG_CONFIG_HOME XDG_DATA_HOME CALLER_SECRET_TOKEN https_proxy
     export SUDO_USER=owner BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
 }
@@ -361,6 +374,23 @@ mkdir -p "$home/.claude"; chmod 775 "$home/.claude"
 bs --runtime claudecode --dry-run
 assert "--dry-run says it would tighten, and does not" \
     'grep -q "^would: sudo -u owner -H chmod go-w -- $home/.claude" <<<"$out" && [ "$(stat -c %a "$home/.claude")" = 775 ]'
+
+reset
+mkdir -p "$home/.claude/workspace"; chmod 777 "$home/.claude/workspace"
+FAKE_ROOT_OWNED="$home/.claude/workspace" bs --runtime claudecode
+assert "a directory on the way that is not the user's: exit 1, naming it" \
+    '[ "$rc" -eq 1 ] && grep -q "$home/.claude/workspace belongs to root, not to owner" <<<"$out"'
+assert "...it is not touched: no chmod, no clone, nothing handed over" \
+    '! called "chmod" && ! called "git clone" && ! called "bootstrap_user.py" && [ "$(stat -c %a "$home/.claude/workspace")" = 777 ]'
+reset
+mkdir -p "$home/.claude/workspace"; chmod 755 "$home/.claude/workspace"
+FAKE_ROOT_OWNED="$home/.claude" bs --runtime claudecode
+assert "a root-owned directory on the way fails even when it is not writable (install.sh would refuse it)" \
+    '[ "$rc" -eq 1 ] && grep -q "$home/.claude belongs to root" <<<"$out" && ! called "git clone"'
+reset
+mkdir -p "$home/.claude"; chmod 775 "$home/.claude"
+FAKE_ROOT_OWNED="$home" bs --runtime claudecode
+assert "the home itself is never inspected, so a home that is not the user's is install.sh's to report" '[ "$rc" -eq 0 ]'
 
 # ---- B3: what exists is not replaced ----------------------------------------
 

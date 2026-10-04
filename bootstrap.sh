@@ -336,7 +336,10 @@ fi
 # ~/.claude under umask 002 both leave one behind, and the umask above only
 # governs what this script creates. So the directories that already exist between
 # the home and the clone lose group and world write, and each one is said out loud.
-# Only those two bits, only on that path, never on $HOME itself.
+# Only those two bits, only on that path, never on $HOME itself. A directory on
+# that path that does not belong to the user is not touched at all: install.sh
+# would refuse it too (unsafe-owner), and a chmod by a user who does not own it
+# cannot work, so the script stops and names it.
 tighten_path() {
     local current=$dir
     local -a chain=()
@@ -345,9 +348,13 @@ tighten_path() {
         chain+=("$current")
         current=$(dirname "$current")
     done
-    local entry mode
+    local entry mode owner
     for entry in "${chain[@]}"; do
         [[ -d "$entry" && ! -L "$entry" ]] || continue
+        owner=$(stat -c %U -- "$entry" 2>/dev/null || true)
+        if [[ -n "$owner" && "$owner" != "$user" ]]; then
+            die "$EX_STEP" "$entry belongs to $owner, not to $user, and install.sh refuses a path it does not own: fix it (chown $user: $entry, or choose another --dir) and run this again"
+        fi
         mode=$(stat -c %a -- "$entry" 2>/dev/null || true)
         [[ -n "$mode" ]] || continue
         if (( 8#$mode & 8#022 )); then
