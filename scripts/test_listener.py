@@ -12,6 +12,9 @@ import pathlib
 import socket
 import sys
 import tempfile
+import time
+from contextlib import contextmanager
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -23,6 +26,26 @@ from idle_listener import (KEEPALIVE_OPTIONS, PROCESS_COMMIT, PROCESS_VERSION, L
 from roster import (notifier_headers, notifiers, roster_addresses,
                     roster_entries, sender_is_listed)
 from failure_diagnostics import print_diagnostics
+
+
+@contextmanager
+def clock(*stamps):
+    """
+    describe() stamps the line with time.strftime("%H:%M:%S"). Two calls a test
+    compares can straddle a second and differ (#363), so a comparison of whole
+    lines runs under a clock that answers those calls with the given stamps in
+    turn (repeating the last), and everything else with the real time.
+    """
+    real = time.strftime
+    left = list(stamps)
+
+    def fake(fmt, *t):
+        if fmt == "%H:%M:%S" and not t:
+            return left.pop(0) if len(left) > 1 else left[0]
+        return real(fmt, *t)
+
+    with mock.patch.object(time, "strftime", fake):
+        yield
 
 
 def message(from_header, **extra):
@@ -459,13 +482,24 @@ def main():
         account = "iris.claude.tob@agenteiamail.com"
         listed = Listed(roster)
 
-        [(_, to_fields)] = fetch_since(FakeConn({1: envelope(to=account)}), 0, listed, account)
+        # Under one fixed clock: the two lines are built by separate calls and
+        # would otherwise differ whenever they straddle a second (#363).
+        with clock("12:00:00"):
+            [(_, to_fields)] = fetch_since(FakeConn({1: envelope(to=account)}), 0, listed, account)
+            control = describe("Someone <someone@example.org>", "Asunto",
+                               "Fri, 19 Sep 2026 04:00:00 +0000", trusted=False)
         check(to_fields["recipient_role"] == "to",
               f"the account in To gives 'to', got {to_fields['recipient_role']!r}")
-        control = describe("Someone <someone@example.org>", "Asunto",
-                           "Fri, 19 Sep 2026 04:00:00 +0000", trusted=False)
         check(to_fields["notification_text"] == control,
               "the 'to' role leaves the notification line exactly as before (#221's PRD)")
+        # The failure #363 hit, made to happen every time: two calls a second
+        # apart give different lines, so a bare comparison like the old one
+        # depended on luck. If this stops differing, describe() dropped the stamp
+        # and the frozen clock above is no longer needed.
+        with clock("12:00:00", "12:00:01"):
+            first = describe("Someone <someone@example.org>", "Asunto", "", trusted=False)
+            second = describe("Someone <someone@example.org>", "Asunto", "", trusted=False)
+        check(first != second, "describe() stamps the time, so whole lines are compared under a fixed clock")
 
         [(_, cc_fields)] = fetch_since(
             FakeConn({1: envelope(to="other@example.org", cc=account)}), 0, listed, account)
