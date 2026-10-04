@@ -335,6 +335,8 @@ assert "~/.claude, which the script creates for the clone, is not group or world
     '[ "$(stat -c %a "$home/.claude")" = 700 ] && [ "$(stat -c %a "$home/.claude/workspace")" = 700 ]'
 assert "...and neither is the himalaya installer's target nor anything else it made" \
     '! find "$home" -perm /022 | grep -q .'
+assert "with umask 002 in the caller, every command handed to sudo carries umask 077" \
+    '[ "$(grep -c "^sudo -u owner -H " "$log")" -gt 3 ] && [ "$(grep "^sudo -u owner -H " "$log" | grep -vc "umask 077; exec")" -eq 0 ]'
 
 # ---- B3: what exists is not replaced ----------------------------------------
 

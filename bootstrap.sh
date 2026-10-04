@@ -135,21 +135,23 @@ run() {
 # else's home, so himalaya and git read or write the wrong user's files. The
 # systemd user session needs XDG_RUNTIME_DIR and its bus, which exist once linger
 # has started user@UID.service (wait_for_user_bus).
+#
+# Everything as the user also runs under umask 077, not under the account's own:
+# on Ubuntu that is usually 002 (USERGROUPS_ENAB), which leaves what this script
+# creates in the home (the directories above the clone, the clone, ~/.local/bin)
+# group-writable, and install.sh then refuses ~/.claude as an unsafe container
+# (found by the end-to-end job). A umask is not an environment variable, so
+# `env -i` does not fix it.
 user_env=()
-as_user() { sudo -u "$user" -H "${user_env[@]}" "$@"; }
+as_user() { sudo -u "$user" -H "${user_env[@]}" sh -c 'umask 077; exec "$@"' sh "$@"; }
 
-# Same as run, for what runs as the user, and for what this script CREATES in the
-# user's home (the directories above the clone, the clone, ~/.local/bin). Those are
-# made with umask 077 and not with whatever the account has: on Ubuntu a user's
-# umask is usually 002 (USERGROUPS_ENAB), which leaves ~/.claude group-writable, and
-# install.sh then refuses it as an unsafe container (found by the end-to-end job).
-# A umask is not an environment variable, so env -i does not fix it.
+# Same as run, for what runs as the user.
 run_user() {
     if [[ $dry_run -eq 1 ]]; then
         printf 'would: sudo -u %s -H %s\n' "$user" "$*"
         return 0
     fi
-    as_user sh -c 'umask 077; exec "$@"' sh "$@"
+    as_user "$@"
 }
 
 cleanup() {
