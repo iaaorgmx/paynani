@@ -346,7 +346,15 @@ fi
 # lowers the mask. It is put there on purpose by an administrator (or, on GitHub's
 # runner image, on /home), so it is not removed here: refuse, and say where it is.
 # Only a default entry that lets someone other than the owner write counts; the usual
-# "user::rwx, group::r-x, other::r-x" does not.
+# "user::rwx, group::r-x, other::r-x" does not. Without getfacl nothing can be judged,
+# so a "+" on a directory only earns a warning, and install.sh's own refusal stays as
+# the safety net.
+has_acl() {   # has_acl DIR: the "+" ls -ld appends to the mode; needs no `acl` package
+    local listing
+    listing=$(ls -ld -- "$1" 2>/dev/null) || return 1
+    [[ "${listing%%[[:space:]]*}" == *+ ]]
+}
+
 writable_default_acl() {   # writable_default_acl DIR: prints each offending entry
     command -v getfacl >/dev/null 2>&1 || return 0
     getfacl -p -- "$1" 2>/dev/null | awk '
@@ -374,6 +382,12 @@ tighten_path() {
     # its mode and owner are install.sh's to judge.
     for current in "$home" "${chain[@]}"; do
         [[ -d "$current" && ! -L "$current" ]] || continue
+        if ! command -v getfacl >/dev/null 2>&1; then
+            if has_acl "$current"; then
+                say "warning: $current has an ACL; install acl (getfacl) to check it, or expect install.sh to refuse it"
+            fi
+            continue
+        fi
         offending=$(writable_default_acl "$current")
         if [[ -n "$offending" ]]; then
             die "$EX_STEP" "$current has a default ACL that lets others write to everything created under it, and install.sh refuses such a path. I do not change ACLs an administrator set. Remove it (setfacl -k $current) or choose another --dir, and run this again. The entries:

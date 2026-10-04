@@ -182,6 +182,17 @@ case " ${FAKE_ACL_BAD-} " in
 esac
 echo "default:other::r-x"
 EOF
+# ls: the real one, except that `ls -ld PATH` shows the "+" of an ACL on the paths in FAKE_LS_ACL.
+cat >"$fake/ls" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "-ld" ] || [ "$1" = "-dl" ]; then
+    target=${!#}
+    case " ${FAKE_LS_ACL-} " in
+        *" $target "*) echo "drwxrwxr-x+ 2 owner owner 4096 Oct  4 05:00 $target"; exit 0 ;;
+    esac
+fi
+exec "$REAL_LS" "$@"
+EOF
 chmod +x "$fake"/*
 
 # The Ubuntu and Fedora files bootstrap.sh reads through BOOTSTRAP_OS_RELEASE.
@@ -190,9 +201,10 @@ printf 'ID=debian\n' >"$tmp/os-debian"
 printf 'ID=linuxmint\nID_LIKE="ubuntu debian"\n' >"$tmp/os-mint"
 printf 'ID=fedora\nID_LIKE="rhel centos"\n' >"$tmp/os-fedora"
 
-export REAL_PYTHON3 REAL_STAT
+export REAL_PYTHON3 REAL_STAT REAL_LS
 REAL_PYTHON3=$(command -v python3)
 REAL_STAT=$(command -v stat)
+REAL_LS=$(command -v ls)
 export PATH="$fake:$PATH"
 export FAKE_LOG="$log" FAKE_HOME="$home" FAKE_USER=owner FAKE_MARK="$tmp/himalaya-installed"
 export BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
@@ -205,7 +217,7 @@ reset() {   # a clean host for the next case
     : >"$log"
     rm -rf "$home" "$FAKE_MARK" "$tmp/run"
     mkdir -p "$home"
-    unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC FAKE_NO_BUS FAKE_ROOT_OWNED FAKE_ACL_BAD FAKE_ACL_MASKED
+    unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC FAKE_NO_BUS FAKE_ROOT_OWNED FAKE_ACL_BAD FAKE_ACL_MASKED FAKE_LS_ACL FAKE_NO_GETFACL
     unset XDG_CONFIG_HOME XDG_DATA_HOME CALLER_SECRET_TOKEN https_proxy
     export SUDO_USER=owner BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
 }
@@ -433,6 +445,25 @@ assert "an entry the mask leaves read-only is not a problem" '[ "$rc" -eq 0 ]'
 reset
 bs --runtime claudecode
 assert "the usual default ACL (user::rwx, group::r-x, other::r-x) does not block" '[ "$rc" -eq 0 ]'
+
+# ---- without getfacl nothing can be judged: a "+" earns a warning, not a refusal ---
+
+reset
+mkdir -p "$home/.claude"
+mv "$fake/getfacl" "$fake/getfacl.off"
+FAKE_LS_ACL="$home/.claude" bs --runtime claudecode
+mv "$fake/getfacl.off" "$fake/getfacl"
+assert "without getfacl, a directory with an ACL ('+') on the way is a warning and the run goes on" \
+    '[ "$rc" -eq 0 ] && grep -q "warning: $home/.claude has an ACL; install acl (getfacl) to check it, or expect install.sh to refuse it" <<<"$out"'
+reset
+mv "$fake/getfacl" "$fake/getfacl.off"
+bs --runtime claudecode
+mv "$fake/getfacl.off" "$fake/getfacl"
+assert "...and with no ACL anywhere there is no warning" '[ "$rc" -eq 0 ] && ! grep -q "warning:" <<<"$out"'
+reset
+mkdir -p "$home/.claude"
+FAKE_LS_ACL="$home/.claude" bs --runtime claudecode
+assert "with getfacl present the \"+\" alone is not a reason to refuse (the standard default ACL is judged by its entries)" '[ "$rc" -eq 0 ] && ! grep -q "warning:" <<<"$out"'
 
 # ---- B3: what exists is not replaced ----------------------------------------
 
