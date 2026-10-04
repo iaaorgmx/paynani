@@ -53,6 +53,20 @@ gh release create v0.7.2 --title "paynani 0.7.2" --notes-file <notas>
 Las notas salen de la sección del CHANGELOG, no se reescriben aparte: dos textos
 que describen la misma versión terminan diciendo cosas distintas.
 
+**Adjunta `bootstrap.sh` y su SHA-256** a la release (desde 0.12.0), con el
+mismo nombre que dan las ligas de `INSTALL.md` («Install with one command»):
+
+```bash
+git show v0.7.2:bootstrap.sh > bootstrap.sh
+sha256sum bootstrap.sh > bootstrap.sh.sha256
+gh release upload v0.7.2 bootstrap.sh bootstrap.sh.sha256
+```
+
+Sale de la etiqueta y no del árbol de trabajo, para que el archivo que se
+descarga sea exactamente el de esa versión. Sin él, la liga
+`releases/latest/download/bootstrap.sh` da 404 y el camino que comprueba el
+archivo deja de existir.
+
 ## 6. Actualiza tu propio host antes de avisarle a nadie
 
 Con los pasos exactos que va a llevar el aviso, no con los que tú te sabes.

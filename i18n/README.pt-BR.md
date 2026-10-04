@@ -338,6 +338,7 @@ seu próprio critério sobre quem entra.
 |---|---|
 | Preparar a caixa sem expor senhas | [`MAILBOX_SETUP.pt-BR.md`](MAILBOX_SETUP.pt-BR.md) |
 | Instalar o Paynani | [`AGENTS.md`](../AGENTS.md) e [`INSTALL.md`](../INSTALL.md) |
+| Instalar com um só comando (sudo, Ubuntu ou Debian) | [`INSTALL.md`](../INSTALL.md#install-with-one-command-sudo) |
 | Integrar com o Hermes Agent | [`HERMES.md`](../HERMES.md) |
 | Entender por que ele não deve falhar em silêncio | [`DESIGN.md`](../DESIGN.md) |
 | Migrar do agenteiamail | [`MIGRATION.md`](../MIGRATION.md) |
