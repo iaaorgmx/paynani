@@ -85,17 +85,14 @@ DOCTOR_POLL_SECONDS = 2
 # The one doctor row that may stay `unknown` and still let the run say ready, written in
 # plain sight. session_watch_state is unknown until a session of the runtime has armed the
 # mail watch, which happens when the owner opens Claude Code (or Codex) for the first time,
-# so no amount of waiting fixes it and the closing message asks the owner to do it. It counts
-# only when ALL of these hold: the row is `unknown` (a watch that was armed and went stale
-# is a `warning`, which fails), the runtime is one with session hooks, and no watch has ever
-# been armed in this install (no state/sessions/*/watch.json, the source diagnostics reads
-# for that row). Any other row that is not ok fails, as before.
+# so no amount of waiting fixes it and the closing message asks the owner to do it. For
+# Claude Code, diagnostics.py answers `unknown` for that row only when no watch has ever been
+# armed (a live one is `ok`; a stale, orphaned or ended one is `warning`), so `unknown`
+# already means "never armed" and nothing else needs checking here; the other runtimes
+# report the generic `unknown`. Only `unknown` counts: `warning` and `blocked` fail, and any
+# other row that is not ok fails, as before.
 PENDING_AT_INSTALL = ("session_watch_state",)
-WATCH_RUNTIMES = {"claudecode": "Claude Code", "codex": "Codex"}
-
-
-def watch_never_armed() -> bool:
-    return not list((harness_paths.state_dir() / "sessions").glob("*/watch.json"))
+APP_NAMES = {"claudecode": "Claude Code", "codex": "Codex"}
 
 
 class NeedData(Exception):
@@ -417,13 +414,13 @@ def step_rules(ctx: Ctx):
 
 # --- 13. verification -----------------------------------------------------------------
 
-def split_doctor_rows(report: dict, allow_pending: bool = True):
+def split_doctor_rows(report: dict):
     """(rows that are not ok and block, rows that are unknown on purpose in a fresh install)."""
     blocking, pending = [], []
     for row in report.get("checks", []):
         if not isinstance(row, dict) or row.get("status") == "ok":
             continue
-        if allow_pending and row.get("name") in PENDING_AT_INSTALL and row.get("status") == "unknown":
+        if row.get("name") in PENDING_AT_INSTALL and row.get("status") == "unknown":
             pending.append(row)
         else:
             blocking.append(row)
@@ -444,7 +441,6 @@ def step_verify(ctx: Ctx):
         ctx.would("scripts/paynani doctor --json and scripts/healthcheck.py"
                   + (", then a test message to the owner" if ctx.args.test_mail else ""))
         return True, "dry run"
-    allow_pending = ctx.runtime in WATCH_RUNTIMES and watch_never_armed()
     waited = 0
     while True:
         doctor = run_quiet(ctx, [ROOT / "scripts" / "paynani", "doctor", "--json"], cwd=str(ROOT))
@@ -453,7 +449,7 @@ def step_verify(ctx: Ctx):
             status = report["status"]
         except (ValueError, KeyError, TypeError):
             return False, f"paynani doctor gave no status:\n{first_lines(doctor.stderr or doctor.stdout)}"
-        blocking, pending = split_doctor_rows(report, allow_pending)
+        blocking, pending = split_doctor_rows(report)
         if status == "ok" or (not blocking and report.get("checks")):
             ctx.pending = [row.get("name") for row in pending]
             break
@@ -548,7 +544,7 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
 
     if args.dry_run:
         return EX_OK
-    ctx.say(ctx.L("b.ready_pending", app=WATCH_RUNTIMES.get(ctx.runtime, ctx.runtime)) if ctx.pending
+    ctx.say(ctx.L("b.ready_pending", app=APP_NAMES.get(ctx.runtime, ctx.runtime)) if ctx.pending
             else ctx.L("b.ready"))
     ctx.say(ctx.L("b.sum_runtime", value=ctx.runtime))
     ctx.say(ctx.L("b.sum_creds", value=ctx.env_path))

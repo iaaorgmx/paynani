@@ -527,11 +527,6 @@ with_world(doctor_always_unknown)
 WATCH_ROW = {"name": "session_watch_state", "status": "unknown", "summary": "Claude Code session watcher state is observable"}
 
 
-def arm_a_watch(w):
-    (w.state / "sessions" / "3e430849").mkdir(parents=True)
-    (w.state / "sessions" / "3e430849" / "watch.json").write_text("{}", encoding="utf-8")
-
-
 def doctor_only_the_session_watch_pending(w):
     rows = [{"name": "listener", "status": "ok", "summary": "active"}, WATCH_ROW]
     w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", rows))
@@ -570,26 +565,15 @@ def doctor_pending_codex(w):
 with_world(doctor_pending_codex)
 
 
-def doctor_not_a_watch_runtime(w):
+def doctor_pending_other_runtime(w):
     w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", [WATCH_ROW]))
     code = w.run("--runtime", "hermes", "--ref", "v0.12.0", "--env-file", str(w.env_file), "--owner-name", "Ada",
                  "--owner-email", "ada@example.org", "--yes")
-    check("a runtime without session hooks gets no exception: the same row fails", code == 1 and "session_watch_state: unknown" in w.text, w.text)
+    check("the other runtimes report the generic unknown for that row: accepted too, with the same pending step",
+          code == 0 and "open hermes on this machine" in w.text and "pending: session_watch_state" in w.text, w.text)
 
 
-with_world(doctor_not_a_watch_runtime)
-
-
-def doctor_a_watch_was_armed_before(w):
-    arm_a_watch(w)
-    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", [WATCH_ROW]))
-    code = w.run(*w.full())
-    check("unknown although a session armed a watch before is a failure, not a pending step",
-          code == 1 and "session_watch_state: unknown" in w.text and "Ready." not in w.text, w.text)
-    check("...after waiting the full 60 s like any other unknown row", sum(w.sleeps) == 60, str(w.sleeps[:3]))
-
-
-with_world(doctor_a_watch_was_armed_before)
+with_world(doctor_pending_other_runtime)
 
 
 def doctor_pending_plus_a_real_unknown(w):
