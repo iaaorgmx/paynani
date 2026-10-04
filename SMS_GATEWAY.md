@@ -291,6 +291,11 @@ tuvo un SMS correspondiente, y avisa:
   decidir si el remitente está en el roster.
 - Se deduplica por `id` y se contesta con `ack`, igual que `sms.in`.
 - La app sólo lo manda si `welcome.accepts` incluye `sms.unseen`.
+- Google Messages también notifica los **MMS**, que tampoco pasan por
+  `content://sms` y la app no lee: un MMS también produce `sms.unseen`. Por eso la
+  línea dice «posible RCS» y no «RCS».
+- Un SMS que llega por la SIM que paynani no atiende (APP-10) no se encola, pero
+  la app lo anota como visto, así que no produce un `sms.unseen` falso.
 
 ### `ack`: la pasarela lo guardó
 
