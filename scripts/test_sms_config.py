@@ -107,6 +107,8 @@ else:
         r = run([str(ROOT / "scripts" / "paynani"), "sms", "pair"])
         check("paynani sms pair saca la dirección del túnel de sms.env, sin exportar nada", (0, True),
               (r.returncode, "https://desde-sms-env.example/sms/pair" in r.stdout))
+        check("paynani sms pair explica que un código vencido no es error", True,
+              "Si vence antes de usarlo, no es un error" in r.stdout)
         r = run([str(ROOT / "scripts" / "paynani"), "sms", "pair"], {"PAYNANI_SMS_PUBLIC_URL": "https://del-entorno.example"})
         check("y el entorno gana al archivo en el comando real", True,
               "https://del-entorno.example/sms/pair" in r.stdout and "desde-sms-env" not in r.stdout)
