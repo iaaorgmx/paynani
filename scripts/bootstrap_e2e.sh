@@ -28,7 +28,16 @@ ALLOWED_NOT_OK=""
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok   $*"; }
-as_user() { sudo -u "$USER_NAME" -H env XDG_RUNTIME_DIR="/run/user/$(id -u "$USER_NAME")" "$@"; }
+# The same clean environment bootstrap.sh gives the user (BOOT-2 #358), so what
+# this script checks is what the install sees: ~/.local/bin (himalaya) on PATH,
+# the user's own runtime dir and session bus, nothing inherited from root.
+as_user() {
+    local uid home
+    uid=$(id -u "$USER_NAME"); home=$(getent passwd "$USER_NAME" | cut -d: -f6)
+    sudo -u "$USER_NAME" -H env -i HOME="$home" USER="$USER_NAME" LOGNAME="$USER_NAME" \
+        PATH="$home/.local/bin:/usr/local/bin:/usr/bin:/bin" LANG=C.UTF-8 \
+        XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" "$@"
+}
 
 mkdir -p "$WORK"
 # The GitHub runner image puts a default ACL on /home (default:user:runner:rwx,
