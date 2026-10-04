@@ -1373,6 +1373,13 @@ non_interactive=0
 dry_run=0
 with_sms=0
 declare -A seen_options=()
+# What the ownership manifest says this installer owns. Declared here, empty, and
+# filled by load_ownership_manifest: the inventory skips that load when the
+# config directory fails validate_container_chain, and sms_enabled still reads
+# it. Undeclared, bash takes the subscript as arithmetic and dies on the path
+# ("operand expected") before the real reason is ever printed. Found by the
+# bootstrap end-to-end job (#354) on a clean Ubuntu 24.04.
+declare -gA owned_digests=()
 
 mark_option_once() {
     local option=$1
