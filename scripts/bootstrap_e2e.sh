@@ -32,16 +32,18 @@ mkdir -p "$WORK"
 id "$USER_NAME" >/dev/null 2>&1 || useradd -m -s /bin/bash "$USER_NAME"
 HOME_DIR=$(getent passwd "$USER_NAME" | cut -d: -f6)
 
-# The credentials the fake server accepts, in paynani's .env format.
+# The credentials the fake server accepts, with the names `paynani onboard`
+# writes (validate.py). The SMTP side only exists under the AGENT_EMAIL_ names;
+# .env.example's PAYNANI_SMTP_* are read by nothing.
 ENV_IN="$WORK/paynani.env"
 cat > "$ENV_IN" <<EOF
-PAYNANI_EMAIL=agente@example.com
-PAYNANI_PASSWORD=${FAKE_MAIL_PASSWORD:?FAKE_MAIL_PASSWORD}
-PAYNANI_IMAP_HOST=localhost
-PAYNANI_IMAP_PORT=${FAKE_IMAP_PORT:-9993}
-PAYNANI_SMTP_HOST=localhost
-PAYNANI_SMTP_PORT=${FAKE_SMTP_PORT:-9465}
-PAYNANI_FROM_NAME=Agente de prueba
+AGENT_EMAIL_ACCOUNT=agente@example.com
+AGENT_EMAIL_PASSWORD=${FAKE_MAIL_PASSWORD:?FAKE_MAIL_PASSWORD}
+AGENT_EMAIL_FROM_NAME=Agente de prueba
+AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=localhost
+AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=${FAKE_IMAP_PORT:-9993}
+AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST=localhost
+AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT=${FAKE_SMTP_PORT:-9465}
 EOF
 chmod 644 "$ENV_IN"   # agente reads it through bootstrap_user.py; it holds a throwaway password
 
