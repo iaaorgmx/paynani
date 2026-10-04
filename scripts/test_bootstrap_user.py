@@ -118,12 +118,13 @@ class World:
         os.environ["LANG"] = "en_US.UTF-8"
         self.real_roster_file = roster_cli.roster_file
         roster_cli.roster_file = lambda: self.roster
-        # `roster add` runs test_roster.sh and test_listener.py before it writes, which takes
-        # tens of seconds and is not what is under test here: those suites run on their own.
-        # Everything else of the real roster flow (creation from the template, the address
-        # check, the write) stays.
+        # The installer must not run test_roster.sh and test_listener.py (#361): this stub FAILS
+        # and counts, so a roster step that ran them would fail the run and show in the count.
+        # The rest of the real roster flow (creation from the template, the address check,
+        # the write, the read back) stays.
+        self.regression_runs = []
         self.real_regression = roster_cli._run_regression_tests
-        roster_cli._run_regression_tests = lambda: (True, "")
+        roster_cli._run_regression_tests = lambda: self.regression_runs.append(1) or (False, "must never run in the installer")
         self.real_probes = (probe.probe_imap, probe.probe_smtp)
         self.probe_calls = []
         probe.probe_imap = lambda *a: self.probe_calls.append(("imap", a[0])) or ok_probe()
@@ -196,6 +197,7 @@ def fresh(w):
     check("the password is read by a command from the credentials file, never written",
           f"env_secret.py {w.env_dest} AGENT_EMAIL_PASSWORD" in himalaya.replace("'", "") and SECRET not in himalaya)
     check("roster.md is created with the owner", "ada@example.org" in w.roster.read_text() and "Ada Owner" in w.roster.read_text())
+    check("#361: the roster step did not run the regression suites on this machine", w.regression_runs == [], str(w.regression_runs))
     installs = w.runner.ran("install.sh")
     check("install.sh runs once with the runtime", len(installs) == 1 and installs[0][-2:] == ["--runtime", "claudecode"], str(installs))
     check("...with PAYNANI_ENV pointing at the credentials file",
@@ -442,6 +444,28 @@ def owner_validation(w):
 
 
 with_world(owner_validation)
+
+
+def roster_written_but_unreadable(w):
+    # The write goes through, but the file does not recognise the owner when read back with the
+    # reader the listener and send.sh use: the step must fail, not report a roster that is dead.
+    real_add = roster_cli.add_contact_noninteractive
+
+    def writes_nothing_useful(name, email, **kwargs):
+        w.roster.write_text("# an empty roster, with nobody in it\n", encoding="utf-8")
+        return "added", str(w.roster)
+
+    roster_cli.add_contact_noninteractive = writes_nothing_useful
+    try:
+        code = w.run(*w.full())
+    finally:
+        roster_cli.add_contact_noninteractive = real_add
+    check("a roster that cannot be read back with the owner in it fails the step (exit 1)",
+          code == 1 and "could not be read back with the owner in it" in w.text and "Ready." not in w.text, w.text)
+    check("...and nothing after it ran", not w.runner.ran("install.sh"))
+
+
+with_world(roster_written_but_unreadable)
 
 
 def owner_missing(w):
