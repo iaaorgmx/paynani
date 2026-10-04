@@ -67,7 +67,17 @@ run_bootstrap() {
         --env-file "$ENV_IN" --owner-name "$OWNER_NAME" --owner-email "$OWNER_EMAIL" \
         --ref "$REF" 2>&1 | tee "$log" || rc=${PIPESTATUS[0]}
     echo "::endgroup::"
-    [ "$rc" -eq 0 ] || fail "bootstrap.sh ($label) exited $rc"
+    if [ "$rc" -ne 0 ]; then
+        # What doctor saw, row by row: "not ready" alone does not say which check.
+        local clone
+        clone=$(find "$HOME_DIR" -maxdepth 4 -name bootstrap.sh -path '*paynani*' -printf '%h\n' | head -1)
+        if [ -n "$clone" ]; then
+            echo "::group::doctor after bootstrap.sh ($label)"
+            as_user "$clone/scripts/paynani" doctor || true
+            echo "::endgroup::"
+        fi
+        fail "bootstrap.sh ($label) exited $rc"
+    fi
     pass "bootstrap.sh ($label) exited 0"
 }
 
