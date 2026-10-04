@@ -459,13 +459,26 @@ def main():
         account = "iris.claude.tob@agenteiamail.com"
         listed = Listed(roster)
 
-        [(_, to_fields)] = fetch_since(FakeConn({1: envelope(to=account)}), 0, listed, account)
+        # The line carries the time the mail was noticed, to the second (parts() calls
+        # time.strftime("%H:%M:%S")), and this check builds two lines one after the other:
+        # whenever the clock crossed a second between them they differed, and the test
+        # failed with nothing wrong in the code (it did so in CI, under the load of an
+        # install). The clock is held still for the two lines that are compared.
+        import time as _time
+        real_strftime = _time.strftime
+        _time.strftime = lambda fmt, *args: "12:00:00" if fmt == "%H:%M:%S" else real_strftime(fmt, *args)
+        try:
+            [(_, to_fields)] = fetch_since(FakeConn({1: envelope(to=account)}), 0, listed, account)
+            control = describe("Someone <someone@example.org>", "Asunto",
+                               "Fri, 19 Sep 2026 04:00:00 +0000", trusted=False)
+        finally:
+            _time.strftime = real_strftime
         check(to_fields["recipient_role"] == "to",
               f"the account in To gives 'to', got {to_fields['recipient_role']!r}")
-        control = describe("Someone <someone@example.org>", "Asunto",
-                           "Fri, 19 Sep 2026 04:00:00 +0000", trusted=False)
         check(to_fields["notification_text"] == control,
               "the 'to' role leaves the notification line exactly as before (#221's PRD)")
+        check(", cc]" not in control and "undisclosed" not in control,
+              "...and the control line itself carries neither role marker")
 
         [(_, cc_fields)] = fetch_since(
             FakeConn({1: envelope(to="other@example.org", cc=account)}), 0, listed, account)
