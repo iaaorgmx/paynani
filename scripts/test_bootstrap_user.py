@@ -109,7 +109,9 @@ class World:
         self.himalaya = self.tmp / "xdg" / "himalaya" / "config.toml"
         self.env_file = self.tmp / "creds.env"
         self.env_file.write_text(ENV_FILE_TEXT, encoding="utf-8")
-        self.saved = {k: os.environ.get(k) for k in ("HOME", "XDG_CONFIG_HOME", "PAYNANI_ENV", "LANG")}
+        self.state = self.tmp / "state"
+        self.saved = {k: os.environ.get(k) for k in ("HOME", "XDG_CONFIG_HOME", "PAYNANI_ENV", "PAYNANI_STATE", "LANG")}
+        os.environ["PAYNANI_STATE"] = str(self.state)
         os.environ["HOME"] = str(self.home)
         os.environ["XDG_CONFIG_HOME"] = str(self.tmp / "xdg")
         os.environ["PAYNANI_ENV"] = str(self.env_dest)
@@ -522,33 +524,95 @@ def doctor_always_unknown(w):
 with_world(doctor_always_unknown)
 
 
+WATCH_ROW = {"name": "session_watch_state", "status": "unknown", "summary": "Claude Code session watcher state is observable"}
+
+
+def arm_a_watch(w):
+    (w.state / "sessions" / "3e430849").mkdir(parents=True)
+    (w.state / "sessions" / "3e430849" / "watch.json").write_text("{}", encoding="utf-8")
+
+
 def doctor_only_the_session_watch_pending(w):
-    rows = [{"name": "listener", "status": "ok", "summary": "active"},
-            {"name": "session_watch_state", "status": "unknown", "summary": "Claude Code session watcher state is observable"}]
+    rows = [{"name": "listener", "status": "ok", "summary": "active"}, WATCH_ROW]
     w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", rows))
     code = w.run(*w.full())
-    check("a fresh install: session_watch_state unknown (no session has armed the watch yet) does not stop the run",
-          code == 0 and "Ready." in w.text, w.text)
+    check("a fresh Claude Code install: session_watch_state unknown with no watch ever armed does not stop the run",
+          code == 0, w.text)
     check("...it is not waited for (nothing else is unknown)", w.sleeps == [] and len(w.runner.ran("doctor", "--json")) == 1, str(w.sleeps))
-    check("...and the closing message says what is pending and what the owner does",
-          "pending: session_watch_state" in w.text and "Pending: open Claude Code once" in w.text, w.text)
+    check("...the closing message replaces the plain ready with the owner's step",
+          "Ready. One step is left for you: open Claude Code on this machine; the first session arms the mail watch." in w.text
+          and "Ready. paynani is installed" not in w.text, w.text)
+    check("...and the step says what is pending", "pending: session_watch_state" in w.text, w.text)
     check("...healthcheck still runs", len(w.runner.ran("healthcheck.py")) == 1)
 
 
 with_world(doctor_only_the_session_watch_pending)
 
 
+def doctor_pending_in_spanish(w):
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", [WATCH_ROW]))
+    w.run(*w.full(), lang="es_MX.UTF-8")
+    check("...and in Spanish when LANG says so",
+          "Listo. Falta un paso tuyo: abre Claude Code en esta máquina; la primera sesión arma la vigilancia del correo." in w.text, w.text)
+
+
+with_world(doctor_pending_in_spanish)
+
+
+def doctor_pending_codex(w):
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", [WATCH_ROW]))
+    code = w.run("--runtime", "codex", "--ref", "v0.12.0", "--env-file", str(w.env_file), "--owner-name", "Ada",
+                 "--owner-email", "ada@example.org", "--yes")
+    check("with codex the same row is pending, and the message names Codex",
+          code == 0 and "open Codex on this machine" in w.text, w.text)
+
+
+with_world(doctor_pending_codex)
+
+
+def doctor_not_a_watch_runtime(w):
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", [WATCH_ROW]))
+    code = w.run("--runtime", "hermes", "--ref", "v0.12.0", "--env-file", str(w.env_file), "--owner-name", "Ada",
+                 "--owner-email", "ada@example.org", "--yes")
+    check("a runtime without session hooks gets no exception: the same row fails", code == 1 and "session_watch_state: unknown" in w.text, w.text)
+
+
+with_world(doctor_not_a_watch_runtime)
+
+
+def doctor_a_watch_was_armed_before(w):
+    arm_a_watch(w)
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", [WATCH_ROW]))
+    code = w.run(*w.full())
+    check("unknown although a session armed a watch before is a failure, not a pending step",
+          code == 1 and "session_watch_state: unknown" in w.text and "Ready." not in w.text, w.text)
+    check("...after waiting the full 60 s like any other unknown row", sum(w.sleeps) == 60, str(w.sleeps[:3]))
+
+
+with_world(doctor_a_watch_was_armed_before)
+
+
 def doctor_pending_plus_a_real_unknown(w):
-    pending = {"name": "session_watch_state", "status": "unknown", "summary": "watcher state"}
-    answers = iter([doctor_json("unknown", [pending, {"name": "version_drift", "status": "unknown", "summary": "no state yet"}]),
-                    doctor_json("unknown", [pending])])
+    answers = iter([doctor_json("unknown", [WATCH_ROW, {"name": "version_drift", "status": "unknown", "summary": "no state yet"}]),
+                    doctor_json("unknown", [WATCH_ROW])])
     w.runner.add(has("scripts/paynani", "doctor"), 0, lambda: next(answers))
     code = w.run(*w.full())
-    check("another row that is unknown is still waited for, and the pending one does not keep it waiting after that",
+    check("another unknown row is waited for, and the pending one does not keep it waiting after that",
           code == 0 and w.sleeps == [2] and "pending: session_watch_state" in w.text, f"{w.sleeps} {w.text}")
 
 
 with_world(doctor_pending_plus_a_real_unknown)
+
+
+def doctor_himalaya_unknown(w):
+    rows = [WATCH_ROW, {"name": "himalaya", "status": "unknown", "summary": "himalaya binary could not be run"}]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", rows))
+    code = w.run(*w.full())
+    check("himalaya unknown retries and, if it stays, fails with exit 1 listing only that row",
+          code == 1 and sum(w.sleeps) == 60 and "himalaya: unknown" in w.text and "session_watch_state:" not in w.text, w.text)
+
+
+with_world(doctor_himalaya_unknown)
 
 
 def doctor_stale_watch_is_a_failure(w):

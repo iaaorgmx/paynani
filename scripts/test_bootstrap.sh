@@ -450,15 +450,12 @@ assert "the usual default ACL (user::rwx, group::r-x, other::r-x) does not block
 
 reset
 mkdir -p "$home/.claude"
-mv "$fake/getfacl" "$fake/getfacl.off"
-FAKE_LS_ACL="$home/.claude" bs --runtime claudecode
-mv "$fake/getfacl.off" "$fake/getfacl"
+# BOOTSTRAP_GETFACL points at nothing: a system without the acl package, whatever the host has installed.
+BOOTSTRAP_GETFACL=/nonexistent/getfacl FAKE_LS_ACL="$home/.claude" bs --runtime claudecode
 assert "without getfacl, a directory with an ACL ('+') on the way is a warning and the run goes on" \
     '[ "$rc" -eq 0 ] && grep -q "warning: $home/.claude has an ACL; install acl (getfacl) to check it, or expect install.sh to refuse it" <<<"$out"'
 reset
-mv "$fake/getfacl" "$fake/getfacl.off"
-bs --runtime claudecode
-mv "$fake/getfacl.off" "$fake/getfacl"
+BOOTSTRAP_GETFACL=/nonexistent/getfacl bs --runtime claudecode
 assert "...and with no ACL anywhere there is no warning" '[ "$rc" -eq 0 ] && ! grep -q "warning:" <<<"$out"'
 reset
 mkdir -p "$home/.claude"

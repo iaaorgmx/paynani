@@ -217,5 +217,5 @@ STRINGS = {
     'b.sum_owner': 'Owner in roster.md: {value}',
     'b.not_ready': 'Not ready: the step "{step}" failed.',
     'b.repeat': 'To repeat it: {command}',
-    'b.sum_pending': 'Pending: open Claude Code once, so that it arms the mail watch.',
+    'b.ready_pending': 'Ready. One step is left for you: open {app} on this machine; the first session arms the mail watch.',
 }

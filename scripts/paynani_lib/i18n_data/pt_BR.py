@@ -217,5 +217,5 @@ STRINGS = {
     'b.sum_owner': 'Dono no roster.md: {value}',
     'b.not_ready': 'Não ficou pronto: a etapa "{step}" falhou.',
     'b.repeat': 'Para repetir: {command}',
-    'b.sum_pending': 'Pendente: abra o Claude Code uma vez, para que ele arme a vigilância do e-mail.',
+    'b.ready_pending': 'Pronto. Falta um passo seu: abra o {app} nesta máquina; a primeira sessão arma a vigilância do e-mail.',
 }

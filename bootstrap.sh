@@ -42,6 +42,8 @@
 #   BOOTSTRAP_REPO_URL    clone source (default https://github.com/iaaorgmx/paynani.git)
 #   BOOTSTRAP_RUN_USER_DIR  where the user's runtime dirs live (default /run/user)
 #   BOOTSTRAP_BUS_WAIT    seconds to wait for the user's systemd bus (default 10)
+#   BOOTSTRAP_GETFACL     the getfacl command (default getfacl); a path that does not exist
+#                         simulates a system without the acl package
 
 set -euo pipefail
 
@@ -53,6 +55,7 @@ readonly EX_NOT_ROOT=4
 
 REPO_URL=${BOOTSTRAP_REPO_URL:-https://github.com/iaaorgmx/paynani.git}
 OS_RELEASE=${BOOTSTRAP_OS_RELEASE:-/etc/os-release}
+GETFACL=${BOOTSTRAP_GETFACL:-getfacl}
 HIMALAYA_INSTALLER=https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh
 
 # The runtime names, in the order of HARNESS_ROOTS in harness/paths.py.
@@ -356,8 +359,8 @@ has_acl() {   # has_acl DIR: the "+" ls -ld appends to the mode; needs no `acl` 
 }
 
 writable_default_acl() {   # writable_default_acl DIR: prints each offending entry
-    command -v getfacl >/dev/null 2>&1 || return 0
-    getfacl -p -- "$1" 2>/dev/null | awk '
+    command -v "$GETFACL" >/dev/null 2>&1 || return 0
+    "$GETFACL" -p -- "$1" 2>/dev/null | awk '
         /^default:/ {
             n = split($0, f, ":")
             rest = f[4]
@@ -382,7 +385,7 @@ tighten_path() {
     # its mode and owner are install.sh's to judge.
     for current in "$home" "${chain[@]}"; do
         [[ -d "$current" && ! -L "$current" ]] || continue
-        if ! command -v getfacl >/dev/null 2>&1; then
+        if ! command -v "$GETFACL" >/dev/null 2>&1; then
             if has_acl "$current"; then
                 say "warning: $current has an ACL; install acl (getfacl) to check it, or expect install.sh to refuse it"
             fi
