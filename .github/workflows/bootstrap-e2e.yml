@@ -47,7 +47,11 @@ jobs:
 
       - name: Start the fake IMAPS/SMTPS server
         run: |
-          echo "FAKE_MAIL_PASSWORD=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
+          pw=$(openssl rand -hex 16)
+          # Throwaway, but still masked: a log that prints a password teaches the
+          # habit of not caring, and the job's env block echoes it otherwise.
+          echo "::add-mask::$pw"
+          echo "FAKE_MAIL_PASSWORD=$pw" >> "$GITHUB_ENV"
           . "$GITHUB_ENV"
           nohup python3 scripts/fake_mail_server.py \
             --cert "$RUNNER_TEMP/tls/srv.pem" --key "$RUNNER_TEMP/tls/srv.key" \
