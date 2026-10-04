@@ -55,7 +55,7 @@ it uses them and says so, so running it again is safe. Exit codes: `0` ready,
 `1` a step failed (it names the step and the command to repeat it), `2`
 missing data or a bad option, `3` unsupported system, `4` not run as root.
 
-**If it refuses**, it exits 1 without having changed anything on that path:
+**If the path is unsafe.** Whenever it stops, it exits 1 and has changed nothing on that path:
 - A directory on the clone's path has a default ACL that lets another user
   write (common on CI images, rare on a stock Ubuntu): it changes nothing and
   stops, naming the directory and the entries. Remove it with `setfacl -k DIR`
@@ -66,9 +66,9 @@ missing data or a bad option, `3` unsupported system, `4` not run as root.
   user, it removes only that write bit, says so, and goes on. If it belongs to
   someone else (root, for example), it changes nothing and stops, naming the
   directory: `chown` it to the user or pick another `--dir`.
-- `--upgrade` runs the installed copy of the user half until `version.sh
-  --apply` has moved the clone. If a release changes the install steps
-  themselves, run `--upgrade` twice.
+**Upgrades.** `--upgrade` runs the installed copy of the user half until
+`version.sh --apply` has moved the clone. If a release changes the install
+steps themselves, run `--upgrade` twice.
 
 macOS is not covered yet (#347). Additional mailboxes are still added with
 `paynani account add` (`MULTI_ACCOUNT.md`).
