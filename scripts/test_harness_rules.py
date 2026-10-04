@@ -83,28 +83,65 @@ settings.write_text(json.dumps({"permissions": {"allow": "Bash(*)"}}))
 ok, _ = hr.apply("claudecode", clone, assume_yes=True, home=home, out=quiet)
 check("allow that is not a list: refused", False, ok)
 
+# a symlinked settings.json (dotfiles) is written at its target, link kept
+dot = tmp / "dotfiles"
+dot.mkdir()
+target = dot / "settings.json"
+target.write_text(json.dumps({"model": "y"}, indent=4) + "\n")
+settings.unlink()
+settings.symlink_to(target)
+ok, _ = hr.apply("claudecode", clone, assume_yes=True, home=home, out=quiet)
+check("symlinked settings.json: still a link, target has the rules", (True, True, rules),
+      (ok, settings.is_symlink(), json.loads(target.read_text())["permissions"]["allow"]))
+check("and the original 4-space indentation is kept", True, '\n    "model"' in target.read_text())
+settings.unlink()
+
+
+def no_terminal(prompt):
+    raise EOFError
+
+
+settings.write_text(json.dumps({"permissions": {"allow": []}}))
+ok, detail = hr.apply("claudecode", clone, home=home, out=quiet, confirm=no_terminal)
+check("no terminal to confirm: refused with a pointer to --yes, nothing written", (False, True, []),
+      (ok, "--yes" in detail, json.loads(settings.read_text())["permissions"]["allow"]))
+
 # --- OpenClaw -----------------------------------------------------------------
 calls = []
 
 
-def fake_openclaw(listed):
+def fake_openclaw(listed, as_strings=False):
     def runner(argv, **kw):
         calls.append(argv[1:])
         if argv[1:3] == ["approvals", "get"]:
-            return subprocess.CompletedProcess(argv, 0, stdout="Allowlist\n" + "\n".join(listed), stderr="")
+            if "--agent" in argv:  # OpenClaw 2026.9.2 rejects it (#352)
+                return subprocess.CompletedProcess(argv, 1, stdout="", stderr='does not recognize option "--agent"')
+            entries = listed if as_strings else [{"pattern": p} for p in (listed or [])]
+            body = {"file": {"version": 1, "defaults": {}, "agents": {"main": {"allowlist": entries}} if listed is not None else {}}}
+            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(body), stderr="")
         return subprocess.CompletedProcess(argv, 0, stdout="added", stderr="")
     return runner
 
 
 which = lambda name: "/fake/openclaw"  # noqa: E731
 paths = hr.scripts(clone)
-steps = hr.plan("openclaw", clone, which=which, runner=fake_openclaw([]))
-check("openclaw: one allowlist add per script, agent main", [f"openclaw approvals allowlist add --agent main {p}" for p in paths], steps)
+steps = hr.plan("openclaw", clone, which=which, runner=fake_openclaw(None))
+check("openclaw: empty file.agents -> one allowlist add per script, agent main",
+      [f"openclaw approvals allowlist add --agent main {p}" for p in paths], steps)
+calls.clear()
+hr.plan("openclaw", clone, which=which, runner=fake_openclaw([]))
+check("openclaw: get is called as get --json, never with --agent", [["approvals", "get", "--json"]], calls)
 calls.clear()
 ok, _ = hr.apply("openclaw", clone, assume_yes=True, out=quiet, which=which, runner=fake_openclaw([paths[0]]))
 adds = [c for c in calls if c[:3] == ["approvals", "allowlist", "add"]]
-check("openclaw: only the missing ones are added", (True, [paths[1], paths[2]]), (ok, [c[-1] for c in adds]))
+check("openclaw: only the missing ones are added, with --agent main",
+      (True, [["approvals", "allowlist", "add", "--agent", "main", p] for p in paths[1:]]), (ok, adds))
 check("openclaw: nothing to add when all are listed", [], hr.plan("openclaw", clone, which=which, runner=fake_openclaw(paths)))
+check("openclaw: string entries count too", [], hr.plan("openclaw", clone, which=which, runner=fake_openclaw(paths, as_strings=True)))
+lookalikes = [paths[0] + "_old", paths[1] + ".bak", paths[2]]
+check("openclaw: paynani_old and send.sh.bak do not count as paynani and send.sh",
+      [f"openclaw approvals allowlist add --agent main {p}" for p in paths[:2]],
+      hr.plan("openclaw", clone, which=which, runner=fake_openclaw(lookalikes)))
 manual = hr.plan("openclaw", clone, which=lambda n: None)
 check("openclaw not on PATH: manual text, no command", True, len(manual) == 1 and manual[0].startswith("harness rules:"))
 
@@ -113,9 +150,13 @@ def failing_get(argv, **kw):
     return subprocess.CompletedProcess(argv, 1, stdout="", stderr="boom")
 
 
-calls.clear()
-ok, detail = hr.apply("openclaw", clone, assume_yes=True, out=quiet, which=which, runner=failing_get)
-check("openclaw get fails: manual text, nothing added", (True, "harness rules: printed for manual setup"), (ok, detail))
+def garbage_get(argv, **kw):
+    return subprocess.CompletedProcess(argv, 0, stdout="Allowlist 0", stderr="")
+
+
+for label, runner in (("fails", failing_get), ("is not JSON", garbage_get)):
+    ok, detail = hr.apply("openclaw", clone, assume_yes=True, out=quiet, which=which, runner=runner)
+    check(f"openclaw get {label}: manual text, nothing added", (True, "harness rules: printed for manual setup"), (ok, detail))
 
 # --- the rest -----------------------------------------------------------------
 for rt in ("hermes", "codex", "opencode"):

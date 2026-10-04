@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -67,14 +68,30 @@ def _missing_claude(clone, home=None) -> list[str]:
     return [r for r in claude_rules(clone) if r not in allow]
 
 
+def _indent_of(path: Path) -> int:
+    """The indentation the file already uses, so a dotfiles diff shows only our lines."""
+    try:
+        m = re.search(r'\n( +)"', path.read_text(encoding="utf-8"))
+    except OSError:
+        return 2
+    return len(m.group(1)) if m else 2
+
+
 def _write_json(path: Path, data: dict) -> None:
-    """Replace the file whole, keeping its mode; a reader never sees half a file."""
+    """
+    Replace the file whole, keeping its mode and indentation; a reader never
+    sees half a file. A symlinked settings.json (dotfiles managers) is written
+    at its target, and the link stays a link: os.replace on the link itself
+    would swap it for a plain file and leave the target without the rules.
+    """
+    path = Path(os.path.realpath(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
+    indent = _indent_of(path) if path.exists() else 2
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".settings.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
+            json.dump(data, fh, indent=indent, ensure_ascii=False)
             fh.write("\n")
         os.chmod(tmp, mode)
         os.replace(tmp, path)
@@ -83,14 +100,35 @@ def _write_json(path: Path, data: dict) -> None:
         raise
 
 
-def _openclaw_allowed(binary: str, runner) -> str | None:
-    """`openclaw approvals get` output, or None if it could not be read."""
+def _openclaw_allowed(binary: str, runner) -> set[str] | None:
+    """
+    The exact patterns in agent main's allowlist, or None if they could not be read.
+
+    `openclaw approvals get` takes no --agent (OpenClaw 2026.9.2); its --json view
+    is the whole config, redacted, with entries under file.agents.<id>.allowlist,
+    each {"pattern": ...} or, from older files, a plain string (Ximena, #352).
+    Matching is on the exact path: a substring test would read
+    scripts/paynani_old as scripts/paynani already allowed.
+    """
     try:
-        done = runner([binary, "approvals", "get", "--agent", OPENCLAW_AGENT],
-                      capture_output=True, text=True, timeout=30)
+        done = runner([binary, "approvals", "get", "--json"], capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
-    return done.stdout if done.returncode == 0 else None
+    if done.returncode != 0:
+        return None
+    try:
+        data = json.loads(done.stdout)
+        entries = (data.get("file") or {}).get("agents", {}).get(OPENCLAW_AGENT, {}).get("allowlist", [])
+    except (ValueError, AttributeError):
+        return None
+    if not isinstance(entries, list):
+        return None
+    out = set()
+    for item in entries:
+        pattern = item.get("pattern") if isinstance(item, dict) else item
+        if isinstance(pattern, str):
+            out.add(pattern)
+    return out
 
 
 def manual_text(runtime, clone) -> str:
@@ -138,7 +176,12 @@ def apply(runtime, clone, assume_yes=False, home=None, confirm=input, out=print,
     for line in steps:
         out(f"  {line}")
     if not assume_yes:
-        answer = confirm("Add them? [y/N] ").strip().lower()
+        try:
+            answer = confirm("Add them? [y/N] ").strip().lower()
+        except EOFError:
+            # No terminal under sudo -u: a "no" nobody said would hide that the
+            # rules were not written.
+            return False, "harness rules: no terminal to confirm; run again with --yes to add them"
         if answer not in ("y", "yes", "s", "si", "sí"):
             return True, "harness rules: skipped by the owner"
     if runtime == "claudecode":
