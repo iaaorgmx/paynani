@@ -1,5 +1,15 @@
 # Changelog
 
+## Sin publicar
+
+- **Aviso de un mensaje que PaynaniApp no pudo leer** (#332). La pasarela acepta
+  `sms.unseen`: cuando Google Messages recibe un mensaje (casi siempre un RCS, que
+  no pasa por SMS) y la app no ve el SMS correspondiente en 60 s, el agente recibe
+  una línea fija, sin el texto ni el remitente, para que no se pierda en silencio.
+  `welcome` anuncia en `accepts` los tipos que la pasarela acepta, y la app sólo
+  manda `sms.unseen` a una pasarela que lo anuncia. Necesita PaynaniApp con el
+  detector (PaynaniApp#55); sin él no cambia nada.
+
 ## 0.10.0 (2026-10-02)
 
 **SMS y llamadas: el agente recibe y contesta mensajes de texto con el número real

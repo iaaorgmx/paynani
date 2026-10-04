@@ -359,10 +359,11 @@ def run_mark(args) -> int:
 # vive en state/sms/inbox/ y sólo sale con --body, con la misma regla que el
 # cuerpo de un correo: el número tiene que haber sido del roster al llegar y
 # seguir siéndolo ahora.
-_SMS_EVENT_TYPES = ("sms.received", "call.missed", "call.answered")
+_SMS_EVENT_TYPES = ("sms.received", "call.missed", "call.answered", "sms.unseen")
 _SMS_SAFE_FIELDS = ("event_id", "event_type", "account", "device_id", "observed_at", "sent_at",
                     "started_at", "duration_s", "sender", "roster_match", "authenticated_sender",
-                    "provider_id", "notification_text", "inspection_command")
+                    "provider_id", "notification_text", "inspection_command",
+                    "posted_at", "app", "title")
 
 
 def _show_sms(record, args) -> int:
@@ -377,10 +378,16 @@ def _show_sms(record, args) -> int:
         "reason": ("the number is on roster.md (Phone)" if in_roster_now
                    else "the number is not on roster.md (Phone) now"),
     }
+    if record.get("event_type") == "sms.unseen":
+        output["roster_decision"] = {"matched": False,
+                                     "reason": "sms.unseen carries no number, so no roster decision is possible"}
     output["lifecycle"] = ledger.history(state_dir() / "lifecycle.jsonl", args.event_id)
     print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     if not args.body:
         return 0
+    if record.get("event_type") == "sms.unseen":
+        print("sms.unseen has no body: PaynaniApp could not read the message", file=sys.stderr)
+        return 2
     if record.get("event_type") != "sms.received":
         print("calls have no body", file=sys.stderr)
         return 2
