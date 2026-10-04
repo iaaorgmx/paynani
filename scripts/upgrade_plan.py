@@ -332,7 +332,7 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
             elif f["unit"] == "listener-all":
                 units.extend([LISTENER, LISTENER_INSTANCES, SMS_GATEWAY])
             elif f["unit"] == "all":
-                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER])
+                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY])
             else:
                 units.append((f["unit"], f["label"]))
         elif f["verb"] == "reinstall-and-restart":

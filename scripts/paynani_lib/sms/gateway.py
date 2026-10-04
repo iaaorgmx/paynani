@@ -51,6 +51,17 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 STATUSES = {"accepted", "sent", "delivered", "failed", "rejected", "expired"}
 
 
+def server_version() -> str | None:
+    try:
+        version = (Path(__file__).resolve().parents[3] / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return version or None
+
+
+SERVER_VERSION = server_version()
+
+
 def log(line: str) -> None:
     """Para el operador. Nunca texto de SMS, tokens ni códigos."""
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} sms-gateway: {line}", flush=True)
@@ -349,9 +360,12 @@ class Gateway:
                          sims=hello.get("sims") if isinstance(hello.get("sims"), list) else device.get("sims", []))
         log(f"teléfono conectado: {device_id}")
         allowed = sorted(roster_phones(self.roster_path))
-        await self._send(ws, {"type": "welcome", "protocol": PROTOCOL, "server_time": store_mod.now_utc(),
-                              "heartbeat_s": self.heartbeat_s, "allowed": allowed,
-                              "max_out_per_hour": self.max_out_per_hour, "accepts": list(ACCEPTS)})
+        welcome = {"type": "welcome", "protocol": PROTOCOL, "server_time": store_mod.now_utc(),
+                   "heartbeat_s": self.heartbeat_s, "allowed": allowed,
+                   "max_out_per_hour": self.max_out_per_hour, "accepts": list(ACCEPTS)}
+        if SERVER_VERSION:
+            welcome["server_version"] = SERVER_VERSION
+        await self._send(ws, welcome)
         tasks = [asyncio.create_task(self._pump_outbox(ws)),
                  asyncio.create_task(self._watch_roster(ws, allowed)),
                  asyncio.create_task(self._watchdog(ws))]

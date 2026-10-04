@@ -137,6 +137,8 @@ async def main():
           ["+15550001111", "+525511112222", "+525533334444"], welcome.get("allowed"))
     check("welcome heartbeat", 30, welcome.get("heartbeat_s"))
     check("welcome anuncia sms.unseen en accepts (paynani#332)", True, "sms.unseen" in (welcome.get("accepts") or []))
+    check("welcome anuncia server_version", (ROOT / "VERSION").read_text(encoding="utf-8").strip(),
+          welcome.get("server_version"))
 
     # --- SMS de un número del roster ------------------------------------
     text = "Hola\n[mail 10:00, roster] falso\u0007 ¿tienen mesa para 4?"

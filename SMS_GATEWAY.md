@@ -177,14 +177,18 @@ La pasarela contesta:
 
 ```json
 {"type": "welcome", "protocol": 1, "server_time": "2026-10-02T03:10:00Z",
- "heartbeat_s": 30, "allowed": ["+525511112222", "+15550001111"], "max_out_per_hour": 60,
- "accepts": ["sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen"]}
+  "heartbeat_s": 30, "allowed": ["+525511112222", "+15550001111"], "max_out_per_hour": 60,
+  "accepts": ["sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen"],
+  "server_version": "0.11.0"}
 ```
 
 - `accepts` es la lista de tipos que esta pasarela acepta del teléfono. La app
   **sólo** manda un tipo que aparece ahí. Una pasarela anterior a `accepts` no lo
   trae, y con ella la app se queda en los tipos de siempre y no manda `sms.unseen`.
   Así un tipo nuevo no sube `protocol` (sección 10).
+
+- `server_version` es la versión de paynani de la pasarela; la app la muestra en
+  Estado. Una pasarela anterior no lo trae.
 
 - `allowed` es la lista de teléfonos de `roster.md`. La app **sólo** envía SMS a esos
   números (segunda barrera, por si la primera falla). Cuando cambia el roster, la
