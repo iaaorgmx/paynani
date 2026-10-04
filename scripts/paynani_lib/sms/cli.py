@@ -141,6 +141,7 @@ def run_pair(args) -> int:
     code = store.new_code()
     payload = pairing.payload(base, code)
     print(f"Código de emparejamiento: {code}  (vence en {CODE_TTL_S // 60} minutos, un solo uso)")
+    print("Si vence antes de usarlo, no es un error: vuelve a correr este comando y usa el código nuevo.")
     print("Contenido del QR:")
     print(json.dumps(payload, ensure_ascii=False))
     return 0
