@@ -88,6 +88,11 @@ jobs:
           sudo -u agente XDG_RUNTIME_DIR=/run/user/$uid journalctl --user --no-pager -n 200 || true
           sudo cat /tmp/paynani-e2e/doctor.json 2>/dev/null || true
           echo "modes of what install.sh validates, and where they came from:"
-          sudo stat -c '%a %U:%G %n' /home/agente /home/agente/.claude /home/agente/.claude/workspace \
-            /home/agente/.config /home/agente/.config/systemd 2>&1 || true
+          # mode, owner, birth and change time: who made each directory, and when
+          sudo stat -c '%a %U:%G born=%w changed=%z %n' /home/agente /home/agente/.claude \
+            /home/agente/.claude/workspace /home/agente/.claude/workspace/paynani \
+            /home/agente/.config /home/agente/.config/himalaya /home/agente/.local 2>&1 || true
+          sudo ls -la /home/agente /home/agente/.claude 2>&1 || true
+          # a default ACL makes mkdir ignore the umask
+          sudo getfacl -p /home /home/agente /home/agente/.claude 2>&1 || true
           ls -la /etc/skel || true
