@@ -177,8 +177,14 @@ La pasarela contesta:
 
 ```json
 {"type": "welcome", "protocol": 1, "server_time": "2026-10-02T03:10:00Z",
- "heartbeat_s": 30, "allowed": ["+525511112222", "+15550001111"], "max_out_per_hour": 60}
+ "heartbeat_s": 30, "allowed": ["+525511112222", "+15550001111"], "max_out_per_hour": 60,
+ "accepts": ["sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen"]}
 ```
+
+- `accepts` es la lista de tipos que esta pasarela acepta del teléfono. La app
+  **sólo** manda un tipo que aparece ahí. Una pasarela anterior a `accepts` no lo
+  trae, y con ella la app se queda en los tipos de siempre y no manda `sms.unseen`.
+  Así un tipo nuevo no sube `protocol` (sección 10).
 
 - `allowed` es la lista de teléfonos de `roster.md`. La app **sólo** envía SMS a esos
   números (segunda barrera, por si la primera falla). Cuando cambia el roster, la
@@ -263,6 +269,28 @@ partir de `from.raw`; el `from.e164` que manda la app sólo sirve para el `id`.
   `llave` que en `sms.in`.
 - Una llamada con número oculto llega con `from.raw = ""` y `from.e164 = null`.
 - `call.answered` se manda **al colgar**, cuando ya se conoce la duración.
+
+### `sms.unseen`: un mensaje que la app no pudo leer
+
+Google Messages entrega los RCS por datos y nunca como SMS, así que la app no los
+ve (PaynaniApp#46). Si el usuario le dio a la app acceso a las notificaciones, la
+app detecta una notificación de mensaje de Google Messages que en 60 segundos no
+tuvo un SMS correspondiente, y avisa:
+
+```json
+{"type": "sms.unseen", "id": "4b1e…(64 hex)", "app": "com.google.android.apps.messaging",
+ "posted_at": "2026-10-04T08:00:00Z", "title": "Ana López",
+ "sim": {"slot": 0, "number": "+525512345678"}}
+```
+
+- `id`, `app` y `posted_at` son obligatorios. Si falta alguno, `missing_field` y
+  `ack` `rejected`.
+- `title` es lo que mostró la notificación: un nombre de contacto o un número, **no
+  confiable**. La pasarela lo limpia y lo recorta a 80 caracteres.
+- El texto de la notificación **no** se manda: puede venir cortado y no sirve para
+  decidir si el remitente está en el roster.
+- Se deduplica por `id` y se contesta con `ack`, igual que `sms.in`.
+- La app sólo lo manda si `welcome.accepts` incluye `sms.unseen`.
 
 ### `ack`: la pasarela lo guardó
 
@@ -386,11 +414,17 @@ camino aparte. Ejemplo de `sms.received`:
 | `call.answered` | `call.answered` | `started_at`, `duration_s` |
 | `sms.gateway.offline` | Sin latido en 3 × `heartbeat_s` | `device_id`, `last_seen` |
 | `sms.gateway.online` | Reconexión después de un `offline` | `device_id`, `offline_for_s` |
+| `sms.unseen` | `sms.unseen` | `posted_at`, `app`, `title` (limpio, sólo en `paynani event show`) |
 
 - `sender.address` es el E.164 o, si no hay, el remitente original (`AMAZON`).
 - `sender.name` sale de la columna de nombre de `roster.md` si el número coincide.
 - `roster_match` compara el **E.164 exacto** contra la columna `Phone` del roster. Un
   remitente alfanumérico nunca coincide.
+- `sms.unseen` tampoco lleva `roster_match`, porque no trae número: siempre se le
+  muestra al agente, con una línea fija («Google Messages recibió un mensaje que
+  PaynaniApp no pudo leer (posible RCS)»). El `title` **nunca** va en
+  `notification_text`, así que una notificación no puede fabricar una línea falsa.
+  `paynani event show --body` se niega: no hay texto.
 - `sms.gateway.offline` y `online` son de la pasarela, no de una persona: no llevan
   `roster_match` y siempre se le muestran al agente. Para que una conexión inestable
   no inunde al agente: a lo más un `offline` cada 10 minutos, y `online` sólo si
@@ -416,6 +450,7 @@ evento, así que en `notification_text`:
 | Una orden de envío no llega a tiempo | Queda `expired` en el ledger, y `paynani sms send` o `paynani sms status` lo dicen |
 | La red rechaza un envío | `sms.status` `failed` con el código de Android, en el ledger |
 | El teléfono se reinicia | La app arranca su servicio al encender y reconecta sola |
+| Llega un RCS, que no pasa por SMS | Con el acceso a notificaciones activo en la app, `sms.unseen` le llega al agente a los 60 s. Sin ese acceso, la pantalla de estado de la app dice que no puede detectarlos |
 
 ### Cómo lo vigila la pasarela (SRV-5)
 

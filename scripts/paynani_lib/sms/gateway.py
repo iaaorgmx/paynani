@@ -35,6 +35,10 @@ import phone  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
 PROTOCOL = 1
+# Lo que la pasarela acepta del teléfono, anunciado en `welcome` (SMS_GATEWAY.md
+# §2). Un tipo nuevo entra aquí y no sube PROTOCOL: la app sólo manda lo que ve en
+# la lista, así que una pasarela vieja nunca recibe un tipo que rechazaría.
+ACCEPTS = ("sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen")
 SUBPROTOCOL = "paynani-sms.v1"
 HEARTBEAT_S = 30
 HELLO_TIMEOUT_S = 10
@@ -347,7 +351,7 @@ class Gateway:
         allowed = sorted(roster_phones(self.roster_path))
         await self._send(ws, {"type": "welcome", "protocol": PROTOCOL, "server_time": store_mod.now_utc(),
                               "heartbeat_s": self.heartbeat_s, "allowed": allowed,
-                              "max_out_per_hour": self.max_out_per_hour})
+                              "max_out_per_hour": self.max_out_per_hour, "accepts": list(ACCEPTS)})
         tasks = [asyncio.create_task(self._pump_outbox(ws)),
                  asyncio.create_task(self._watch_roster(ws, allowed)),
                  asyncio.create_task(self._watchdog(ws))]
@@ -440,6 +444,8 @@ class Gateway:
             await self._call(ws, device_id, msg)
         elif kind == "sms.status":
             await self._sms_status(ws, msg)
+        elif kind == ev.SMS_UNSEEN:
+            await self._sms_unseen(ws, device_id, msg)
         elif kind == "hello":
             await self._error(ws, "unknown_type", detail="hello sólo al conectar")
         else:
@@ -528,6 +534,24 @@ class Gateway:
             log(f"no se pudo escribir el evento ({exc}); no se manda ack, el teléfono reintentará")
             return
         await self._send(ws, {"type": "ack", "id": cid, "result": result, "event_id": envelope["event_id"]})
+
+    async def _sms_unseen(self, ws, device_id, msg) -> None:
+        uid, app, posted = str(msg.get("id", "")), msg.get("app"), msg.get("posted_at")
+        if not HEX64.match(uid) or not isinstance(app, str) or not app or not isinstance(posted, str) or not posted:
+            await self._error(ws, "missing_field", ref=uid[:80], detail="sms.unseen necesita id, app y posted_at")
+            await self._send(ws, {"type": "ack", "id": uid, "result": "rejected"})
+            return
+        title = msg.get("title") if isinstance(msg.get("title"), str) else ""
+        envelope = ev.unseen_event(device_id=device_id, message_id=uid, app=app, posted_at=posted,
+                                   title=title, local_time=time.strftime("%H:%M:%S"))
+        try:
+            result = self._journal(uid, envelope, {"type": ev.SMS_UNSEEN, "app": envelope["app"],
+                                                   "posted_at": posted, "title": envelope["title"],
+                                                   "sim": msg.get("sim")})
+        except (OSError, ValueError) as exc:
+            log(f"no se pudo escribir el evento ({exc}); no se manda ack, el teléfono reintentará")
+            return
+        await self._send(ws, {"type": "ack", "id": uid, "result": result, "event_id": envelope["event_id"]})
 
     async def _sms_status(self, ws, msg) -> None:
         sid, oid, status = str(msg.get("id", "")), str(msg.get("order_id", "")), msg.get("status")

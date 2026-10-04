@@ -461,6 +461,7 @@ CALL_MISSED = "call.missed"
 CALL_ANSWERED = "call.answered"
 SMS_GATEWAY_OFFLINE = "sms.gateway.offline"
 SMS_GATEWAY_ONLINE = "sms.gateway.online"
+SMS_UNSEEN = "sms.unseen"
 
 NOTIFICATION_EXCERPT = 160
 
@@ -565,6 +566,42 @@ def gateway_health_event(*, kind, device_id, local_time, offline_for_s, last_see
         "inspection_command": "scripts/paynani status",
         "notification_text": f"{line} [scripts/paynani status]",
     }
+
+
+UNSEEN_TITLE_MAX = 80
+
+
+def unseen_event(*, device_id, message_id, app, posted_at, title, local_time, observed_at=None):
+    """
+    Google Messages publicó un mensaje que PaynaniApp no pudo leer: casi siempre
+    un RCS, que viaja por datos y nunca como SMS (PaynaniApp#46, paynani#332).
+
+    Es un aviso de la pasarela, como sms.gateway.offline: sin `roster_match`,
+    porque sin el número no se puede decidir, y siempre visible para el agente.
+    `title` es lo que mostró la notificación, no confiable: se guarda limpio y
+    recortado en el sobre para `paynani event show`, pero nunca va en
+    `notification_text`, que session_watch.sh imprime como una línea.
+    """
+    eid = sms_event_id(device_id, message_id)
+    line = (f"[sms {local_time}] Google Messages recibió un mensaje que PaynaniApp no pudo leer"
+            " (posible RCS)")
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": SMS_UNSEEN,
+        "event_id": eid,
+        "source": "paynani",
+        "account": f"sms:{device_id}",
+        "device_id": device_id,
+        "observed_at": observed_at or _now(),
+        "posted_at": posted_at or "",
+        "app": safe_excerpt(app, 80),
+        "title": safe_excerpt(title, UNSEEN_TITLE_MAX),
+        "authenticated_sender": False,
+        "provider_id": f"unseen:{message_id}",
+        "inspection_command": f"scripts/paynani event show {eid}",
+    }
+    record["notification_text"] = f"{line} [{record['inspection_command']}]"
+    return record
 
 
 def call_event(*, kind, device_id, call_id, e164, raw_caller, caller_name, started_at,
