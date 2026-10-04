@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `paynani sms pair` ahora aclara en la terminal que un código vencido no es un
+  error, y que basta con volver a correr el comando para usar un código nuevo
+  (#355).
+
 ## 0.11.0 (2026-10-04)
 
 **RCS: lo que la app no puede leer ya no se pierde en silencio, y PaynaniApp 0.3.0.**
