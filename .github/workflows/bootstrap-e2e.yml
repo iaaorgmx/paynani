@@ -1,0 +1,98 @@
+name: bootstrap-e2e
+
+# bootstrap.sh from end to end on a clean Ubuntu 24.04 (paynani#343, PRD #335
+# B1-B3). A GitHub-hosted runner is a VM with systemd, sudo and linger, which is
+# what this needs: in a container there is no systemd user session and the
+# units bootstrap.sh installs would never start. Do not move this into one.
+#
+# The mail account is a local fixture (scripts/fake_mail_server.py) behind a
+# throwaway CA that this job adds to the system trust store, so the listener,
+# himalaya and send.sh all verify TLS exactly as they would against a real
+# provider -- nothing here turns verification off.
+#
+# Not a required check yet: let it report first, make it block once its
+# failures are understood (same rule as suite-macos in tests.yml).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      FAKE_IMAP_PORT: "9993"
+      FAKE_SMTP_PORT: "9465"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: A throwaway CA and a certificate for localhost, trusted system-wide
+        run: |
+          d=$RUNNER_TEMP/tls
+          mkdir -p "$d" && cd "$d"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=paynani e2e test CA" \
+            -keyout ca.key -out ca.pem \
+            -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign"
+          openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" -keyout srv.key -out srv.csr
+          printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n' > ext.cnf
+          openssl x509 -req -in srv.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 1 -extfile ext.cnf -out srv.pem
+          sudo cp ca.pem /usr/local/share/ca-certificates/paynani-e2e-test.crt
+          sudo update-ca-certificates
+          python3 -c "import ssl, socket; print('system trust has', len(ssl.create_default_context().get_ca_certs()) or 'lazy-loaded', 'certs')"
+
+      - name: Start the fake IMAPS/SMTPS server
+        run: |
+          pw=$(openssl rand -hex 16)
+          # Throwaway, but still masked: a log that prints a password teaches the
+          # habit of not caring, and the job's env block echoes it otherwise.
+          echo "::add-mask::$pw"
+          echo "FAKE_MAIL_PASSWORD=$pw" >> "$GITHUB_ENV"
+          . "$GITHUB_ENV"
+          nohup python3 scripts/fake_mail_server.py \
+            --cert "$RUNNER_TEMP/tls/srv.pem" --key "$RUNNER_TEMP/tls/srv.key" \
+            --user agente@example.com --password "$FAKE_MAIL_PASSWORD" \
+            --imap-port "$FAKE_IMAP_PORT" --smtp-port "$FAKE_SMTP_PORT" \
+            --spool "$RUNNER_TEMP/received.mbox" > "$RUNNER_TEMP/fake-mail.log" 2>&1 &
+          for _ in $(seq 1 20); do
+            python3 - <<'PY' && break
+          import imaplib, os, ssl
+          c = imaplib.IMAP4_SSL("localhost", int(os.environ["FAKE_IMAP_PORT"]), ssl_context=ssl.create_default_context(), timeout=5)
+          c.login("agente@example.com", os.environ["FAKE_MAIL_PASSWORD"]); c.logout()
+          PY
+            sleep 0.5
+          done
+          echo "the fake server answers IMAPS with the system trust store"
+
+      - name: bootstrap.sh, three runs (B1, B2, B3)
+        # --ref is the branch, not $GITHUB_SHA: bootstrap.sh clones with
+        # `git clone --branch`, which takes a branch or a tag but not a commit.
+        # On a pull request that is the PR's branch, so a PR from a fork (whose
+        # branch is not on iaaorgmx/paynani) cannot run this job.
+        env:
+          E2E_REF: ${{ github.head_ref || github.ref_name }}
+        run: sudo --preserve-env=FAKE_MAIL_PASSWORD,FAKE_IMAP_PORT,FAKE_SMTP_PORT bash scripts/bootstrap_e2e.sh "$GITHUB_WORKSPACE" "$E2E_REF"
+
+      - name: What the fake server saw
+        if: always()
+        run: cat "$RUNNER_TEMP/fake-mail.log" || true
+
+      - name: The user units' journal, if something failed
+        if: failure()
+        run: |
+          uid=$(id -u agente 2>/dev/null) || exit 0
+          sudo -u agente XDG_RUNTIME_DIR=/run/user/$uid journalctl --user --no-pager -n 200 || true
+          sudo cat /tmp/paynani-e2e/doctor.json 2>/dev/null || true
+          echo "modes of what install.sh validates, and where they came from:"
+          # mode, owner, birth and change time: who made each directory, and when
+          sudo stat -c '%a %U:%G born=%w changed=%z %n' /home/agente /home/agente/.claude \
+            /home/agente/.claude/workspace /home/agente/.claude/workspace/paynani \
+            /home/agente/.config /home/agente/.config/himalaya /home/agente/.local 2>&1 || true
+          sudo ls -la /home/agente /home/agente/.claude 2>&1 || true
+          # a default ACL makes mkdir ignore the umask
+          sudo getfacl -p /home /home/agente /home/agente/.claude 2>&1 || true
+          ls -la /etc/skel || true
