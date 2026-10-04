@@ -31,6 +31,17 @@ pass() { echo "ok   $*"; }
 as_user() { sudo -u "$USER_NAME" -H env XDG_RUNTIME_DIR="/run/user/$(id -u "$USER_NAME")" "$@"; }
 
 mkdir -p "$WORK"
+# The GitHub runner image puts a default ACL on /home (default:user:runner:rwx,
+# default:mask::rwx) that a stock Ubuntu does not have. Every directory created
+# under it inherits that ACL and ignores the umask, so ~/.claude would come out
+# writable by `runner` and install.sh would rightly refuse it. Strip it so this
+# job tests a clean host, which is what B1 asks for. (What bootstrap.sh does on a
+# host that really has such an ACL is its own check, BOOT-2 #358.)
+if command -v setfacl >/dev/null && getfacl -p /home 2>/dev/null | grep -q '^default:'; then
+    echo "removing the runner image's default ACL from /home:"
+    getfacl -p /home | sed 's/^/  /'
+    setfacl -b /home
+fi
 id "$USER_NAME" >/dev/null 2>&1 || useradd -m -s /bin/bash "$USER_NAME"
 HOME_DIR=$(getent passwd "$USER_NAME" | cut -d: -f6)
 
