@@ -19,10 +19,12 @@ USER_NAME=agente
 OWNER_NAME=Prueba
 OWNER_EMAIL=prueba@example.com
 WORK=/tmp/paynani-e2e
-# doctor rows that may be something other than ok here, and why. Keep this list
-# short and every entry explained: a row added here is a check the job stops making.
-#   runtime: the runner has no `claude` binary, so Claude Code cannot be reached.
-ALLOWED_NOT_OK="runtime"
+# doctor rows that may be something other than ok here, and why. Empty on
+# purpose: bootstrap.sh only says it is ready with every row ok, so the job asks
+# the same. (Claude Code's runtime row is ok without a `claude` binary: its
+# check is that the spool can be written.) A row added here is a check the job
+# stops making, so each one needs its reason written next to it.
+ALLOWED_NOT_OK=""
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok   $*"; }
