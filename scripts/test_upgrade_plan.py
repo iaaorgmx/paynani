@@ -161,6 +161,16 @@ try:
     check("opencode plugin -> reinstall-and-restart", verbs.get("harness/opencode/paynani.js") == "reinstall-and-restart")
     check("session watcher -> next-session", verbs.get("harness/session_watch.sh") == "next-session")
     check("README -> none", verbs.get("README.md") == "none")
+    check("bootstrap.sh (#335) -> none: it runs by hand and nothing loads it", up.classify("bootstrap.sh")["verb"] == "none")
+    # Every file the repository tracks has a rule. bootstrap.sh reached main
+    # without one (#351) and every plan to the next release would have said
+    # `unknown` and refused --apply: a new file must fail here, in its own PR.
+    tracked = subprocess.run(["git", "-C", str(up.ROOT), "ls-files"], capture_output=True, text=True).stdout.split()
+    if tracked:
+        untabled = [f for f in tracked if up.classify(f)["verb"] == "unknown"]
+        check("every tracked file has a rule in the table", not untabled, str(untabled))
+    else:
+        print("skip tracked-file coverage: not a git checkout")
     check("a test file -> none", verbs.get("scripts/test_x.py") == "none")
     check("a file outside the table -> unknown", verbs.get("tools/new_thing.py") == "unknown")
     check("unknown files are listed by name", p["unknown"] == ["tools/new_thing.py"])
