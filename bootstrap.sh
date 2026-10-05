@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
-# bootstrap.sh -- install paynani with one sudo command (Ubuntu and Debian).
+# bootstrap.sh -- install paynani with one command.
 #
-# This file is the root half only (BOOT-1): checks, system packages, himalaya,
-# linger and the clone. Everything that belongs to the owner -- credentials,
-# roster.md, the himalaya account, install.sh, the harness permissions and the
-# final verification -- is done by scripts/bootstrap_user.py, run as the owner.
+# On Ubuntu and Debian this file is the root half only (BOOT-1): checks, system
+# packages, himalaya, linger and the clone. Everything that belongs to the owner
+# -- credentials, roster.md, the himalaya account, install.sh, the harness
+# permissions and the final verification -- is done by scripts/bootstrap_user.py,
+# run as the owner.
+#
+# On macOS this file hands off before the Linux-only bash 4 code below: Apple's
+# /bin/bash is 3.2, Homebrew must never run as root, and LaunchAgents belong to
+# the user. scripts/bootstrap_macos.py owns that path and delegates service
+# convergence to scripts/install_macos.py through scripts/bootstrap_user.py.
 # The PRD is https://github.com/iaaorgmx/paynani/issues/335#issuecomment-5977928967
 #
 # Usage:
 #   sudo bash bootstrap.sh [--runtime R] [--user U] [--dir PATH] [--ref REF]
 #                          [--env-file PATH] [--owner-name N --owner-email E]
 #                          [--yes] [--with-sms] [--upgrade] [--dry-run] [--test-mail]
+#   bash bootstrap.sh [--runtime R] [--dir PATH] [--ref REF]
+#                     [--env-file PATH] [--owner-name N --owner-email E]
+#                     [--yes] [--with-sms] [--upgrade] [--dry-run] [--test-mail]
 #
 # Options:
 #   --runtime R         openclaw, hermes, claudecode, codex or opencode. Without it
@@ -34,8 +43,11 @@
 #   0 done   1 a step failed   2 missing data with --yes, or an invalid option
 #   3 unsupported system or version   4 not run as root
 #
-# Root is used for apt-get and loginctl only. The clone, himalaya and everything
-# after run as the user (sudo -u USER -H).
+# On Linux, root is used for apt-get and loginctl only. The clone, himalaya and
+# everything after run as the user (sudo -u USER -H).
+#
+# On macOS, run this as the user. If it is invoked through sudo, the Darwin path
+# re-executes as $SUDO_USER and refuses to continue as root.
 #
 # Test hooks, used by scripts/test_bootstrap.sh and for field trials:
 #   BOOTSTRAP_OS_RELEASE  path of the os-release file (default /etc/os-release)
@@ -46,6 +58,47 @@
 #                         simulates a system without the acl package
 
 set -euo pipefail
+
+BOOTSTRAP_UNAME=${BOOTSTRAP_UNAME:-$(uname -s 2>/dev/null || true)}
+if [[ "$BOOTSTRAP_UNAME" == Darwin ]]; then
+    if [[ -z "${BOOTSTRAP_SKIP_CLT_CHECK:-}" ]] && ! xcode-select -p >/dev/null 2>&1; then
+        echo "bootstrap: macOS needs Homebrew first (it also installs the Command Line Tools, python3 and git): https://brew.sh/ , then run bootstrap.sh again" >&2
+        exit 3
+    fi
+
+    bootstrap_ref=main
+    bootstrap_next_is_ref=0
+    for bootstrap_arg in "$@"; do
+        if [[ $bootstrap_next_is_ref -eq 1 ]]; then
+            bootstrap_ref=$bootstrap_arg
+            bootstrap_next_is_ref=0
+            continue
+        fi
+        case "$bootstrap_arg" in
+            --ref) bootstrap_next_is_ref=1 ;;
+            --ref=*) bootstrap_ref=${bootstrap_arg#--ref=} ;;
+        esac
+    done
+
+    bootstrap_source=${BASH_SOURCE[0]:-}
+    bootstrap_script=""
+    if [[ -n "$bootstrap_source" ]]; then
+        bootstrap_root=$(cd "$(dirname "$bootstrap_source")" && pwd -P)
+        if [[ -f "$bootstrap_root/scripts/bootstrap_macos.py" ]]; then
+            bootstrap_script=$bootstrap_root/scripts/bootstrap_macos.py
+        fi
+    fi
+    if [[ -z "$bootstrap_script" ]]; then
+        bootstrap_url=${BOOTSTRAP_MACOS_SCRIPT_URL:-https://raw.githubusercontent.com/iaaorgmx/paynani/$bootstrap_ref/scripts/bootstrap_macos.py}
+        bootstrap_tmp=$(mktemp -d)
+        bootstrap_script=$bootstrap_tmp/bootstrap_macos.py
+        if ! curl -fsSL "$bootstrap_url" -o "$bootstrap_script"; then
+            echo "bootstrap: cannot download scripts/bootstrap_macos.py from $bootstrap_url: check the network or pass --ref" >&2
+            exit 1
+        fi
+    fi
+    exec python3 "$bootstrap_script" "$@"
+fi
 
 readonly EX_OK=0
 readonly EX_STEP=1

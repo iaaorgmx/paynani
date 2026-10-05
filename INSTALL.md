@@ -4,13 +4,15 @@
 for either OpenClaw or Hermes Agent, with access to a systemd user session, or
 deploying it on macOS for OpenClaw with access to launchd.
 
-## Install with one command (sudo)
+## Install with one command
 
 On **Ubuntu or Debian**, a human can install paynani for the agent's user with
-one command and no further steps in the terminal. This is for hosts where the
-harness keeps the agent from running the install itself (Claude Code in auto
-mode, OpenClaw without `tools.profile: full`). The rest of this document is the
-agent's own path, and it still works the same.
+one `sudo` command and no further steps in the terminal. This is for hosts where
+the harness keeps the agent from running the install itself (Claude Code in auto
+mode, OpenClaw without `tools.profile: full`). On **macOS**, the same script is
+run as the user: Homebrew never runs as root, LaunchAgents are per-user, and the
+script delegates service convergence to `scripts/install_macos.py`. The rest of
+this document is the agent's own path, and it still works the same.
 
 From a release (0.12.0 and later), checking the file before running it:
 
@@ -21,7 +23,7 @@ sha256sum -c bootstrap.sh.sha256      # must print: bootstrap.sh: OK
 sudo bash bootstrap.sh
 ```
 
-The shortcut, without the check:
+The Linux shortcut, without the check:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/iaaorgmx/paynani/main/bootstrap.sh | sudo bash
@@ -55,6 +57,27 @@ it uses them and says so, so running it again is safe. Exit codes: `0` ready,
 `1` a step failed (it names the step and the command to repeat it), `2`
 missing data or a bad option, `3` unsupported system, `4` not run as root.
 
+On macOS, use the same downloaded `bootstrap.sh`, but **without sudo**:
+
+```bash
+bash bootstrap.sh --runtime openclaw
+```
+
+If somebody runs `sudo bash bootstrap.sh` on macOS, the script re-executes the
+real install as `$SUDO_USER` and refuses to continue as root. The macOS path:
+
+- requires Homebrew to already exist; if it is missing, it prints the official
+  Homebrew installer location and stops;
+- installs missing `python@3.13` or `himalaya` with `brew install` as the user,
+  never with sudo;
+- chooses a Python 3.10+ interpreter for the service and puts that interpreter
+  first in `PATH` when it hands off to `scripts/bootstrap_user.py`;
+- uses `scripts/install_macos.py` through the existing user half, so LaunchAgent
+  rendering and `launchctl` convergence stay in one place;
+- supports `--dry-run`, which prints Homebrew, clone and handoff actions without
+  writing plist files, running `launchctl`, installing formulae or modifying the
+  repository.
+
 **If the path is unsafe.** Whenever it stops, it exits 1 and has changed nothing on that path:
 - A directory on the clone's path has a default ACL that lets another user
   write (common on CI images, rare on a stock Ubuntu): it changes nothing and
@@ -71,8 +94,8 @@ missing data or a bad option, `3` unsupported system, `4` not run as root.
 `version.sh --apply` has moved the clone. If a release changes the install
 steps themselves, run `--upgrade` twice.
 
-macOS is not covered yet (#347). Additional mailboxes are still added with
-`paynani account add` (`MULTI_ACCOUNT.md`).
+Additional mailboxes are still added with `paynani account add`
+(`MULTI_ACCOUNT.md`).
 
 `scripts/install.sh` is the runtime-neutral, idempotent path for the owned
 supervision boundary. On Ubuntu it owns systemd-user units; on macOS with

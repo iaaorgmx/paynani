@@ -2,6 +2,10 @@
 
 ## Sin publicar
 
+- `bootstrap.sh` ahora tiene una ruta macOS de usuario: no usa `sudo` por
+  omisión, nunca corre Homebrew como root, se detiene si falta Homebrew, resuelve
+  Python 3.10+ para `install_macos.py` y conserva `--dry-run` como plan sin
+  mutaciones (#347).
 - `paynani sms pair` ahora aclara en la terminal que un código vencido no es un
   error, y que basta con volver a correr el comando para usar un código nuevo
   (#355).

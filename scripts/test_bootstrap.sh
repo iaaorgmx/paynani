@@ -12,12 +12,13 @@
 
 set -uo pipefail
 
-# bootstrap.sh is the Ubuntu and Debian installer and uses bash 4 (associative
-# arrays, mapfile); macOS ships bash 3.2 and has its own installer. Say so out
-# loud, in the form the macOS job in .github/workflows/tests.yml counts as a skip,
-# rather than failing there or passing silently.
+# This file exercises the Linux half of bootstrap.sh. That half uses bash 4
+# (associative arrays, mapfile); macOS ships bash 3.2 and is covered by
+# test_bootstrap_macos.py. Say so out loud, in the form the macOS job in
+# .github/workflows/tests.yml counts as a skip, rather than failing there or
+# passing silently.
 if [ "$(uname -s)" != Linux ]; then
-    printf 'skip bootstrap (bootstrap.sh is the Ubuntu/Debian installer; this host is %s)\n' "$(uname -s)"
+    printf 'skip bootstrap Linux half (covered by test_bootstrap_macos.py on %s)\n' "$(uname -s)"
     printf '\n0 passed, 0 failed, 1 suite skipped (not Linux)\n'
     exit 0
 fi
