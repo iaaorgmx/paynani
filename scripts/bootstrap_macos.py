@@ -140,7 +140,8 @@ def resolve_service_python(brew: str) -> str | None:
     for formula in ("python@3.13", "python@3.12", "python@3.11", "python@3.10"):
         prefix = brew_prefix(brew, formula)
         if prefix:
-            candidates.extend([str(prefix / "bin" / "python3"), str(prefix / "bin" / "python3.13")])
+            version = formula.split("@", 1)[1]
+            candidates.extend([str(prefix / "bin" / f"python{version}"), str(prefix / "bin" / "python3")])
     candidates.extend([
         "/opt/homebrew/bin/python3",
         "/opt/homebrew/bin/python3.13",
@@ -154,7 +155,7 @@ def resolve_service_python(brew: str) -> str | None:
             continue
         seen.add(candidate)
         if Path(candidate).exists() and python_ok(candidate):
-            return str(Path(candidate).resolve())
+            return str(Path(candidate))
     return None
 
 
