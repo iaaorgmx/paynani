@@ -209,6 +209,48 @@ def dry_run_fresh_openclaw(w: World):
 with_world(dry_run_fresh_openclaw)
 
 
+def service_python_uses_stable_homebrew_opt_path(w: World):
+    os.environ.pop("BOOTSTRAP_SERVICE_PYTHON", None)
+    cellar_prefix = w.tmp / "Cellar" / "python@3.13" / "3.13.15"
+    (cellar_prefix / "bin").mkdir(parents=True)
+    (cellar_prefix / "bin" / "python3.13").write_text(
+        "#!/usr/bin/env bash\n"
+        "if [ \"$1\" = \"-c\" ]; then exit 0; fi\n"
+        "echo python \"$@\" >>\"$CALLS\"\n",
+        encoding="utf-8",
+    )
+    (cellar_prefix / "bin" / "python3.13").chmod(0o700)
+    opt = w.tmp / "opt"
+    opt.mkdir()
+    opt_prefix = opt / "python@3.13"
+    opt_prefix.symlink_to(cellar_prefix, target_is_directory=True)
+    (w.bin / "brew").write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            echo brew "$@" >>"$CALLS"
+            if [ "$1" = "--prefix" ] && [ "$2" = "python@3.13" ]; then
+              printf '%s\\n' "{opt_prefix}"
+              exit 0
+            fi
+            exit 1
+            """
+        ),
+        encoding="utf-8",
+    )
+    (w.bin / "brew").chmod(0o700)
+    code, out, err = w.run("--runtime", "openclaw", "--yes", "--dry-run")
+    text = out + err
+    expected = opt_prefix / "bin" / "python3.13"
+    check("Homebrew Python uses stable opt path", code == 0 and f"would: {expected}" in text, text)
+    check("Homebrew Python dry-run does not expose Cellar path", "Cellar" not in text, text)
+    check("Homebrew Python path goes first in handoff PATH",
+          bm.resolve_service_python(str(w.bin / "brew")) == str(expected), text)
+
+
+with_world(service_python_uses_stable_homebrew_opt_path)
+
+
 def default_ref_ignores_release_candidates(w: World):
     (w.bin / "git").write_text(
         textwrap.dedent(
