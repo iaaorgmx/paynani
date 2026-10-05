@@ -896,6 +896,30 @@ check that the unit is active (`systemctl --user status paynani-sms.service`) an
 that the tunnel points at the same port. Put the tunnel's `https://` address in
 `PAYNANI_SMS_PUBLIC_URL` in `sms.env`.
 
+**Use an address that does not change.** The phone keeps the address it was
+paired with and has no way to learn a new one. A `trycloudflare.com` quick
+tunnel gets a new address every time it starts, so after a reboot or a dropped
+tunnel the phone keeps calling the old one and shows *disconnected* until it is
+paired again. That is fine for a first test and not for a phone that has to keep
+working: use an ngrok reserved domain or a cloudflared named tunnel.
+
+If the address does change anyway, three steps bring the phone back: put the new
+address in `PAYNANI_SMS_PUBLIC_URL`, restart the gateway, and pair the phone again
+with `scripts/paynani sms pair --replace`, which revokes the old pairing and
+prints a new code, and **Pair again** in the app (§5.2, step 5). The app does
+not need to be reinstalled.
+
+**Keep the tunnel running under a supervisor.** A tunnel started in a terminal
+stops when that terminal closes, and the phone then looks exactly like a phone
+that was switched off. On Linux, a systemd user unit of your own next to
+paynani's (`Restart=always`, `WantedBy=default.target`) keeps it up across
+logouts and reboots, since linger is already on (§5). Give `ExecStart` the full
+path to the tunnel binary (`command -v ngrok`): a user service does not get your
+shell's `PATH`. paynani does not ship, install or check that unit.
+`scripts/healthcheck.py` does not test the tunnel either; its `sms phone` line
+only says whether the phone is reaching the gateway. After a reboot, the `curl`
+to `/sms/health` above is the check for the tunnel itself.
+
 **Verifying it.** `scripts/healthcheck.py` shows `sms gateway  paynani-sms.service
 active` and reports it as a problem when it is not: a stopped gateway cannot
 report itself, so nothing else would say that texts stopped arriving. The unit
