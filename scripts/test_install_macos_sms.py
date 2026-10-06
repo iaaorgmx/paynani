@@ -36,7 +36,9 @@ def check(label, expected, actual=True):
         print(f"FAIL {label}\n     expected {expected!r}\n     got      {actual!r}")
 
 
-tmp = Path(tempfile.mkdtemp())
+# resolve(): on macOS the temp dir sits under /var, a symlink, and
+# install_manifest.py refuses any path that goes through one.
+tmp = Path(tempfile.mkdtemp()).resolve()
 agents = tmp / "LaunchAgents"
 state = tmp / "state"
 env_file = tmp / "mail.env"
