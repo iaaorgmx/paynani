@@ -36,7 +36,9 @@ def check(label, expected, actual=True):
         print(f"FAIL {label}\n     expected {expected!r}\n     got      {actual!r}")
 
 
-tmp = Path(tempfile.mkdtemp())
+# resolve(): on macOS the temp dir sits under /var, a symlink, and
+# install_manifest.py refuses any path that goes through one.
+tmp = Path(tempfile.mkdtemp()).resolve()
 agents = tmp / "LaunchAgents"
 state = tmp / "state"
 env_file = tmp / "mail.env"
@@ -56,6 +58,7 @@ def run(argv, env=None):
          mock.patch.object(m, "state_dir", lambda: state), \
          mock.patch.object(m, "env_file", lambda: env_file), \
          mock.patch.object(m, "runtime_env", lambda: tmp / "runtime.env"), \
+         mock.patch.object(m, "manifest", lambda: tmp / "install.manifest"), \
          mock.patch.object(m, "run_launchctl", fake_launchctl), \
          mock.patch.object(m, "bootstrap", lambda path, label: calls.append(("bootstrap", label)) or True), \
          mock.patch.object(m, "service_state", lambda label: "active"), \

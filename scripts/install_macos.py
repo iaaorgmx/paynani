@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import plistlib
@@ -17,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "harness"))
 
-from paths import env_file, runtime_env, state_dir  # noqa: E402
+from paths import env_file, manifest, runtime_env, state_dir  # noqa: E402
 
 EX_OK = 0
 EX_CHANGED = 10
@@ -280,6 +281,69 @@ def parse(argv: list[str]) -> argparse.Namespace:
     return args
 
 
+# The ownership manifest (install.manifest) says which copies outside the clone
+# this install owns; upgrade_plan.py refuses to plan without it (#167, #185).
+# install.sh keeps it on Linux through scripts/install_manifest.py, and this
+# installer uses the same tool rather than a copy of its rules, so a macOS host
+# gets the manifest the same way (#291). Every LaunchAgent this checkout may own
+# and runtime.env are the managed paths; account LaunchAgents are written by
+# `paynani account add`, not here.
+MANIFEST_TOOL = ROOT / "scripts" / "install_manifest.py"
+
+
+def managed_paths() -> list[Path]:
+    return [plist_path(name) for name in ALL_LABELS] + [runtime_env()]
+
+
+def manifest_call(runtime: str, command: str, *extra: str) -> str:
+    argv = [sys.executable, str(MANIFEST_TOOL), command,
+            "--manifest", str(manifest()), "--runtime", runtime]
+    for path in managed_paths():
+        argv += ["--allowed", str(path)]
+    result = subprocess.run([*argv, *extra], capture_output=True, text=True, timeout=20)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        die(detail or f"install_manifest.py {command} failed", result.returncode or EX_CONFIG)
+    return result.stdout
+
+
+def manifest_runtime() -> str | None:
+    """The runtime the existing manifest was written for, or None when there is none."""
+    try:
+        lines = manifest().read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        die(f"{manifest()} exists but cannot be read: {exc}")
+    if len(lines) >= 2 and lines[1].startswith("runtime\t"):
+        return lines[1].split("\t", 1)[1]
+    return None
+
+
+def ensure_manifest(runtime: str) -> None:
+    """Create the manifest, or carry an existing one over to this run's runtime."""
+    current = manifest_runtime()
+    if current is not None and current != runtime:
+        manifest_call(runtime, "migrate-runtime", "--from-runtime", current)
+    manifest_call(runtime, "init")
+
+
+def record_artifact(runtime: str, path: Path) -> None:
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest_call(runtime, "record", "--kind", "file", "--path", str(path), "--digest", digest)
+
+
+def release_manifest() -> None:
+    """After an uninstall: forget what was removed, then drop the manifest."""
+    runtime = manifest_runtime()
+    if runtime is None:
+        return
+    recorded = [line.split("\t")[1] for line in manifest_call(runtime, "read").splitlines() if line]
+    for path in recorded:
+        manifest_call(runtime, "forget", "--path", path)
+    manifest_call(runtime, "finalize")
+
+
 def print_plan(runtime: str, runtime_bin: str | None, python: str, args: argparse.Namespace) -> int:
     print(f"discovery runtime={runtime}")
     print(f"repo_root={ROOT}")
@@ -324,6 +388,7 @@ def uninstall(args: argparse.Namespace) -> int:
         print(f"removed_runtime_env={runtime_env()}")
     if args.dry_run:
         return EX_CHANGED
+    release_manifest()
     return EX_CHANGED if changed else EX_OK
 
 
@@ -366,7 +431,9 @@ def install(args: argparse.Namespace) -> int:
     state_dir().mkdir(parents=True, exist_ok=True)
     os.chmod(state_dir(), 0o700)
     launch_agent_dir().mkdir(parents=True, exist_ok=True)
+    ensure_manifest(args.runtime)
     changed = write_runtime_env(args.runtime, runtime_bin) or changed
+    record_artifact(args.runtime, runtime_env())
     install_names = list(LABELS) + (["sms"] if sms_wanted(args) else [])
     for name in install_names:
         label = ALL_LABELS[name]
@@ -374,6 +441,7 @@ def install(args: argparse.Namespace) -> int:
         if not plist_owned_by_this_checkout(path):
             die(f"refusing to overwrite unowned LaunchAgent: {path}")
         changed = write_plist(path, plist_for(name, python, args.runtime, runtime_bin)) or changed
+        record_artifact(args.runtime, path)
         changed = bootstrap(path, label) or changed
         print(f"launchagent={path} label={label} state={service_state(label)}")
 
