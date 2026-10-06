@@ -1044,8 +1044,8 @@ there: tap the row and choose **I turned them off**.
 message still arrives (for example, from a sender whose phone has not caught up
 with the change yet), PaynaniApp can only tell paynani about it through Google
 Messages' notification. With that conversation open on screen, Google Messages
-posts the notification silently and removes it right away, so nothing reaches
-the agent, not even the `sms.unseen` notice. Leave the phone on the chat list
+posts the notification silently and PaynaniApp does not report it, so nothing
+reaches the agent, not even the `sms.unseen` notice. Leave the phone on the chat list
 or locked (iaaorgmx/PaynaniApp#75).
 
 **5. Pair it.** On the agent's machine, from the clone, with the tunnel address
