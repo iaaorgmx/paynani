@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- `upgrade_plan.py` ya no repite el `daemon-reload` ni el reinicio de
+  `paynani-idle` y `paynani-dispatch` después de `install.sh --upgrade` cuando
+  cambió una unidad de `systemd/`: ese caso el instalador ya los hizo, y el plan
+  lo dice con `# install.sh --upgrade already restarted paynani-idle and
+  paynani-dispatch`. Siguen en el plan las instancias `paynani-idle@*` y la
+  pasarela SMS, que el instalador no reinicia. Si sólo cambió el instalador, el
+  plan conserva el reinicio, porque `install.sh` reinicia únicamente cuando
+  reescribió un archivo suyo (#302).
 - En macOS, `scripts/install.sh` ahora escribe `install.manifest` con los
   LaunchAgents y `runtime.env`, igual que en Linux, con `install_manifest.py`.
   Antes el manifiesto no existía nunca en un Mac, y `upgrade_plan.py` se negaba
