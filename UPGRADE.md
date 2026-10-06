@@ -236,7 +236,9 @@ copies for the same reason the systemd units are, and a `git pull` does not
 touch them either.
 
 The difference is that you do not re-copy them by hand. Re-run the installer and
-let it converge:
+let it converge. The installer also records the LaunchAgents and `runtime.env`
+in `install.manifest`, the same file it keeps on Linux, so a Mac installed
+before this existed gets its manifest from the first `--upgrade` run:
 
 ```bash
 scripts/install.sh --runtime openclaw --dry-run    # read the plan first

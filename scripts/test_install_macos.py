@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import plistlib
 import shutil
@@ -250,6 +252,84 @@ class MacOSInstallTest(unittest.TestCase):
         self.assertFalse((self.clone / "runtime.env").exists())
         for label in ("com.paynani.idle", "com.paynani.dispatch", "com.paynani.logrotate"):
             self.assertFalse((self.home / "Library" / "LaunchAgents" / f"{label}.plist").exists())
+
+    def manifest_records(self) -> dict[str, tuple[str, str]]:
+        """path -> (kind, digest) as the manifest lists them."""
+        lines = (self.clone / "install.manifest").read_text(encoding="utf-8").splitlines()
+        records = {}
+        for line in lines[2:]:
+            _, kind, path, digest = line.split("\t")
+            records[path] = (kind, digest)
+        return records
+
+    def test_install_writes_the_ownership_manifest(self):
+        completed = self.run_install("--runtime", "openclaw")
+        self.assertEqual(10, completed.returncode, completed.stdout + completed.stderr)
+        manifest = self.clone / "install.manifest"
+        self.assertEqual(0o600, stat.S_IMODE(manifest.stat().st_mode))
+        lines = manifest.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(["version\t1", "runtime\topenclaw"], lines[:2])
+        agents = self.home / "Library" / "LaunchAgents"
+        expected = {str(agents / f"{label}.plist")
+                    for label in ("com.paynani.idle", "com.paynani.dispatch", "com.paynani.logrotate")}
+        expected.add(str(self.clone / "runtime.env"))
+        records = self.manifest_records()
+        self.assertEqual(expected, set(records))
+        for path, (kind, digest) in records.items():
+            self.assertEqual("file", kind)
+            self.assertEqual(hashlib.sha256(Path(path).read_bytes()).hexdigest(), digest, path)
+
+    def test_the_plan_no_longer_refuses_for_a_missing_manifest(self):
+        self.assertEqual(10, self.run_install("--runtime", "openclaw").returncode)
+        # A subprocess from inside the clone, so upgrade_plan resolves the
+        # manifest of this clone and not of whichever test imported it first.
+        code = (
+            "import json, sys; sys.path.insert(0, 'scripts'); import upgrade_plan as u; "
+            "state, lines = u.read_manifest(); "
+            "print(json.dumps([state, u.manifest_drift(lines) if state == 'present' else lines]))"
+        )
+        result = subprocess.run([sys.executable, "-c", code], cwd=self.clone, env=self.env,
+                                text=True, capture_output=True, timeout=20)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(["present", []], json.loads(result.stdout))
+
+    def test_upgrade_gives_an_installed_host_without_a_manifest_one(self):
+        # A host installed before the manifest existed: LaunchAgents and
+        # runtime.env are already here, install.manifest is not.
+        self.assertEqual(10, self.run_install("--runtime", "openclaw").returncode)
+        (self.clone / "install.manifest").unlink()
+        completed = self.run_install("--runtime", "openclaw", "--upgrade")
+        self.assertIn(completed.returncode, (0, 10), completed.stdout + completed.stderr)
+        self.assertEqual(4, len(self.manifest_records()))
+
+    def test_rerun_keeps_the_manifest_and_tracks_a_changed_plist(self):
+        self.assertEqual(10, self.run_install("--runtime", "openclaw").returncode)
+        before = self.manifest_records()
+        self.assertEqual(0, self.run_install("--runtime", "openclaw").returncode)
+        self.assertEqual(before, self.manifest_records())
+        idle = self.home / "Library" / "LaunchAgents" / "com.paynani.idle.plist"
+        idle.write_bytes(idle.read_bytes() + b" ")
+        self.assertEqual(10, self.run_install("--runtime", "openclaw").returncode)
+        records = self.manifest_records()
+        self.assertEqual(hashlib.sha256(idle.read_bytes()).hexdigest(), records[str(idle)][1])
+
+    def test_a_new_runtime_carries_the_manifest_over(self):
+        self.assertEqual(10, self.run_install("--runtime", "openclaw").returncode)
+        completed = self.run_install("--runtime", "opencode")
+        self.assertIn(completed.returncode, (0, 10), completed.stdout + completed.stderr)
+        lines = (self.clone / "install.manifest").read_text(encoding="utf-8").splitlines()
+        self.assertEqual("runtime\topencode", lines[1])
+        self.assertEqual(4, len(self.manifest_records()))
+
+    def test_dry_run_does_not_create_the_manifest(self):
+        self.run_install("--runtime", "openclaw", "--dry-run")
+        self.assertFalse((self.clone / "install.manifest").exists())
+
+    def test_uninstall_removes_the_manifest(self):
+        self.assertEqual(10, self.run_install("--runtime", "openclaw").returncode)
+        completed = self.run_install("--runtime", "openclaw", "--uninstall")
+        self.assertEqual(10, completed.returncode, completed.stdout + completed.stderr)
+        self.assertFalse((self.clone / "install.manifest").exists())
 
     def test_refuses_hermes_on_macos_before_writing(self):
         completed = self.run_install("--runtime", "hermes")
