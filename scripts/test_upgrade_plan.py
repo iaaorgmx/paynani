@@ -186,9 +186,19 @@ try:
     cmds = up.commands(p)
     check("commands start with the installer when a copy changed",
           cmds and cmds[0] == "scripts/install.sh --runtime claudecode --upgrade", str(cmds))
-    check("commands restart the listener and dispatcher with systemctl",
-          any(c == "systemctl --user restart paynani-idle.service paynani-dispatch.service"
-              for c in cmds), str(cmds))
+    # v2 rewrites a systemd template, so install.sh --upgrade writes an artifact
+    # and itself runs daemon-reload and restarts paynani-idle and paynani-dispatch
+    # (converge_required_services, #302): the plan must not ask for either again.
+    check("a changed unit marks the installer as having restarted the services", p["installer_restarts"] is True)
+    check("commands do not repeat the restart the installer already did",
+          not any("systemctl --user restart" in c and "paynani-" in c and "*" not in c for c in cmds), str(cmds))
+    check("commands do not repeat daemon-reload after the installer",
+          "systemctl --user daemon-reload" not in cmds, str(cmds))
+    check("commands say the installer already restarted both services",
+          "# install.sh --upgrade already restarted paynani-idle and paynani-dispatch" in cmds, str(cmds))
+    check("the note comes right after the installer line",
+          cmds[:2] == ["scripts/install.sh --runtime claudecode --upgrade",
+                       "# install.sh --upgrade already restarted paynani-idle and paynani-dispatch"], str(cmds))
     check("commands restart account listener instances only when systemd lists them",
           any("paynani-idle@*.service" in c and "xargs -r systemctl --user restart" in c
               for c in cmds), str(cmds))
@@ -208,6 +218,33 @@ try:
           {f["path"]: f["here"] for f in mac["files"]}["systemd/paynani-idle.service"] is False)
     check("on an OpenCode host the plugin is acted on", any("OpenCode" in c for c in mac_cmds), str(mac_cmds))
     check("on an OpenCode host the watcher is not", not any("watcher" in c for c in mac_cmds), str(mac_cmds))
+
+    # --- the installer's restart is only counted when it is certain (#302) ----
+    # install.sh restarts the two services only if it rewrote an artifact it owns,
+    # so a release whose installer changed but whose units did not still needs the
+    # plan's own restart; dropping it would leave both services on the old code.
+    sh(repo, "checkout", "-q", "-b", "installer-only", "v1.0.0")
+    write(repo, "VERSION", "1.0.1\n")
+    write(repo, "scripts/install.sh", "#!/usr/bin/env bash\n")
+    sh(repo, "add", "-A")
+    sh(repo, "commit", "-q", "-m", "installer only")
+    sh(repo, "tag", "v1.0.1")
+    io = up.plan("v1.0.0", "v1.0.1", repo=repo, runtime="claudecode", system="Linux")
+    io_cmds = up.commands(io)
+    check("an installer change alone still sets reinstall", io["reinstall"] is True)
+    check("an installer change alone does not count as a restart", io["installer_restarts"] is False)
+    check("then the plan keeps daemon-reload and the restart of both services",
+          "systemctl --user daemon-reload" in io_cmds
+          and "systemctl --user restart paynani-idle.service paynani-dispatch.service" in io_cmds, str(io_cmds))
+    check("then no already-restarted note is printed",
+          not any("already restarted" in c for c in io_cmds), str(io_cmds))
+    sh(repo, "checkout", "-q", "-")
+    plain = up.plan("v1.0.0", "v2.0.0", repo=repo, runtime="claudecode", system="Linux")
+    nounit = dict(plain, reinstall=False, installer_restarts=False)
+    check("without an installer in the plan nothing is skipped",
+          "systemctl --user restart paynani-idle.service paynani-dispatch.service" in up.commands(nounit))
+    mac_unit = up.plan("v1.0.0", "v2.0.0", repo=repo, runtime="claudecode", system="Darwin")
+    check("on macOS the installer is never counted as the restart", mac_unit["installer_restarts"] is False)
 
     # --- the OpenCode plugin is re-registered, not merely announced (Ocelotl) --
     # The installer names the registration and does not perform it, so a plan
@@ -418,6 +455,30 @@ try:
           str(calls))
     check("apply finishes with healthcheck",
           any(argv and argv[0].endswith("scripts/healthcheck.py") for argv in calls), str(calls))
+
+    # With the installer in the plan and a unit rewritten, apply runs the
+    # installer and leaves daemon-reload and the two main restarts to it.
+    via_installer = dict(apply, reinstall=True, runtime="claudecode", installer_restarts=True)
+    calls.clear()
+
+    def installer_runner(argv, cwd, text, capture_output):
+        argv = [str(value) for value in argv]
+        if argv and argv[0].endswith("scripts/install.sh"):
+            calls.append(argv)
+            # What the real installer's restart leaves behind for the wait.
+            with (state / "idle.err.log").open("a", encoding="utf-8") as handle:
+                handle.write("listening on INBOX, resuming from uid 7\n")
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return apply_runner(argv, cwd, text, capture_output)
+
+    up.apply_plan(via_installer, repo=applied, runner=installer_runner, wait_seconds=0)
+    check("apply runs the installer", any(a[0].endswith("scripts/install.sh") for a in calls), str(calls))
+    check("apply does not repeat daemon-reload after the installer",
+          ["systemctl", "--user", "daemon-reload"] not in calls, str(calls))
+    check("apply does not repeat the restart of the two main services",
+          not any(a[:3] == ["systemctl", "--user", "restart"] and "paynani-idle.service" in a for a in calls),
+          str(calls))
+    calls.clear()
 
     refused = dict(apply, unknown=["mystery.bin"])
     before_calls = len(calls)

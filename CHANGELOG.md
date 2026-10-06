@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- `upgrade_plan.py` ya no repite el `daemon-reload` ni el reinicio de
+  `paynani-idle` y `paynani-dispatch` después de `install.sh --upgrade` cuando
+  cambió una unidad de `systemd/`: ese caso el instalador ya los hizo, y el plan
+  lo dice con `# install.sh --upgrade already restarted paynani-idle and
+  paynani-dispatch`. Siguen en el plan las instancias `paynani-idle@*` y la
+  pasarela SMS, que el instalador no reinicia. Si sólo cambió el instalador, el
+  plan conserva el reinicio, porque `install.sh` reinicia únicamente cuando
+  reescribió un archivo suyo (#302).
 - El bootstrap macOS conserva la ruta estable de Homebrew
   `/opt/homebrew/opt/python@3.N/bin/python3.N` para los LaunchAgents, en vez de
   resolverla a `Cellar/<versión>`, de modo que `brew upgrade` no deje servicios
