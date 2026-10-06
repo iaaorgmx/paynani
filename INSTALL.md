@@ -929,7 +929,7 @@ working: use an ngrok reserved domain or a cloudflared named tunnel.
 If the address does change anyway, three steps bring the phone back: put the new
 address in `PAYNANI_SMS_PUBLIC_URL`, restart the gateway, and pair the phone again
 with `scripts/paynani sms pair --replace`, which revokes the old pairing and
-prints a new code, and **Pair again** in the app (§5.2, step 5). The app does
+prints a new code, and **Pair again** in the app (§5.2, step 6). The app does
 not need to be reinstalled.
 
 **Keep the tunnel running under a supervisor.** A tunnel started in a terminal
@@ -1007,7 +1007,7 @@ adb uninstall com.iaaorgmx.paynani
 ```
 
 Uninstalling also deletes its pairing, so the phone has to be paired again
-(step 5), and if it was paired, revoke the old one on the agent's machine first.
+(step 6), and if it was paired, revoke the old one on the agent's machine first.
 
 **3. First run: permissions and battery.** The app opens on a Permissions screen
 that says what each one is for. Grant all of them; without them nothing reaches
@@ -1025,7 +1025,37 @@ The camera is asked for only when you scan the pairing QR. If something is
 missing later, the app's **Status** screen (**Estado** on a phone in Spanish)
 lists it under Permissions, with a **Fix permissions** button.
 
-**4. Turn off RCS chats.** Do this before pairing. RCS messages travel over
+**4. Allow it in the background (phones that close apps).** Many phones add
+their own power saver on top of Android's, and it force-stops apps running in
+the background even with battery optimization off: DuraSpeed on MediaTek phones
+(Blackview, Ulefone, Doogee, Tecno…), autostart on Xiaomi, and similar screens
+on Huawei, Oppo, Vivo and Samsung. After a force-stop Android does not restart
+the app until someone opens it, so the phone stops receiving and sending texts;
+the agent only learns it from the `sms.gateway.offline` notice (step 7).
+
+From PaynaniApp 0.6.1, if the phone has one of these screens, the Permissions
+screen takes you there right after Battery, and Status shows a **Background**
+row (**Segundo plano** on a phone in Spanish) until you tap it and choose
+**I allowed it**. On a phone without any of them, neither appears.
+
+**DuraSpeed:** Settings → search **DuraSpeed** → leave DuraSpeed **On** and turn
+on the switch next to **PaynaniApp** («Switch on to allow apps to run in
+background»). Over USB the same screen opens with:
+
+```bash
+adb shell am start -n com.mediatek.duraspeed/.DuraSpeedMainActivity
+```
+
+Tested on a Blackview BV5500Pro with Android 9 (2026-10-06): with the switch
+off, DuraSpeed force-stopped the app with the screen off and the phone stayed
+offline until someone opened it again; with the switch on, the setting survived
+a reboot, the app started on its own and kept running with the screen off
+(iaaorgmx/PaynaniApp#84).
+
+**Other brands:** <https://dontkillmyapp.com/> has the steps for each one; pick
+your phone's brand.
+
+**5. Turn off RCS chats.** Do this before pairing. RCS messages travel over
 data inside Google Messages, never as SMS, so the app cannot see them. On the
 phone:
 
@@ -1048,7 +1078,7 @@ posts the notification silently and PaynaniApp does not report it, so nothing
 reaches the agent, not even the `sms.unseen` notice. Leave the phone on the chat list
 or locked (iaaorgmx/PaynaniApp#75).
 
-**5. Pair it.** On the agent's machine, from the clone, with the tunnel address
+**6. Pair it.** On the agent's machine, from the clone, with the tunnel address
 in `PAYNANI_SMS_PUBLIC_URL` (§5.1):
 
 ```bash
@@ -1078,7 +1108,7 @@ scripts/paynani sms pair --web
 
 (`scripts/paynani sms pair --replace` does both in one step.)
 
-**6. Check it is connected.**
+**7. Check it is connected.**
 
 ```bash
 scripts/paynani sms devices
@@ -1090,7 +1120,7 @@ In the app, the Status screen must say «Connected since …» under Connection
 `scripts/paynani status` shows the last heartbeat too; after 90 s without one,
 the agent gets a `sms.gateway.offline` notice.
 
-**7. Tell the roster which numbers count.** A text or call from a number on
+**8. Tell the roster which numbers count.** A text or call from a number on
 `roster.md` is work for the agent and may be answered; any other number is only
 reported, and `scripts/paynani sms send` refuses it with exit 2. The numbers go
 in the `Phone` column, in E.164 (`+` and the country code), several per cell
