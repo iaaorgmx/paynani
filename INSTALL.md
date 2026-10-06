@@ -1050,7 +1050,9 @@ Tested on a Blackview BV5500Pro with Android 9 (2026-10-06): with the switch
 off, DuraSpeed force-stopped the app with the screen off and the phone stayed
 offline until someone opened it again; with the switch on, the setting survived
 a reboot, the app started on its own and kept running with the screen off
-(iaaorgmx/PaynaniApp#84).
+(iaaorgmx/PaynaniApp#84). **Check it again after updating PaynaniApp:** on that
+phone, the update from 0.4.0 to 0.6.1 turned the switch back off (reinstalling
+the same version did not).
 
 **Other brands:** <https://dontkillmyapp.com/> has the steps for each one; pick
 your phone's brand.
