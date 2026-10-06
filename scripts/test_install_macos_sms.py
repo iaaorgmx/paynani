@@ -56,6 +56,7 @@ def run(argv, env=None):
          mock.patch.object(m, "state_dir", lambda: state), \
          mock.patch.object(m, "env_file", lambda: env_file), \
          mock.patch.object(m, "runtime_env", lambda: tmp / "runtime.env"), \
+         mock.patch.object(m, "manifest", lambda: tmp / "install.manifest"), \
          mock.patch.object(m, "run_launchctl", fake_launchctl), \
          mock.patch.object(m, "bootstrap", lambda path, label: calls.append(("bootstrap", label)) or True), \
          mock.patch.object(m, "service_state", lambda label: "active"), \

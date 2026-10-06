@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- En macOS, `scripts/install.sh` ahora escribe `install.manifest` con los
+  LaunchAgents y `runtime.env`, igual que en Linux, con `install_manifest.py`.
+  Antes el manifiesto no existía nunca en un Mac, y `upgrade_plan.py` se negaba
+  a planear en cada release. **Si actualizas** un Mac que ya está instalado, corre
+  una vez `scripts/install.sh --runtime <runtime> --upgrade`: crea el manifiesto
+  y desde la siguiente release el plan funciona. `--uninstall` lo retira (#291).
 - El bootstrap macOS conserva la ruta estable de Homebrew
   `/opt/homebrew/opt/python@3.N/bin/python3.N` para los LaunchAgents, en vez de
   resolverla a `Cellar/<versión>`, de modo que `brew upgrade` no deje servicios
