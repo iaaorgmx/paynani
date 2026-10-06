@@ -1040,6 +1040,14 @@ Google warns that turning RCS off takes you out of RCS group chats.
 The app's **Status** screen shows **RCS chats** as pending until you confirm it
 there: tap the row and choose **I turned them off**.
 
+**Do not leave a conversation open in Google Messages on this phone.** If an RCS
+message still arrives (for example, from a sender whose phone has not caught up
+with the change yet), PaynaniApp can only tell paynani about it through Google
+Messages' notification. With that conversation open on screen, Google Messages
+posts the notification silently and removes it right away, so nothing reaches
+the agent, not even the `sms.unseen` notice. Leave the phone on the chat list
+or locked (iaaorgmx/PaynaniApp#75).
+
 **5. Pair it.** On the agent's machine, from the clone, with the tunnel address
 in `PAYNANI_SMS_PUBLIC_URL` (§5.1):
 
