@@ -2,6 +2,10 @@
 
 ## Sin publicar
 
+- La pasarela SMS guarda como `last_seen` la hora del último frame del teléfono, no la
+  de su revisión periódica ni la del cierre. Antes, con el teléfono sin red,
+  `sms.gateway.offline` llegaba 2 a 3 min tarde y decía como «último latido» una hora
+  en que el teléfono ya no estaba (#385).
 - Nuevo `scripts/paynani sms check`: la prueba guiada después de emparejar el
   teléfono. Revisa el servicio de la pasarela, que conteste en el equipo, que el
   túnel llegue a ella y que el teléfono esté en línea (último latido, versión de
