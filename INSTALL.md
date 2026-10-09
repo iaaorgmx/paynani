@@ -1052,7 +1052,9 @@ offline until someone opened it again; with the switch on, the setting survived
 a reboot, the app started on its own and kept running with the screen off
 (iaaorgmx/PaynaniApp#84). **Check it again after updating PaynaniApp:** on that
 phone, the update from 0.4.0 to 0.6.1 turned the switch back off (reinstalling
-the same version did not).
+the same version did not). From PaynaniApp 0.6.2 the app asks again after each
+update: Status shows the **Background** row until you confirm it
+(iaaorgmx/PaynaniApp#94).
 
 **Other brands:** <https://dontkillmyapp.com/> has the steps for each one; pick
 your phone's brand.
