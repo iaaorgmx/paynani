@@ -548,7 +548,8 @@ def gateway_health_event(*, kind, device_id, local_time, offline_for_s, last_see
     if kind == GATEWAY_OFFLINE:
         line = (f"[sms-gateway {local_time}] el teléfono {device_id} lleva {span} sin conexión"
                 f" (último latido {last_seen_local or 'nunca'}). Los SMS que lleguen esperan en el"
-                " teléfono; los envíos pendientes vencen si no vuelve a tiempo")
+                " teléfono; los envíos pendientes vencen si no vuelve a tiempo. Si no vuelve sola, pide"
+                " que abran Paynani en el teléfono: el fabricante pudo haberla cerrado (INSTALL.md §5.2, paso 4)")
         tag = "offline"
     else:
         line = f"[sms-gateway {local_time}] el teléfono {device_id} volvió a conectarse tras {span}"
