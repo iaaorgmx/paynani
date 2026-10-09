@@ -85,6 +85,8 @@ store.touch(connected=False, offline_notified=True)
 check("describe: sin conexión, con el aviso ya enviado al agente", True,
       "OFFLINE" in health.describe(health.phone_facts(state, now=T0))[0]
       and "sms.gateway.offline was sent" in health.describe(health.phone_facts(state, now=T0))[0])
+check("describe: sin conexión, sugiere abrir Paynani en el teléfono (#381)", True,
+      "open Paynani on the phone" in health.describe(health.phone_facts(state, now=T0))[0])
 store.touch(last_seen=None)
 check("nunca conectado", ("never connected", True),
       (health.describe(health.phone_facts(state, now=T0))[0].split(", ")[1],
@@ -109,6 +111,11 @@ check("evento offline: tipo, cuenta y línea para el agente", True,
       e["event_type"] == "sms.gateway.offline" and e["account"] == "sms:d_abc123"
       and "[sms-gateway 03:10:00] el teléfono d_abc123 lleva 1 min 35 s sin conexión (último latido 03:08:25)" in e["notification_text"]
       and e["notification_text"].endswith("[scripts/paynani status]"))
+check("evento offline: sugiere abrir Paynani, por un posible cierre del fabricante (#381)", True,
+      "pide que abran Paynani en el teléfono: el fabricante pudo haberla cerrado (INSTALL.md §5.2, paso 4)"
+      in e["notification_text"])
+online = ev.gateway_health_event(kind=ev.GATEWAY_ONLINE, device_id="d_abc123", local_time="03:12:00", offline_for_s=120)
+check("evento online: sin la sugerencia de abrir Paynani", False, "abran Paynani" in online["notification_text"])
 check("evento offline: sin roster_match (es de la instalación, no de un remitente)", False, "roster_match" in e)
 try:
     ev.gateway_health_event(kind="otra", device_id="d", local_time="", offline_for_s=0)
