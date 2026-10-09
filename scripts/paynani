@@ -208,6 +208,10 @@ def main(argv: list[str] | None = None) -> int:
     sms_send.add_argument("--sim", type=int, default=None, help="SIM slot to send from.")
     sms_status = sms_sub.add_parser("status", help="Show the states of an SMS order.")
     sms_status.add_argument("order_id")
+    sms_check = sms_sub.add_parser("check", help="Check gateway, tunnel and phone; with --to, send a test text and wait for the reply.")
+    sms_check.add_argument("--to", default="", help="A roster number to send a test text to.")
+    sms_check.add_argument("--wait", type=int, default=60, help="Seconds to wait for the phone to send the test text (default 60).")
+    sms_check.add_argument("--wait-reply", type=int, default=0, help="Seconds to wait for a reply from --to (default 0: do not wait).")
 
     account_parser = subparsers.add_parser(
         "account", help="Additional mail accounts in accounts.json (#276)."
@@ -325,6 +329,9 @@ def main(argv: list[str] | None = None) -> int:
             return sms_cli.run_send(args)
         if args.sms_command == "status":
             return sms_cli.run_status(args)
+        if args.sms_command == "check":
+            from paynani_lib.sms import check as sms_check_mod
+            return sms_check_mod.run(args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)

@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- Nuevo `scripts/paynani sms check`: la prueba guiada después de emparejar el
+  teléfono. Revisa el servicio de la pasarela, que conteste en el equipo, que el
+  túnel llegue a ella y que el teléfono esté en línea (último latido, versión de
+  PaynaniApp y número de la SIM). Con `--to <número del roster>` manda un SMS de
+  prueba y con `--wait-reply <s>` espera la respuesta en `events.jsonl`
+  (INSTALL.md §5.2, paso 7; #350).
 - `upgrade_plan.py` ya no repite el `daemon-reload` ni el reinicio de
   `paynani-idle` y `paynani-dispatch` después de `install.sh --upgrade` cuando
   cambió una unidad de `systemd/`: ese caso el instalador ya los hizo, y el plan
