@@ -1133,6 +1133,26 @@ In the app, the Status screen must say «Connected since …» under Connection
 `scripts/paynani status` shows the last heartbeat too; after 90 s without one,
 the agent gets a `sms.gateway.offline` notice.
 
+To check everything in one go, run:
+
+```bash
+scripts/paynani sms check
+```
+
+It goes through what a text needs, one line each, `ok`, `warn` or `FAIL`: the
+gateway service, the gateway answering on this machine, the tunnel reaching it
+from outside (`PAYNANI_SMS_PUBLIC_URL`), and the phone online, with its last
+heartbeat, PaynaniApp version and SIM number when the SIM exposes it. It exits 0
+when nothing failed and 1 otherwise. Once step 8 is done, try a text both ways:
+
+```bash
+scripts/paynani sms check --to +525511112222 --wait-reply 300
+```
+
+sends a test text to that roster number through the phone, the same way as
+`scripts/paynani sms send`, and waits up to 300 s for a reply from it to arrive
+as `sms.received`. Without `--wait-reply` it only sends.
+
 **8. Tell the roster which numbers count.** A text or call from a number on
 `roster.md` is work for the agent and may be answered; any other number is only
 reported, and `scripts/paynani sms send` refuses it with exit 2. The numbers go
