@@ -426,7 +426,9 @@ tag means the same thing:
   to log it. A call from outside the roster is information only.
 - A `sms.gateway.offline` event means the paired phone stopped answering the
   gateway. It is not mail and has no sender: tell your human that texts and calls
-  are not reaching you until a `sms.gateway.online` event follows.
+  are not reaching you until a `sms.gateway.online` event follows, and suggest they
+  open Paynani on the phone if it does not come back on its own: the maker's power
+  saver may have closed it (INSTALL.md §5.2, step 4).
 
 **Say "no new mail" only when something checked.** `scripts/healthcheck.py`
 answers whether mail could arrive; silence does not. Reporting a quiet mailbox
