@@ -1056,6 +1056,15 @@ the same version did not). From PaynaniApp 0.6.2 the app asks again after each
 update: Status shows the **Background** row until you confirm it
 (iaaorgmx/PaynaniApp#94).
 
+**Samsung:** two settings, and one list to stay away from. Settings → Apps →
+Paynani → Battery → **Unrestricted**; and Settings → Battery → Background usage
+limits → **Never sleeping apps** → + → Paynani. Do **not** add it to *Sleeping
+apps* or *Deep sleeping apps*: those put it to sleep. From PaynaniApp 0.6.5 the
+app shows these steps itself on a Samsung, and its **Open settings** button opens
+Paynani's own screen for the first one (iaaorgmx/PaynaniApp#97). If Paynani is missing
+when you tap + in *Sleeping apps*, its battery is most likely already
+unrestricted (seen on a Galaxy S21+); that list is the one to stay out of anyway.
+
 **Other brands:** <https://dontkillmyapp.com/> has the steps for each one; pick
 your phone's brand.
 
