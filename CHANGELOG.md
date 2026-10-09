@@ -8,6 +8,9 @@
   PaynaniApp y número de la SIM). Con `--to <número del roster>` manda un SMS de
   prueba y con `--wait-reply <s>` espera la respuesta en `events.jsonl`
   (INSTALL.md §5.2, paso 7; #350).
+- El aviso `sms.gateway.offline` y la línea del teléfono en `paynani status`
+  ahora sugieren abrir Paynani en el teléfono si no vuelve sola, porque el
+  ahorro de energía del fabricante pudo haberla cerrado (#381).
 - `upgrade_plan.py` ya no repite el `daemon-reload` ni el reinicio de
   `paynani-idle` y `paynani-dispatch` después de `install.sh --upgrade` cuando
   cambió una unidad de `systemd/`: ese caso el instalador ya los hizo, y el plan
