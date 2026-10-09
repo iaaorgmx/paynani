@@ -75,4 +75,6 @@ def describe(facts):
     line = f"{who}: {state}, {beat}, {queue}"
     if not facts["online"] and facts["offline_notified"]:
         line += "; sms.gateway.offline was sent to the agent"
+    if not facts["online"] and facts["last_seen_age_s"] is not None:
+        line += "; if it does not come back, open Paynani on the phone (the maker may have closed it, INSTALL.md §5.2 step 4)"
     return [line]

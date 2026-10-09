@@ -466,7 +466,9 @@ evento, así que en `notification_text`:
 - Cada 5 s la pasarela revisa al teléfono emparejado. Si no hay conexión y lleva
   **90 s** (3 × latido) sin latir, escribe **un** `sms.gateway.offline` en
   `events.jsonl` y en el ledger, con la línea `[sms-gateway HH:MM:SS] el teléfono
-  d_… lleva … sin conexión (último latido …)`. Cuando vuelve, un `sms.gateway.online`
+  d_… lleva … sin conexión (último latido …)`, que termina pidiendo que abran Paynani
+  en el teléfono si no vuelve sola, porque un ahorro de energía del fabricante pudo
+  haberla cerrado (INSTALL.md §5.2, paso 4). Cuando vuelve, un `sms.gateway.online`
   con lo que duró. Sin `roster_match`: es de la instalación, no de un remitente.
 - La marca (`offline_notified` en `device.json`) hace que sea un aviso por apagón y
   que reiniciar la pasarela no lo repita. Si el evento no se pudo escribir, la marca
