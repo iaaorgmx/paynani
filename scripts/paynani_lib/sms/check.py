@@ -34,6 +34,8 @@ from . import health  # noqa: E402
 
 DEFAULT_PORT = 8770
 HTTP_TIMEOUT_S = 5
+# «No me pasaron nada»; None queda para «no instalado» y «sin teléfono».
+_UNSET = object()
 
 
 class Report:
@@ -162,14 +164,14 @@ def wait_for_reply(journal, offset, number, seconds, poll_s=1.0, clock=time.mono
         sleep(poll_s)
 
 
-def run(args, out=None, gateway_facts=None, phone_facts=None, fetch=fetch_health, send=None) -> int:
+def run(args, out=None, gateway_facts=_UNSET, phone_facts=_UNSET, fetch=fetch_health, send=None) -> int:
     report = Report(out)
     number = None
     if args.to:
         number = phone.to_e164(args.to)
         if number is None:
             return sms_cli._refuse(f"{args.to!r} is not a phone number. Write it in E.164, for example +525511112222.")
-    if gateway_facts is None:
+    if gateway_facts is _UNSET:
         import healthcheck  # noqa: PLC0415 -- pesado; sólo cuando se usa
         gateway_facts = healthcheck.sms_gateway_facts()
     port = int(os.environ.get("PAYNANI_SMS_PORT") or DEFAULT_PORT)
@@ -182,7 +184,7 @@ def run(args, out=None, gateway_facts=None, phone_facts=None, fetch=fetch_health
         return 1
     check_local(report, port, fetch)
     check_tunnel(report, public_url, fetch)
-    if phone_facts is None:
+    if phone_facts is _UNSET:
         phone_facts = health.phone_facts(paths.state_dir())
         if phone_facts is not None:
             device = sms_cli._store().device() or {}
