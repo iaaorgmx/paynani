@@ -176,6 +176,44 @@ store6 = g.store
 store6.revoke()
 check("revocado: nada", None, g.health_tick(T0 + 900))
 
+# --- last_seen es el último frame, no la hora del watchdog ni del cierre (#385) -------------
+g7, journal7 = fresh()
+g7.last_frame_at = T0
+g7._mark_seen(connected=False)
+check("al cerrar, last_seen es la hora del último frame", stamp(T0), g7.store.device()["last_seen"])
+check("el aviso offline cuenta 90 s desde el último frame, no desde el cierre", (None, "offline"),
+      (g7.health_tick(T0 + 89), g7.health_tick(T0 + 91)))
+check("el aviso dice como último latido el del último frame", True,
+      f"(último latido {time.strftime('%H:%M:%S', time.localtime(T0))})" in journal_events(journal7)[0]["notification_text"])
+
+
+class FakeWS:
+    def __init__(self):
+        self.closed = False
+        self.device_id = "d_x1"
+        self.close_code = None
+
+    async def close(self, code, reason=""):
+        self.closed, self.close_code = True, code
+
+
+async def watchdog_test():
+    g8, _ = fresh(heartbeat_s=3)
+    g8._still_paired = lambda ws, device_id: True
+    ws = FakeWS()
+    g8.last_frame, g8.last_frame_at = time.monotonic(), T0   # frame reciente, con una hora de pared reconocible
+    task = asyncio.create_task(g8._watchdog(ws))
+    await asyncio.sleep(1.3)
+    seen = g8.store.device()["last_seen"]
+    g8.last_frame = time.monotonic() - 10   # el teléfono dejó de hablar
+    await asyncio.wait_for(task, 3)
+    return seen, ws.close_code, g8.store.device()["last_seen"]
+
+
+seen8, code8, after8 = asyncio.run(watchdog_test())
+check("el watchdog no adelanta last_seen sin frames", (stamp(T0), stamp(T0)), (seen8, after8))
+check("sin frames en 3 × heartbeat, el watchdog cierra (1001)", 1001, code8)
+
 # --- el ciclo y serve() ---------------------------------------------------------------------
 async def loop_test():
     t = Path(tempfile.mkdtemp())

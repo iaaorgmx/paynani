@@ -470,6 +470,13 @@ evento, así que en `notification_text`:
   en el teléfono si no vuelve sola, porque un ahorro de energía del fabricante pudo
   haberla cerrado (INSTALL.md §5.2, paso 4). Cuando vuelve, un `sms.gateway.online`
   con lo que duró. Sin `roster_match`: es de la instalación, no de un remitente.
+- El «último latido» (`last_seen` en `device.json`) es la hora del último frame que
+  mandó el teléfono, no la de la última revisión: si el teléfono se queda sin red,
+  la conexión sigue abierta hasta que el watchdog la cierra (3 × latido sin frames),
+  y los 90 s se cuentan desde ese último frame (#385).
+- Al volver, el teléfono manda lo que tenía en cola en cuanto se conecta, así que los
+  `sms.received` de ese apagón pueden quedar en `events.jsonl` **antes** que el
+  `sms.gateway.online`. No se pierde nada; sólo el orden no es el de la reconexión.
 - La marca (`offline_notified` en `device.json`) hace que sea un aviso por apagón y
   que reiniciar la pasarela no lo repita. Si el evento no se pudo escribir, la marca
   no se pone y se reintenta a los 5 s.

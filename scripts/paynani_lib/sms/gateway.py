@@ -110,6 +110,8 @@ class Gateway:
         self.health_every_s = health_every_s
         self.conn: WebSocket | None = None
         self.last_frame = 0.0
+        # La misma hora en reloj de pared, para `last_seen` (#385).
+        self.last_frame_at = 0.0
         # Un proceso nuevo no tiene a nadie conectado, diga lo que diga device.json
         # de la vida anterior; y el teléfono tiene `offline_after_s` para volver
         # antes de que se diga que no está.
@@ -325,6 +327,17 @@ class Gateway:
 
     def _saw_frame(self) -> None:
         self.last_frame = time.monotonic()
+        self.last_frame_at = time.time()
+
+    def _mark_seen(self, **fields) -> None:
+        """
+        `last_seen` es la hora del último frame del teléfono, no la de ahora: el
+        watchdog y el cierre corren aunque el teléfono ya no hable, y health_tick
+        cuenta `offline_after_s` desde aquí (#385).
+        """
+        seen = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.last_frame_at)) if self.last_frame_at \
+            else store_mod.now_utc()
+        self.store.touch(last_seen=seen, **fields)
 
     async def _send(self, ws: WebSocket, obj: dict) -> None:
         await ws.send_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
@@ -384,7 +397,7 @@ class Gateway:
             if self.conn is ws:
                 self.conn = None
                 if self._still_paired(ws, device_id):
-                    self.store.touch(connected=False, last_seen=store_mod.now_utc())
+                    self._mark_seen(connected=False)
 
     def _still_paired(self, ws: WebSocket, device_id: str) -> bool:
         """
@@ -411,7 +424,7 @@ class Gateway:
                 log("sin latido del teléfono; se cierra la conexión")
                 await ws.close(1001, "sin latido")
                 return
-            self.store.touch(last_seen=store_mod.now_utc())
+            self._mark_seen()
 
     async def _watch_roster(self, ws: WebSocket, allowed: list) -> None:
         while not ws.closed:
