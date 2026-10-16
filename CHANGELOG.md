@@ -2,6 +2,9 @@
 
 ## Sin publicar
 
+- `scripts/version.sh --plan` y `--apply` sin destino ya no eligen un tag de
+  pre-release (como `v0.12.0-rc1`) como el más nuevo. `--apply` lo rechazaba y fallaba en
+  todos los hosts mientras existiera ese tag (#394).
 - `scripts/test_codex.py` ya no escribe en el estado real del clon. La prueba de la
   repetición al iniciar sesión de Codex dejaba 20 filas falsas (`imap:INBOX:42:*`,
   `presented`, `codex`) en `state/lifecycle.jsonl` y un `state/codex.delivery.json`

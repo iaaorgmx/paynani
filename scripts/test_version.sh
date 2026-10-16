@@ -396,6 +396,14 @@ assert "a destination without a planner says so on stderr" \
     'grep -q "version.sh: v0.0.3 has no upgrade_plan.py; planning with the installed table" <<<"$out"'
 assert "and still plans, with the installed table" 'grep -q "^upgrade plan: v0.0.1 -> v0.0.3" <<<"$out"'
 
+# A pre-release tag is never the default target: it sorts above every release
+# and --apply refuses it, so a bare --plan / --apply must skip it.
+g2 tag v0.0.4-rc1; g2 push -q "$remote2" --tags
+git -C "$clone2" fetch -q --tags
+out=$("$clone2/scripts/version.sh" --plan 2>&1); rc=$?
+assert "a bare --plan skips the pre-release tag"  'grep -q "^upgrade plan: v0.0.1 -> v0.0.3" <<<"$out"'
+assert "and never names it"                        '! grep -q "rc1" <<<"$out"'
+
 # Nothing is left behind in the temp directory after either run.
 leftover_before=$(ls -d "${TMPDIR:-/tmp}"/tmp.* 2>/dev/null | sort)
 "$clone2/scripts/version.sh" --plan v0.0.2 >/dev/null 2>&1
@@ -404,6 +412,26 @@ assert "the extracted planner's directory is removed" '[ "$leftover_before" = "$
 
 export PAYNANI_STATE="$state"
 rm -rf "$clone2" "$seed2" "$remote2"
+
+# A clone whose only tag is a pre-release: no release tag at all. The bare
+# --plan has to keep talking (the planner's "no local tag newer" answer), not
+# end in silence because grep found nothing under pipefail (#395 review).
+remote3="$tmp/origin3.git"; git init -q --bare "$remote3"
+seed3="$tmp/seed3"; git init -q "$seed3"
+git -C "$seed3" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$seed3" tag v0.0.9-rc1; git -C "$seed3" push -q "$remote3" HEAD:main --tags
+clone3="$tmp/clone3"; mkdir -p "$clone3/scripts" "$clone3/harness"
+cp "$VERSION_SH" "$here/envpath.sh" "$here/upgrade_plan.py" "$clone3/scripts/"
+cp "$here/../harness/paths.py" "$clone3/harness/paths.py"
+git init -q "$clone3"; git -C "$clone3" remote add origin "$remote3"
+git -C "$clone3" fetch -q --tags origin
+printf '0.0.1\n' >"$clone3/VERSION"
+printf 'runtime\tclaudecode\n' >"$clone3/install.manifest"
+out=$("$clone3/scripts/version.sh" --plan 2>&1); rc=$?
+assert "only a pre-release tag: --plan still answers"  '[ -n "$out" ]'
+assert "only a pre-release tag: it says no newer tag"  'grep -q "no local tag newer" <<<"$out"'
+assert "only a pre-release tag: exits 2, not 1"         '[ "$rc" -eq 2 ]'
+rm -rf "$clone3" "$seed3" "$remote3"
 
 # ---- --installed ----------------------------------------------------------
 
