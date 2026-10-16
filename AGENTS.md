@@ -40,6 +40,47 @@ before acting does not lose it (#271).
 
 ## The path
 
+**0. Offer your human the one-command install first.** `bootstrap.sh` does the
+work of steps 1 to 4 and 6 below in one run: packages, Himalaya, the clone, the
+mailbox test (IMAP and SMTP), the services, your human's row in `roster.md` and
+the permission rules, and it says **Ready** only when
+`paynani doctor` and `healthcheck.py` both pass. On Ubuntu or Debian it needs
+`sudo`, which is why your human runs it, in a terminal on this machine, as the
+user you run as. It asks for the mailbox password with the input hidden, so the
+password never passes through this conversation. Send them this, with the
+runtime you are (`openclaw`, `hermes`, `claudecode`, `codex` or `opencode`):
+
+```bash
+curl -fsSLO https://github.com/iaaorgmx/paynani/releases/latest/download/bootstrap.sh
+curl -fsSLO https://github.com/iaaorgmx/paynani/releases/latest/download/bootstrap.sh.sha256
+sha256sum -c bootstrap.sh.sha256      # must print: bootstrap.sh: OK
+sudo bash bootstrap.sh --runtime <runtime>
+```
+
+Releases before 0.12.0 do not carry `bootstrap.sh`, and the first `curl`
+fails with a 404. In that case send this instead, which takes the script and
+the code from `main`:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/iaaorgmx/paynani/main/bootstrap.sh
+sudo bash bootstrap.sh --ref main --runtime <runtime>
+```
+
+On macOS the same script runs **without** `sudo`; `INSTALL.md` *"Install with
+one command"* has that variant and every option.
+
+Ask them to paste back the last lines it prints. Then:
+
+- **It printed Ready.** What is still yours: the runtime step at the end of
+  step 4 (the OpenClaw standing rule, or the Claude Code, Codex or OpenCode
+  hooks), then steps 7, 8 and 9. Step 9 is short here: the script already
+  listed what it changed, so report that list.
+- **It stopped at a step.** It names the step and the command to repeat it.
+  Read that, tell your human what failed, and carry on from the matching step
+  below instead of guessing.
+- **Your human would rather not run it**, or cannot use `sudo`. Follow steps 1
+  to 9 below; they reach the same install.
+
 **1. Confirm this machine has a supervisor this project can use.** That is a
 systemd user session on Linux, or a launchd user domain on macOS.
 

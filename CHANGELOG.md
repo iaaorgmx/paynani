@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- `AGENTS.md` tiene un paso 0: antes del camino a mano, el agente le ofrece a su
+  humano la instalación de un solo comando con `bootstrap.sh`, que el humano corre con
+  `sudo` y que pide la contraseña sin que pase por la conversación. Si la release no
+  trae `bootstrap.sh` (antes de la 0.12.0), usa el de `main`. Después de **Ready**
+  quedan para el agente el paso del runtime del paso 4 y los pasos 7 a 9. Antes, el
+  prompt del README llevaba al agente a `install.sh` y nunca al script (#389).
 - La pasarela SMS guarda como `last_seen` la hora del último frame del teléfono, no la
   de su revisión periódica ni la del cierre. Antes, con el teléfono sin red,
   `sms.gateway.offline` llegaba 2 a 3 min tarde y decía como «último latido» una hora
