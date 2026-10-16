@@ -2,6 +2,10 @@
 
 ## Sin publicar
 
+- `scripts/test_codex.py` ya no escribe en el estado real del clon. La prueba de la
+  repetición al iniciar sesión de Codex dejaba 20 filas falsas (`imap:INBOX:42:*`,
+  `presented`, `codex`) en `state/lifecycle.jsonl` y un `state/codex.delivery.json`
+  cada vez que alguien corría la suite en una instalación (#392).
 - `AGENTS.md` tiene un paso 0: antes del camino a mano, el agente le ofrece a su
   humano la instalación de un solo comando con `bootstrap.sh`, que el humano corre con
   `sudo` y que pide la contraseña sin que pase por la conversación. Si la release no
