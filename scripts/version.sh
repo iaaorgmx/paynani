@@ -189,7 +189,13 @@ run_planner() {   # run_planner <extra planner args...>; "$target" may be empty
         target=$PLAN_TARGET
     else
         git -C "$REPO" fetch --tags origin >/dev/null 2>&1 || true
-        target=$(git -C "$REPO" tag --list 'v*' --sort=-v:refname 2>/dev/null | head -n1)
+        # Only release tags: a pre-release such as v0.12.0-rc1 sorts above
+        # v0.11.0 (and above v0.12.0 itself), and upgrade_plan.py --apply refuses
+        # it, so picking it would make a plain --apply fail on every host.
+        # `|| true`: with no release tag at all grep exits 1, and under
+        # pipefail + set -e that would end the script silently (#395 review).
+        target=$(git -C "$REPO" tag --list 'v*' --sort=-v:refname 2>/dev/null \
+                     | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1) || true
     fi
 
     if [ -n "$target" ] && git -C "$REPO" cat-file -e "$target:scripts/upgrade_plan.py" 2>/dev/null; then
