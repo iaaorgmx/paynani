@@ -249,8 +249,13 @@ class SpoolReplay(unittest.TestCase):
         self.offset = self.state / "codex.offset"
         self.session = self.state / "codex.session"
         self.journal = self.state / "events.jsonl"
+        # LIFECYCLE and CODEX_STATUS too: codex_replayed writes both, and left
+        # unpatched they landed in the real clone's state (20 fake "presented"
+        # rows on every suite run in an installed clone).
         for attr, value in (("CODEX_SPOOL", self.spool), ("CODEX_OFFSET", self.offset),
-                            ("CODEX_SESSION", self.session), ("JOURNAL", self.journal)):
+                            ("CODEX_SESSION", self.session), ("JOURNAL", self.journal),
+                            ("LIFECYCLE", self.state / "lifecycle.jsonl"),
+                            ("CODEX_STATUS", self.state / "codex.delivery.json")):
             patcher = mock.patch.object(ss, attr, value)
             patcher.start()
             self.addCleanup(patcher.stop)
