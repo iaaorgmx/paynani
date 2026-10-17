@@ -2,6 +2,15 @@
 
 ## Sin publicar
 
+- El paso 0 de `AGENTS.md` respeta la versión que pide el humano: descarga
+  `bootstrap.sh` de `releases/download/<tag>/` y lo corre con `--ref <tag>`, en vez de
+  instalar siempre la última release estable. También dice que el humano lo corre en su
+  propia terminal (no con el `!` del harness, donde `sudo` no puede pedir la contraseña)
+  y que en Claude Code con modo automático conviene más que el camino a mano (#397).
+- `paynani onboard` muestra el enlace del formulario en cuanto el servidor arranca,
+  aunque su salida vaya a un archivo o una tubería, como cuando un harness lo corre en
+  segundo plano. Antes la salida quedaba en búfer y el enlace salía hasta que se
+  guardaba el formulario (#396).
 - `scripts/version.sh --plan` y `--apply` sin destino ya no eligen un tag de
   pre-release (como `v0.12.0-rc1`) como el más nuevo. `--apply` lo rechazaba y fallaba en
   todos los hosts mientras existiera ese tag (#394).

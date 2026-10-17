@@ -57,14 +57,40 @@ sha256sum -c bootstrap.sh.sha256      # must print: bootstrap.sh: OK
 sudo bash bootstrap.sh --runtime <runtime>
 ```
 
+**If your human asked for a specific version** (a tag such as `v0.12.0-rc1`,
+pre-releases included), do not send the `latest` lines above: they install
+whatever the newest stable release is, which is not what was asked for. Take
+the script from that release and pin the code to the same tag:
+
+```bash
+TAG=v0.12.0-rc1                       # the version your human asked for
+curl -fsSLO https://github.com/iaaorgmx/paynani/releases/download/$TAG/bootstrap.sh
+curl -fsSLO https://github.com/iaaorgmx/paynani/releases/download/$TAG/bootstrap.sh.sha256
+sha256sum -c bootstrap.sh.sha256      # must print: bootstrap.sh: OK
+sudo bash bootstrap.sh --ref $TAG --runtime <runtime>
+```
+
 Releases before 0.12.0 do not carry `bootstrap.sh`, and the first `curl`
-fails with a 404. In that case send this instead, which takes the script and
-the code from `main`:
+fails with a 404. **If your human asked for one of those versions**, the script
+cannot install it either: those tags have no `scripts/bootstrap_user.py`, and
+`bootstrap.sh` stops with «bootstrap_user.py not found in this ref». Follow
+steps 1 to 9 below on that tag instead. If nobody asked for a version and the
+404 is only because no release has the script yet, send this, which takes the
+script and the code from `main`:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/iaaorgmx/paynani/main/bootstrap.sh
 sudo bash bootstrap.sh --ref main --runtime <runtime>
 ```
+
+**Your human runs it in their own terminal**, not through your harness's
+shell-escape (Claude Code's `!`, for one): `sudo` has to ask for their
+password there, and a command run on your behalf has no way to type it.
+
+**On Claude Code in auto mode, prefer this step over the path below.** The
+manual path needs your human at least twice anyway, for `sudo
+loginctl enable-linger` and for the Himalaya installer that auto mode blocks
+(`curl … | sh` counts as code from outside), and the script does both in one go.
 
 On macOS the same script runs **without** `sudo`; `INSTALL.md` *"Install with
 one command"* has that variant and every option.

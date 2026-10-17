@@ -123,6 +123,14 @@ def run(port: int = 8765, mode: str = "setup") -> int:
     `config web`) -- same server, same form, different banner -- or
     "sms_pair" (`sms pair --web`, SRV-4): the same local server and link, but
     the page pairs the phone, and it stays up until Ctrl-C."""
+    # The link is printed once and the process then waits for the form. When
+    # stdout is a pipe or a file (a harness running this in the background),
+    # Python block-buffers it and the link would only appear after the form
+    # is saved, which is too late to send it (#396).
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
     state = state_dir()
     state.mkdir(parents=True, exist_ok=True)
     try:
