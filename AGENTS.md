@@ -71,8 +71,12 @@ sudo bash bootstrap.sh --ref $TAG --runtime <runtime>
 ```
 
 Releases before 0.12.0 do not carry `bootstrap.sh`, and the first `curl`
-fails with a 404. In that case send this instead, which takes the script and
-the code from `main`:
+fails with a 404. **If your human asked for one of those versions**, the script
+cannot install it either: those tags have no `scripts/bootstrap_user.py`, and
+`bootstrap.sh` stops with «bootstrap_user.py not found in this ref». Follow
+steps 1 to 9 below on that tag instead. If nobody asked for a version and the
+404 is only because no release has the script yet, send this, which takes the
+script and the code from `main`:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/iaaorgmx/paynani/main/bootstrap.sh
