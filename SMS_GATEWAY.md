@@ -318,8 +318,16 @@ conectar o desconectar la corriente (PaynaniApp#109):
 ```
 
 - `id`, `battery_pct` (entero de 0 a 100), `charging` (booleano) y `measured_at`
-  (milisegundos de época, reloj del teléfono) son obligatorios. Si falta alguno o no
-  es válido, `missing_field` y `ack` `rejected`.
+  (milisegundos de época) son obligatorios. Si falta alguno o no es válido,
+  `missing_field` y `ack` `rejected`.
+- `measured_at` va en la hora de la pasarela: la app le suma la diferencia de reloj
+  que calcula con `welcome.server_time`. Uno que cae más de **5 minutos** en el futuro
+  o hace más de **30 días** se rechaza igual (`missing_field`, `ack` `rejected`) y
+  queda en el log de la pasarela: una lectura del futuro dejaría todas las reales como
+  `duplicate`. En `hello.device_status`, una lectura así se ignora y el `welcome` sale
+  igual.
+- `battery_temp_c` que no es un número finito entre −40 y 100 se descarta; la
+  lectura se guarda sin temperatura.
 - `plugged` es `ac`, `usb`, `wireless` o `none`; otro valor se guarda como `none`.
   `battery_temp_c` es opcional.
 - Pasa por la cola del teléfono, como todo lo demás: una lectura tomada sin conexión
@@ -538,7 +546,8 @@ evento, así que en `notification_text`:
     `critical`.
 
   Los dos umbrales viven en `sms.env` (INSTALL.md). Un valor inválido, o un crítico
-  que no queda por debajo del aviso, vuelve a 25 y 10.
+  que no queda por debajo del aviso, vuelve a 25 y 10, y la pasarela lo dice en su log
+  al arrancar. `paynani status` muestra los umbrales con los que avisa.
 - **Una vez por nivel y por descarga:** la marca `battery_alert_level` en
   `device.json` sobrevive a un reinicio de la pasarela, como `offline_notified`. A lo
   más son dos avisos por descarga. Si la batería baja de golpe por debajo del crítico,
@@ -547,9 +556,16 @@ evento, así que en `notification_text`:
   a cargar o cuando vuelve a superar el aviso por **5 puntos** (30 % por omisión). Los
   5 puntos evitan que un teléfono que oscila en el borde mande avisos de ida y vuelta.
   Luego la marca se limpia.
-- **Un dato viejo no avisa:** si la última lectura tiene más de **20 minutos** (la app
-  manda una cada 10, y un ahorro de energía del fabricante puede congelarla, #92), no
-  sale ningún aviso de batería por ella, y `paynani status` la marca como vieja.
+- **Un cable flojo no repite avisos:** `battery_low` sólo sale cuando el teléfono lleva
+  **5 minutos** sin cargar (`battery_unplugged_at` en `device.json`, con el reloj de la
+  pasarela). Un cargador que conecta y desconecta cada minuto da un `warn`, un
+  `battery_ok` y nada más hasta que pasen 5 minutos seguidos sin cargar.
+- **Un dato viejo no avisa:** si la última lectura **llegó** hace más de **20 minutos**
+  (la app manda una cada 10, y un ahorro de energía del fabricante puede congelarla,
+  #92), no sale ningún aviso de batería por ella, y `paynani status` la marca como
+  vieja. Se mide con la hora de llegada (`battery_received_at`, reloj de la pasarela),
+  no con `measured_at`: un reloj del teléfono atrasado no apaga los avisos, y uno
+  adelantado no deja el dato fresco para siempre.
 - **Sin lecturas** (una app anterior), no hay avisos de batería y `paynani status` dice
   «battery unknown».
 - **Sin conexión** no hay avisos de batería: para eso está `sms.gateway.offline`, que

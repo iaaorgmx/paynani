@@ -7,9 +7,12 @@
   lectura) cuando cambia o cada 10 min, y el saludo trae la última lectura. Sin cargar,
   la pasarela escribe `sms.gateway.battery_low` al bajar de 25 % (`warn`) y de 10 %
   (`critical`), una vez cada uno por descarga, y `sms.gateway.battery_ok` al cargar o al
-  volver a superar el aviso por 5 puntos. Los umbrales se cambian en `sms.env`
-  (`PAYNANI_SMS_BATTERY_WARN_PCT`, `PAYNANI_SMS_BATTERY_CRITICAL_PCT`). Un dato de más
-  de 20 min no avisa. `sms.gateway.offline` incluye la última batería conocida, y
+  volver a superar el aviso por 5 puntos. `battery_low` espera 5 min seguidos sin
+  cargar, así un cable flojo no repite avisos. Los umbrales se cambian en `sms.env`
+  (`PAYNANI_SMS_BATTERY_WARN_PCT`, `PAYNANI_SMS_BATTERY_CRITICAL_PCT`); uno inválido
+  vuelve a 25 y 10 y queda en el log. Un dato que llegó hace más de 20 min no avisa, y
+  una lectura con la hora más de 5 min en el futuro o de hace más de 30 días se
+  rechaza. `sms.gateway.offline` incluye la última batería conocida, y
   `paynani status` y `healthcheck` muestran la batería, si carga y qué tan vieja es la
   lectura. Con una app anterior, la batería sale como desconocida y nada cambia.
 - El paso 0 de `AGENTS.md` respeta la versión que pide el humano: descarga

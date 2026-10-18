@@ -14,6 +14,7 @@ import asyncio
 import calendar
 import hashlib
 import json
+import math
 import re
 import secrets
 import sys
@@ -53,6 +54,9 @@ STATUSES = {"accepted", "sent", "delivered", "failed", "rejected", "expired"}
 PLUGGED = {"ac", "usb", "wireless", "none"}
 BATTERY_STALE_S = 20 * 60   # un dato más viejo no dispara avisos: DuraSpeed puede congelar la app (#92)
 BATTERY_HYSTERESIS = 5      # battery_ok al volver a superar el aviso por estos puntos
+BATTERY_SETTLE_S = 5 * 60   # sin cargar tanto tiempo antes de avisar: un cable flojo no repite avisos
+BATTERY_FUTURE_S = 5 * 60   # una lectura más adelante que esto viene de un reloj mal puesto
+BATTERY_PAST_S = 30 * 86400  # y una de hace más de 30 días, también
 
 
 def server_version() -> str | None:
@@ -77,6 +81,12 @@ def _epoch(stamp) -> float | None:
         return float(calendar.timegm(time.strptime(str(stamp), "%Y-%m-%dT%H:%M:%SZ")))
     except (TypeError, ValueError):
         return None
+
+
+def _when_local(epoch: float, now: float) -> str:
+    """«HH:MM» si fue hoy (hora local), y «DD/MM HH:MM» si fue otro día."""
+    same_day = time.localtime(epoch)[:3] == time.localtime(now)[:3]
+    return time.strftime("%H:%M" if same_day else "%d/%m %H:%M", time.localtime(epoch))
 
 
 def ws_device_id(ws) -> str:
@@ -117,6 +127,7 @@ class Gateway:
         self.battery_warn_pct = battery_warn_pct
         self.battery_critical_pct = battery_critical_pct
         self.battery_stale_s = battery_stale_s
+        self.clock = time.time  # las pruebas lo cambian; lo viejo del dato se mide con este reloj
         self.conn: WebSocket | None = None
         self.last_frame = 0.0
         # La misma hora en reloj de pared, para `last_seen` (#385).
@@ -289,8 +300,7 @@ class Gateway:
         envelope = ev.gateway_health_event(kind=ev.GATEWAY_OFFLINE, device_id=device_id, local_time=local,
                                            offline_for_s=now - since, last_seen_local=last,
                                            last_battery_pct=device.get("battery_pct"),
-                                           last_battery_local=time.strftime("%H:%M", time.localtime(measured))
-                                           if measured else "")
+                                           last_battery_local=_when_local(measured, now) if measured else "")
         if self._publish(envelope):
             self.store.touch(offline_notified=True, offline_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since)))
             return "offline"
@@ -303,16 +313,21 @@ class Gateway:
         (`critical`), una sola vez por nivel y por descarga; `sms.gateway.battery_ok`
         una vez, al cargar o al volver a superar el aviso por BATTERY_HYSTERESIS. La
         marca (`battery_alert_level` en device.json) sobrevive a un reinicio, como
-        `offline_notified`. Sin dato, o con un dato de más de `battery_stale_s`, no
-        se dice nada: podría ser viejo. Devuelve "warn", "critical", "ok" o None.
+        `offline_notified`.
+
+        Sin dato, o con uno recibido hace más de `battery_stale_s`, no se dice nada:
+        podría ser viejo. Lo viejo se mide con la hora en que llegó (reloj de la
+        pasarela), no con `measured_at`, que es del teléfono. battery_low sólo sale
+        si el teléfono lleva BATTERY_SETTLE_S sin cargar: un cable flojo que conecta
+        y desconecta no repite warn, ok, warn… Devuelve "warn", "critical", "ok" o None.
         """
-        now = time.time() if now is None else now
+        now = self.clock() if now is None else now
         device = self.store.device()
         if not device or self.conn is None:
             return None
         pct = device.get("battery_pct")
-        measured = _epoch(device.get("battery_measured_at"))
-        if not isinstance(pct, int) or measured is None or now - measured > self.battery_stale_s:
+        received = _epoch(device.get("battery_received_at"))
+        if not isinstance(pct, int) or received is None or now - received > self.battery_stale_s:
             return None
         device_id = device.get("device_id", "")
         level = device.get("battery_alert_level") or ""
@@ -326,6 +341,9 @@ class Gateway:
                 return "ok"
             return None
         if charging:
+            return None
+        unplugged = _epoch(device.get("battery_unplugged_at"))
+        if unplugged is None or now - unplugged < BATTERY_SETTLE_S:
             return None
         if pct < self.battery_critical_pct and level != "critical":
             new = "critical"
@@ -355,9 +373,12 @@ class Gateway:
             await asyncio.sleep(self.health_every_s)
             try:
                 self.health_tick()
-                self.battery_tick()
             except Exception as exc:  # noqa: BLE001 -- la vigilancia no debe morir por un error suelto
                 log(f"revisión de salud falló: {exc}")
+            try:
+                self.battery_tick()
+            except Exception as exc:  # noqa: BLE001 -- un error de la batería no frena la de conexión
+                log(f"revisión de batería falló: {exc}")
 
     # --- WebSocket ----------------------------------------------------------
     async def _websocket(self, reader, writer, headers) -> None:
@@ -430,8 +451,13 @@ class Gateway:
                          app_version=str(hello.get("app_version", ""))[:40],
                          sims=hello.get("sims") if isinstance(hello.get("sims"), list) else device.get("sims", []))
         if isinstance(hello.get("device_status"), dict):
-            # La última lectura de batería viene en el saludo (PaynaniApp#109).
-            self._store_device_status(hello["device_status"])
+            # La última lectura de batería viene en el saludo (PaynaniApp#109). Una
+            # lectura mala nunca impide el welcome.
+            try:
+                if self._device_status_problem(hello["device_status"]) is None:
+                    self._store_device_status(hello["device_status"])
+            except Exception as exc:  # noqa: BLE001
+                log(f"hello.device_status no se guardó: {exc}")
         log(f"teléfono conectado: {device_id}")
         allowed = sorted(roster_phones(self.roster_path))
         welcome = {"type": "welcome", "protocol": PROTOCOL, "server_time": store_mod.now_utc(),
@@ -643,39 +669,61 @@ class Gateway:
             return
         await self._send(ws, {"type": "ack", "id": uid, "result": result, "event_id": envelope["event_id"]})
 
-    @staticmethod
-    def _valid_device_status(msg: dict) -> bool:
+    def _device_status_problem(self, msg: dict) -> str | None:
+        """
+        Por qué la lectura no sirve, o None si sirve. Además de la forma, `measured_at`
+        tiene que caer entre hace 30 días y dentro de 5 minutos: una lectura del
+        futuro dejaría todas las reales como `duplicate` (y sin avisos), y una enorme
+        rompe `gmtime`.
+        """
         pct, charging, measured = msg.get("battery_pct"), msg.get("charging"), msg.get("measured_at")
-        return (isinstance(pct, int) and not isinstance(pct, bool) and 0 <= pct <= 100
+        if not (isinstance(pct, int) and not isinstance(pct, bool) and 0 <= pct <= 100
                 and isinstance(charging, bool)
-                and isinstance(measured, int) and not isinstance(measured, bool) and measured > 0)
+                and isinstance(measured, int) and not isinstance(measured, bool) and measured > 0):
+            return "device.status necesita id, battery_pct, charging y measured_at"
+        skew = measured / 1000 - self.clock()
+        if skew > BATTERY_FUTURE_S or skew < -BATTERY_PAST_S:
+            return f"measured_at fuera de rango: {int(skew)} s respecto a la pasarela (¿reloj del teléfono?)"
+        return None
 
     def _store_device_status(self, msg: dict) -> bool:
         """
-        Guarda la lectura en device.json si es válida y más nueva que la guardada:
-        la cola del teléfono puede entregar una lectura vieja después de una nueva.
-        Devuelve si la guardó.
+        Guarda la lectura en device.json si es más nueva que la guardada: la cola
+        del teléfono puede entregar una lectura vieja después de una nueva. Quien
+        llama ya la validó con _device_status_problem. Devuelve si la guardó.
         """
-        if not self._valid_device_status(msg):
-            return False
         device = self.store.device() or {}
+        now = self.clock()
         measured_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(msg["measured_at"] / 1000))
         previous = device.get("battery_measured_at")
         if previous and previous >= measured_at:
             return False
         plugged = msg.get("plugged") if msg.get("plugged") in PLUGGED else "none"
         temp = msg.get("battery_temp_c")
+        if not (isinstance(temp, (int, float)) and not isinstance(temp, bool)
+                and math.isfinite(temp) and -40 <= temp <= 100):
+            temp = None
+        received_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+        # Desde cuándo no carga, con el reloj de la pasarela (BATTERY_SETTLE_S).
+        if msg["charging"]:
+            unplugged_at = None
+        elif device.get("charging") is False and device.get("battery_unplugged_at"):
+            unplugged_at = device["battery_unplugged_at"]
+        else:
+            unplugged_at = received_at
         self.store.touch(battery_pct=msg["battery_pct"], charging=msg["charging"], plugged=plugged,
-                         battery_temp_c=float(temp) if isinstance(temp, (int, float)) and not isinstance(temp, bool)
-                         else None,
-                         battery_measured_at=measured_at, battery_received_at=store_mod.now_utc())
+                         battery_temp_c=float(temp) if temp is not None else None,
+                         battery_measured_at=measured_at, battery_received_at=received_at,
+                         battery_unplugged_at=unplugged_at)
         return True
 
     async def _device_status(self, ws, msg) -> None:
         sid = str(msg.get("id", ""))
-        if not HEX64.match(sid) or not self._valid_device_status(msg):
-            await self._error(ws, "missing_field", ref=sid[:80],
-                              detail="device.status necesita id, battery_pct, charging y measured_at")
+        problem = "device.status necesita un id de 64 hex" if not HEX64.match(sid) else self._device_status_problem(msg)
+        if problem:
+            if "measured_at fuera de rango" in problem:
+                log(f"device.status rechazado: {problem}")
+            await self._error(ws, "missing_field", ref=sid[:80], detail=problem)
             await self._send(ws, {"type": "ack", "id": sid, "result": "rejected"})
             return
         try:

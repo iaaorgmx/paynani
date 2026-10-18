@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import calendar
 import json
+import os
 import time
 from pathlib import Path
+
+from . import config as sms_config
 
 HEARTBEAT_S = 30
 # Un latido más viejo que esto no cuenta como conectado aunque device.json diga
@@ -63,10 +66,19 @@ def _battery(device, now):
     measured = _epoch(device.get("battery_measured_at"))
     if not isinstance(pct, int) or measured is None:
         return None
-    age = max(0, int(now - measured))
+    # Lo viejo con la hora de llegada (reloj de la pasarela), como battery_tick.
+    received = _epoch(device.get("battery_received_at")) or measured
+    age = max(0, int(now - received))
     return {"pct": pct, "charging": bool(device.get("charging")), "plugged": device.get("plugged") or "none",
             "measured_at": device.get("battery_measured_at"), "age_s": age, "stale": age > BATTERY_STALE_S,
-            "alert_level": device.get("battery_alert_level") or ""}
+            "alert_level": device.get("battery_alert_level") or "", "thresholds": _thresholds()}
+
+
+def _thresholds():
+    """(aviso, crítico) efectivos: los de sms.env, como los lee la pasarela al arrancar."""
+    environ = dict(os.environ)
+    sms_config.load_sms_env(environ=environ)
+    return sms_config.battery_thresholds(environ)
 
 
 def _span(seconds):
@@ -95,6 +107,8 @@ def describe(facts):
     else:
         state = "charging" if battery["charging"] else "not charging"
         line += f"; battery {battery['pct']} % {state}, read {_span(battery['age_s'])} ago"
+        warn, critical = battery["thresholds"]
+        line += f" (alerts below {warn} % and {critical} %)"
         if battery["stale"]:
             line += " (stale: no battery alerts from it)"
         elif battery["alert_level"]:

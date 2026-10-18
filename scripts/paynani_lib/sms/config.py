@@ -65,24 +65,35 @@ def load_sms_env(path=None, environ=None) -> dict:
     return applied
 
 
-def battery_thresholds(environ=None) -> tuple[int, int]:
+def battery_thresholds(environ=None, problems=None) -> tuple[int, int]:
     """
     (aviso, crítico) en porcentaje, de `PAYNANI_SMS_BATTERY_WARN_PCT` y
     `PAYNANI_SMS_BATTERY_CRITICAL_PCT`. Un valor que no es un entero de 1 a 99, o
     un crítico que no queda por debajo del aviso, vuelve a los de omisión (25 y 10):
-    un `sms.env` con un error de dedo nunca apaga los avisos.
+    un `sms.env` con un error de dedo nunca apaga los avisos. Lo que se corrigió se
+    agrega a `problems` (una lista), para que quien arranca lo diga en el log.
     """
     environ = os.environ if environ is None else environ
+    problems = [] if problems is None else problems
 
     def pct(name, default):
-        try:
-            value = int(str(environ.get(name, default)).strip())
-        except ValueError:
+        raw = environ.get(name)
+        if raw is None:
             return default
-        return value if 1 <= value <= 99 else default
+        try:
+            value = int(str(raw).strip())
+        except ValueError:
+            problems.append(f"{name}={raw!r} no es un número; se usa {default}")
+            return default
+        if not 1 <= value <= 99:
+            problems.append(f"{name}={value} está fuera de 1 a 99; se usa {default}")
+            return default
+        return value
 
     warn = pct("PAYNANI_SMS_BATTERY_WARN_PCT", BATTERY_WARN_PCT)
     critical = pct("PAYNANI_SMS_BATTERY_CRITICAL_PCT", BATTERY_CRITICAL_PCT)
     if critical >= warn:
+        problems.append(f"el crítico ({critical}) no queda debajo del aviso ({warn}); se usan "
+                        f"{BATTERY_WARN_PCT} y {BATTERY_CRITICAL_PCT}")
         return BATTERY_WARN_PCT, BATTERY_CRITICAL_PCT
     return warn, critical

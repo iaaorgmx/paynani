@@ -47,7 +47,11 @@ def main(argv=None) -> int:
         return 2
 
     state = Path(args.state)
-    warn, critical = sms_config.battery_thresholds()
+    problems = []
+    warn, critical = sms_config.battery_thresholds(problems=problems)
+    for problem in problems:
+        gw.log(f"sms.env: {problem}")
+    gw.log(f"avisos de batería: warn bajo {warn} %, critical bajo {critical} %")
     gateway = gw.Gateway(state, state / "events.jsonl", Path(args.roster), public_url=args.public_url,
                          battery_warn_pct=warn, battery_critical_pct=critical)
 
