@@ -1005,8 +1005,14 @@ def sms_phone_facts():
 
 
 def sms_phone_warnings(phone):
-    """A paired phone that is not reporting. Not a problem: the install itself is fine."""
-    if phone is None or phone["online"]:
+    """A paired phone that is not reporting, or about to stop. Not a problem: the install itself is fine."""
+    if phone is None:
+        return []
+    if phone["online"]:
+        battery = phone.get("battery")
+        if battery and battery["alert_level"] and not battery["charging"] and not battery["stale"]:
+            return [f"the paired phone {phone['device_id']} is at {battery['pct']} % battery and not charging: "
+                    "if it shuts down, texts and calls stop arriving. Ask your human to plug it in"]
         return []
     since = ("has never connected" if phone["last_seen_age_s"] is None
              else f"last reported {phone['last_seen_age_s']}s ago")

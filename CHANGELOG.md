@@ -2,6 +2,16 @@
 
 ## Sin publicar
 
+- La pasarela SMS sabe la batería del teléfono (PaynaniApp#109). La app manda
+  `device.status` (porcentaje, si carga, tipo de conector, temperatura y la hora de la
+  lectura) cuando cambia o cada 10 min, y el saludo trae la última lectura. Sin cargar,
+  la pasarela escribe `sms.gateway.battery_low` al bajar de 25 % (`warn`) y de 10 %
+  (`critical`), una vez cada uno por descarga, y `sms.gateway.battery_ok` al cargar o al
+  volver a superar el aviso por 5 puntos. Los umbrales se cambian en `sms.env`
+  (`PAYNANI_SMS_BATTERY_WARN_PCT`, `PAYNANI_SMS_BATTERY_CRITICAL_PCT`). Un dato de más
+  de 20 min no avisa. `sms.gateway.offline` incluye la última batería conocida, y
+  `paynani status` y `healthcheck` muestran la batería, si carga y qué tan vieja es la
+  lectura. Con una app anterior, la batería sale como desconocida y nada cambia.
 - El paso 0 de `AGENTS.md` respeta la versión que pide el humano: descarga
   `bootstrap.sh` de `releases/download/<tag>/` y lo corre con `--ref <tag>`, en vez de
   instalar siempre la última release estable. También dice que el humano lo corre en su

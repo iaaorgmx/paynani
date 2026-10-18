@@ -47,7 +47,9 @@ def main(argv=None) -> int:
         return 2
 
     state = Path(args.state)
-    gateway = gw.Gateway(state, state / "events.jsonl", Path(args.roster), public_url=args.public_url)
+    warn, critical = sms_config.battery_thresholds()
+    gateway = gw.Gateway(state, state / "events.jsonl", Path(args.roster), public_url=args.public_url,
+                         battery_warn_pct=warn, battery_critical_pct=critical)
 
     async def run():
         server = await gw.serve(gateway, args.host, args.port)

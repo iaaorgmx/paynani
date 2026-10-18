@@ -532,7 +532,8 @@ GATEWAY_OFFLINE = "sms.gateway.offline"
 GATEWAY_ONLINE = "sms.gateway.online"
 
 
-def gateway_health_event(*, kind, device_id, local_time, offline_for_s, last_seen_local="", observed_at=None):
+def gateway_health_event(*, kind, device_id, local_time, offline_for_s, last_seen_local="", observed_at=None,
+                         last_battery_pct=None, last_battery_local=""):
     """
     The phone stopped (or resumed) reporting (SMS_GATEWAY.md §7, SRV-5).
 
@@ -546,8 +547,12 @@ def gateway_health_event(*, kind, device_id, local_time, offline_for_s, last_see
     minutes, seconds = divmod(int(offline_for_s), 60)
     span = f"{minutes} min {seconds} s" if minutes else f"{seconds} s"
     if kind == GATEWAY_OFFLINE:
+        # La última batería conocida dice si probablemente se descargó (PaynaniApp#109).
+        battery = (f"; última batería {int(last_battery_pct)} %"
+                   + (f" a las {last_battery_local}" if last_battery_local else "")) \
+            if last_battery_pct is not None else ""
         line = (f"[sms-gateway {local_time}] el teléfono {device_id} lleva {span} sin conexión"
-                f" (último latido {last_seen_local or 'nunca'}). Los SMS que lleguen esperan en el"
+                f" (último latido {last_seen_local or 'nunca'}{battery}). Los SMS que lleguen esperan en el"
                 " teléfono; los envíos pendientes vencen si no vuelve a tiempo. Si no vuelve sola, pide"
                 " que abran Paynani en el teléfono: el fabricante pudo haberla cerrado (INSTALL.md §5.2, paso 4)")
         tag = "offline"
@@ -555,7 +560,7 @@ def gateway_health_event(*, kind, device_id, local_time, offline_for_s, last_see
         line = f"[sms-gateway {local_time}] el teléfono {device_id} volvió a conectarse tras {span}"
         tag = "online"
     eid = f"sms:{device_id}:gateway-{tag}:{hashlib.sha256(observed_at.encode()).hexdigest()[:12]}"
-    return {
+    envelope = {
         "schema_version": SCHEMA_VERSION,
         "event_type": kind,
         "event_id": eid,
@@ -567,6 +572,55 @@ def gateway_health_event(*, kind, device_id, local_time, offline_for_s, last_see
         "inspection_command": "scripts/paynani status",
         "notification_text": f"{line} [scripts/paynani status]",
     }
+    if kind == GATEWAY_OFFLINE and last_battery_pct is not None:
+        envelope["last_battery_pct"] = int(last_battery_pct)
+    return envelope
+
+
+GATEWAY_BATTERY_LOW = "sms.gateway.battery_low"
+GATEWAY_BATTERY_OK = "sms.gateway.battery_ok"
+BATTERY_LEVELS = ("warn", "critical")
+
+
+def gateway_battery_event(*, kind, device_id, local_time, battery_pct, charging, level=None, observed_at=None):
+    """
+    The phone's battery crossed a threshold, or recovered (PaynaniApp#109,
+    SMS_GATEWAY.md §7). Same envelope and path as sms.gateway.offline: it is about
+    the install, not a sender, so no `roster_match`. `level` is "warn" or
+    "critical" for battery_low.
+    """
+    if kind not in (GATEWAY_BATTERY_LOW, GATEWAY_BATTERY_OK):
+        raise ValueError(f"tipo de evento de batería desconocido: {kind}")
+    if kind == GATEWAY_BATTERY_LOW and level not in BATTERY_LEVELS:
+        raise ValueError(f"nivel de batería desconocido: {level}")
+    observed_at = observed_at or _now()
+    pct = int(battery_pct)
+    if kind == GATEWAY_BATTERY_LOW:
+        urgency = "crítica" if level == "critical" else "baja"
+        line = (f"[sms-gateway {local_time}] batería {urgency} del teléfono {device_id}: {pct} % y sin cargar."
+                " Pide que lo conecten al cargador; si se apaga, los SMS y las llamadas dejan de llegar")
+        tag = f"battery-{level}"
+    else:
+        state = "cargando" if charging else "sin cargar"
+        line = f"[sms-gateway {local_time}] la batería del teléfono {device_id} se recuperó: {pct} %, {state}"
+        tag = "battery-ok"
+    eid = f"sms:{device_id}:gateway-{tag}:{hashlib.sha256(observed_at.encode()).hexdigest()[:12]}"
+    envelope = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": kind,
+        "event_id": eid,
+        "source": "paynani",
+        "account": f"sms:{device_id}",
+        "device_id": device_id,
+        "observed_at": observed_at,
+        "battery_pct": pct,
+        "charging": bool(charging),
+        "inspection_command": "scripts/paynani status",
+        "notification_text": f"{line} [scripts/paynani status]",
+    }
+    if level:
+        envelope["level"] = level
+    return envelope
 
 
 UNSEEN_TITLE_MAX = 80

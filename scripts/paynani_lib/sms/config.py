@@ -10,6 +10,8 @@ en Linux y en macOS.
 
     PAYNANI_SMS_PORT=8770
     PAYNANI_SMS_PUBLIC_URL=https://<tu túnel>
+    PAYNANI_SMS_BATTERY_WARN_PCT=25
+    PAYNANI_SMS_BATTERY_CRITICAL_PCT=10
 """
 from __future__ import annotations
 
@@ -21,7 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "harness"))
 
 import paths  # noqa: E402
 
-KEYS = ("PAYNANI_SMS_PORT", "PAYNANI_SMS_PUBLIC_URL", "PAYNANI_SMS_DEFAULT_REGION")
+KEYS = ("PAYNANI_SMS_PORT", "PAYNANI_SMS_PUBLIC_URL", "PAYNANI_SMS_DEFAULT_REGION",
+        "PAYNANI_SMS_BATTERY_WARN_PCT", "PAYNANI_SMS_BATTERY_CRITICAL_PCT")
+# Los avisos de batería del teléfono (PaynaniApp#109, Q88): aviso y crítico.
+BATTERY_WARN_PCT = 25
+BATTERY_CRITICAL_PCT = 10
 FILE_NAME = "sms.env"
 
 
@@ -33,7 +39,7 @@ def load_sms_env(path=None, environ=None) -> dict:
     """
     Pone en el entorno las claves de `sms.env` que todavía no estén definidas.
 
-    El entorno del proceso gana al archivo. Sólo las tres claves de `KEYS`; todo
+    El entorno del proceso gana al archivo. Sólo las claves de `KEYS`; todo
     lo demás se ignora, igual que las líneas vacías y las que empiezan con `#`.
     Sin archivo (o ilegible) no hace nada. Devuelve lo que puso, para quien quiera
     saberlo.
@@ -57,3 +63,26 @@ def load_sms_env(path=None, environ=None) -> dict:
             environ[name] = value
             applied[name] = value
     return applied
+
+
+def battery_thresholds(environ=None) -> tuple[int, int]:
+    """
+    (aviso, crítico) en porcentaje, de `PAYNANI_SMS_BATTERY_WARN_PCT` y
+    `PAYNANI_SMS_BATTERY_CRITICAL_PCT`. Un valor que no es un entero de 1 a 99, o
+    un crítico que no queda por debajo del aviso, vuelve a los de omisión (25 y 10):
+    un `sms.env` con un error de dedo nunca apaga los avisos.
+    """
+    environ = os.environ if environ is None else environ
+
+    def pct(name, default):
+        try:
+            value = int(str(environ.get(name, default)).strip())
+        except ValueError:
+            return default
+        return value if 1 <= value <= 99 else default
+
+    warn = pct("PAYNANI_SMS_BATTERY_WARN_PCT", BATTERY_WARN_PCT)
+    critical = pct("PAYNANI_SMS_BATTERY_CRITICAL_PCT", BATTERY_CRITICAL_PCT)
+    if critical >= warn:
+        return BATTERY_WARN_PCT, BATTERY_CRITICAL_PCT
+    return warn, critical
