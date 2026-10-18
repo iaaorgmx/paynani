@@ -170,15 +170,21 @@ Lo primero que manda la app:
 ```json
 {"type": "hello", "protocol": 1, "device_id": "d_3f9a1c", "app_version": "1.0",
  "sims": [{"slot": 0, "number": "+525512345678"}],
- "pending": {"in": 3, "status": 0}}
+ "pending": {"in": 3, "status": 0},
+ "device_status": {"battery_pct": 23, "charging": false, "plugged": "none",
+                   "battery_temp_c": 31.5, "measured_at": 1792343122000}}
 ```
+
+`device_status` es opcional: la última lectura de batería que tiene la app, con los
+mismos campos que `device.status` (sección 3) pero sin `id`, para que la pasarela la
+tenga en cuanto el teléfono se reconecta. Una app anterior no lo manda.
 
 La pasarela contesta:
 
 ```json
 {"type": "welcome", "protocol": 1, "server_time": "2026-10-02T03:10:00Z",
   "heartbeat_s": 30, "allowed": ["+525511112222", "+15550001111"], "max_out_per_hour": 60,
-  "accepts": ["sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen"],
+  "accepts": ["sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen", "device.status"],
   "server_version": "0.11.0"}
 ```
 
@@ -300,6 +306,40 @@ tuvo un SMS correspondiente, y avisa:
   línea dice «posible RCS» y no «RCS».
 - Un SMS que llega por la SIM que paynani no atiende (APP-10) no se encola, pero
   la app lo anota como visto, así que no produce un `sms.unseen` falso.
+
+### `device.status`: la batería del teléfono
+
+La app lee la batería en el `Timer` que ya tiene su servicio (cada minuto) y al
+conectar o desconectar la corriente (PaynaniApp#109):
+
+```json
+{"type": "device.status", "id": "7d0e…(64 hex)", "battery_pct": 23, "charging": false,
+ "plugged": "none", "battery_temp_c": 31.5, "measured_at": 1792343122000}
+```
+
+- `id`, `battery_pct` (entero de 0 a 100), `charging` (booleano) y `measured_at`
+  (milisegundos de época) son obligatorios. Si falta alguno o no es válido,
+  `missing_field` y `ack` `rejected`.
+- `measured_at` va en la hora de la pasarela: la app le suma la diferencia de reloj
+  que calcula con `welcome.server_time`. Uno que cae más de **5 minutos** en el futuro
+  o hace más de **30 días** se rechaza igual (`missing_field`, `ack` `rejected`) y
+  queda en el log de la pasarela: una lectura del futuro dejaría todas las reales como
+  `duplicate`. En `hello.device_status`, una lectura así se ignora y el `welcome` sale
+  igual.
+- `battery_temp_c` que no es un número finito entre −40 y 100 se descarta; la
+  lectura se guarda sin temperatura.
+- `plugged` es `ac`, `usb`, `wireless` o `none`; otro valor se guarda como `none`.
+  `battery_temp_c` es opcional.
+- Pasa por la cola del teléfono, como todo lo demás: una lectura tomada sin conexión
+  llega al reconectar, con su `measured_at`.
+- La app **no** la manda cada minuto: sólo cuando cambia `battery_pct` o `charging`,
+  o cada **10 minutos** aunque no cambie, para que la pasarela sepa que el dato es
+  reciente.
+- La pasarela guarda sólo la lectura más nueva por `measured_at`: si la cola entrega
+  una vieja después de una nueva, contesta `ack` `duplicate` y no la guarda. Una
+  lectura no escribe ningún evento por sí misma; los avisos los decide la vigilancia
+  de salud (sección 7).
+- La app sólo la manda si `welcome.accepts` incluye `device.status`.
 
 ### `ack`: la pasarela lo guardó
 
@@ -423,6 +463,8 @@ camino aparte. Ejemplo de `sms.received`:
 | `call.answered` | `call.answered` | `started_at`, `duration_s` |
 | `sms.gateway.offline` | Sin latido en 3 × `heartbeat_s` | `device_id`, `last_seen` |
 | `sms.gateway.online` | Reconexión después de un `offline` | `device_id`, `offline_for_s` |
+| `sms.gateway.battery_low` | La batería, sin cargar, bajó del aviso o del crítico (sección 7) | `device_id`, `battery_pct`, `charging`, `level` (`warn` o `critical`) |
+| `sms.gateway.battery_ok` | Después de un `battery_low`: empezó a cargar o volvió a superar el aviso | `device_id`, `battery_pct`, `charging` |
 | `sms.unseen` | `sms.unseen` | `posted_at`, `app`, `title` (limpio, sólo en `paynani event show`) |
 
 - `sender.address` es el E.164 o, si no hay, el remitente original (`AMAZON`).
@@ -434,7 +476,10 @@ camino aparte. Ejemplo de `sms.received`:
   PaynaniApp no pudo leer (posible RCS)»). El `title` **nunca** va en
   `notification_text`, así que una notificación no puede fabricar una línea falsa.
   `paynani event show --body` se niega: no hay texto.
-- `sms.gateway.offline` y `online` son de la pasarela, no de una persona: no llevan
+- `sms.gateway.offline` lleva también `last_battery_pct` si la app mandó alguna
+  lectura, y la línea dice «última batería 8 % a las 03:12»: así se sabe si el
+  teléfono probablemente se descargó.
+- `sms.gateway.offline`, `online`, `battery_low` y `battery_ok` son de la pasarela, no de una persona: no llevan
   `roster_match` y siempre se le muestran al agente. Para que una conexión inestable
   no inunde al agente: a lo más un `offline` cada 10 minutos, y `online` sólo si
   estuvo fuera de línea más de 2 minutos.
@@ -459,6 +504,7 @@ evento, así que en `notification_text`:
 | Una orden de envío no llega a tiempo | Queda `expired` en el ledger, y `paynani sms send` o `paynani sms status` lo dicen |
 | La red rechaza un envío | `sms.status` `failed` con el código de Android, en el ledger |
 | El teléfono se reinicia | La app arranca su servicio al encender y reconecta sola |
+| La batería del teléfono se acaba | Sin cargar, `sms.gateway.battery_low` al bajar de 25 % (`warn`) y de 10 % (`critical`), una vez cada uno por descarga; `battery_ok` al conectar el cargador. Si aun así se apaga, `sms.gateway.offline` dice la última batería |
 | Llega un RCS, que no pasa por SMS | Con el acceso a notificaciones activo en la app, `sms.unseen` le llega al agente a los 60 s. Sin ese acceso, la pantalla de estado de la app dice que no puede detectarlos |
 
 ### Cómo lo vigila la pasarela (SRV-5)
@@ -489,6 +535,41 @@ evento, así que en `notification_text`:
   pasarela murió, nadie quitó la marca). Para `healthcheck` es un aviso, no un
   problema: la instalación en sí está bien. Una pasarela que murió del todo no puede
   avisar de sí misma: eso lo cubre su supervisión (SRV-7).
+
+
+### La batería (PaynaniApp#109)
+
+- En la misma revisión de cada 5 s, con el teléfono **conectado** y **sin cargar**:
+  - al bajar de `PAYNANI_SMS_BATTERY_WARN_PCT` (25 % por omisión) escribe
+    `sms.gateway.battery_low` con `level` `warn`;
+  - al bajar de `PAYNANI_SMS_BATTERY_CRITICAL_PCT` (10 %), otro con `level`
+    `critical`.
+
+  Los dos umbrales viven en `sms.env` (INSTALL.md). Un valor inválido, o un crítico
+  que no queda por debajo del aviso, vuelve a 25 y 10, y la pasarela lo dice en su log
+  al arrancar. `paynani status` muestra los umbrales con los que avisa.
+- **Una vez por nivel y por descarga:** la marca `battery_alert_level` en
+  `device.json` sobrevive a un reinicio de la pasarela, como `offline_notified`. A lo
+  más son dos avisos por descarga. Si la batería baja de golpe por debajo del crítico,
+  sale sólo `critical`.
+- **La recuperación:** `sms.gateway.battery_ok` sale una vez, cuando el teléfono empieza
+  a cargar o cuando vuelve a superar el aviso por **5 puntos** (30 % por omisión). Los
+  5 puntos evitan que un teléfono que oscila en el borde mande avisos de ida y vuelta.
+  Luego la marca se limpia.
+- **Un cable flojo no repite avisos:** `battery_low` sólo sale cuando el teléfono lleva
+  **5 minutos** sin cargar (`battery_unplugged_at` en `device.json`, con el reloj de la
+  pasarela). Un cargador que conecta y desconecta cada minuto da un `warn`, un
+  `battery_ok` y nada más hasta que pasen 5 minutos seguidos sin cargar.
+- **Un dato viejo no avisa:** si la última lectura **llegó** hace más de **20 minutos**
+  (la app manda una cada 10, y un ahorro de energía del fabricante puede congelarla,
+  #92), no sale ningún aviso de batería por ella, y `paynani status` la marca como
+  vieja. Se mide con la hora de llegada (`battery_received_at`, reloj de la pasarela),
+  no con `measured_at`: un reloj del teléfono atrasado no apaga los avisos, y uno
+  adelantado no deja el dato fresco para siempre.
+- **Sin lecturas** (una app anterior), no hay avisos de batería y `paynani status` dice
+  «battery unknown».
+- **Sin conexión** no hay avisos de batería: para eso está `sms.gateway.offline`, que
+  ahora incluye la última batería conocida.
 
 ## 8. Seguridad
 
@@ -565,5 +646,8 @@ orden vencida se anota `expired` sin mandarse. `paynani sms status <id>` lee
 ## 10. Versiones
 
 Este documento describe el protocolo **1**. Un campo nuevo y opcional no cambia la
-versión, y las dos partes ignoran los campos que no conocen. Un cambio que rompe a
+versión, y las dos partes ignoran los campos que no conocen. Así entraron
+`sms.unseen` y `device.status` (con `hello.device_status`): una pasarela que no los
+anuncia en `accepts` nunca los recibe, y una app que no los manda sólo deja la batería
+como desconocida. Un cambio que rompe a
 la otra parte sube `protocol` y se documenta aquí antes de escribir el código.

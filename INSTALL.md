@@ -889,7 +889,10 @@ PAYNANI_SMS_PUBLIC_URL=https://<your tunnel>
 The gateway, `scripts/paynani sms pair` and `scripts/paynani sms send` all read it
 themselves, on Linux and on macOS. A variable already set in the environment of
 the process wins over the file, and only `PAYNANI_SMS_PORT`,
-`PAYNANI_SMS_PUBLIC_URL` and `PAYNANI_SMS_DEFAULT_REGION` are read. After editing
+`PAYNANI_SMS_PUBLIC_URL`, `PAYNANI_SMS_DEFAULT_REGION`,
+`PAYNANI_SMS_BATTERY_WARN_PCT` and `PAYNANI_SMS_BATTERY_CRITICAL_PCT` are read.
+The last two are the phone's battery alerts (25 % and 10 % if unset; a critical
+value at or above the warning falls back to both defaults). After editing
 it, restart the gateway: `systemctl --user restart paynani-sms.service`, or on
 macOS `launchctl kickstart -k gui/$(id -u)/com.paynani.sms`.
 

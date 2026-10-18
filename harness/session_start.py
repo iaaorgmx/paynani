@@ -636,7 +636,9 @@ def unattended_roster(ledger_path=None, now=None, days=None, exclude=()):
     return [(event_id, envelope) for _, event_id, envelope in out]
 
 
-_UNATTENDED_KINDS = {"sms.received": "SMS", "call.missed": "llamada perdida", "call.answered": "llamada contestada"}
+_UNATTENDED_KINDS = {"sms.received": "SMS", "call.missed": "llamada perdida", "call.answered": "llamada contestada",
+                     "sms.gateway.battery_low": "batería baja del teléfono",
+                     "sms.gateway.battery_ok": "batería del teléfono recuperada"}
 
 
 def unattended_line(event_id, envelope):

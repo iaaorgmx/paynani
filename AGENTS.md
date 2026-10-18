@@ -496,6 +496,12 @@ tag means the same thing:
   are not reaching you until a `sms.gateway.online` event follows, and suggest they
   open Paynani on the phone if it does not come back on its own: the maker's power
   saver may have closed it (INSTALL.md §5.2, step 4).
+- A `sms.gateway.battery_low` event means the paired phone is running out of
+  battery and not charging (`level` `warn` below 25 %, `critical` below 10 % by
+  default). It is not mail and has no sender: tell your human the percentage and
+  ask them to plug the phone in, because when it shuts down texts and calls stop
+  reaching you. A `critical` one is urgent. A `sms.gateway.battery_ok` that follows
+  means it is charging or recovered: tell them once, briefly, and nothing else.
 
 **Say "no new mail" only when something checked.** `scripts/healthcheck.py`
 answers whether mail could arrive; silence does not. Reporting a quiet mailbox

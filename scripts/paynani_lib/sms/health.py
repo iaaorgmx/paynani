@@ -9,13 +9,19 @@ from __future__ import annotations
 
 import calendar
 import json
+import os
 import time
 from pathlib import Path
+
+from . import config as sms_config
 
 HEARTBEAT_S = 30
 # Un latido más viejo que esto no cuenta como conectado aunque device.json diga
 # que sí: si la pasarela murió, nadie borró la marca.
 STALE_AFTER_S = 3 * HEARTBEAT_S
+# Una lectura de batería más vieja que esto se dice «vieja» (PaynaniApp#109): la
+# app manda una cada 10 min aunque no cambie, y DuraSpeed puede congelarla (#92).
+BATTERY_STALE_S = 20 * 60
 
 
 def _epoch(stamp):
@@ -50,7 +56,29 @@ def phone_facts(state_dir, now=None):
         "last_seen_age_s": age,
         "orders_queued": queued,
         "offline_notified": bool(device.get("offline_notified")),
+        "battery": _battery(device, now),
     }
+
+
+def _battery(device, now):
+    """La última lectura de batería, o None si la app nunca mandó una (app vieja)."""
+    pct = device.get("battery_pct")
+    measured = _epoch(device.get("battery_measured_at"))
+    if not isinstance(pct, int) or measured is None:
+        return None
+    # Lo viejo con la hora de llegada (reloj de la pasarela), como battery_tick.
+    received = _epoch(device.get("battery_received_at")) or measured
+    age = max(0, int(now - received))
+    return {"pct": pct, "charging": bool(device.get("charging")), "plugged": device.get("plugged") or "none",
+            "measured_at": device.get("battery_measured_at"), "age_s": age, "stale": age > BATTERY_STALE_S,
+            "alert_level": device.get("battery_alert_level") or "", "thresholds": _thresholds()}
+
+
+def _thresholds():
+    """(aviso, crítico) efectivos: los de sms.env, como los lee la pasarela al arrancar."""
+    environ = dict(os.environ)
+    sms_config.load_sms_env(environ=environ)
+    return sms_config.battery_thresholds(environ)
 
 
 def _span(seconds):
@@ -73,6 +101,18 @@ def describe(facts):
     state = "online" if facts["online"] else "OFFLINE"
     queue = f"{facts['orders_queued']} order(s) queued"
     line = f"{who}: {state}, {beat}, {queue}"
+    battery = facts.get("battery")
+    if battery is None:
+        line += "; battery unknown (the app does not report it yet)"
+    else:
+        state = "charging" if battery["charging"] else "not charging"
+        line += f"; battery {battery['pct']} % {state}, read {_span(battery['age_s'])} ago"
+        warn, critical = battery["thresholds"]
+        line += f" (alerts below {warn} % and {critical} %)"
+        if battery["stale"]:
+            line += " (stale: no battery alerts from it)"
+        elif battery["alert_level"]:
+            line += f"; battery_low {battery['alert_level']} was sent to the agent"
     if not facts["online"] and facts["offline_notified"]:
         line += "; sms.gateway.offline was sent to the agent"
     if not facts["online"] and facts["last_seen_age_s"] is not None:
