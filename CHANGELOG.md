@@ -1,7 +1,50 @@
 # Changelog
 
-## Sin publicar
+## 0.12.0 (2026-10-19)
 
+**Instalación de un solo comando, y la pasarela SMS sabe la batería del teléfono y
+lo que contesta su dueño.** Desde 0.11.0, 33 PRs en paynani de Metis, Andy, Iris,
+Balam y Ximena, más el de esta release. `bootstrap.sh` instala paynani con un solo
+comando que el humano corre en su terminal (con `sudo` en Ubuntu y Debian, sin él
+en macOS) y viene adjunto a esta release con su SHA-256. La pasarela recibe la batería (PaynaniApp 0.6.8) y los
+SMS que el dueño manda desde «Mensajes», con la pausa del agente (PaynaniApp 0.6.9).
+Sin requisitos nuevos: himalaya **v2.x** y Python **3.10** o mayor. Con una
+PaynaniApp anterior la pasarela funciona igual que en 0.11.0.
+
+- **`bootstrap.sh`, la instalación de un solo comando** (#351, #358, #352; cierran
+  #341, #342 y #344; paraguas #349, PRD en #335). La parte root comprueba el sistema,
+  instala sólo los paquetes que falten (`git python3 curl ca-certificates`) y
+  himalaya v2.x como el usuario, activa `linger` y clona; luego pasa a
+  `scripts/bootstrap_user.py`, que como el usuario elige el runtime, pide las
+  credenciales del buzón en la terminal (no por la conversación del agente), configura
+  la cuenta de himalaya, escribe el roster con el dueño, corre el instalador, agrega
+  las reglas de permiso del harness (`harness_rules.py`: sólo `scripts/paynani`,
+  `scripts/send.sh` y `harness/session_watch.sh` del clon, por ruta absoluta) y
+  verifica la instalación. Si un paso falla, dice cuál y el comando para repetirlo; `--dry-run` imprime el plan sin
+  cambiar nada y `--upgrade` actualiza una instalación existente. Documentado en
+  `INSTALL.md` («Install with one command (sudo)», con «If it refuses»), README y
+  `RELEASING.md` (#366, cierra #345).
+- CI de punta a punta de `bootstrap.sh` en una VM Ubuntu 24.04 limpia, con un servidor
+  de correo de prueba (`bootstrap-e2e`, #354, cierra #343). Todavía no es un check
+  obligatorio.
+- El paso del roster de `bootstrap_user.py` ya no corre las suites de prueba en la
+  máquina del usuario; después de escribir, lee `roster.md` con el mismo lector del
+  listener y sale con 1 si no reconoce al dueño. `paynani roster add` y `onboard`
+  siguen corriéndolas (#364, cierra #361).
+- `install.sh` ya no truena con `syntax error: operand expected` en una instalación
+  limpia cuando rechaza la cadena de directorios: `owned_digests` se declara global y
+  el instalador llega a imprimir la causa real (#360).
+- `upgrade_plan.py` clasifica `bootstrap.sh`, `brand/` y `.env.example`, que antes lo
+  hacían negarse con `not in the table`, y una prueba nueva recorre `git ls-files`
+  para que ningún archivo vuelva a quedar sin regla (#353).
+- `test_listener.py`: la prueba del rol `to` ya no falla cuando el reloj cambia de
+  segundo entre las dos líneas que compara (#362).
+- Documentación: `INSTALL.md` §5.2 explica cómo cambiar de gateway con «Emparejar de
+  nuevo» sin reinstalar la app (#359), cómo permitir PaynaniApp en segundo plano con
+  DuraSpeed y otros ahorros de energía (#380) y los pasos de Samsung (#384), y avisa
+  que un RCS que llega con su conversación abierta en Google Messages no genera
+  `sms.unseen` (#374, #375). `AGENTS.md`, ante `sms.gateway.offline`, pide sugerir
+  abrir Paynani en el teléfono (#387).
 - `paynani sms thread` ordena por la hora real y la muestra en hora local. Los SMS
   recibidos traen la zona del teléfono y lo demás va en UTC, y ordenarlos como texto
   podía poner un recibido en otro lugar del mismo día (QA de PaynaniApp#111).
@@ -91,6 +134,32 @@
   (#355).
 - La pasarela SMS anuncia `server_version` en el `welcome`, para que PaynaniApp
   pueda mostrar en Estado la versión de paynani a la que está conectada (#367).
+
+### Si actualizas desde 0.11.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.12.0
+python3 scripts/upgrade_plan.py --from v0.11.0     # y haz lo que imprima
+```
+
+El plan corre `scripts/install.sh --runtime <runtime> --upgrade`, recarga
+`systemd` y reinicia el listener, el dispatcher, las cuentas adicionales
+(`paynani-idle@*`) y la pasarela SMS si la tienes. `harness/session_start.py`
+cambió, así que la siguiente sesión del agente arma la vigilancia de nuevo.
+Después, `scripts/paynani doctor | grep version_drift` tiene que dar `ok` en todas
+las líneas.
+
+No hace falta `bootstrap.sh` para actualizar: es para instalaciones nuevas.
+
+En macOS, corre una vez `scripts/install.sh --runtime <runtime> --upgrade` para
+crear `install.manifest` (#291); desde ahí, `upgrade_plan.py` funciona también en
+un Mac.
+
+Si usas el teléfono: instala PaynaniApp 0.6.9 encima de la que tengas (comprueba el
+SHA-256 y el certificado como en `INSTALL.md` §5.2). Sigue emparejado. Con la
+pasarela ya en 0.12.0, Estado muestra la batería y «Mensajes» puede contestar SMS.
 
 ## 0.11.0 (2026-10-04)
 
