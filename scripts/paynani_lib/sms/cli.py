@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import event as ev  # noqa: E402
 import paths  # noqa: E402
 import phone  # noqa: E402
 import roster as roster_mod  # noqa: E402
@@ -27,6 +28,7 @@ from .store import CODE_TTL_S, Store, now_utc, valid_order_id  # noqa: E402
 MAX_TEXT = 1000
 DEFAULT_TTL_MIN = 15
 FINAL = {"sent": 0, "delivered": 0, "failed": 1, "rejected": 1, "expired": 1}
+PAUSED = 4  # el humano contestó ese número hace poco (PaynaniApp#111, SMS_GATEWAY.md §4)
 
 
 def _store() -> Store:
@@ -51,6 +53,21 @@ def _describe(record: dict) -> str:
     return line
 
 
+def human_pause(store: Store, number: str, now: str | None = None) -> str | None:
+    """
+    Hasta cuándo el agente no le escribe a `number`, o None. La decide el último
+    `sent` del dueño a ese número: uno nuevo la reinicia y uno con pausa 0 la
+    termina (SMS_GATEWAY.md §4).
+    """
+    latest = None
+    for record in store.human_records():
+        if record.get("status") == "sent" and record.get("to") == number:
+            if latest is None or str(record.get("at", "")) >= str(latest.get("at", "")):
+                latest = record
+    until = (latest or {}).get("pause_until")
+    return until if until and until > (now or now_utc()) else None
+
+
 def run_send(args) -> int:
     """
     El mismo portón que send.sh: un número que no está en roster.md sale con
@@ -73,6 +90,12 @@ def run_send(args) -> int:
         return _refuse(f"{number} is not in {roster}. Add it to the Phone column first; nothing was sent.")
 
     store = _store()
+    paused = human_pause(store, number)
+    if paused and not getattr(args, "override_pause", False):
+        print(f"Refused: human_replied. The phone's owner replied to {number} from PaynaniApp, so the agent "
+              f"does not write to it until {paused}. Nothing was sent. Use --override-pause only if the "
+              "owner asked you to.", file=sys.stderr)
+        return PAUSED
     device = store.device()
     if not device:
         print("No phone is paired, so there is nowhere to send from. Run `paynani sms pair`.",
@@ -120,6 +143,79 @@ def run_status(args) -> int:
         return 1
     for record in statuses:
         print(_describe(record))
+    return 0
+
+
+def _thread_items(store: Store, number: str, journal: Path) -> list[tuple[str, str, str, str]]:
+    """(hora, quién, estado, texto) de la conversación con `number`, en orden de hora."""
+    items = []
+    for record, _ in ev.read_from(journal, 0):
+        if not isinstance(record, dict) or record.get("event_type") != ev.SMS_RECEIVED:
+            continue
+        if (record.get("sender") or {}).get("address") != number:
+            continue
+        message_id = str(record.get("provider_id", "")).split(":", 1)[-1]
+        saved = store.inbox(message_id) or {}
+        when = str(record.get("sent_at") or record.get("observed_at") or "")
+        items.append((when, "received", "", str(saved.get("text", ""))))
+    statuses: dict[str, str] = {}
+    path = store.root / "orders.jsonl"
+    if path.exists():
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if rec.get("status") != "queued":
+                    statuses[rec.get("order_id", "")] = rec.get("status", "")
+    for order in store.sent_orders() + store.pending_orders():
+        if order.get("to") != number:
+            continue
+        queued = next((r.get("at", "") for r in store.order_statuses(order["id"]) if r.get("status") == "queued"), "")
+        items.append((queued, "agent", statuses.get(order["id"], "queued"), str(order.get("text", ""))))
+    by_send: dict[str, dict] = {}
+    last: dict[str, str] = {}
+    for rec in store.human_records():
+        if rec.get("to") != number:
+            continue
+        if rec.get("event_id"):
+            by_send[rec["local_id"]] = rec
+        last[rec["local_id"]] = rec.get("status", "")
+    for local_id, rec in by_send.items():
+        saved = store.inbox(rec["id"]) or {}
+        items.append((rec.get("at", ""), "human", last.get(local_id, ""), str(saved.get("text", ""))))
+    items.sort(key=lambda item: item[0])
+    return items
+
+
+def run_thread(args) -> int:
+    """
+    `paynani sms thread <número>` (PaynaniApp#111): lo que llegó de ese número, lo
+    que le mandó el agente y lo que le contestó el dueño desde PaynaniApp, en
+    orden. Con un número fuera del roster no muestra textos, como
+    `paynani event show --body`.
+    """
+    number = phone.to_e164(args.number)
+    if number is None:
+        return _refuse(f"{args.number!r} is not a phone number. Write it in E.164, for example +525511112222.")
+    roster = paths.roster()
+    phones = {e["phone"] for e in roster_mod.roster_phone_entries(roster)}
+    in_roster = roster_mod.phone_listed(number, phones)
+    store = _store()
+    items = _thread_items(store, number, paths.state_dir() / "events.jsonl")
+    if args.limit and args.limit > 0:
+        items = items[-args.limit:]
+    if not items:
+        print(f"No messages with {number}.")
+    for when, who, status, text in items:
+        label = {"received": "received", "agent": "agent", "human": "human"}[who]
+        shown = ev.safe_excerpt(text, 1000) if in_roster else "(text hidden: the number is not on roster.md)"
+        print(f"{when}  {label:<8} {('[' + status + ']') if status else '':<12} {shown}")
+    paused = human_pause(store, number)
+    if paused:
+        print(f"Agent pause: the owner replied from PaynaniApp; the agent does not write to {number} "
+              f"until {paused} (--override-pause only if the owner asks).")
     return 0
 
 

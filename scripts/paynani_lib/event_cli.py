@@ -359,11 +359,14 @@ def run_mark(args) -> int:
 # vive en state/sms/inbox/ y sólo sale con --body, con la misma regla que el
 # cuerpo de un correo: el número tiene que haber sido del roster al llegar y
 # seguir siéndolo ahora.
-_SMS_EVENT_TYPES = ("sms.received", "call.missed", "call.answered", "sms.unseen")
+_SMS_EVENT_TYPES = ("sms.received", "call.missed", "call.answered", "sms.unseen", "sms.human_sent")
 _SMS_SAFE_FIELDS = ("event_id", "event_type", "account", "device_id", "observed_at", "sent_at",
                     "started_at", "duration_s", "sender", "roster_match", "authenticated_sender",
                     "provider_id", "notification_text", "inspection_command",
-                    "posted_at", "app", "title")
+                    "posted_at", "app", "title",
+                    "recipient", "status", "parts", "in_reply_to", "agent_pause_min", "pause_until", "error")
+# Los que tienen texto en state/sms/inbox/: el SMS recibido y el que mandó el dueño (PaynaniApp#111).
+_SMS_WITH_BODY = ("sms.received", "sms.human_sent")
 
 
 def _show_sms(record, args) -> int:
@@ -371,7 +374,9 @@ def _show_sms(record, args) -> int:
     from paynani_lib.sms.store import Store
 
     output = {k: record[k] for k in _SMS_SAFE_FIELDS if k in record}
-    address = (record.get("sender") or {}).get("address", "")
+    # De un sms.human_sent, el número que cuenta es el del destinatario.
+    party = record.get("recipient") if record.get("event_type") == "sms.human_sent" else record.get("sender")
+    address = (party or {}).get("address", "")
     in_roster_now = address in sms_gateway.roster_phones(roster_file())
     output["roster_decision"] = {
         "matched": bool(record.get("roster_match")) and in_roster_now,
@@ -388,7 +393,7 @@ def _show_sms(record, args) -> int:
     if record.get("event_type") == "sms.unseen":
         print("sms.unseen has no body: PaynaniApp could not read the message", file=sys.stderr)
         return 2
-    if record.get("event_type") != "sms.received":
+    if record.get("event_type") not in _SMS_WITH_BODY:
         print("calls have no body", file=sys.stderr)
         return 2
     if not record.get("roster_match"):

@@ -637,6 +637,7 @@ def unattended_roster(ledger_path=None, now=None, days=None, exclude=()):
 
 
 _UNATTENDED_KINDS = {"sms.received": "SMS", "call.missed": "llamada perdida", "call.answered": "llamada contestada",
+                     "sms.human_sent": "SMS que mandó el dueño desde PaynaniApp",
                      "sms.gateway.battery_low": "batería baja del teléfono",
                      "sms.gateway.battery_ok": "batería del teléfono recuperada"}
 

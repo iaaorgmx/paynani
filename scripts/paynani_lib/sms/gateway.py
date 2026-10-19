@@ -39,7 +39,7 @@ PROTOCOL = 1
 # Lo que la pasarela acepta del teléfono, anunciado en `welcome` (SMS_GATEWAY.md
 # §2). Un tipo nuevo entra aquí y no sube PROTOCOL: la app sólo manda lo que ve en
 # la lista, así que una pasarela vieja nunca recibe un tipo que rechazaría.
-ACCEPTS = ("sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen", "device.status")
+ACCEPTS = ("sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen", "device.status", "sms.human")
 SUBPROTOCOL = "paynani-sms.v1"
 HEARTBEAT_S = 30
 HELLO_TIMEOUT_S = 10
@@ -57,6 +57,12 @@ BATTERY_HYSTERESIS = 5      # battery_ok al volver a superar el aviso por estos 
 BATTERY_SETTLE_S = 5 * 60   # sin cargar tanto tiempo antes de avisar: un cable flojo no repite avisos
 BATTERY_FUTURE_S = 5 * 60   # una lectura más adelante que esto viene de un reloj mal puesto
 BATTERY_PAST_S = 30 * 86400  # y una de hace más de 30 días, también
+
+# SMS del dueño desde PaynaniApp (PaynaniApp#111, SMS_GATEWAY.md §3).
+HUMAN_STATUSES = ("sent", "failed", "delivered")
+HUMAN_MAX_TEXT = 1000
+PAUSE_DEFAULT_MIN = 30
+PAUSE_MAX_MIN = 1440
 
 
 def server_version() -> str | None:
@@ -95,6 +101,14 @@ def ws_device_id(ws) -> str:
 
 def status_id(order_id: str, status: str) -> str:
     return hashlib.sha256(f"{order_id}\n{status}".encode("utf-8")).hexdigest()
+
+
+def human_status_id(local_id: str, status: str) -> str:
+    return hashlib.sha256(f"{local_id}\n{status}".encode("utf-8")).hexdigest()
+
+
+def iso_utc(epoch: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
 
 
 def roster_phones(path: Path) -> dict[str, str]:
@@ -562,6 +576,8 @@ class Gateway:
             await self._sms_unseen(ws, device_id, msg)
         elif kind == "device.status":
             await self._device_status(ws, msg)
+        elif kind == "sms.human":
+            await self._sms_human(ws, device_id, msg)
         elif kind == "hello":
             await self._error(ws, "unknown_type", detail="hello sólo al conectar")
         else:
@@ -732,6 +748,82 @@ class Gateway:
             log(f"no se pudo guardar la batería ({exc}); sin ack")
             return
         await self._send(ws, {"type": "ack", "id": sid, "result": "stored" if fresh else "duplicate"})
+
+    def _sms_human_problem(self, msg: dict) -> str | None:
+        """Por qué el sms.human no sirve, o None (SMS_GATEWAY.md §3)."""
+        hid, local_id, status = str(msg.get("id", "")), msg.get("local_id"), msg.get("status")
+        to, text, at = msg.get("to"), msg.get("text"), msg.get("at")
+        pause = msg.get("agent_pause_min", PAUSE_DEFAULT_MIN)
+        if not (HEX64.match(hid) and store_mod.valid_human_id(local_id) and status in HUMAN_STATUSES
+                and isinstance(to, dict) and isinstance(to.get("raw"), str) and to["raw"].strip()
+                and isinstance(text, str) and text.strip()
+                and isinstance(at, int) and not isinstance(at, bool) and at > 0
+                and isinstance(pause, int) and not isinstance(pause, bool) and 0 <= pause <= PAUSE_MAX_MIN):
+            return "sms.human necesita id, local_id, to.raw, text, status, at y agent_pause_min de 0 a 1440"
+        if hid != human_status_id(local_id, status):
+            return "sms.human: id no es sha256(local_id + \"\\n\" + status)"
+        if len(text) > HUMAN_MAX_TEXT:
+            return f"sms.human: text de más de {HUMAN_MAX_TEXT} caracteres"
+        skew = at / 1000 - self.clock()
+        if skew > BATTERY_FUTURE_S or skew < -BATTERY_PAST_S:
+            return f"sms.human: at fuera de rango, {int(skew)} s respecto a la pasarela (¿reloj del teléfono?)"
+        return None
+
+    async def _sms_human(self, ws, device_id, msg) -> None:
+        """
+        Un SMS que el dueño mandó desde PaynaniApp (PaynaniApp#111). El evento
+        sms.human_sent se escribe una vez por envío, con el primer `sent` o
+        `failed`; `delivered` y cualquier estado repetido sólo van a human.jsonl.
+        """
+        hid = str(msg.get("id", ""))
+        problem = self._sms_human_problem(msg)
+        if problem:
+            if "fuera de rango" in problem:
+                log(problem)
+            await self._error(ws, "missing_field", ref=hid[:80], detail=problem)
+            await self._send(ws, {"type": "ack", "id": hid, "result": "rejected"})
+            return
+        local_id, status, text = msg["local_id"], msg["status"], msg["text"]
+        raw, e164, name, in_roster = self._who(msg["to"])
+        at_s = msg["at"] / 1000
+        pause = msg.get("agent_pause_min", PAUSE_DEFAULT_MIN)
+        pause_until = iso_utc(at_s + pause * 60) if status == "sent" and pause > 0 and e164 else None
+        reply = msg.get("in_reply_to")
+        replied = self.store.inbox(reply) if isinstance(reply, str) and HEX64.match(reply) else None
+        in_reply_to = replied.get("event_id") if replied and replied.get("type") == "sms.in" else None
+        record = {"id": hid, "local_id": local_id, "to": e164 or raw, "status": status, "at": iso_utc(at_s),
+                  "agent_pause_min": pause}
+        for key in ("parts", "error"):
+            if key in msg:
+                record[key] = msg[key]
+        if in_reply_to:
+            record["in_reply_to"] = in_reply_to
+        if pause_until:
+            record["pause_until"] = pause_until
+        journaled = any(r.get("local_id") == local_id and r.get("event_id")
+                        for r in self.store.human_records())
+        result = "duplicate"
+        try:
+            if status in ("sent", "failed") and (not journaled or self.store.inbox(hid)):
+                envelope = ev.human_sent_event(
+                    device_id=device_id, message_id=hid, e164=e164, raw_to=raw, recipient_name=name,
+                    text=text, status=status, parts=msg.get("parts", 1), at=iso_utc(at_s),
+                    roster_match=in_roster, local_time=time.strftime("%H:%M:%S"),
+                    in_reply_to=in_reply_to, agent_pause_min=pause, pause_until=pause_until,
+                    error=msg.get("error"))
+                result = self._journal(hid, envelope, {
+                    "type": "sms.human", "local_id": local_id, "to_raw": raw, "to_e164": e164,
+                    "text": text, "status": status, "at": iso_utc(at_s), "sim": msg.get("sim")})
+                record["event_id"] = envelope["event_id"]
+            if self.store.append_human(record):
+                result = "stored"
+        except (OSError, ValueError) as exc:
+            log(f"no se pudo guardar el sms.human ({exc}); sin ack, el teléfono reintentará")
+            return
+        ack = {"type": "ack", "id": hid, "result": result}
+        if record.get("event_id"):
+            ack["event_id"] = record["event_id"]
+        await self._send(ws, ack)
 
     async def _sms_status(self, ws, msg) -> None:
         sid, oid, status = str(msg.get("id", "")), str(msg.get("order_id", "")), msg.get("status")
