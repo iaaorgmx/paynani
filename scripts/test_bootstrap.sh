@@ -217,7 +217,7 @@ export LANG=en_US.UTF-8
 reset() {   # a clean host for the next case
     : >"$log"
     rm -rf "$home" "$FAKE_MARK" "$tmp/run"
-    mkdir -p "$home"
+    mkdir -p -m 0755 "$home"   # a real home is 755, whatever the caller's umask (002 on Ubuntu)
     unset FAKE_UID FAKE_INSTALLED FAKE_LINGER FAKE_HIMALAYA FAKE_PY_OLD FAKE_NO_USER_PY FAKE_USER_RC FAKE_NO_BUS FAKE_ROOT_OWNED FAKE_ACL_BAD FAKE_ACL_MASKED FAKE_LS_ACL FAKE_NO_GETFACL
     unset XDG_CONFIG_HOME XDG_DATA_HOME CALLER_SECRET_TOKEN https_proxy
     export SUDO_USER=owner BOOTSTRAP_OS_RELEASE="$tmp/os-ubuntu"
