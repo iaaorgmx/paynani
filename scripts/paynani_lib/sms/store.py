@@ -5,7 +5,9 @@ Lo que la pasarela SMS guarda en disco, bajo `state/sms/` (modo 700):
     pairing.json        el código de emparejamiento vigente, como hash, y los fallos
     inbox/<id>.json     el texto de cada SMS recibido (600); el sobre del evento no lo lleva
     outbox/<id>.json    órdenes de envío que escribe `paynani sms send` (SRV-3)
+    sent/<id>.json      la misma orden, cuando el teléfono ya la tomó (para `paynani sms thread`)
     orders.jsonl        cada estado de cada orden, una línea por estado
+    human.jsonl         cada estado de cada SMS que mandó el dueño desde PaynaniApp (PaynaniApp#111)
 
 Nada de esto se imprime en logs: tokens y códigos sólo como hash, y el texto de
 los SMS sólo en inbox/, igual que el cuerpo de un correo vive en el servidor IMAP
@@ -31,11 +33,16 @@ FAIL_LIMIT = 10
 # pasarela ya los valide: el almacén no confía en quien lo llame (un order_id
 # "../device" borraba device.json; lo encontró Iris en #316).
 ORDER_ID = re.compile(r"^o_[0-9a-f]{32}$")
+HUMAN_ID = re.compile(r"^h_[0-9a-f]{32}$")
 MESSAGE_ID = re.compile(r"^[0-9a-f]{64}$")
 
 
 def valid_order_id(order_id) -> bool:
     return bool(ORDER_ID.match(str(order_id or "")))
+
+
+def valid_human_id(local_id) -> bool:
+    return bool(HUMAN_ID.match(str(local_id or "")))
 
 
 def _check_message_id(message_id) -> str:
@@ -55,7 +62,7 @@ def now_utc() -> str:
 class Store:
     def __init__(self, state_dir: Path):
         self.root = Path(state_dir) / "sms"
-        for sub in (self.root, self.root / "inbox", self.root / "outbox"):
+        for sub in (self.root, self.root / "inbox", self.root / "outbox", self.root / "sent"):
             sub.mkdir(parents=True, exist_ok=True)
             os.chmod(sub, 0o700)
 
@@ -176,12 +183,27 @@ class Store:
         self._write(self.root / "outbox" / f"{order['id']}.json", order)
 
     def finish_order(self, order_id: str) -> None:
+        """
+        La orden sale de outbox/ para no reenviarse, y se queda en sent/: el
+        estado no dice a quién ni qué, y `paynani sms thread` lo necesita.
+        """
         if not valid_order_id(order_id):
             raise ValueError("order_id inválido")
         try:
-            (self.root / "outbox" / f"{order_id}.json").unlink()
+            os.replace(self.root / "outbox" / f"{order_id}.json", self.root / "sent" / f"{order_id}.json")
         except FileNotFoundError:
             pass
+
+    def sent_orders(self) -> list[dict]:
+        orders = []
+        for path in sorted((self.root / "sent").glob("o_*.json")):
+            try:
+                order = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if valid_order_id(order.get("id")) and path.stem == order["id"]:
+                orders.append(order)
+        return orders
 
     def append_status(self, record: dict) -> bool:
         """
@@ -190,7 +212,9 @@ class Store:
         Lee todo orders.jsonl para encontrar el id: O(n) por estado. Con el volumen
         de un teléfono no importa; si crece, un índice de ids vistos lo resuelve.
         """
-        path = self.root / "orders.jsonl"
+        return self._append_once(self.root / "orders.jsonl", record)
+
+    def _append_once(self, path: Path, record: dict) -> bool:
         sid = record.get("id")
         if sid and path.exists():
             with open(path, encoding="utf-8") as fh:
@@ -205,6 +229,25 @@ class Store:
         finally:
             os.close(fd)
         return True
+
+    # --- SMS del dueño (PaynaniApp#111) --------------------------------------
+    def append_human(self, record: dict) -> bool:
+        """Un estado de un SMS del dueño en human.jsonl. False si ese id ya estaba."""
+        if not valid_human_id(record.get("local_id")):
+            raise ValueError("local_id inválido")
+        return self._append_once(self.root / "human.jsonl", record)
+
+    def human_records(self) -> list[dict]:
+        path = self.root / "human.jsonl"
+        out = []
+        if path.exists():
+            with open(path, encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        out.append(json.loads(line))
+                    except ValueError:
+                        continue
+        return out
 
     def order_statuses(self, order_id: str) -> list[dict]:
         if not valid_order_id(order_id):

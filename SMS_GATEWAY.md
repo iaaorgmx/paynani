@@ -359,7 +359,8 @@ sepa qué contestó el humano y no le conteste encima:
 - `local_id` lo genera la app al tocar Enviar: `h_` + 16 bytes al azar en hex
   (`^h_[0-9a-f]{32}$`). Así nunca se confunde con una orden del agente (`o_…`).
 - Un envío produce **varios** `sms.human`, uno por estado, igual que `sms.status`:
-  `id = hex(sha256(local_id + "\n" + status))`.
+  `id = hex(sha256(local_id + "\n" + status))`. La pasarela lo comprueba: un `id`
+  que no sale de esa fórmula se rechaza con `missing_field`.
 
 | `status` | Cuándo lo manda la app |
 |---|---|
@@ -370,6 +371,7 @@ sepa qué contestó el humano y no le conteste encima:
 - `to.raw` es el número tal como lo escribió o lo eligió el humano; `to.e164`, ese
   número en E.164 con la región de la SIM, o `null` si no se puede (un número corto).
   La pasarela lo recalcula como `from.e164` en `sms.in`.
+- `sim` es opcional: la SIM por la que salió, con la misma forma que en `sms.in`.
 - `text` va completo, con hasta **1,000 caracteres**, el mismo tope que `sms.out`. Más
   largo, la app no deja enviarlo.
 - `at` es la hora del estado en milisegundos de época, en la hora de la pasarela (la
@@ -379,9 +381,11 @@ sepa qué contestó el humano y no le conteste encima:
   SMS nuevo, sin un `sms.in` antes, no lo lleva.
 - `agent_pause_min` es la pausa del agente que el dueño configuró en los ajustes de
   PaynaniApp (APP-C4): un entero de 0 a 1,440; 0 es sin pausa y 30 el valor por
-  omisión. Ver «La pausa del agente» en la sección 4.
+  omisión. Si no viene, la pasarela usa 30; fuera de ese rango, `missing_field`. Ver
+  «La pausa del agente» en la sección 4.
 - `local_id`, `to.raw`, `text`, `status` y `at` son obligatorios. Si falta alguno o no
-  es válido, `missing_field` y `ack` `rejected`.
+  es válido, `missing_field` y `ack` `rejected`. `at` tiene el mismo rango que
+  `measured_at` de `device.status`: hasta 5 minutos en el futuro y 30 días atrás.
 - Pasa por la cola con `ack`: sin conexión, el SMS sale igual y los estados llegan al
   reconectar, con su `at`.
 - **Lo que el humano manda no pasa por las reglas de `sms.out`** (Q98 y Q99 de
@@ -708,11 +712,12 @@ Todo bajo `state/sms/` (700, archivos 600):
 | `outbox/<id>.json` | `paynani sms send` | `{"id": "o_…", "to": "+52…", "text": "…", "expires_at": "…", "sim_slot": 0}`. Se escribe atómico (temporal y `rename`) |
 | `orders.jsonl` | La pasarela | Una línea por estado: `{"id": sha256(order_id + "\n" + status), "order_id", "status", "at", "error"?, "parts"?}` |
 | `inbox/<id>.json` | La pasarela | El texto de cada SMS recibido, y de cada `sms.human` (PaynaniApp#111); lo lee `paynani event show --body` |
-| `human.jsonl` | La pasarela | Una línea por cada `sms.human` guardado: `{"id", "local_id", "to", "status", "at", "parts"?, "error"?, "in_reply_to"?, "agent_pause_min"}`. De aquí salen la pausa del agente y `paynani sms thread` |
+| `sent/<id>.json` | La pasarela | La orden de `outbox/` cuando el teléfono ya la tomó: el estado no dice a quién ni qué, y `paynani sms thread` lo necesita |
+| `human.jsonl` | La pasarela | Una línea por cada `sms.human` guardado: `{"id", "local_id", "to", "status", "at", "agent_pause_min", "parts"?, "error"?, "in_reply_to"?, "pause_until"?, "event_id"?}`. `to` es el E.164, o el número tal cual si no tiene; `event_id` sólo en el estado que escribió el evento. De aquí salen la pausa del agente y `paynani sms thread` |
 | `device.json` | La pasarela y `paynani sms` | El teléfono emparejado, con el SHA-256 de su token |
 
 La pasarela revisa `outbox/` cada segundo mientras el teléfono está conectado, manda
-cada orden como `sms.out` y la saca de `outbox/` con el primer `sms.status`. Una
+cada orden como `sms.out` y la pasa de `outbox/` a `sent/` con el primer `sms.status`. Una
 orden vencida se anota `expired` sin mandarse. `paynani sms status <id>` lee
 `orders.jsonl`.
 
@@ -734,7 +739,9 @@ orden vencida se anota `expired` sin mandarse. `paynani sms status <id>` lee
 `paynani sms thread [--limit N] <número>` (PaynaniApp#111) muestra la conversación con
 ese número en orden de hora: los `sms.received`, las órdenes `sms.out` del agente con su
 último estado, y los `sms.human_sent`, cada uno marcado (`recibido`, `agente`,
-`humano`), más la pausa vigente si la hay. Es el contexto completo para el agente.
+`humano`; en la salida, `received`, `agent` y `human`) con su último estado, más la
+pausa vigente si la hay. Es el contexto completo para el agente. Las órdenes del agente
+de antes de esta versión no salen: la pasarela las borraba de `outbox/`.
 Con un número fuera del roster, igual que `paynani event show --body`, no muestra
 textos.
 

@@ -659,6 +659,63 @@ def unseen_event(*, device_id, message_id, app, posted_at, title, local_time, ob
     return record
 
 
+SMS_HUMAN_SENT = "sms.human_sent"
+
+
+def human_event_id(device_id, message_id):
+    return f"sms-human:{device_id}:{message_id}"
+
+
+def human_sent_event(*, device_id, message_id, e164, raw_to, recipient_name, text, status, parts,
+                     at, roster_match, local_time, in_reply_to=None, agent_pause_min=0, pause_until=None,
+                     error=None, observed_at=None):
+    """
+    Un SMS que el dueño del teléfono mandó desde PaynaniApp (PaynaniApp#111,
+    SMS_GATEWAY.md §3 y §6). Va una vez por envío, con `sent` o `failed`.
+
+    Lo escribió el dueño, no un desconocido, pero la línea pasa por la misma
+    limpieza que un SMS recibido, y con un destinatario fuera del roster no lleva
+    el texto: igual que `sms.received`. El texto completo vive en
+    state/sms/inbox/ y sale con `paynani event show --body`.
+    """
+    eid = human_event_id(device_id, message_id)
+    who = " ".join(p for p in (recipient_name, e164 or safe_excerpt(raw_to, 40)) if p)
+    failed = status == "failed"
+    what = "no se envió: " if failed else ""
+    if roster_match:
+        line = f"[sms-human {local_time}, roster] Tú → {who}: {what}{safe_excerpt(text)}"
+    else:
+        line = f"[sms-human {local_time}] Tú → {who}: {what}mensaje a un número fuera del roster"
+    if pause_until and not failed:
+        line += f" (el agente no le escribe hasta {pause_until})"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": SMS_HUMAN_SENT,
+        "event_id": eid,
+        "source": "paynani",
+        "account": f"sms:{device_id}",
+        "device_id": device_id,
+        "observed_at": observed_at or _now(),
+        "sent_at": at or "",
+        "recipient": _sender(e164, raw_to, recipient_name),
+        "status": status,
+        "parts": int(parts) if isinstance(parts, int) and not isinstance(parts, bool) and parts > 0 else 1,
+        "agent_pause_min": int(agent_pause_min),
+        "roster_match": bool(roster_match),
+        "authenticated_sender": False,
+        "provider_id": f"sms-human:{message_id}",
+        "inspection_command": f"scripts/paynani event show {eid}",
+    }
+    if in_reply_to:
+        record["in_reply_to"] = in_reply_to
+    if pause_until and not failed:
+        record["pause_until"] = pause_until
+    if failed and error:
+        record["error"] = safe_excerpt(str(error), 80)
+    record["notification_text"] = f"{line} [{record['inspection_command']}]"
+    return record
+
+
 def call_event(*, kind, device_id, call_id, e164, raw_caller, caller_name, started_at,
                roster_match, local_time, duration_s=None, observed_at=None):
     """Una llamada perdida o contestada (DEC-4). La saliente no se reporta."""

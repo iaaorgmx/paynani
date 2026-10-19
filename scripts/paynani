@@ -206,6 +206,10 @@ def main(argv: list[str] | None = None) -> int:
     sms_send.add_argument("--wait", type=int, default=20, help="Seconds to wait for the phone's status (default 20; 0 returns at once); exit 3 if no final status arrived in time.")
     sms_send.add_argument("--ttl", type=int, default=15, help="Minutes the order may wait for a connected phone (default 15).")
     sms_send.add_argument("--sim", type=int, default=None, help="SIM slot to send from.")
+    sms_send.add_argument("--override-pause", action="store_true", help="Send even though the phone's owner replied to this number recently (exit 4 otherwise). Only when the owner asked for it.")
+    sms_thread = sms_sub.add_parser("thread", help="Show the conversation with a number: received SMS, the agent's orders and the owner's replies from PaynaniApp.")
+    sms_thread.add_argument("number", help="The other party's phone number.")
+    sms_thread.add_argument("--limit", type=int, default=0, help="Show only the last N messages (default all).")
     sms_status = sms_sub.add_parser("status", help="Show the states of an SMS order.")
     sms_status.add_argument("order_id")
     sms_check = sms_sub.add_parser("check", help="Check gateway, tunnel and phone; with --to, send a test text and wait for the reply.")
@@ -329,6 +333,8 @@ def main(argv: list[str] | None = None) -> int:
             return sms_cli.run_send(args)
         if args.sms_command == "status":
             return sms_cli.run_status(args)
+        if args.sms_command == "thread":
+            return sms_cli.run_thread(args)
         if args.sms_command == "check":
             from paynani_lib.sms import check as sms_check_mod
             return sms_check_mod.run(args)

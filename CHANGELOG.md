@@ -2,6 +2,17 @@
 
 ## Sin publicar
 
+- La pasarela SMS recibe `sms.human`: los SMS que el dueño del teléfono manda desde
+  «Mensajes» de PaynaniApp (PaynaniApp#111). Escribe `sms.human_sent` una vez por envío,
+  con `sent` o `failed`, con «Tú → …» en la línea, el mensaje al que contestó
+  (`in_reply_to`) y, si salió, hasta cuándo el agente no le escribe a ese número
+  (`pause_until`, 30 min por omisión, lo configura el dueño en la app). Con un
+  destinatario fuera del roster la línea no lleva el texto. `delivered` sólo va a
+  `state/sms/human.jsonl`. Durante la pausa, `paynani sms send` a ese número sale con
+  código 4 (`human_replied`) sin crear la orden; `--override-pause` la manda igual.
+  `paynani sms thread <número>` muestra la conversación en orden: lo recibido, las
+  órdenes del agente y lo que mandó el dueño. Las órdenes ya tomadas por el teléfono
+  pasan de `outbox/` a `sent/` en lugar de borrarse. Con una app anterior nada cambia.
 - La pasarela SMS sabe la batería del teléfono (PaynaniApp#109). La app manda
   `device.status` (porcentaje, si carga, tipo de conector, temperatura y la hora de la
   lectura) cuando cambia o cada 10 min, y el saludo trae la última lectura. Sin cargar,
