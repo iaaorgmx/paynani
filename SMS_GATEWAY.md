@@ -184,7 +184,8 @@ La pasarela contesta:
 ```json
 {"type": "welcome", "protocol": 1, "server_time": "2026-10-02T03:10:00Z",
   "heartbeat_s": 30, "allowed": ["+525511112222", "+15550001111"], "max_out_per_hour": 60,
-  "accepts": ["sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen", "device.status"],
+  "accepts": ["sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen", "device.status",
+              "sms.human"],
   "server_version": "0.11.0"}
 ```
 
@@ -341,6 +342,58 @@ conectar o desconectar la corriente (PaynaniApp#109):
   de salud (sección 7).
 - La app sólo la manda si `welcome.accepts` incluye `device.status`.
 
+### `sms.human`: un SMS que el dueño del teléfono mandó desde PaynaniApp
+
+Desde «Mensajes» el dueño del teléfono puede contestar una conversación o escribir un
+SMS nuevo (PaynaniApp#111). Cada uno se le avisa a la pasarela, para que el agente
+sepa qué contestó el humano y no le conteste encima:
+
+```json
+{"type": "sms.human", "id": "c41a…(64 hex)", "local_id": "h_6b1e…",
+ "to": {"e164": "+525511112222", "raw": "5511112222"},
+ "sim": {"slot": 0, "number": "+525512345678"},
+ "text": "Sí, mañana a las 10 está bien.", "status": "sent", "parts": 1,
+ "at": 1792343122000, "in_reply_to": "9f2c…(64 hex)", "agent_pause_min": 30}
+```
+
+- `local_id` lo genera la app al tocar Enviar: `h_` + 16 bytes al azar en hex
+  (`^h_[0-9a-f]{32}$`). Así nunca se confunde con una orden del agente (`o_…`).
+- Un envío produce **varios** `sms.human`, uno por estado, igual que `sms.status`:
+  `id = hex(sha256(local_id + "\n" + status))`.
+
+| `status` | Cuándo lo manda la app |
+|---|---|
+| `sent` | El `sentIntent` de Android confirmó el envío a la red |
+| `failed` | Android reportó error. Va `error` con el código, como en `sms.status` |
+| `delivered` | El `deliveryIntent` confirmó la entrega. No todas las redes lo reportan |
+
+- `to.raw` es el número tal como lo escribió o lo eligió el humano; `to.e164`, ese
+  número en E.164 con la región de la SIM, o `null` si no se puede (un número corto).
+  La pasarela lo recalcula como `from.e164` en `sms.in`.
+- `text` va completo, con hasta **1,000 caracteres**, el mismo tope que `sms.out`. Más
+  largo, la app no deja enviarlo.
+- `at` es la hora del estado en milisegundos de época, en la hora de la pasarela (la
+  app le suma la diferencia con `welcome.server_time`), como `device.status`.
+- `in_reply_to` es opcional: el `id` del último `sms.in` de esa conversación que la
+  app ya mandó a la pasarela. Así el agente sabe a qué mensaje contestó el humano. Un
+  SMS nuevo, sin un `sms.in` antes, no lo lleva.
+- `agent_pause_min` es la pausa del agente que el dueño configuró en los ajustes de
+  PaynaniApp (APP-C4): un entero de 0 a 1,440; 0 es sin pausa y 30 el valor por
+  omisión. Ver «La pausa del agente» en la sección 4.
+- `local_id`, `to.raw`, `text`, `status` y `at` son obligatorios. Si falta alguno o no
+  es válido, `missing_field` y `ack` `rejected`.
+- Pasa por la cola con `ack`: sin conexión, el SMS sale igual y los estados llegan al
+  reconectar, con su `at`.
+- **Lo que el humano manda no pasa por las reglas de `sms.out`** (Q98 y Q99 de
+  PaynaniApp#111): puede escribir a cualquier número, no sólo a los de `allowed`, y
+  sus SMS no cuentan para `max_out_per_hour`. Esas reglas protegen de un agente que se
+  desboca; el dueño del teléfono las decide él.
+- Sólo se detecta lo que se manda desde PaynaniApp, no lo que se manda desde otra app
+  de SMS (Q100).
+- La app sólo lo manda si `welcome.accepts` incluye `sms.human`. Con una pasarela
+  anterior el SMS sale igual, y «Mensajes» avisa «paynani no recibe tus respuestas
+  todavía: actualízalo», como la fila Batería de Estado.
+
 ### `ack`: la pasarela lo guardó
 
 ```json
@@ -419,6 +472,23 @@ estado no se pierde si se cae la conexión.
    después queda `expired`. En los dos casos se informa en pantalla, no en silencio.
 4. Imprime el `id` de la orden. `paynani sms status <id>` muestra en qué estado va.
 
+### La pausa del agente después de que el humano responde
+
+Cuando el humano contesta un número desde PaynaniApp, el agente no le contesta a ese
+número durante la pausa, salvo que el humano se lo pida (Q101 de PaynaniApp#111):
+
+- La pausa empieza con el `sms.human` `sent` y dura `agent_pause_min` minutos:
+  `pause_until = at + agent_pause_min`, con el reloj de la pasarela. Un `failed` no
+  pausa: ese SMS no salió.
+- Va por número E.164: un `sms.human` con `to.e164` `null` no pausa nada, porque el
+  agente no puede escribirle a ese número de todos modos (no está en el roster).
+- Un `sms.human` nuevo al mismo número la reinicia con su propio `agent_pause_min`;
+  con 0 la termina.
+- Durante la pausa, `paynani sms send` a ese número sale con **código 4**
+  (`human_replied`) sin crear la orden, y dice hasta cuándo. `--override-pause` la
+  manda de todos modos, sólo cuando el humano se lo pidió al agente (`AGENTS.md`).
+- `paynani sms thread <número>` muestra la pausa vigente, si la hay.
+
 ## 5. Errores
 
 ```json
@@ -466,11 +536,21 @@ camino aparte. Ejemplo de `sms.received`:
 | `sms.gateway.battery_low` | La batería, sin cargar, bajó del aviso o del crítico (sección 7) | `device_id`, `battery_pct`, `charging`, `level` (`warn` o `critical`) |
 | `sms.gateway.battery_ok` | Después de un `battery_low`: empezó a cargar o volvió a superar el aviso | `device_id`, `battery_pct`, `charging` |
 | `sms.unseen` | `sms.unseen` | `posted_at`, `app`, `title` (limpio, sólo en `paynani event show`) |
+| `sms.human_sent` | `sms.human` con `sent` o `failed` | `recipient` (como `sender`), `status`, `parts`, `in_reply_to` (el `event_id` de ese `sms.received`, si lo hay), `agent_pause_min`, `pause_until` (sólo con `sent` y pausa mayor que 0). El texto se guarda aparte, como en `sms.received` |
 
 - `sender.address` es el E.164 o, si no hay, el remitente original (`AMAZON`).
 - `sender.name` sale de la columna de nombre de `roster.md` si el número coincide.
 - `roster_match` compara el **E.164 exacto** contra la columna `Phone` del roster. Un
   remitente alfanumérico nunca coincide.
+- `sms.human_sent` se escribe **una vez** por envío: con `sent` o con `failed`, el que
+  llegue primero. `delivered` sólo actualiza el ledger (`state/sms/human.jsonl`,
+  sección 9). Lleva `roster_match` del **destinatario**, con la misma regla, y la línea
+  dice quién lo mandó: «[sms-human 03:31:12, roster] Tú → Ana López +525511112222: Sí,
+  mañana a las 10 está bien. [paynani event show sms-human:d_3f9a1c:c41a…]». El texto
+  lo escribió el dueño, pero pasa por la misma limpieza de `notification_text`, y con
+  un destinatario fuera del roster no va el texto.
+- Un `sms.out` del agente **nunca** produce `sms.human_sent`: sólo sale de un
+  `sms.human`, que la app manda únicamente cuando el humano toca Enviar.
 - `sms.unseen` tampoco lleva `roster_match`, porque no trae número: siempre se le
   muestra al agente, con una línea fija («Google Messages recibió un mensaje que
   PaynaniApp no pudo leer (posible RCS)»). El `title` **nunca** va en
@@ -581,6 +661,11 @@ evento, así que en `notification_text`:
   lista `allowed` en el teléfono. Las dos tienen que dejar pasar el número.
 - **Cuánto se escribe:** tope de envíos por hora en el teléfono (`max_out_per_hour`,
   por omisión 60).
+- **Lo que manda el humano (`sms.human`):** no pasa por el roster, `allowed` ni el tope
+  por hora, porque lo decide el dueño del teléfono (PaynaniApp#111). Ningún SMS del
+  humano sale sin que el humano toque Enviar en PaynaniApp, y la pasarela no tiene
+  forma de pedirlo: el agente sigue enviando sólo con `sms.out`. El texto viaja por la
+  misma conexión autenticada que un `sms.in`.
 - **Qué se registra:** ni la app en *release* ni la pasarela escriben en su log el
   texto de los SMS. El texto vive en el diario de eventos, como el cuerpo de un correo.
 
@@ -622,7 +707,8 @@ Todo bajo `state/sms/` (700, archivos 600):
 |---|---|---|
 | `outbox/<id>.json` | `paynani sms send` | `{"id": "o_…", "to": "+52…", "text": "…", "expires_at": "…", "sim_slot": 0}`. Se escribe atómico (temporal y `rename`) |
 | `orders.jsonl` | La pasarela | Una línea por estado: `{"id": sha256(order_id + "\n" + status), "order_id", "status", "at", "error"?, "parts"?}` |
-| `inbox/<id>.json` | La pasarela | El texto de cada SMS recibido; lo lee `paynani event show --body` |
+| `inbox/<id>.json` | La pasarela | El texto de cada SMS recibido, y de cada `sms.human` (PaynaniApp#111); lo lee `paynani event show --body` |
+| `human.jsonl` | La pasarela | Una línea por cada `sms.human` guardado: `{"id", "local_id", "to", "status", "at", "parts"?, "error"?, "in_reply_to"?, "agent_pause_min"}`. De aquí salen la pausa del agente y `paynani sms thread` |
 | `device.json` | La pasarela y `paynani sms` | El teléfono emparejado, con el SHA-256 de su token |
 
 La pasarela revisa `outbox/` cada segundo mientras el teléfono está conectado, manda
@@ -642,6 +728,15 @@ orden vencida se anota `expired` sin mandarse. `paynani sms status <id>` lee
   `sent` o `delivered`, 1 con `failed`, `rejected` o `expired`. Si en ese tiempo no hay
   estado final, sale con **código 3** y dice que la orden sigue en cola;
   `paynani sms status <id>` la sigue.
+- Sale con **código 4** (`human_replied`), sin crear nada, si el número está en la
+  pausa del agente (sección 4); `--override-pause` la ignora.
+
+`paynani sms thread [--limit N] <número>` (PaynaniApp#111) muestra la conversación con
+ese número en orden de hora: los `sms.received`, las órdenes `sms.out` del agente con su
+último estado, y los `sms.human_sent`, cada uno marcado (`recibido`, `agente`,
+`humano`), más la pausa vigente si la hay. Es el contexto completo para el agente.
+Con un número fuera del roster, igual que `paynani event show --body`, no muestra
+textos.
 
 ## 10. Versiones
 
@@ -649,5 +744,6 @@ Este documento describe el protocolo **1**. Un campo nuevo y opcional no cambia 
 versión, y las dos partes ignoran los campos que no conocen. Así entraron
 `sms.unseen` y `device.status` (con `hello.device_status`): una pasarela que no los
 anuncia en `accepts` nunca los recibe, y una app que no los manda sólo deja la batería
-como desconocida. Un cambio que rompe a
+como desconocida. `sms.human` entró igual: con una pasarela que no lo anuncia, el SMS
+del humano sale y la app sólo avisa que paynani no lo recibe. Un cambio que rompe a
 la otra parte sube `protocol` y se documenta aquí antes de escribir el código.
