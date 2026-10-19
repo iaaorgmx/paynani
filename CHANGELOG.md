@@ -2,6 +2,9 @@
 
 ## Sin publicar
 
+- `paynani sms thread` ordena por la hora real y la muestra en hora local. Los SMS
+  recibidos traen la zona del teléfono y lo demás va en UTC, y ordenarlos como texto
+  podía poner un recibido en otro lugar del mismo día (QA de PaynaniApp#111).
 - La pasarela SMS recibe `sms.human`: los SMS que el dueño del teléfono manda desde
   «Mensajes» de PaynaniApp (PaynaniApp#111). Escribe `sms.human_sent` una vez por envío,
   con `sent` o `failed`, con «Tú → …» en la línea, el mensaje al que contestó
