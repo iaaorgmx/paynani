@@ -960,23 +960,25 @@ This needs §5.1 done first: the gateway running and the tunnel answering
 `/sms/health`. The phone needs Android 8.0 or later and a SIM that sends and
 receives texts.
 
-**1. Download the app and check it.** The APK rides on each paynani release,
-next to its checksum. Take both from the latest release and check the download:
+**1. Download the app and check it.** Each PaynaniApp version is published on
+the PaynaniApp releases, next to its checksum. Take both from the latest release
+and check the download:
 
 ```bash
-gh release download --repo iaaorgmx/paynani --pattern 'PaynaniApp-*'
+gh release download --repo iaaorgmx/PaynaniApp --pattern 'PaynaniApp-*'
 sha256sum -c PaynaniApp-*.apk.sha256      # must print: PaynaniApp-<version>.apk: OK
 ```
 
 Without `gh`, download `PaynaniApp-<version>.apk` and
 `PaynaniApp-<version>.apk.sha256` from
-<https://github.com/iaaorgmx/paynani/releases/latest> and run the same
-`sha256sum -c`.
+<https://github.com/iaaorgmx/PaynaniApp/releases/latest> and run the same
+`sha256sum -c`. The paynani release also carries a copy of the APK that goes
+with it (`--repo iaaorgmx/paynani`); either one passes the same checks.
 
 Then check who signed it. The release is signed with this certificate:
 
 ```
-5e:db:93:e3:ae:86:b6:aa:2f:38:dc:ca:b0:01:f9:c1:9e:22:bc:a9:b8:db:bb:8d:fc:10:ab:fc:3f:67:9c:2f
+58:f8:e9:22:8c:f2:82:1a:82:58:73:80:28:a5:43:c1:60:bf:08:e3:20:bc:e8:55:c5:b9:71:d0:b5:3c:45:31
 ```
 
 `apksigner` comes with the Android SDK build tools
@@ -985,7 +987,7 @@ without the colons:
 
 ```bash
 apksigner verify --print-certs PaynaniApp-*.apk | grep 'SHA-256'
-# Signer #1 certificate SHA-256 digest: 5edb93e3ae86b6aa2f38dccab001f9c19e22bca9b8dbbb8dfc10abfc3f679c2f
+# Signer #1 certificate SHA-256 digest: 58f8e9228cf2821a8258738028a543c160bf08e320bce855c5b971d0b53c4531
 ```
 
 A different digest means the file is not the published app: do not install it.
@@ -1008,6 +1010,14 @@ different keys, so Android refuses to install one over the other
 ```bash
 adb uninstall com.iaaorgmx.paynani
 ```
+
+The same happens with a PaynaniApp signed with the previous release key,
+`5edb93e3…3f679c2f`: PaynaniApp 0.3.0 (the one that came with paynani 0.11.0)
+and older. The key changed before PaynaniApp 0.6.3, so the current app does not
+install over those. Tell your human first, because the phone stops forwarding
+texts and calls until it is paired again; then uninstall the old app, install
+the new one and pair it with a new code (`paynani sms pair`). From 0.6.3 on,
+the new version installs over the old one and stays paired.
 
 Uninstalling also deletes its pairing, so the phone has to be paired again
 (step 6), and if it was paired, revoke the old one on the agent's machine first.
