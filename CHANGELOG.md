@@ -1,5 +1,13 @@
 # Changelog
 
+## Sin publicar
+
+- `INSTALL.md` §5.2 muestra el certificado con el que se firma PaynaniApp hoy
+  (`58f8e922…b53c4531`); el anterior (`5edb93e3…3f679c2f`) es el de la 0.3.0 y
+  anteriores. Baja el APK de las releases de PaynaniApp, con la de paynani como
+  copia, y dice qué hacer con un teléfono que tiene la app firmada con la llave
+  anterior: desinstalar, instalar la nueva y emparejar con un código nuevo.
+
 ## 0.12.0 (2026-10-19)
 
 **Instalación de un solo comando, y la pasarela SMS sabe la batería del teléfono y
