@@ -265,6 +265,11 @@ async def main():
     check("sms thread trae los textos del roster", True,
           any("¿Tienen mesa mañana?" in line for line in lines) and any("Hola Ana" in line for line in lines))
     check("sms thread: el estado del humano es el último (delivered)", True, "[delivered]" in lines[1])
+    # Horas con zona distinta: el recibido «-05:00» va por su hora real, no como texto.
+    check("_when ordena por la hora real, no por el texto", True,
+          cli._when("2026-10-19T08:00:00-05:00")[0] > cli._when("2026-10-19T12:30:00Z")[0])
+    check("_when muestra la hora local con zona", True, cli._when("2026-10-19T12:30:00Z")[1].startswith("2026-10-19T"))
+    check("_when no truena con una hora inválida", (0.0, "ayer"), cli._when("ayer"))
     rc, lines = thread("55 1111 2222", limit=1)
     check("sms thread --limit 1", ["human"], [line.split()[1] for line in lines])
     rc, lines = thread("55 9999 0000")

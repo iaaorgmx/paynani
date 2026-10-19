@@ -146,8 +146,24 @@ def run_status(args) -> int:
     return 0
 
 
+def _when(stamp: str) -> tuple[float, str]:
+    """
+    (segundos de época, hora local con zona) de una hora ISO 8601. Los SMS recibidos
+    traen la zona del teléfono («-05:00») y lo demás va en UTC («Z»): ordenarlos como
+    texto mezclaba los de un mismo día (QA de PaynaniApp#111 en el teléfono de Rock).
+    """
+    from datetime import datetime
+    try:
+        moment = datetime.fromisoformat(str(stamp).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0, str(stamp)
+    if moment.tzinfo is None:
+        return moment.timestamp(), moment.isoformat(timespec="seconds")
+    return moment.timestamp(), moment.astimezone().isoformat(timespec="seconds")
+
+
 def _thread_items(store: Store, number: str, journal: Path) -> list[tuple[str, str, str, str]]:
-    """(hora, quién, estado, texto) de la conversación con `number`, en orden de hora."""
+    """(hora local, quién, estado, texto) de la conversación con `number`, en orden de hora."""
     items = []
     for record, _ in ev.read_from(journal, 0):
         if not isinstance(record, dict) or record.get("event_type") != ev.SMS_RECEIVED:
@@ -185,8 +201,9 @@ def _thread_items(store: Store, number: str, journal: Path) -> list[tuple[str, s
     for local_id, rec in by_send.items():
         saved = store.inbox(rec["id"]) or {}
         items.append((rec.get("at", ""), "human", last.get(local_id, ""), str(saved.get("text", ""))))
-    items.sort(key=lambda item: item[0])
-    return items
+    timed = sorted((_when(when) + (who, status, text) for when, who, status, text in items),
+                   key=lambda item: item[0])
+    return [(local, who, status, text) for _, local, who, status, text in timed]
 
 
 def run_thread(args) -> int:
