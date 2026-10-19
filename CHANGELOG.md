@@ -42,8 +42,8 @@ PaynaniApp anterior la pasarela funciona igual que en 0.11.0.
   segundo entre las dos líneas que compara (#362).
 - Documentación: `INSTALL.md` §5.1 explica por qué el túnel necesita una dirección que
   no cambie, cómo recuperar el teléfono si cambia y que el túnel tiene que seguir
-  corriendo al cerrar la terminal (#370); §5.2 explica cómo cambiar de gateway con «Emparejar de
-  nuevo» sin reinstalar la app (#359), cómo permitir PaynaniApp en segundo plano con
+  corriendo al cerrar la terminal (#370); §5.2 explica cómo cambiar de gateway con
+  «Emparejar de nuevo» sin reinstalar la app (#359), cómo permitir PaynaniApp en segundo plano con
   DuraSpeed y otros ahorros de energía (#380) y los pasos de Samsung (#384), y avisa
   que un RCS que llega con su conversación abierta en Google Messages no genera
   `sms.unseen` (#374, #375). `AGENTS.md`, ante `sms.gateway.offline`, pide sugerir
