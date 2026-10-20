@@ -34,5 +34,10 @@
 # unattended, and a git pull must never be able to change that list.
 /roster.md
 
+# The agent's instructions per contact (rules/<id>.md, rules/default.md; #409 I-1):
+# per-install like the roster, written from PaynaniApp's roster screen, and never
+# something a git pull may change.
+/rules/
+
 *.log
 __pycache__/

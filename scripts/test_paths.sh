@@ -230,7 +230,7 @@ check "the install root is the clone" "$ROOT" "$(py "$(tmpdir)" "" root)"
 # the exact failure the header of this file warns about.
 if git -C "$SOURCE_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     for relative in .env runtime.env install.manifest roster.md \
-        hermes/notify.secret state/idle.json state/mail.log; do
+        hermes/notify.secret state/idle.json state/mail.log rules/default.md rules/ana-ruiz-9b1c.md; do
         if git -C "$SOURCE_ROOT" check-ignore -q "$relative"; then
             check "git ignores $relative" ignored ignored
         else

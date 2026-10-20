@@ -355,6 +355,36 @@ def delete_text(text: str, row) -> tuple[str, dict]:
     return _join(lines, text), gone
 
 
+def set_rules_text(text: str, row, rules_id: str) -> str:
+    """
+    El roster con `rules_id` en la columna `Rules` de `row` (I-1). Si la tabla no
+    tiene esa columna, la agrega al final: es la única columna que la pasarela
+    agrega por su cuenta (SMS_GATEWAY.md §11). Las demás celdas no cambian.
+    """
+    header_idx, header_fields, rows = table(text)
+    if header_idx is None:
+        raise EditError("unreadable", detail="el roster no tiene tabla de contactos")
+    schema_error = roster_mod.write_schema_error(text)
+    if schema_error:
+        raise EditError("unreadable", detail=schema_error)
+    line_idx, fields = _row(rows, row)
+    lines = text.splitlines()
+    canon = [roster_mod.canonical_column(h) for h in header_fields]
+    if "rules" not in canon:
+        lines[header_idx] = lines[header_idx].rstrip().rstrip("|").rstrip() + " | Rules |"
+        sep = lines[header_idx + 1].rstrip()
+        lines[header_idx + 1] = (sep if sep.endswith("|") else sep + "|") + "---|"
+        for idx, other in rows:
+            cells = list(other) + [""] * (len(header_fields) - len(other))
+            lines[idx] = "| " + " | ".join(c.strip() for c in cells) + " |  |"
+        header_fields = list(header_fields) + ["Rules"]
+        canon.append("rules")
+    cells = [f.strip() for f in fields] + [""] * (len(header_fields) - len(fields))
+    cells[canon.index("rules")] = rules_id
+    lines[line_idx] = "| " + " | ".join(cells) + " |"
+    return _join(lines, text)
+
+
 # --- escribir ---------------------------------------------------------------
 
 def history_copy(path: Path, data: bytes, history_dir: Path, label: str) -> Path:
@@ -430,5 +460,34 @@ def apply(path: Path, expected_etag: str, transform, *, state_dir: Path, label: 
             write_checked(path, data, new_text, lambda again: _signature(again) == expected)
             return {"etag": etag_of(read_bytes(path)), "etag_before": current,
                     "backup": str(backup) if backup else "", "info": info, "text": new_text}
+    except TimeoutError as exc:
+        raise EditError("write_failed", detail=str(exc)) from exc
+
+
+def apply_file(path: Path, expected_etag: str, new_text: str, *, state_dir: Path, label: str) -> dict:
+    """
+    Escribe `new_text` en `path` (un archivo de reglas, I-4c) en un solo paso: el
+    mismo bloqueo, `etag`, copia fechada, escritura atómica y relectura que `apply`,
+    sin la plantilla del roster. `{"etag", "etag_before", "backup"}`.
+    """
+    path = Path(path)
+    if not isinstance(expected_etag, str):
+        raise EditError("missing_field", field="etag", detail="falta etag")
+    try:
+        with locked(path, state_dir):
+            data = read_bytes(path)
+            current = etag_of(data)
+            if expected_etag != current:
+                raise EditError("conflict", detail="el archivo cambió", etag=current)
+            backup = history_copy(path, data, Path(state_dir) / "history", label) if data is not None else None
+            if data is None:
+                # Las instrucciones no son un secreto, pero tampoco son de nadie más
+                # que del dueño: 700 la carpeta y 600 el archivo, que la escritura
+                # atómica conserva.
+                path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+            write_checked(path, data, new_text, lambda again: again == new_text)
+            return {"etag": etag_of(read_bytes(path)), "etag_before": current,
+                    "backup": str(backup) if backup else ""}
     except TimeoutError as exc:
         raise EditError("write_failed", detail=str(exc)) from exc
