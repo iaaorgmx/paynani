@@ -534,7 +534,7 @@ camino aparte. Ejemplo de `sms.received`:
 
 | `event_type` | Sale de | Qué agrega al sobre |
 |---|---|---|
-| `sms.received` | `sms.in` | El texto completo se guarda aparte, como el cuerpo de un correo, y se ve con `paynani event show` |
+| `sms.received` | `sms.in` | El texto completo se guarda aparte, como el cuerpo de un correo, y se ve con `paynani event show`. Del roster y con reglas que leer: `rules` (abajo) |
 | `call.missed` | `call.missed` | `started_at` |
 | `call.answered` | `call.answered` | `started_at`, `duration_s` |
 | `sms.gateway.offline` | Sin latido en 3 × `heartbeat_s` | `device_id`, `last_seen` |
@@ -548,6 +548,13 @@ camino aparte. Ejemplo de `sms.received`:
 - `sender.name` sale de la columna de nombre de `roster.md` si el número coincide.
 - `roster_match` compara el **E.164 exacto** contra la columna `Phone` del roster. Un
   remitente alfanumérico nunca coincide.
+- `rules` (#409 A-1), sólo en un `sms.received` del roster con reglas que leer:
+  `{"file": "rules/<id>.md", "status": "active"}`. Son las del contacto si existen y
+  están activas, y si no, `rules/default.md`. Con `"status": "invalid"` el archivo
+  existe pero no valida. La línea lo dice dentro de su primer corchete, donde el texto
+  del SMS no puede escribir: `[sms 03:09:45, roster, reglas: rules/ana-ruiz-9b1c.md]`
+  o `reglas inválidas: …`. Nunca lleva el texto de las reglas. El correo del roster
+  lleva lo mismo. `sms.human_sent` y las llamadas no lo llevan.
 - `sms.human_sent` se escribe **una vez** por envío: con `sent` o con `failed`, el que
   llegue primero. `delivered` sólo actualiza el ledger (`state/sms/human.jsonl`,
   sección 9). Lleva `roster_match` del **destinatario**, con la misma regla, y la línea

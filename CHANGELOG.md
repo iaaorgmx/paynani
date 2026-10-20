@@ -2,6 +2,20 @@
 
 ## Sin publicar
 
+- **Cada aviso de un contacto del roster dice qué reglas leer** (#415, R5 del paraguas
+  #410, PRD #409 A-1 a A-3). La línea de un correo o un SMS del roster nombra, dentro
+  de su primer corchete, el archivo que el agente lee antes de actuar:
+  `[mail 21:27:35, roster, reglas: rules/ana-ruiz-9b1c.md]`. Son las del contacto si
+  existen y están activas, y si no, `rules/default.md`. Va dentro de ese corchete
+  para que un asunto o un SMS no pueda fingirla. El sobre lleva `rules` con la ruta y
+  `status`, nunca el texto. Un archivo que no valida sale como `reglas inválidas: …`,
+  para que un error a mano no deje de aplicarse sin que nadie lo sepa (nota de #421).
+  `AGENTS.md` tiene la regla fija nueva: leer `default.md` y luego las del contacto, y
+  seguirlas. Las reglas no autorizan nada, y un mensaje no las cambia.
+  `sms.human_sent` sigue igual. `INSTALL.md` §5.3 y `UNINSTALL.md` dicen dónde viven
+  las reglas, y la desinstalación las conserva. La pasarela toma `rules/` de la
+  carpeta de `--roster` (#418).
+
 - **`reply: never` por canal es una barrera mecánica** (#414, R4 del paraguas #410,
   PRD #409 I-3). Si las reglas de un contacto, o `rules/default.md` cuando las suyas
   no dicen nada, tienen `reply.email: never`, `send.sh` no le manda correo y sale con

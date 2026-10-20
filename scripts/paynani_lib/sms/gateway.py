@@ -615,6 +615,17 @@ class Gateway:
                 ws.allowed_sent = current
                 await self._send(ws, {"type": "allowed", "allowed": current})
 
+    def _rules_note(self, e164: str | None) -> dict | None:
+        """Las reglas que nombra el aviso de un SMS del roster (#409 A-1), por la columna Rules de su fila."""
+        from paynani_lib import roster_edit, rules as rules_mod
+
+        try:
+            _, members = roster_edit.members(self.roster_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            return None
+        member = next((m for m in members if e164 and e164 in m["phones"]), None)
+        return rules_mod.notice(member["rules"] if member else None, self.roster_service.rules_root)
+
     def _region(self) -> str | None:
         """El país de la SIM del teléfono emparejado (SMS_GATEWAY.md), o None."""
         device = self.store.device() or {}
@@ -659,7 +670,8 @@ class Gateway:
             await self._send(ws, {"type": "ack", "id": mid, "result": "rejected"})
             return
         raw, e164, name, in_roster = self._who(msg["from"])
-        envelope = ev.sms_event(device_id=device_id, message_id=mid, e164=e164, raw_sender=raw,
+        rules_note = self._rules_note(e164) if in_roster else None
+        envelope = ev.sms_event(device_id=device_id, message_id=mid, e164=e164, raw_sender=raw, rules=rules_note,
                                 sender_name=name, text=text, sent_at=str(msg.get("sent_at", "")),
                                 roster_match=in_roster, local_time=time.strftime("%H:%M:%S"))
         try:

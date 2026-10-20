@@ -26,8 +26,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "harness
 import python_floor  # noqa: E402
 PYTHON_FACTS = python_floor.enforce()
 
-from roster import (DEFAULT_ROSTER, normalise, notifier_headers, notifiers,
+from roster import (DEFAULT_ROSTER, explain_sender, normalise, notifier_headers, notifiers,
                     roster_addresses, roster_entries, sender_is_listed)
+from paynani_lib import rules as rules_mod  # noqa: E402  (#409 A-1)
 
 import event as ev
 import ledger
@@ -339,7 +340,8 @@ def describe(sender, subject, date, trusted=False):
     return parts(sender, subject, date, trusted)["notification_text"]
 
 
-def parts(sender, subject, date, trusted=False, message_id="", provider_id="", recipient_role="to"):
+def parts(sender, subject, date, trusted=False, message_id="", provider_id="", recipient_role="to",
+          rules_note=None):
     """
     One message, rendered and structured at the same time.
 
@@ -375,6 +377,11 @@ def parts(sender, subject, date, trusted=False, message_id="", provider_id="", r
     # out.
     if recipient_role in ("cc", "undisclosed"):
         when += f", {recipient_role}"
+    # The contact's rules (#409 A-1), only on roster mail, and inside this bracket
+    # for the same reason as `roster`: a subject can say "[reglas: …]" too, but it
+    # cannot write into the bracket paynani opens the line with.
+    if trusted and rules_note:
+        when += ", " + rules_mod.tag(rules_note)
 
     m = GH_SUBJECT.match(subject or "")
     if m:
@@ -393,6 +400,7 @@ def parts(sender, subject, date, trusted=False, message_id="", provider_id="", r
         "message_id": (message_id or "").strip(),
         "provider_id": (provider_id or "").strip(),
         "recipient_role": recipient_role,
+        "rules": rules_note if trusted and rules_note else None,
     }
 
 
@@ -660,13 +668,15 @@ def fetch_since(conn, last_uid, listed, account):
             continue
         msg = email.message_from_bytes(payload[0][1])
         message_id = decode_hdr(msg.get("Message-ID"))
+        decision = explain_sender(msg, listed.allowed, listed.entries, listed.notifiers)
+        rules_id = ((decision.get("entry") or {}).get("columns") or {}).get("rules", "")
         fields = parts(decode_hdr(msg.get("From")),
                        decode_hdr(msg.get("Subject")),
                        msg.get("Date", ""),
-                       sender_is_listed(msg, listed.allowed,
-                                        listed.entries, listed.notifiers),
+                       decision["matched"],
                        message_id, provider_identifier(message_id),
-                       recipient_role_for(msg, account))
+                       recipient_role_for(msg, account),
+                       rules_mod.notice(rules_id) if decision["matched"] else None)
         notifier_values = {
             header: decode_hdr(msg.get(header))
             for header in notifier_headers(listed.notifiers)
