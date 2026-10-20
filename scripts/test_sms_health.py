@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import time
@@ -279,6 +280,20 @@ check("sin Environment=PATH usa el PATH del administrador de servicios", (None, 
 unit.write_text(f'[Service]\nEnvironment="LANG=C.UTF-8" "PATH={fakebin}"\n')
 check("lee PATH aunque la línea traiga varias variables entre comillas", str(fakebin / "himalaya"),
       healthcheck.sms_gateway_facts(home=home, system="Linux")["himalaya"])
+spaced = Path(tempfile.mkdtemp()) / "mi carpeta"
+spaced.mkdir()
+(spaced / "himalaya").write_text("#!/bin/sh\n")
+(spaced / "himalaya").chmod(0o755)
+unit.write_text(f'[Service]\nEnvironment="PATH={spaced}:/usr/bin"\n')
+check("una carpeta con espacios entre comillas se lee entera", str(spaced / "himalaya"),
+      healthcheck.sms_gateway_facts(home=home, system="Linux")["himalaya"])
+unit.chmod(0o000)
+if os.access(unit, os.R_OK):
+    print("skip unidad ilegible: corre como root")
+else:
+    facts = healthcheck.sms_gateway_facts(home=home, system="Linux")
+    check("una unidad que no se puede leer no tumba el healthcheck", ("active", False), (facts["unit"], "himalaya" in facts))
+unit.chmod(0o644)
 unit.write_text("[Unit]\n")
 healthcheck.service_manager_path = lambda: None
 

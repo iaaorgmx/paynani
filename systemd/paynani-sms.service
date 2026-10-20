@@ -26,7 +26,7 @@ Documentation=file:///path/to/paynani/SMS_GATEWAY.md
 
 [Service]
 Type=simple
-Environment=PATH=/path/to/service-path
+Environment="PATH=/path/to/service-path"
 EnvironmentFile=-/path/to/config/runtime.env
 ExecStart=/usr/bin/python3 /path/to/paynani/scripts/sms_gateway.py
 WorkingDirectory=/path/to/paynani

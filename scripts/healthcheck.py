@@ -26,6 +26,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -983,7 +984,11 @@ def sms_gateway_facts(home=None, system=None):
         return None
     if (system or platform.system()) == "Darwin":
         return {"unit": unit_state(SMS_UNIT), "name": SMS_LAUNCHD_LABEL}
-    unit_text = (home / ".config" / "systemd" / "user" / SMS_UNIT).read_text(encoding="utf-8", errors="replace")
+    try:
+        unit_text = (home / ".config" / "systemd" / "user" / SMS_UNIT).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        # Una unidad que no se puede leer no tumba el healthcheck: queda el estado, sin el check de #410.
+        return {"unit": unit_state(SMS_UNIT), "name": SMS_UNIT}
     himalaya, path = sms_service_himalaya(unit_text)
     return {"unit": unit_state(SMS_UNIT), "name": SMS_UNIT, "himalaya": himalaya, "path": path}
 
@@ -1018,8 +1023,11 @@ def sms_service_himalaya(unit_text, which=shutil.which):
         line = line.strip()
         if not line.startswith("Environment="):
             continue
-        for item in line[len("Environment="):].split():
-            item = item.strip('"')
+        try:
+            items = shlex.split(line[len("Environment="):])
+        except ValueError:
+            continue
+        for item in items:
             if item.startswith("PATH="):
                 path = item[len("PATH="):]
     if path is None:
