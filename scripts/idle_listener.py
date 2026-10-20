@@ -365,6 +365,13 @@ def parts(sender, subject, date, trusted=False, message_id="", provider_id="", r
     when = time.strftime("%H:%M:%S") + (f", sent {sent}" if sent else "")
     if ACCOUNT_LABEL:
         when += f", {ACCOUNT_LABEL}"
+    # The contact's rules (#409 A-1), only on roster mail, inside this bracket for
+    # the same reason as `roster`: a subject can say "reglas: …" too, but it cannot
+    # write into the bracket paynani opens the line with. And *before* `roster`, so
+    # the line still carries `, roster]`, which is what agents and the OpenClaw rule
+    # read as "this is work" (#423).
+    if trusted and rules_note:
+        when += ", " + rules_mod.tag(rules_note)
     # The tag goes inside the timestamp bracket so one grep finds actionable
     # mail in the log, and so its absence is visible rather than merely implied.
     if trusted:
@@ -377,11 +384,6 @@ def parts(sender, subject, date, trusted=False, message_id="", provider_id="", r
     # out.
     if recipient_role in ("cc", "undisclosed"):
         when += f", {recipient_role}"
-    # The contact's rules (#409 A-1), only on roster mail, and inside this bracket
-    # for the same reason as `roster`: a subject can say "[reglas: …]" too, but it
-    # cannot write into the bracket paynani opens the line with.
-    if trusted and rules_note:
-        when += ", " + rules_mod.tag(rules_note)
 
     m = GH_SUBJECT.match(subject or "")
     if m:

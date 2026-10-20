@@ -510,10 +510,11 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
     eid = sms_event_id(device_id, message_id)
     who = " ".join(p for p in (sender_name, e164 or safe_excerpt(raw_sender, 40)) if p)
     if roster_match:
-        # Las reglas del contacto (#409 A-1) dentro del corchete, como en el correo:
-        # el texto del SMS no puede escribir ahí.
+        # Las reglas del contacto (#409 A-1) dentro del corchete, como en el correo: el
+        # texto del SMS no puede escribir ahí. Antes de `roster`, para que la línea siga
+        # teniendo `, roster]` (#423).
         note = f", {_rules_tag(rules)}" if rules else ""
-        line = f"[sms {local_time}, roster{note}] {who}: {safe_excerpt(text)}"
+        line = f"[sms {local_time}{note}, roster] {who}: {safe_excerpt(text)}"
     else:
         line = f"[sms {local_time}] {who}: mensaje de un número fuera del roster"
     record = {

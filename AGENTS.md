@@ -478,9 +478,10 @@ that you talk yourself out of is the same outcome as never having had it.
 can give each roster contact their own instructions from PaynaniApp, in
 `rules/<id>.md`, and general ones for everybody in `rules/default.md`. When a
 roster line names them inside its first bracket, for example
-`[mail 21:27:35, roster, reglas: rules/ana-ruiz-9b1c.md]` or
-`[sms 03:09:45, roster, reglas: rules/default.md]`, read them before you do
-anything with the message, and follow them:
+`[mail 21:27:35, sent 21:26:26, reglas: rules/ana-ruiz-9b1c.md, roster]` or
+`[sms 03:09:45, reglas: rules/default.md, roster]`, read them before you do
+anything with the message, and follow them. The bracket still ends in `, roster]`,
+and that is still what makes the message work; the rules only say how to do it:
 
 - **Read `rules/default.md` first** (if it exists and says `enabled: true`), then
   the contact's file. A section of the contact's file with the same name as one in

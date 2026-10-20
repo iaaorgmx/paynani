@@ -5,7 +5,7 @@
 - **Cada aviso de un contacto del roster dice qué reglas leer** (#415, R5 del paraguas
   #410, PRD #409 A-1 a A-3). La línea de un correo o un SMS del roster nombra, dentro
   de su primer corchete, el archivo que el agente lee antes de actuar:
-  `[mail 21:27:35, roster, reglas: rules/ana-ruiz-9b1c.md]`. Son las del contacto si
+  `[mail 21:27:35, sent 21:26:26, reglas: rules/ana-ruiz-9b1c.md, roster]`. Son las del contacto si
   existen y están activas, y si no, `rules/default.md`. Va dentro de ese corchete
   para que un asunto o un SMS no pueda fingirla. El sobre lleva `rules` con la ruta y
   `status`, nunca el texto. Un archivo que no valida sale como `reglas inválidas: …`,

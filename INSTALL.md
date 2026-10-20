@@ -1198,7 +1198,7 @@ each one instructions for the agent, plus general ones for everybody.
   `roster.md`), sent with `scripts/send.sh` from the gateway's service. If that email
   cannot go out, `scripts/healthcheck.py` warns for 24 h.
 - **What the agent sees:** a roster notice names the rules to read inside its first
-  bracket, as `[mail …, roster, reglas: rules/<id>.md]`, and AGENTS.md says how to
+  bracket, as `[mail …, reglas: rules/<id>.md, roster]`, and AGENTS.md says how to
   apply them. `reply: never` per channel is enforced by `send.sh` and `paynani sms
   send` (exit 2); `--override` with `--override-by` is logged in
   `state/reply_overrides.jsonl`.

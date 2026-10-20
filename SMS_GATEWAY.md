@@ -552,7 +552,7 @@ camino aparte. Ejemplo de `sms.received`:
   `{"file": "rules/<id>.md", "status": "active"}`. Son las del contacto si existen y
   están activas, y si no, `rules/default.md`. Con `"status": "invalid"` el archivo
   existe pero no valida. La línea lo dice dentro de su primer corchete, donde el texto
-  del SMS no puede escribir: `[sms 03:09:45, roster, reglas: rules/ana-ruiz-9b1c.md]`
+  del SMS no puede escribir: `[sms 03:09:45, reglas: rules/ana-ruiz-9b1c.md, roster]`
   o `reglas inválidas: …`. Nunca lleva el texto de las reglas. El correo del roster
   lleva lo mismo. `sms.human_sent` y las llamadas no lo llevan.
 - `sms.human_sent` se escribe **una vez** por envío: con `sent` o con `failed`, el que
