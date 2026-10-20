@@ -9,8 +9,9 @@
   paso con el bloqueo del roster y el `etag`, deja una copia fechada en
   `state/history/` y se escribe con el mismo mecanismo atómico de `paynani roster`.
   Queda una línea en `state/roster_changes.jsonl` y sale un correo al dueño con qué
-  cambió y desde qué teléfono. La fila del dueño no se borra. Una app anterior no
-  manda estos mensajes y no cambia nada.
+  cambió y desde qué teléfono. Si ese correo no sale, el resultado queda en el log y
+  `healthcheck.py` lo advierte durante 24 h. La fila del dueño no se borra. Una app
+  anterior no manda estos mensajes y no cambia nada.
 - **`paynani roster` ya no pisa un cambio hecho entretanto.** Su escritura toma el
   mismo bloqueo que la pantalla «Roster» (`state/locks/`) y comprueba que el roster
   sigue siendo el que leyó. Si cambió, no escribe y pide correrlo otra vez.

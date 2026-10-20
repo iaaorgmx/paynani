@@ -18,6 +18,12 @@ Las reglas que se cumplen aquí, para cualquier cambio:
     que se pidieron, se restaura byte por byte y el cambio no cuenta.
   - **La fila del dueño** (el primer contacto `Human`) no se borra ni deja de ser
     `Human`.
+
+A diferencia de `paynani roster`, aquí no se corren `test_roster.sh` ni
+`test_listener.py` antes de escribir: prueban el código con rosters de prueba, no
+este archivo, y tardan decenas de segundos que la app (que espera 15) no tiene. Lo
+que comprueba el cambio es la relectura del archivo escrito, como con
+`run_tests=False` en roster_cli (#361).
 """
 
 from __future__ import annotations
@@ -294,8 +300,10 @@ def _render(header_fields, values: dict, old_fields=None) -> str:
 
 
 def _join(lines: list[str], text: str) -> str:
-    trailing = "\n" if text.endswith(("\n", "\r\n")) or not text else ""
-    return "\n".join(lines) + trailing
+    """Las líneas otra vez, con el fin de línea que tenía el archivo (un roster con CRLF lo conserva)."""
+    eol = "\r\n" if "\r\n" in text else "\n"
+    trailing = eol if text.endswith(("\n", "\r\n")) or not text else ""
+    return eol.join(lines) + trailing
 
 
 def _row(rows, row) -> tuple[int, list]:

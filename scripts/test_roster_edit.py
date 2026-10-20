@@ -248,5 +248,13 @@ check("roster_cli: sin `base`, como antes (no compara)", "ok",
       roster_cli._apply_change_core(cli_path, cli_path.read_text(encoding="utf-8"),
                                     roster_cli.roster_mod.roster_addresses(cli_path), run_tests=False)[0])
 
+# --- CRLF ---------------------------------------------------------------------
+crlf = ROSTER.replace("\n", "\r\n")
+out, _, _ = re_.save_text(crlf, None, good)
+check("un roster con CRLF lo conserva en todas sus líneas", (True, False),
+      (out.endswith("\r\n"), "\n" in out.replace("\r\n", "")))
+out, _ = re_.delete_text(crlf, 3)
+check("y en la baja", False, "\n" in out.replace("\r\n", ""))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

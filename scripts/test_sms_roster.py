@@ -163,6 +163,10 @@ async def main():
     check("correo al dueño (el primer Human)", "julian@example.com", mails[0][0] if mails else None)
     check("el correo dice qué cambió y desde qué teléfono", (True, True),
           (("alta" in mails[0][1]) if mails else False, (device_id in mails[0][2]) if mails else False))
+    log = [json.loads(line) for line in (state / roster_api.CHANGES_LOG).read_text(encoding="utf-8").splitlines()]
+    check("el aviso que salió queda en el log", ("notify", True, log[0]["change"]),
+          (log[1].get("type"), log[1].get("notified"), log[1].get("for")))
+    check("unnotified: nada pendiente", {"count": 0, "errors": []}, roster_api.unnotified(state))
 
     # --- reenvío seguro ---
     again = await ask(ws, save)
@@ -211,6 +215,50 @@ async def main():
     check("allowed sin el número de Ana", ["+525511112222"], allowed["allowed"])
     out = await ask(ws, {"type": "roster.delete", "id": qid(), "account": None, "etag": gone["data"]["etag"], "row": 9})
     check("fila que no existe -> not_found", ("not_found", "row"), (out.get("code"), out.get("field")))
+
+    # --- un error pasajero no se guarda para el reenvío ---
+    real_locked = roster_api.roster_edit.locked
+    calls = []
+
+    def busy(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise TimeoutError("ocupado")
+        return real_locked(*args, **kwargs)
+
+    roster_api.roster_edit.locked = busy
+    cara = {"name": "Cara", "email": "cara@example.com", "type": "Human", "github": "", "phones": []}
+    retry = {"type": "roster.save", "id": qid(), "account": None, "etag": gone["data"]["etag"], "row": None,
+             "member": cara}
+    first = await ask(ws, retry)
+    second = await ask(ws, retry)
+    roster_api.roster_edit.locked = real_locked
+    check("bloqueo ocupado -> write_failed", "write_failed", first.get("code"))
+    check("el reenvío del mismo id se vuelve a intentar y entra", (True, None), (second.get("ok"), second.get("replayed")))
+    for thread in service.notify_threads:
+        thread.join(5)
+
+    # --- un aviso que no sale no queda en silencio ---
+    def broken(to, subject, body):
+        raise RuntimeError("send.sh no pudo")
+
+    service.notifier = broken
+    etag = second["data"]["etag"]
+    r = await ask(ws, {"type": "roster.delete", "id": qid(), "account": None, "etag": etag, "row": 3})
+    for thread in service.notify_threads:
+        thread.join(5)
+    log = [json.loads(line) for line in (state / roster_api.CHANGES_LOG).read_text(encoding="utf-8").splitlines()]
+    check("el cambio se hizo aunque el correo falle", True, r.get("ok"))
+    check("el aviso fallido queda en el log con la clase del error", (False, "RuntimeError"),
+          (log[-1].get("notified"), log[-1].get("error")))
+    pending = roster_api.unnotified(state)
+    check("unnotified lo cuenta", (1, ["RuntimeError"]), (pending["count"], pending["errors"]))
+    import healthcheck
+    warning = healthcheck.roster_notice_warnings(pending)
+    check("healthcheck lo advierte", (1, True), (len(warning), "not emailed to your human" in warning[0]))
+    check("sin cambios sin aviso, healthcheck no dice nada", [],
+          healthcheck.roster_notice_warnings({"count": 0, "errors": []}))
+    service.notifier = lambda to, subject, body: mails.append((to, subject, body))
 
     # --- otra cuenta ---
     r = await ask(ws, {"type": "roster.list", "id": qid(), "account": "ventas"})

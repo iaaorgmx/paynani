@@ -158,6 +158,7 @@ class Gateway:
         self.store.touch(connected=False)
         self.clients: set = set()   # todos los writers abiertos, para cerrarlos al apagar
         self.health_task = None
+        self.roster_tasks: set = set()   # los pedidos de §11 en curso
 
     # --- HTTP -------------------------------------------------------------
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -587,7 +588,11 @@ class Gateway:
         elif kind == "sms.human":
             await self._sms_human(ws, device_id, msg)
         elif kind in roster_api.TYPES:
-            await self._roster(ws, device_id, msg)
+            # Como tarea: un pedido que espera el bloqueo del roster (hasta 10 s) no
+            # detiene la lectura de los demás frames, como un sms.in.
+            task = asyncio.create_task(self._roster(ws, device_id, msg))
+            self.roster_tasks.add(task)
+            task.add_done_callback(self.roster_tasks.discard)
         elif kind == "hello":
             await self._error(ws, "unknown_type", detail="hello sólo al conectar")
         else:

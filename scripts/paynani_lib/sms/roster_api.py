@@ -13,10 +13,12 @@ al humano.
 """
 from __future__ import annotations
 
+import calendar
 import collections
 import hashlib
 import json
 import re
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -37,6 +39,14 @@ ACCOUNT_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
 REPLAY_MAX = 64
 REPLAY_TTL_S = 600
 CHANGES_LOG = "roster_changes.jsonl"
+# Los errores que se guardan para el reenvío: los que darían lo mismo otra vez. Uno
+# pasajero (`write_failed` porque el bloqueo no llegó, `unreadable`) no: el reenvío
+# del mismo `id` lo vuelve a intentar.
+FINAL_ERRORS = {"invalid", "conflict", "not_found", "owner_row", "missing_field"}
+# Un cambio sin la línea de su aviso después de esto cuenta como no avisado
+# (el proceso pudo morir antes de mandarlo).
+NOTIFY_GRACE_S = 300
+NOTIFY_WINDOW_S = 24 * 3600
 
 
 def _now_iso() -> str:
@@ -217,15 +227,33 @@ class RosterService:
     # --- log y aviso -------------------------------------------------------
     def _changed(self, device_id, kind, account, shown, row, name, done, *, action, fields=(),
                  member=None, before=None) -> None:
-        entry = {"at": _now_iso(), "device_id": device_id, "type": kind, "action": action,
+        # `change` y no el etag: dos cambios pueden dejar el mismo archivo (una alta y su baja).
+        entry = {"at": _now_iso(), "change": "c_" + secrets.token_hex(8), "device_id": device_id,
+                 "type": kind, "action": action,
                  "account": account, "roster": shown, "row": row, "name": name, "fields": list(fields),
                  "etag_before": done["etag_before"], "etag_after": done["etag"], "backup": done["backup"]}
-        path = self.state_dir / CHANGES_LOG
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        self._append(entry)
         self.log(f"roster: {action} fila {row} de {shown} desde {device_id}")
         self._notify(entry, member or {}, before or {})
+
+    def _append(self, entry: dict) -> None:
+        path = self.state_dir / CHANGES_LOG
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with self.lock, path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def _notified(self, entry: dict, ok: bool, error: str = "") -> None:
+        """
+        El resultado del correo al dueño, como otra línea del log de cambios. El aviso
+        es lo único que mitiga el riesgo aceptado en Q6 (un teléfono perdido puede
+        cambiar el roster): uno que no sale no puede quedar en silencio, y
+        `healthcheck.py` lo advierte con `unnotified()`.
+        """
+        line = {"at": _now_iso(), "type": "notify", "for": entry["change"], "roster": entry["roster"],
+                "notified": ok}
+        if error:
+            line["error"] = error
+        self._append(line)
 
     def owner_email(self) -> str:
         """El correo del dueño: el primer `Human` con correo del roster del agente."""
@@ -244,6 +272,7 @@ class RosterService:
         to = self.owner_email()
         if not to:
             self.log("roster: no hay dueño con correo en roster.md; el cambio no se avisó")
+            self._notified(entry, False, "no_owner_email")
             return
         subject, body = notice(entry, member, before)
         notifier = self.notifier
@@ -253,6 +282,9 @@ class RosterService:
                 notifier(to, subject, body)
             except Exception as exc:  # noqa: BLE001 -- el cambio ya está escrito y en el log
                 self.log(f"roster: no se pudo mandar el aviso del cambio ({type(exc).__name__})")
+                self._notified(entry, False, type(exc).__name__)
+            else:
+                self._notified(entry, True)
 
         thread = threading.Thread(target=run, daemon=True)
         self.notify_threads.append(thread)
@@ -286,7 +318,7 @@ class RosterService:
             self.log(f"roster: {kind} falló ({type(exc).__name__})")
             response = {"type": "error", "code": "write_failed" if kind in WRITES else "unreadable",
                         "ref": rid, "detail": type(exc).__name__}
-        if kind in WRITES:
+        if kind in WRITES and (response["type"] == "result" or response.get("code") in FINAL_ERRORS):
             with self.lock:
                 self.replays[rid] = (digest, response, time.monotonic())
                 while len(self.replays) > REPLAY_MAX:
@@ -297,6 +329,49 @@ class RosterService:
         cutoff = time.monotonic() - REPLAY_TTL_S
         for rid in [r for r, (_, _, at) in self.replays.items() if at < cutoff]:
             del self.replays[rid]
+
+
+def unnotified(state_dir: Path, *, now: float | None = None, window_s: int = NOTIFY_WINDOW_S,
+               grace_s: int = NOTIFY_GRACE_S) -> dict:
+    """
+    Los cambios desde la app de las últimas `window_s` que no tienen un aviso al dueño
+    que salió: `{"count", "errors"}`. Uno sin línea de aviso cuenta después de
+    `grace_s` (el correo tarda, o el proceso murió antes de mandarlo). Para
+    `healthcheck.py`.
+    """
+    now = time.time() if now is None else now
+    path = Path(state_dir) / CHANGES_LOG
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {"count": 0, "errors": []}
+    changes, results = [], {}
+    for line in lines:
+        try:
+            item = json.loads(line)
+            at = calendar.timegm(time.strptime(item["at"], "%Y-%m-%dT%H:%M:%SZ"))
+        except (ValueError, KeyError, TypeError):
+            continue
+        if item.get("type") == "notify":
+            if item.get("notified") or item.get("for") not in results:
+                results[item.get("for")] = item
+        elif "action" in item and now - at <= window_s:
+            changes.append((at, item))
+    count, errors = 0, []
+    for at, item in changes:
+        result = results.get(item.get("change"))
+        if result is None:
+            if now - at < grace_s:
+                continue
+            reason = "no_notice"
+        elif result.get("notified"):
+            continue
+        else:
+            reason = result.get("error") or "failed"
+        count += 1
+        if reason not in errors:
+            errors.append(reason)
+    return {"count": count, "errors": errors}
 
 
 def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
