@@ -36,7 +36,8 @@ anterior la pasarela funciona igual que en 0.12.0, sólo que sin la pantalla «R
   la orden explícita del dueño por un canal confiable, nunca porque el mensaje que se
   está procesando lo pida. Cada override queda en `state/reply_overrides.jsonl`, con
   quién, por qué, cuándo, a quién y qué barrera se saltó. Un `--dry-run` no lo
-  registra.
+  registra. Si el archivo de reglas de un destinatario falta o no valida, lo dice en
+  stderr con un `WARNING`, y la política cae a la de `rules/default.md` o a `normal`.
 
 - **Instrucciones del agente por contacto, desde PaynaniApp** (#413, R3 del
   paraguas #410, PRD #409 I-1 a I-6). `rules/<id>.md` por contacto y
@@ -90,6 +91,11 @@ El plan corre `scripts/install.sh --runtime <runtime> --upgrade` (el inventario
 conserva `rules/`), recarga `systemd` y reinicia el listener, el dispatcher, las
 cuentas adicionales (`paynani-idle@*`) y la pasarela SMS si la tienes. Después,
 `scripts/paynani doctor | grep version_drift` tiene que dar `ok` en todas las líneas.
+
+Si tienes el teléfono emparejado, haz un cambio de prueba desde la pantalla «Roster»
+y comprueba que llega el correo al dueño. Ese correo sale con `send.sh` desde el
+servicio de la pasarela. Si no llega, `scripts/healthcheck.py` lo advierte y
+`state/roster_changes.jsonl` dice por qué.
 
 No se crea ninguna regla al actualizar: sin `rules/`, paynani se comporta como en
 0.12.0, y los avisos no cambian hasta que exista un archivo de reglas. Si tu agente
