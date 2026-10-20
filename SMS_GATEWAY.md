@@ -509,6 +509,8 @@ número durante la pausa, salvo que el humano se lo pida (Q101 de PaynaniApp#111
 | `rate_limited` | Se pasó `max_out_per_hour` | Sigue abierta |
 | `text_too_long` | `text` de más de 1,000 caracteres | Sigue abierta |
 
+Los mensajes del Roster y las reglas tienen sus propios códigos (sección 11).
+
 **Códigos de cierre propios:** `4400` protocolo, `4401` token revocado o inválido,
 `4409` otra conexión del mismo teléfono la reemplazó. `1001` se usa cuando la
 pasarela se apaga.
@@ -752,5 +754,279 @@ versión, y las dos partes ignoran los campos que no conocen. Así entraron
 `sms.unseen` y `device.status` (con `hello.device_status`): una pasarela que no los
 anuncia en `accepts` nunca los recibe, y una app que no los manda sólo deja la batería
 como desconocida. `sms.human` entró igual: con una pasarela que no lo anuncia, el SMS
-del humano sale y la app sólo avisa que paynani no lo recibe. Un cambio que rompe a
-la otra parte sube `protocol` y se documenta aquí antes de escribir el código.
+del humano sale y la app sólo avisa que paynani no lo recibe. Los mensajes del Roster
+(sección 11) también: con una pasarela que no los anuncia, la app no muestra «Roster».
+Un cambio que rompe a la otra parte sube `protocol` y se documenta aquí antes de
+escribir el código.
+
+## 11. Roster y reglas desde PaynaniApp (#409)
+
+Desde la pantalla «Roster» el dueño ve y edita, en su teléfono emparejado, el roster
+de cada cuenta de la instalación y las instrucciones del agente para cada contacto
+(PRD #409). Esta sección es el contrato entre la app y la pasarela. El formato de las
+reglas y lo que paynani hace con ellas están en el PRD (I-1 a I-6).
+
+### Cómo se habla
+
+- **Sólo el teléfono emparejado**, por su WebSocket autenticado. Nada de esto se puede
+  pedir por SMS ni por correo (Q5), y la pasarela no tiene otra puerta para hacerlo.
+- **Pregunta y respuesta, sin cola.** A diferencia de la sección 3, estos mensajes
+  **no** pasan por la cola SQLite de la app. Sin conexión no se edita (Q7): la app
+  muestra «Sin conexión con paynani» y no guarda nada.
+- Cada pedido lleva un `id` que genera la app: `q_` + 16 bytes al azar en hex
+  (`^q_[0-9a-f]{32}$`). La pasarela contesta **una sola vez**, con `result` o con
+  `error`, y en los dos casos con `ref` igual a ese `id`:
+
+```json
+{"type": "result", "ref": "q_5d0c…", "ok": true, "data": {…}}
+{"type": "error", "code": "invalid", "ref": "q_5d0c…", "field": "email",
+ "reason": "email_format", "detail": "«ana@» no es un correo válido"}
+```
+
+- La app espera la respuesta **15 segundos**. Si no llega, o se cae la conexión, el
+  cambio **no** se muestra como guardado (R-5): la app avisa y vuelve a leer la lista
+  al reconectar.
+- **Reenvío seguro.** Si la app reenvía un pedido de escritura con el **mismo `id`**
+  (porque se cortó antes de la respuesta), la pasarela no lo aplica dos veces:
+  contesta el mismo `result` de la primera vez, con `"replayed": true`. Guarda las
+  respuestas de los últimos 64 `id` durante 10 minutos.
+- **Sin pisar cambios ajenos.** Cada lectura trae un `etag`: el SHA-256 en hex del
+  archivo tal como está en disco. Cada escritura manda el `etag` que leyó. Si el
+  archivo cambió entretanto (otra edición, `paynani roster add` en la terminal), la
+  pasarela no escribe y responde `conflict` con el `etag` actual. La app vuelve a
+  leer y le muestra al dueño la versión nueva.
+
+### Anuncio en el `welcome`
+
+La pasarela que entiende estos mensajes los pone en `welcome.accepts`, como cualquier
+tipo nuevo (sección 10):
+
+```json
+"accepts": ["sms.in", …, "sms.human", "roster.accounts", "roster.list", "roster.save",
+            "roster.delete", "rules.get", "rules.preview", "rules.save",
+            "rules.get_default", "rules.save_default"]
+```
+
+- La app muestra «Roster» en el menú sólo si `accepts` incluye `roster.list`, y el
+  editor de instrucciones sólo si incluye `rules.get`.
+- Una pasarela anterior no los anuncia, y si la app los mandara de todos modos
+  contestaría `unknown_type` (sección 5).
+
+### Las cuentas y las filas
+
+- **`account`** dice qué roster se usa: `null` es la cuenta del agente (`roster.md`),
+  y un id de `accounts.json` (`^[a-z0-9][a-z0-9-]{0,30}$`) es esa cuenta adicional. Un
+  id que no existe da `not_found`.
+- **`row`** es la posición del contacto en la tabla de contactos de ese roster,
+  empezando en 1, tal como la devolvió `roster.list`. Sólo vale junto con su `etag`:
+  si el archivo cambió, la escritura responde `conflict` antes de mirar `row`.
+- **La fila del dueño** es el primer contacto con `Type` = `Human` de cada roster.
+  `roster.list` la marca con `owner: true`. No se puede borrar desde la app, y al
+  editarla su `type` no puede dejar de ser `Human` (R-4).
+
+### `roster.accounts`: las cuentas de la instalación
+
+```json
+{"type": "roster.accounts", "id": "q_…"}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {"accounts": [
+  {"account": null, "email": "agente@dominio.com", "roster": "roster.md", "members": 6, "status": "ok"},
+  {"account": "ventas", "email": "ventas@dominio.com", "roster": "rosters/ventas.md", "members": 2,
+   "status": "ok"}]}}
+```
+
+- La primera es siempre la cuenta del agente; después, las de `accounts.json` en su
+  orden.
+- `status`: `ok`, `missing` (el archivo no existe: la lista sale vacía y la primera alta
+  lo crea) o `unreadable` (no se puede leer ni reescribir: la app lo muestra y no deja
+  editar esa cuenta).
+- No trae contraseñas ni nada de `.env`.
+
+### `roster.list`: los contactos de una cuenta
+
+```json
+{"type": "roster.list", "id": "q_…", "account": null}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "account": null, "etag": "9c1e…(64 hex)",
+  "members": [
+    {"row": 1, "name": "Julián Flores", "email": "julian@dominio.com", "type": "Human",
+     "github": "julianflores", "phones": ["+525511112222"], "owner": true,
+     "rules": "julian-flores-3f2a", "has_rules": true, "rules_enabled": true},
+    {"row": 2, "name": "Iris", "email": "iris@dominio.com", "type": "AI Agent",
+     "github": "", "phones": [], "owner": false,
+     "rules": null, "has_rules": false, "rules_enabled": false}],
+  "default_rules": true}}
+```
+
+- `phones` es la celda `Phone` separada por comas, cada número ya en E.164. Un roster
+  sin columna `Phone` da `[]` en todas las filas; lo mismo con `GitHub` y `""`.
+- `rules` es el valor de la columna `Rules` (o `null`). `has_rules` dice si
+  `rules/<id>.md` existe, y `rules_enabled`, si además tiene `enabled: true`.
+- `default_rules` dice si existe `rules/default.md`.
+- Sólo la tabla de contactos. Los notificadores (la sección 2 de `roster.md`) no se
+  muestran ni se editan desde la app.
+
+### `roster.save`: alta o edición
+
+```json
+{"type": "roster.save", "id": "q_…", "account": null, "etag": "9c1e…", "row": null,
+ "member": {"name": "Ana Ruiz", "email": "ana@dominio.com", "type": "Human",
+            "github": "", "phones": ["+525511113333"]}}
+```
+
+- `row: null` es un alta, que se agrega al final de la tabla. Un número es la edición
+  de esa fila.
+- `member` lleva siempre los cinco campos, ya completos. Lo que no venga se toma como
+  vacío, no como «sin cambio».
+- **Validación** (R-3); la primera que falla responde `invalid` con `field` y `reason`:
+
+| `field` | `reason` | Cuándo |
+|---|---|---|
+| `name` | `required` | Vacío, o con `\|` o un salto de línea |
+| `email` | `email_format` | No es un correo válido |
+| `phones` | `phone_e164` | Un número no está en E.164 (`^\+[1-9][0-9]{7,14}$`) |
+| `email` | `no_channel` | Sin correo y sin teléfono |
+| `email` | `duplicate_email` | Otra fila de ese roster ya tiene ese correo (sin distinguir mayúsculas) |
+| `phones` | `duplicate_phone` | Otra fila de ese roster ya tiene ese número |
+| `type` | `type` | No es `Human`, `AI Agent` ni vacío |
+| `github` | `github` | No es un login de GitHub válido |
+| `type` | `owner_type` | La fila del dueño dejaría de ser `Human` |
+| `phones` | `no_phone_column` | Trae teléfonos y el roster no tiene columna `Phone` (ver abajo) |
+| `github` | `no_github_column` | Trae GitHub y el roster no tiene columna `GitHub` |
+
+- **Columnas.** La pasarela no agrega columnas por su cuenta (Q3: los cinco campos de
+  hoy). Si el roster no tiene la columna `Phone` o `GitHub` y el campo viene lleno,
+  responde `invalid`. La app deja esos campos deshabilitados si
+  `roster.list` no los trae, y el dueño agrega la columna con `paynani roster`.
+- **Escritura** (sección 4.4 del PRD): copia fechada de `roster.md` antes, escritura
+  atómica con el mismo mecanismo de `roster_cli` (temporal, relectura, y se revierte si
+  no cuadra), una línea en el log de cambios y el correo al humano. Si la relectura no
+  cuadra, se revierte y responde `write_failed`.
+- **Respuesta:** la lista completa, como `roster.list`, con el `etag` nuevo y el `row`
+  de la fila guardada:
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {"row": 7, "etag": "41aa…", "members": [ … ]}}
+```
+
+- Cuando la edición cambia un teléfono, la pasarela manda además el `allowed` nuevo,
+  como hoy cuando cambia el roster (sección 2).
+
+### `roster.delete`: baja
+
+```json
+{"type": "roster.delete", "id": "q_…", "account": null, "etag": "9c1e…", "row": 2}
+```
+
+- La fila del dueño responde `owner_row` y no se toca.
+- Misma copia fechada, escritura, log y correo que `roster.save`. Responde la lista
+  nueva con su `etag`.
+- Si el contacto tenía reglas, `rules/<id>.md` **no se borra**: se renombra a
+  `rules/<id>.removed-<AAAAMMDDTHHMMSSZ>.md`. Si alguien vuelve a darlo de alta, sus
+  reglas se recuperan a mano.
+
+### `rules.get` y `rules.preview`: leer las instrucciones
+
+```json
+{"type": "rules.get", "id": "q_…", "account": null, "row": 1}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "rules": "julian-flores-3f2a", "exists": true, "etag": "77b0…",
+  "text": "---\nversion: 1\nenabled: true\nreply:\n  email: normal\n  sms: never\n…---\n\n## General\n…",
+  "effective": "## General\n…\n\n## SMS\n…"}}
+```
+
+- `text` es el archivo completo, cabecera incluida. Sin archivo: `exists: false`,
+  `text` y `etag` vacíos (`""`), y `effective` es la regla general sola.
+- `effective` es la **regla efectiva** (R-7): `rules/default.md` con las secciones del
+  contacto aplicadas como dice I-4b (una sección con el mismo nombre sustituye a la
+  general completa). La calcula la pasarela, para que la app y el agente vean
+  exactamente lo mismo.
+- `rules.preview` es igual pero con un `text` que manda la app y no se guarda, para la
+  vista previa mientras se edita:
+
+```json
+{"type": "rules.preview", "id": "q_…", "account": null, "row": 1, "text": "---\n…"}
+```
+
+  Responde `effective` o el mismo `invalid` que daría `rules.save`. No escribe nada.
+
+### `rules.save`: escribir las instrucciones
+
+```json
+{"type": "rules.save", "id": "q_…", "account": null, "row": 1, "etag": "77b0…",
+ "roster_etag": "9c1e…", "text": "---\nversion: 1\n…"}
+```
+
+- `etag` es el del archivo de reglas que se leyó (`""` si no existía). `roster_etag`,
+  el de `roster.md`: hace falta porque la fila tiene que seguir siendo la misma, y
+  porque la primera vez se escribe la columna `Rules`.
+- **El id.** Si la fila no tiene `Rules`, la pasarela genera uno (el nombre en minúsculas
+  sin acentos, con guiones, más 4 hex al azar: `ana-ruiz-9b1c`, que cumple
+  `^[a-z0-9][a-z0-9-]{0,47}$`) y lo escribe en la columna `Rules` de esa fila, con el
+  mismo mecanismo atómico. Si el roster no tiene la columna `Rules`, la agrega: es la
+  única columna que la pasarela agrega por su cuenta (I-1).
+- **La cabecera** la valida la pasarela (I-2, I-6), y la primera que falla responde
+  `invalid`:
+
+| `field` | `reason` | Cuándo |
+|---|---|---|
+| `text` | `too_large` | Más de 32,768 bytes en UTF-8 |
+| `header` | `header_missing` | No empieza con una cabecera YAML entre `---` |
+| `header.version` | `value` | No es `1` |
+| `header.enabled` | `value` | No es `true` ni `false` |
+| `header.reply.email`, `header.reply.sms` | `value` | No es `normal` ni `never` |
+| `header` | `unknown_key` | Trae una llave que no es de las de arriba ni `updated_at`/`updated_by` |
+
+- `updated_at` y `updated_by` **los escribe la pasarela**, con la hora y el
+  `device_id` del teléfono (`updated_by: phone d_3f9a1c`). Si la app los manda, se
+  reemplazan.
+- Antes de escribir, la copia fechada del archivo (I-4c). Después, el log y el correo
+  al humano, igual que en el roster.
+- **Respuesta:** `{"rules": "<id>", "etag": "…", "roster_etag": "…", "effective": "…"}`.
+- **Para dejar de usarlas** sin perderlas se guarda con `enabled: false` (I-4). Borrar
+  el archivo desde la app no entra en v1.
+
+### `rules.get_default` y `rules.save_default`: las reglas generales
+
+Iguales a `rules.get` y `rules.save`, sin `account`, `row` ni `roster_etag`, sobre
+`rules/default.md`. `rules.get_default` sin archivo responde `exists: false`, y el
+primer `rules.save_default` lo crea. La cabecera es la misma; en `default.md` la
+política `reply` es la de todos los contactos que no tengan la suya.
+
+### Errores de esta sección
+
+Además de los de la sección 5:
+
+| `code` | Cuándo |
+|---|---|
+| `not_found` | `account` no existe, o `row` está fuera de la tabla |
+| `conflict` | El `etag` (o el `roster_etag`) no es el del archivo en disco. Va `etag` con el actual |
+| `invalid` | Un campo no pasa la validación. Van `field` y `reason` |
+| `owner_row` | Se quiso borrar la fila del dueño |
+| `write_failed` | La escritura no se pudo hacer o no cuadró al releer, y se revirtió. Nada cambió |
+| `unreadable` | El roster o el archivo de reglas no se puede leer |
+
+Ningún error cierra la conexión.
+
+### Lo que se registra
+
+- **Log de cambios** de la instalación: una línea JSON por cambio, con la hora, el
+  `device_id`, el mensaje (`roster.save`, `rules.save`…), la cuenta, la fila y el
+  nombre del contacto, el `etag` de antes y el de después, y la ruta de la copia
+  fechada. **No** lleva el texto de las reglas ni los datos del contacto que no
+  cambiaron.
+- **Correo al humano** por cada cambio, con qué cambió y desde qué teléfono (Q5).
+- **Nada va a `events.jsonl`**: estos mensajes no son avisos para el agente, y el
+  roster y las reglas no salen hacia otros agentes (PRD, sección 5). El agente ve las
+  reglas sólo cuando le llega un mensaje de ese contacto, por la ruta
+  `[reglas: rules/<id>.md]` del aviso (A-1).
+- La pasarela no escribe en su log el texto de las reglas ni los datos de los
+  contactos, igual que con el texto de los SMS (sección 8).
