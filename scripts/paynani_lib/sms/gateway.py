@@ -21,6 +21,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import roster_api
 from . import store as store_mod
 from .websocket import ConnectionClosed, WebSocket, accept_key
 
@@ -39,7 +40,8 @@ PROTOCOL = 1
 # Lo que la pasarela acepta del teléfono, anunciado en `welcome` (SMS_GATEWAY.md
 # §2). Un tipo nuevo entra aquí y no sube PROTOCOL: la app sólo manda lo que ve en
 # la lista, así que una pasarela vieja nunca recibe un tipo que rechazaría.
-ACCEPTS = ("sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen", "device.status", "sms.human")
+ACCEPTS = ("sms.in", "call.missed", "call.answered", "sms.status", "sms.unseen", "device.status", "sms.human") \
+    + roster_api.TYPES  # la pantalla «Roster» (§11)
 SUBPROTOCOL = "paynani-sms.v1"
 HEARTBEAT_S = 30
 HELLO_TIMEOUT_S = 10
@@ -128,11 +130,14 @@ class Gateway:
                  max_out_per_hour: int = MAX_OUT_PER_HOUR,
                  offline_after_s: int = OFFLINE_AFTER_S, health_every_s: float = HEALTH_EVERY_S,
                  battery_warn_pct: int = 25, battery_critical_pct: int = 10,
-                 battery_stale_s: int = BATTERY_STALE_S):
+                 battery_stale_s: int = BATTERY_STALE_S, roster_service=None):
         self.store = store_mod.Store(state_dir)
         self.journal = Path(journal)
         self.ledger_path = ledger.path_for(self.journal)
         self.roster_path = Path(roster_path)
+        # §11: sin uno dado, sólo la cuenta del agente y sin correo al humano. sms_gateway.py
+        # pasa el de la instalación, con accounts.json y send.sh.
+        self.roster_service = roster_service or roster_api.RosterService(self.roster_path, state_dir, log=log)
         self.public_url = public_url.rstrip("/")
         self.heartbeat_s = heartbeat_s
         self.max_out_per_hour = max_out_per_hour
@@ -153,6 +158,7 @@ class Gateway:
         self.store.touch(connected=False)
         self.clients: set = set()   # todos los writers abiertos, para cerrarlos al apagar
         self.health_task = None
+        self.roster_tasks: set = set()   # los pedidos de §11 en curso
 
     # --- HTTP -------------------------------------------------------------
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -528,12 +534,15 @@ class Gateway:
             self._mark_seen()
 
     async def _watch_roster(self, ws: WebSocket, allowed: list) -> None:
+        # Lo último que se le mandó al teléfono, en la conexión: `_roster` también lo
+        # manda después de un cambio desde la app, y así no sale dos veces.
+        ws.allowed_sent = allowed
         while not ws.closed:
             await asyncio.sleep(10)
             current = sorted(roster_phones(self.roster_path))
-            if current != allowed:
-                allowed = current
-                await self._send(ws, {"type": "allowed", "allowed": allowed})
+            if current != getattr(ws, "allowed_sent", None):
+                ws.allowed_sent = current
+                await self._send(ws, {"type": "allowed", "allowed": current})
 
     async def _pump_outbox(self, ws: WebSocket) -> None:
         pushed: set[str] = set()
@@ -578,11 +587,33 @@ class Gateway:
             await self._device_status(ws, msg)
         elif kind == "sms.human":
             await self._sms_human(ws, device_id, msg)
+        elif kind in roster_api.TYPES:
+            # Como tarea: un pedido que espera el bloqueo del roster (hasta 10 s) no
+            # detiene la lectura de los demás frames, como un sms.in.
+            task = asyncio.create_task(self._roster(ws, device_id, msg))
+            self.roster_tasks.add(task)
+            task.add_done_callback(self.roster_tasks.discard)
         elif kind == "hello":
             await self._error(ws, "unknown_type", detail="hello sólo al conectar")
         else:
             await self._error(ws, "unknown_type", ref=str(msg.get("id", ""))[:80],
                               detail=f"type {str(kind)[:40]!r} no existe")
+
+    async def _roster(self, ws: WebSocket, device_id: str, msg: dict) -> None:
+        """
+        Un pedido de la pantalla «Roster» (§11). Corre en un hilo: espera el bloqueo
+        del roster, y un `paynani roster add` en la terminal no detiene la conexión.
+        Si cambió un teléfono del roster del agente, el `allowed` nuevo sale enseguida,
+        sin esperar al vigilante del roster.
+        """
+        response = await asyncio.to_thread(self.roster_service.handle, msg, device_id)
+        await self._send(ws, response)
+        if response.get("type") == "result" and msg.get("type") in roster_api.WRITES \
+                and msg.get("account") is None:
+            current = sorted(roster_phones(self.roster_path))
+            if current != getattr(ws, "allowed_sent", None):
+                ws.allowed_sent = current
+                await self._send(ws, {"type": "allowed", "allowed": current})
 
     def _region(self) -> str | None:
         """El país de la SIM del teléfono emparejado (SMS_GATEWAY.md), o None."""

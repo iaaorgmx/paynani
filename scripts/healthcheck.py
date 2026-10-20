@@ -43,6 +43,7 @@ from paths import (env_file, harness_env_files, install_root,   # noqa: E402
                    recorded_env, repo_root, roster, runtime_env, state_dir)
 from roster import notifiers, roster_addresses   # noqa: E402
 from paynani_lib.sms import health as sms_health   # noqa: E402
+from paynani_lib.sms import roster_api   # noqa: E402
 
 # Taken at import, before runtime_facts() calls load_runtime_env() and layers
 # runtime.env into os.environ. After that call, PAYNANI_ENV is in the environment
@@ -1021,6 +1022,25 @@ def sms_phone_warnings(phone):
             "network is the problem; `paynani status` shows the last heartbeat"]
 
 
+def roster_notice_facts():
+    """Cambios al roster desde PaynaniApp sin el correo al dueño (#412, SMS_GATEWAY.md §11)."""
+    return roster_api.unnotified(state_dir())
+
+
+def roster_notice_warnings(notices):
+    """
+    El correo de cada cambio desde la app es lo único que avisa al humano si alguien
+    con su teléfono cambia el roster (Q6 de #408). Uno que no salió es una advertencia:
+    la instalación funciona, pero el humano no sabe de ese cambio.
+    """
+    if not notices or not notices.get("count"):
+        return []
+    why = ", ".join(notices.get("errors") or []) or "unknown"
+    return [f"{notices['count']} roster change(s) from PaynaniApp in the last 24 h were not emailed to "
+            f"your human ({why}). Tell them, and check state/roster_changes.jsonl and that "
+            "scripts/send.sh works from the SMS gateway's service"]
+
+
 def himalaya_facts():
     """
     Whether the account `send.sh` sends with exists.
@@ -1301,6 +1321,7 @@ def assess(facts):
     problems.extend(gateway_problems)
     warnings.extend(gateway_warnings)
     warnings.extend(sms_phone_warnings(facts.get("sms_phone")))
+    warnings.extend(roster_notice_warnings(facts.get("roster_notices")))
 
     # The last two are a different kind of failure from everything above, and
     # they are problems rather than warnings for one reason: mail does not move.
@@ -1592,6 +1613,7 @@ def main(argv=None):
         "git": git_facts(),
         "sms_phone": sms_phone_facts(),
         "sms_gateway": sms_gateway_facts(),
+        "roster_notices": roster_notice_facts(),
     }
     facts["dispatcher_unit"] = facts["dispatcher"]["unit"]
     facts["python"] = python_facts(facts["listener"], facts["dispatcher"])
