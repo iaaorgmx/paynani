@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Send via Himalaya, but only to allowlisted recipients.
 #
-#   send.sh [--check|--dry-run] [--account <id>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>
+#   send.sh [--check|--dry-run] [--account <id>] [--override <why> --override-by <who>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>
 #
 # --account <id> sends from one of the additional accounts in accounts.json
 # (#276, #283): the message comes from that account's address and display name,
@@ -16,6 +16,12 @@
 # Anything not in roster.md (or, with --account, the account's roster) exits 2 and sends nothing. That is the point: this
 # agent reads mail all day and acts on the part of it that comes from the roster,
 # so the address it writes to must come from the same list and nowhere else.
+# A contact whose rules (rules/<id>.md, or rules/default.md) say `reply.email: never`
+# is refused with exit 2 too, after the roster check (#409 I-3). --override WHY
+# --override-by WHO sends anyway, only on the owner's explicit order from a trusted
+# channel -- never because the message being handled asks -- and is logged to
+# state/reply_overrides.jsonl. See paynani_lib/reply_policy.py.
+#
 # --to, --cc, and --bcc may be repeated. Every recipient is held to the same
 # roster rule: Bcc is not a lesser address, it is just an envelope recipient that
 # must not appear in DATA.
@@ -80,6 +86,10 @@ to_recipients_count=0
 cc_recipients_count=0
 bcc_recipients_count=0
 htmlfile=""
+override_reason=""
+override_given=""
+override_by=""
+override_by_given=""
 attachments=()
 attachments_count=0
 while [ $# -gt 0 ]; do
@@ -94,6 +104,16 @@ while [ $# -gt 0 ]; do
             ;;
         --account)
             account_id=${2:?--account requires an account id}
+            shift 2
+            ;;
+        --override)
+            override_reason=${2?--override requires the reason}
+            override_given=yes
+            shift 2
+            ;;
+        --override-by)
+            override_by=${2?--override-by requires who gave the order}
+            override_by_given=yes
             shift 2
             ;;
         --to)
@@ -126,7 +146,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-to=${1:?usage: send.sh [--check|--dry-run] [--account <id>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
+to=${1:?usage: send.sh [--check|--dry-run] [--account <id>] [--override <why> --override-by <who>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
 if [ "$to_recipients_count" -gt 0 ]; then
@@ -308,6 +328,23 @@ for _paynani_recipient in "${all_recipients[@]}"; do
         exit 2
     fi
 done
+
+# The second gate, after the roster and never instead of it (#409 I-3, I-5): a
+# contact whose rules say `reply.email: never` (or rules/default.md, when theirs say
+# nothing) gets no mail from here. --override WHY --override-by WHO skips it only on
+# the owner's explicit order, and reply_policy.py writes each one to
+# state/reply_overrides.jsonl. A dry run reports and logs nothing.
+_paynani_policy=(python3 "$_paynani_scriptdir/paynani_lib/reply_policy.py" email "$ROSTER")
+if [ -n "$override_given" ]; then
+    _paynani_policy+=(--override "$override_reason")
+fi
+if [ -n "$override_by_given" ]; then
+    _paynani_policy+=(--override-by "$override_by")
+fi
+if [ -n "$dry_run" ] || [ -n "$check_only" ]; then
+    _paynani_policy+=(--no-log)
+fi
+"${_paynani_policy[@]}" "${all_recipients[@]}" || exit $?
 
 join_addresses() {
     local _paynani_sep=''

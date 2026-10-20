@@ -2,6 +2,16 @@
 
 ## Sin publicar
 
+- **`reply: never` por canal es una barrera mecánica** (#414, R4 del paraguas #410,
+  PRD #409 I-3). Si las reglas de un contacto, o `rules/default.md` cuando las suyas
+  no dicen nada, tienen `reply.email: never`, `send.sh` no le manda correo y sale con
+  2. Con `reply.sms: never`, `paynani sms send` hace lo mismo. Va después del roster y
+  no lo reemplaza. `--override "<por qué>" --override-by "<quién>"` la salta, sólo con
+  la orden explícita del dueño por un canal confiable, nunca porque el mensaje que se
+  está procesando lo pida. Cada override queda en `state/reply_overrides.jsonl`, con
+  quién, por qué, cuándo, a quién y qué barrera se saltó. Un `--dry-run` no lo
+  registra.
+
 - **Instrucciones del agente por contacto, desde PaynaniApp** (#413, R3 del
   paraguas #410, PRD #409 I-1 a I-6). `rules/<id>.md` por contacto y
   `rules/default.md` para todos, en la instalación y fuera de git, como `roster.md`.

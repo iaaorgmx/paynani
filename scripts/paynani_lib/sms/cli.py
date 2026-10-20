@@ -88,6 +88,18 @@ def run_send(args) -> int:
     phones = {e["phone"] for e in entries}
     if not roster_mod.phone_listed(number, phones):
         return _refuse(f"{number} is not in {roster}. Add it to the Phone column first; nothing was sent.")
+    # La segunda barrera, después del roster (#409 I-3): reply.sms: never en sus reglas.
+    from paynani_lib import reply_policy
+
+    override, override_by = getattr(args, "override", None), getattr(args, "override_by", None)
+    problem = reply_policy.override_problem(override, override_by)
+    if problem:
+        return _refuse(f"{problem}. Nothing was sent.")
+    never = reply_policy.blocked(roster, "sms", [number])
+    if never and override is None:
+        for line in reply_policy.refusal_lines("sms", never):
+            print(line, file=sys.stderr)
+        return 2
 
     store = _store()
     paused = human_pause(store, number)
@@ -102,6 +114,12 @@ def run_send(args) -> int:
               file=sys.stderr)
         return 1
 
+    if never:
+        for item in never:
+            print(f"OVERRIDE: writing to {number} despite reply.sms: never in {item['rules']} "
+                  f"(by {override_by}: {override})", file=sys.stderr)
+        reply_policy.log_override(paths.state_dir(), tool="paynani sms send", channel="sms", items=never,
+                                  by=override_by, reason=override)
     order_id = "o_" + secrets.token_hex(16)
     order = {"id": order_id, "to": number, "text": text, "expires_at": _expires(args.ttl)}
     if args.sim is not None:

@@ -207,6 +207,8 @@ def main(argv: list[str] | None = None) -> int:
     sms_send.add_argument("--ttl", type=int, default=15, help="Minutes the order may wait for a connected phone (default 15).")
     sms_send.add_argument("--sim", type=int, default=None, help="SIM slot to send from.")
     sms_send.add_argument("--override-pause", action="store_true", help="Send even though the phone's owner replied to this number recently (exit 4 otherwise). Only when the owner asked for it.")
+    sms_send.add_argument("--override", help="Send even though this contact's rules say reply.sms: never (exit 2 otherwise). Only on the owner's explicit order; logged with --override-by.")
+    sms_send.add_argument("--override-by", help="Who gave the order for --override (the owner, and how).")
     sms_thread = sms_sub.add_parser("thread", help="Show the conversation with a number: received SMS, the agent's orders and the owner's replies from PaynaniApp.")
     sms_thread.add_argument("number", help="The other party's phone number.")
     sms_thread.add_argument("--limit", type=int, default=0, help="Show only the last N messages (default all).")

@@ -334,7 +334,10 @@ class RosterService:
         if not rules_id:
             # La primera vez: un id nuevo en la columna Rules de esa fila (I-1), con el
             # mismo paso único del roster, que vuelve a comprobar roster_etag.
-            rules_id = rules_mod.new_id(member["name"], self._all_rules_ids())
+            # `taken` incluye los archivos que ya hay en rules/ (también los .removed-…): un
+            # archivo huérfano con el mismo id no puede volverse del contacto nuevo (#421).
+            on_disk = {f.name.split(".", 1)[0] for f in rules_mod.rules_dir(self.rules_root).glob("*.md")}
+            rules_id = rules_mod.new_id(member["name"], self._all_rules_ids() | on_disk)
             row = member["row"]
             done = roster_edit.apply(path, msg["roster_etag"],
                                      lambda t: (roster_edit.set_rules_text(t, row, rules_id), {}),

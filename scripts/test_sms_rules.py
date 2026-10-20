@@ -164,11 +164,19 @@ async def main():
           (r.get("code"), r.get("field"), r.get("reason")))
 
     # --- guardar por primera vez ---
+    real_new_id = roster_api.rules_mod.new_id
+    seen_taken = []
+    roster_api.rules_mod.new_id = lambda name, taken: (seen_taken.append(set(taken)), real_new_id(name, taken))[1]
+    rules_dir.mkdir(mode=0o700)
+    (rules_dir / "huerfano-0000.removed-20260101T000000Z.md").write_text("x", encoding="utf-8")
     save = {"type": "rules.save", "id": qid(), "account": None, "row": 2, "etag": "", "roster_etag": retag,
             "text": ANA_RULES}
     r = await ask(ws, save)
     data = r.get("data") or {}
     rid = data.get("rules", "")
+    roster_api.rules_mod.new_id = real_new_id
+    check("new_id no repite un id de un archivo que ya está en rules/", True,
+          "huerfano-0000" in (seen_taken[0] if seen_taken else set()))
     rfile = rules_dir / f"{rid}.md"
     check("rules.save: id nuevo con el nombre", True, rid.startswith("ana-ruiz-") and rfile.exists())
     check("rules.save: la columna Rules en roster.md, con el id en la fila de Ana", (True, rid),

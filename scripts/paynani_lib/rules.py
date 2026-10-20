@@ -30,6 +30,7 @@ del teléfono emparejado (sms/roster_api.py) o una persona con su editor.
 """
 from __future__ import annotations
 
+import os
 import re
 import secrets
 import sys
@@ -51,7 +52,14 @@ KEYS = ("version", "enabled", "reply", "updated_at", "updated_by")
 
 
 def rules_dir(root: Path | None = None) -> Path:
-    """`rules/` de la instalación: en el clon, junto a roster.md."""
+    """
+    `rules/` de la instalación: en el clon, junto a roster.md. `PAYNANI_RULES`
+    (una carpeta) lo cambia, como `ROSTER` en send.sh: para las pruebas.
+    """
+    if root is None:
+        override = os.environ.get("PAYNANI_RULES", "").strip()
+        if override:
+            return Path(override).expanduser()
     return (_REPO_ROOT if root is None else Path(root)) / "rules"
 
 
