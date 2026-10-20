@@ -608,20 +608,51 @@ for name, value in values.items():
 PYINNER
         return
     fi
-    python3 - "$source" "$ROOT" "$credentials" "$config_dir" "$state_dir" <<'PYINNER'
+    python3 - "$source" "$ROOT" "$credentials" "$config_dir" "$state_dir" "$(rendered_service_path)" <<'PYINNER'
 import sys
 from pathlib import Path
 
 # Order matters only in that every placeholder is distinct; none is a prefix of
 # another, so a single pass is enough. config and state are rendered separately
 # from the root so an install that overrides either still gets the path it named.
+# service-path goes first: "/path/to/service-path" does not start with any other.
 text = Path(sys.argv[1]).read_text()
+text = text.replace("/path/to/service-path", sys.argv[6])
 text = text.replace("/path/to/paynani", sys.argv[2])
 text = text.replace("/path/to/env", sys.argv[3])
 text = text.replace("/path/to/config", sys.argv[4])
 text = text.replace("/path/to/state", sys.argv[5])
 sys.stdout.write(text)
 PYINNER
+}
+
+# The PATH a rendered service runs with (#410): the folder where this shell finds
+# himalaya, then the service manager's own PATH (what the service would get
+# anyway), or the usual system folders if systemd cannot be asked. A user service
+# does not inherit the login shell's PATH, so a himalaya in ~/.local/bin is
+# invisible to send.sh run by the SMS gateway, and the email to the human for a
+# roster change from PaynaniApp never goes out.
+rendered_service_path() {
+    local system="" systemctl_bin found dir
+    systemctl_bin=$(resolve_command systemctl || true)
+    if [[ -n "$systemctl_bin" ]]; then
+        system=$(systemd_service_path "$systemctl_bin" || true)
+    fi
+    [[ -n "$system" ]] || system=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    found=$(command -v himalaya 2>/dev/null || true)
+    # The installer can run with a PATH without ~/.local/bin, where bootstrap_user.py
+    # puts himalaya: look there too, so the unit does not repeat the same blind spot.
+    if [[ "$found" != /* && -x "$HOME/.local/bin/himalaya" ]]; then
+        found="$HOME/.local/bin/himalaya"
+    fi
+    if [[ "$found" == /* ]]; then
+        dir=${found%/*}
+        case ":$system:" in
+            *":$dir:"*) ;;
+            *) system="$dir:$system" ;;
+        esac
+    fi
+    printf '%s' "$system"
 }
 
 sha256_file() {

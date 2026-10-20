@@ -2,6 +2,21 @@
 
 ## Sin publicar
 
+- **El correo al dueño por los cambios desde PaynaniApp ya sale** (#410). La pasarela
+  corre `send.sh` desde su servicio, y un servicio de usuario no ve el `PATH` de la
+  sesión: con `himalaya` en `~/.local/bin`, como lo instala `INSTALL.md`, el correo de
+  cada cambio en la pantalla «Roster» fallaba con `CalledProcessError` (lo encontró
+  Andy al actualizar a 0.13.0).
+  - `paynani-sms.service` lleva ahora `Environment=PATH=`: la carpeta de
+    `command -v himalaya` (o `~/.local/bin/himalaya`, si el instalador corre sin ella)
+    y luego el `PATH` del administrador de servicios.
+  - En macOS, el `PATH` de los LaunchAgents también empieza con la carpeta de
+    `himalaya`.
+  - `healthcheck.py` advierte si la pasarela no encuentra `himalaya` con el `PATH` de
+    su propio servicio, antes de que falle un aviso.
+  - Para actualizar basta `install.sh --upgrade` y reiniciar la pasarela; el plan de
+    `scripts/upgrade_plan.py` ya lo pide porque cambia `systemd/`.
+
 ## 0.13.0 (2026-10-20)
 
 **El roster y las instrucciones del agente, desde el teléfono.** Desde 0.12.0, 9 PRs

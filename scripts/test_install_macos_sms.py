@@ -101,6 +101,26 @@ with mock.patch.object(m, "state_dir", lambda: state), mock.patch.object(m, "env
     bare = m.plist_for("sms", "/usr/bin/python3", "codex")
 check("plist: sin variables, no inventa ninguna", False, "PAYNANI_SMS_PORT" in bare["EnvironmentVariables"])
 
+# La pasarela corre send.sh para el correo al dueño, y un LaunchAgent no ve el PATH de la sesión (#410):
+# la carpeta de himalaya va en el PATH del agente, también si sólo está en ~/.local/bin.
+real_which = m.shutil.which
+hdir = Path(tempfile.mkdtemp()) / "cargo-bin"
+hdir.mkdir()
+m.shutil.which = lambda name, *a, **k: str(hdir / "himalaya") if name == "himalaya" else real_which(name, *a, **k)
+path = m.plist_for("sms", "/usr/bin/python3", "codex")["EnvironmentVariables"]["PATH"].split(":")
+check("plist: la carpeta de himalaya va primero en el PATH", str(hdir), path[0])
+m.shutil.which = lambda name, *a, **k: None if name == "himalaya" else real_which(name, *a, **k)
+fake_home = Path(tempfile.mkdtemp())
+(fake_home / ".local" / "bin").mkdir(parents=True)
+(fake_home / ".local" / "bin" / "himalaya").write_text("#!/bin/sh\n")
+(fake_home / ".local" / "bin" / "himalaya").chmod(0o755)
+real_home = m.Path.home
+m.Path.home = staticmethod(lambda: fake_home)
+path = m.plist_for("sms", "/usr/bin/python3", "codex")["EnvironmentVariables"]["PATH"].split(":")
+check("plist: sin himalaya en el PATH del instalador, usa ~/.local/bin", str(fake_home / ".local" / "bin"), path[0])
+m.Path.home = real_home
+m.shutil.which = real_which
+
 # --- instalar -------------------------------------------------------------------------------
 code, out, _ = run(["--runtime", "codex"])
 check("sin --with-sms: se instalan los tres de siempre y ninguno de SMS", (True, False, False),

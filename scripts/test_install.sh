@@ -1094,6 +1094,41 @@ fi
 }
 check_status 'the SMS gateway install is idempotent' 0 --runtime codex --with-sms
 
+# The gateway runs send.sh for the email to the human on every roster change from
+# PaynaniApp, and a user service does not get the login shell's PATH (#410). The unit
+# carries Environment=PATH: the service manager's own, here the fixture's.
+grep -q "^Environment=PATH=$fixture_bin:/usr/bin:/bin\$" "$sms_unit" || {
+    printf 'FAIL the rendered SMS unit has no Environment=PATH with the service manager PATH\n'
+    fail=$((fail + 1))
+}
+# With himalaya in a folder the service manager does not have, that folder goes first.
+printf '#!/bin/sh\nexit 0\n' >"$fixture_bin/himalaya"
+chmod 0755 "$fixture_bin/himalaya"
+FAKE_SERVICE_PATH=/bin check_status \
+    'an upgrade puts the folder of himalaya first in the gateway PATH' 10 --runtime codex --upgrade
+grep -q "^Environment=PATH=$fixture_bin:/bin\$" "$sms_unit" || {
+    printf 'FAIL the SMS unit does not start its PATH with the folder of himalaya: %s\n' \
+        "$(grep '^Environment=' "$sms_unit")"
+    fail=$((fail + 1))
+}
+rm -f "$fixture_bin/himalaya"
+# Run with a PATH that does not have ~/.local/bin, the installer still finds a himalaya there.
+mkdir -p "$sandbox/.local/bin"
+printf '#!/bin/sh\nexit 0\n' >"$sandbox/.local/bin/himalaya"
+chmod 0755 "$sandbox/.local/bin/himalaya"
+check_status 'a himalaya in ~/.local/bin goes first even when the installer PATH lacks it' 10 \
+    --runtime codex --upgrade
+grep -q "^Environment=PATH=$sandbox/.local/bin:$fixture_bin:/usr/bin:/bin\$" "$sms_unit" || {
+    printf 'FAIL the SMS unit does not put ~/.local/bin first: %s\n' "$(grep '^Environment=' "$sms_unit")"
+    fail=$((fail + 1))
+}
+rm -rf "$sandbox/.local/bin"
+check_status 'and an upgrade without it goes back to the service manager PATH' 10 --runtime codex --upgrade
+grep -q "^Environment=PATH=$fixture_bin:/usr/bin:/bin\$" "$sms_unit" || {
+    printf 'FAIL the SMS unit did not go back to the service manager PATH\n'
+    fail=$((fail + 1))
+}
+
 check_status 'a later upgrade without the flag keeps handling the owned gateway' 0 --runtime codex --upgrade
 [[ -f "$sms_unit" && "$(<"$clone/runtime.env")" == "$plain_runtime_env" ]] || {
     printf 'FAIL an upgrade without --with-sms dropped the owned SMS unit or changed runtime.env\n'

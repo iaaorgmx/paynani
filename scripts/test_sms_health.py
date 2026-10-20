@@ -240,6 +240,12 @@ check("y no hay hallazgos", ([], []), healthcheck.sms_gateway_findings(None))
 unit = home / ".config" / "systemd" / "user" / "paynani-sms.service"
 unit.parent.mkdir(parents=True)
 unit.write_text("[Unit]\n")
+# Sin Environment=PATH, el check de #410 usa el PATH del administrador de servicios: aquí, uno con himalaya,
+# para que estas pruebas no dependan del host.
+fakebin = Path(tempfile.mkdtemp())
+(fakebin / "himalaya").write_text("#!/bin/sh\n")
+(fakebin / "himalaya").chmod(0o755)
+healthcheck.service_manager_path = lambda: str(fakebin)
 for state_name, expect in (("active", ([], [])), ("failed", (1, 0)), ("inactive", (1, 0)), ("unknown", (0, 1))):
     healthcheck.unit_state = lambda name, _s=state_name: _s
     facts = healthcheck.sms_gateway_facts(home=home, system="Linux")
@@ -250,6 +256,32 @@ healthcheck.unit_state = lambda name: "failed"
 problem = healthcheck.sms_gateway_findings(healthcheck.sms_gateway_facts(home=home, system="Linux"))[0][0]
 check("el problema dice que la pasarela caída no puede avisar de sí misma y dónde mirar", True,
       "paynani-sms.service is failed" in problem and "cannot report itself" in problem and "sms.err.log" in problem)
+
+# --- la pasarela encuentra himalaya con su propio PATH (#410) -------------------------------------
+# send.sh, que corre el servicio para el correo al dueño de cada cambio desde PaynaniApp, necesita
+# himalaya; el servicio no ve el PATH de la sesión, así que un ~/.local/bin no está si la unidad no lo dice.
+healthcheck.unit_state = lambda name: "active"
+unit.write_text(f"[Service]\nEnvironment=PATH={fakebin}:/usr/bin:/bin\nExecStart=/usr/bin/python3 x\n")
+facts = healthcheck.sms_gateway_facts(home=home, system="Linux")
+check("con Environment=PATH que incluye himalaya, lo encuentra", (str(fakebin / "himalaya"), f"{fakebin}:/usr/bin:/bin"),
+      (facts["himalaya"], facts["path"]))
+check("y no hay advertencia", ([], []), healthcheck.sms_gateway_findings(facts))
+emptybin = Path(tempfile.mkdtemp())
+unit.write_text(f"[Service]\nEnvironment=PATH={emptybin}\nExecStart=/usr/bin/python3 x\n")
+found = healthcheck.sms_gateway_findings(healthcheck.sms_gateway_facts(home=home, system="Linux"))
+check("sin himalaya en el PATH de la unidad, una advertencia que dice qué hacer", (0, 1), (len(found[0]), len(found[1])))
+check("y nombra el PATH, el correo al dueño y install.sh --upgrade", True,
+      all(s in found[1][0] for s in (str(emptybin), "not emailed", "install.sh --upgrade")))
+unit.write_text("[Service]\nExecStart=/usr/bin/python3 x\n")
+healthcheck.service_manager_path = lambda: str(emptybin)
+facts = healthcheck.sms_gateway_facts(home=home, system="Linux")
+check("sin Environment=PATH usa el PATH del administrador de servicios", (None, str(emptybin)), (facts["himalaya"], facts["path"]))
+unit.write_text(f'[Service]\nEnvironment="LANG=C.UTF-8" "PATH={fakebin}"\n')
+check("lee PATH aunque la línea traiga varias variables entre comillas", str(fakebin / "himalaya"),
+      healthcheck.sms_gateway_facts(home=home, system="Linux")["himalaya"])
+unit.write_text("[Unit]\n")
+healthcheck.service_manager_path = lambda: None
+
 agents = home / "Library" / "LaunchAgents"
 agents.mkdir(parents=True)
 (agents / "com.paynani.sms.plist").write_text("x")

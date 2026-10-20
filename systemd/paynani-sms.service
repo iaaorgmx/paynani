@@ -1,9 +1,16 @@
 # Template. scripts/install.sh renders it when asked (`--with-sms`); a manual
 # install edits it by hand. Four placeholders:
 #
-#   /path/to/paynani  your clone's absolute path, which is also the install
-#   /path/to/state    the state tree, normally <clone>/state
-#   /path/to/config   where runtime.env lives, normally the clone itself
+#   /path/to/paynani      your clone's absolute path, which is also the install
+#   /path/to/state        the state tree, normally <clone>/state
+#   /path/to/config       where runtime.env lives, normally the clone itself
+#   /path/to/service-path the PATH the gateway runs with: the folder of
+#                         `command -v himalaya` first, then the system's
+#
+# The gateway emails the human through scripts/send.sh for every roster change
+# made from PaynaniApp (SMS_GATEWAY.md §11), and send.sh needs himalaya. A user
+# service does not get the login shell's PATH, so ~/.local/bin, where INSTALL.md
+# puts himalaya, is not on it unless this line says so (#410).
 #
 # The SMS gateway (SMS_GATEWAY.md) is optional: an install with no phone does not
 # need another process, so nothing installs this unless asked. It listens on
@@ -19,6 +26,7 @@ Documentation=file:///path/to/paynani/SMS_GATEWAY.md
 
 [Service]
 Type=simple
+Environment=PATH=/path/to/service-path
 EnvironmentFile=-/path/to/config/runtime.env
 ExecStart=/usr/bin/python3 /path/to/paynani/scripts/sms_gateway.py
 WorkingDirectory=/path/to/paynani

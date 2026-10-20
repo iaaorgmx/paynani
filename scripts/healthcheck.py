@@ -26,6 +26,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -980,7 +981,50 @@ def sms_gateway_facts(home=None, system=None):
         installed = (home / ".config" / "systemd" / "user" / SMS_UNIT).is_file()
     if not installed:
         return None
-    return {"unit": unit_state(SMS_UNIT), "name": SMS_LAUNCHD_LABEL if (system or platform.system()) == "Darwin" else SMS_UNIT}
+    if (system or platform.system()) == "Darwin":
+        return {"unit": unit_state(SMS_UNIT), "name": SMS_LAUNCHD_LABEL}
+    unit_text = (home / ".config" / "systemd" / "user" / SMS_UNIT).read_text(encoding="utf-8", errors="replace")
+    himalaya, path = sms_service_himalaya(unit_text)
+    return {"unit": unit_state(SMS_UNIT), "name": SMS_UNIT, "himalaya": himalaya, "path": path}
+
+
+SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def service_manager_path():
+    """The PATH systemd gives user services (`systemctl --user show-environment`), or None."""
+    try:
+        run = subprocess.run(["systemctl", "--user", "show-environment"],
+                             capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in (run.stdout or "").splitlines():
+        if line.startswith("PATH="):
+            return line[len("PATH="):]
+    return None
+
+
+def sms_service_himalaya(unit_text, which=shutil.which):
+    """
+    Where the gateway's service would find himalaya: (path to it or None, PATH used).
+
+    The gateway runs scripts/send.sh for the email to the human on every roster
+    change from PaynaniApp (SMS_GATEWAY.md §11), and send.sh needs himalaya. The
+    service does not get the login shell's PATH: it gets the unit's Environment=PATH
+    if there is one, and the service manager's otherwise (#410).
+    """
+    path = None
+    for line in unit_text.splitlines():
+        line = line.strip()
+        if not line.startswith("Environment="):
+            continue
+        for item in line[len("Environment="):].split():
+            item = item.strip('"')
+            if item.startswith("PATH="):
+                path = item[len("PATH="):]
+    if path is None:
+        path = service_manager_path() or SYSTEM_PATH
+    return which("himalaya", path=path), path
 
 
 def sms_gateway_findings(gateway):
@@ -994,6 +1038,11 @@ def sms_gateway_findings(gateway):
         return [f"the SMS gateway {gateway['name']} is {gateway['unit']}: texts and calls are "
                 "not arriving and nothing else will say so, because a stopped gateway cannot "
                 "report itself. See state/sms.err.log"], []
+    if "himalaya" in gateway and not gateway["himalaya"]:
+        return [], [f"the SMS gateway {gateway['name']} cannot find himalaya on its own PATH "
+                    f"({gateway['path']}): roster changes from PaynaniApp are not emailed to your "
+                    "human. Run scripts/install.sh --upgrade, which writes the PATH into the unit, "
+                    "then restart the gateway (#410)"]
     return [], []
 
 
