@@ -2,6 +2,13 @@
 
 ## Sin publicar
 
+## 0.13.1 (2026-10-20)
+
+**El correo al dueño por cada cambio desde la pantalla «Roster» ya sale.** Desde
+0.13.0, dos PRs de Andy (#427 y #430), más el de esta release. Sin requisitos nuevos. Con
+PaynaniApp 0.7.1, que deja ver «Tipo» en pantallas chicas y pinta blancos los
+diálogos (PaynaniApp #131 y #132).
+
 - **El correo al dueño por los cambios desde PaynaniApp ya sale** (#410). La pasarela
   corre `send.sh` desde su servicio, y un servicio de usuario no ve el `PATH` de la
   sesión: con `himalaya` en `~/.local/bin`, como lo instala `INSTALL.md`, el correo de
@@ -14,8 +21,29 @@
     `himalaya`.
   - `healthcheck.py` advierte si la pasarela no encuentra `himalaya` con el `PATH` de
     su propio servicio, antes de que falle un aviso.
+  - La línea va entre comillas (`Environment="PATH=…"`), para que una carpeta con
+    espacios no rompa la unidad, y una unidad que no se puede leer no tumba
+    `healthcheck.py` (#430).
   - Para actualizar basta `install.sh --upgrade` y reiniciar la pasarela; el plan de
     `scripts/upgrade_plan.py` ya lo pide porque cambia `systemd/`.
+
+### Si actualizas desde 0.13.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.13.1
+python3 scripts/upgrade_plan.py --from v0.13.0     # y haz lo que imprima
+systemctl --user restart paynani-sms.service       # si tienes la pasarela
+```
+
+Después, `grep PATH ~/.config/systemd/user/paynani-sms.service` tiene que mostrar la
+carpeta de `himalaya`, y `scripts/healthcheck.py` no debe advertir que la pasarela no
+encuentra `himalaya`. Haz un cambio de prueba desde «Roster» y comprueba que llega el
+correo al dueño, con `"notified": true` en `state/roster_changes.jsonl`.
+
+Si actualizas desde 0.12.0, sigue primero «Si actualizas desde 0.12.0» de 0.13.0 con
+`--from v0.12.0`, y después corre el reinicio y las comprobaciones de arriba.
 
 ## 0.13.0 (2026-10-20)
 
