@@ -46,9 +46,11 @@ def roster_service(state: Path, roster: Path) -> roster_api.RosterService:
         agent_email = envfile.read_env().get("AGENT_EMAIL_ACCOUNT", "")
     except Exception as exc:  # noqa: BLE001 -- sólo es para mostrar
         gw.log(f"roster: no se leyó la dirección del agente ({type(exc).__name__})")
+    # rules/ junto al roster del agente (#418): en una instalación es el clon, y una
+    # pasarela de prueba con --roster en otra carpeta no mezcla sus reglas con las de él.
     return roster_api.RosterService(roster, state, accounts_file=accounts.accounts_path(),
                                     agent_email=agent_email, notifier=roster_api.send_sh_notifier,
-                                    log=gw.log)
+                                    log=gw.log, rules_root=roster.parent)
 
 
 def main(argv=None) -> int:

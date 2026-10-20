@@ -197,7 +197,7 @@ def openclaw_text(record, root=None):
 def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_address,
                subject, sent_at, roster_match, notification_text, observed_at=None,
                message_id="", provider_id="", recipient_role="", notifier_headers=None,
-               account_id=None):
+               account_id=None, rules=None):
     """
     One arrived message, as structure rather than prose.
 
@@ -235,6 +235,10 @@ def mail_event(*, account, mailbox, uidvalidity, uid, sender_name, sender_addres
         # for display, not for routing.
         "notification_text": notification_text,
     }
+    if rules:
+        # Las instrucciones de este contacto (#409 A-1): la ruta y si son válidas, nunca
+        # su texto. Sólo en un mensaje del roster, y sin el campo el sobre es el de antes.
+        record["rules"] = {"file": rules["file"], "status": rules["status"]}
     if account_id and account_id != "main":
         # Only for an additional account (#276): a record from the agent's own
         # account stays byte-for-byte what it was before accounts existed.
@@ -497,7 +501,7 @@ def _sender(e164, raw, name):
 
 
 def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sent_at,
-              roster_match, local_time, observed_at=None):
+              roster_match, local_time, observed_at=None, rules=None):
     """
     Un SMS recibido, con el mismo sobre que un correo. El texto completo NO va
     aquí: vive en state/sms/inbox/ y se ve con `paynani event show --body`,
@@ -506,7 +510,11 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
     eid = sms_event_id(device_id, message_id)
     who = " ".join(p for p in (sender_name, e164 or safe_excerpt(raw_sender, 40)) if p)
     if roster_match:
-        line = f"[sms {local_time}, roster] {who}: {safe_excerpt(text)}"
+        # Las reglas del contacto (#409 A-1) dentro del corchete, como en el correo: el
+        # texto del SMS no puede escribir ahí. Antes de `roster`, para que la línea siga
+        # teniendo `, roster]` (#423).
+        note = f", {_rules_tag(rules)}" if rules else ""
+        line = f"[sms {local_time}{note}, roster] {who}: {safe_excerpt(text)}"
     else:
         line = f"[sms {local_time}] {who}: mensaje de un número fuera del roster"
     record = {
@@ -524,8 +532,16 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
         "provider_id": f"sms:{message_id}",
         "inspection_command": f"scripts/paynani event show {eid}",
     }
+    if roster_match and rules:
+        record["rules"] = {"file": rules["file"], "status": rules["status"]}
     record["notification_text"] = f"{line} [{record['inspection_command']}]"
     return record
+
+
+def _rules_tag(rules):
+    """`reglas: rules/x.md`, o `reglas inválidas: …` (rules.tag, sin importar paynani_lib aquí)."""
+    label = "reglas" if rules.get("status") == "active" else "reglas inválidas"
+    return f"{label}: {rules['file']}"
 
 
 GATEWAY_OFFLINE = "sms.gateway.offline"

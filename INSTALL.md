@@ -1183,6 +1183,29 @@ which numbers go here is your human's decision.
 
 ---
 
+### 5.3 The roster and each contact's rules, from PaynaniApp
+
+Nothing to install: with the gateway (§5.1) and a paired phone (§5.2), PaynaniApp
+shows «Roster» in its menu when the gateway announces it. From there your human
+adds, edits and removes contacts of every account (SMS_GATEWAY.md §11), and gives
+each one instructions for the agent, plus general ones for everybody.
+
+- **Where they live:** `roster.md` and the account rosters as always, and
+  `rules/<id>.md` and `rules/default.md` in this clone, beside `roster.md`. `rules/`
+  is not in git (`.gitignore`), like `roster.md`, and the uninstall keeps it.
+- **What each change leaves:** a dated copy in `state/history/`, a line in
+  `state/roster_changes.jsonl`, and an email to the owner (the first `Human` of
+  `roster.md`), sent with `scripts/send.sh` from the gateway's service. If that email
+  cannot go out, `scripts/healthcheck.py` warns for 24 h.
+- **What the agent sees:** a roster notice names the rules to read inside its first
+  bracket, as `[mail …, reglas: rules/<id>.md, roster]`, and AGENTS.md says how to
+  apply them. `reply: never` per channel is enforced by `send.sh` and `paynani sms
+  send` (exit 2); `--override` with `--override-by` is logged in
+  `state/reply_overrides.jsonl`.
+- **Editing by hand** works too: keep the YAML header valid. A broken header shows up
+  as `reglas inválidas: rules/<id>.md` in the notice and as a `WARNING` from
+  `send.sh`, and paynani ignores that file until it is fixed.
+
 ## 6. Harness wiring
 
 `harness/dispatch.py` and `harness/session_start.py` are in this repo and working.

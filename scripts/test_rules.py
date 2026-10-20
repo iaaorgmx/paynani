@@ -168,5 +168,35 @@ check("set_rules_text: con la columna ya puesta no la repite", (1, ["julian-1a2b
 check("set_rules_text: fila fuera de la tabla", ("not_found", "row", ""),
       error_of(roster_edit.set_rules_text, ROSTER, 7, "x-0000"))
 
+# --- lo que nombra el aviso (A-1) ---------------------------------------------------
+import tempfile  # noqa: E402
+
+root = Path(tempfile.mkdtemp())
+rdir = root / "rules"
+rdir.mkdir()
+check("notice: sin archivos, nada", None, rules.notice("ana-9b1c", root))
+(rdir / "default.md").write_text(DEFAULT, encoding="utf-8")
+check("notice: sin reglas propias, las generales", {"file": "rules/default.md", "status": "active"},
+      rules.notice("ana-9b1c", root))
+check("notice: sin Rules en la fila, también las generales", "rules/default.md", rules.notice(None, root)["file"])
+(rdir / "ana-9b1c.md").write_text(CONTACT, encoding="utf-8")
+check("notice: con reglas propias activas, las suyas", {"file": "rules/ana-9b1c.md", "status": "active"},
+      rules.notice("ana-9b1c", root))
+(rdir / "ana-9b1c.md").write_text(CONTACT.replace("enabled: true", "enabled: false"), encoding="utf-8")
+check("notice: las suyas apagadas -> las generales", "rules/default.md", rules.notice("ana-9b1c", root)["file"])
+(rdir / "ana-9b1c.md").write_text("## sin cabecera\n", encoding="utf-8")
+check("notice: las suyas inválidas -> invalid, no las generales en silencio",
+      {"file": "rules/ana-9b1c.md", "status": "invalid"}, rules.notice("ana-9b1c", root))
+(rdir / "ana-9b1c.md").unlink()
+(rdir / "default.md").write_text(DEFAULT.replace("enabled: true", "enabled: false"), encoding="utf-8")
+check("notice: las generales apagadas y nada propio -> nada", None, rules.notice("ana-9b1c", root))
+(rdir / "default.md").write_text("roto", encoding="utf-8")
+check("notice: las generales inválidas -> invalid", {"file": "rules/default.md", "status": "invalid"},
+      rules.notice(None, root))
+check("notice: un Rules raro no sale de rules/", "rules/default.md", rules.notice("../roster", root)["file"])
+check("tag: activas e inválidas", ("reglas: rules/x.md", "reglas inválidas: rules/x.md", ""),
+      (rules.tag({"file": "rules/x.md", "status": "active"}), rules.tag({"file": "rules/x.md", "status": "invalid"}),
+       rules.tag(None)))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

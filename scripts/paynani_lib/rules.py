@@ -257,3 +257,41 @@ def new_id(name: str, taken) -> str:
 def removed_name(rules_id: str, stamp: str) -> str:
     """`<id>.removed-<AAAAMMDDTHHMMSSZ>.md`, para la baja de un contacto con reglas."""
     return f"{rules_id}.removed-{stamp}.md"
+
+
+def notice(rules_id, root: Path | None = None) -> dict | None:
+    """
+    Qué reglas nombra el aviso de un mensaje de un contacto del roster (A-1):
+    `{"file": "rules/<id>.md", "status": "active"}`, o `"invalid"` si el archivo no
+    pasa la validación (para que un error a mano no deje de aplicarse sin que nadie
+    lo sepa, nota de #421), o None si no hay reglas que leer.
+
+    Las del contacto si existen y están activas; si están apagadas o no hay, las
+    generales (`rules/default.md`), si existen y están activas. El agente lee
+    `default.md` y luego las del contacto (AGENTS.md).
+    """
+    def read(name):
+        try:
+            return path_for(name, root).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError, EditError):
+            return None
+
+    for name in ([rules_id] if rules_id else []) + [DEFAULT_ID]:
+        text = read(name)
+        if text is None:
+            continue
+        try:
+            parsed = parse(text)
+        except EditError:
+            return {"file": f"rules/{name}.md", "status": "invalid"}
+        if parsed["enabled"]:
+            return {"file": f"rules/{name}.md", "status": "active"}
+    return None
+
+
+def tag(note: dict | None) -> str:
+    """La parte del corchete del aviso: `reglas: rules/x.md` o `reglas inválidas: rules/x.md`."""
+    if not note:
+        return ""
+    label = "reglas" if note["status"] == "active" else "reglas inválidas"
+    return f"{label}: {note['file']}"

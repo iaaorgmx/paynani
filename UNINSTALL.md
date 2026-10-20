@@ -22,8 +22,9 @@ scripts/install.sh --runtime openclaw --uninstall
 Usa el runtime con el que se instaló. El comando que sí modifica valida todos los
 archivos propios antes de tocar el primero, deshabilita y detiene las unidades
 propias que alcance, y borra únicamente lo que quedó registrado en el manifiesto.
-Deja a propósito las credenciales del buzón, `roster.md`, el repositorio, el
-diario de eventos, el cursor, las bitácoras y demás estado. Si el gestor de
+Deja a propósito las credenciales del buzón, `roster.md`, las reglas por contacto
+(`rules/`), el repositorio, el diario de eventos, el cursor, las bitácoras y demás
+estado. Si el gestor de
 servicios de usuario de systemd no está disponible, la limpieza de archivos sigue
 pero avisa que no pudo confirmar la desactivación del servicio. La salida `10`
 significa que hubo cambios; `0` significa que no había manifiesto y no se quitó
@@ -242,11 +243,13 @@ python3 "$REPO/scripts/opencode_plugin.py" --uninstall
 rm -rf "$REPO"   # el clon desde el que instalaste
 ```
 
-**`roster.md` vive ahí dentro y no está en git**, así que esto lo borra y ningún
-`git clone` lo trae de vuelta. Si armar esa lista costó trabajo, cópiala antes:
+**`roster.md` y `rules/` viven ahí dentro y no están en git**, así que esto los
+borra y ningún `git clone` los trae de vuelta. Si armar esa lista o las
+instrucciones de cada contacto costó trabajo, cópialas antes:
 
 ```bash
 cp "$REPO/roster.md" ~/roster.md.kept
+cp -r "$REPO/rules" ~/rules.kept 2>/dev/null || true
 ```
 
 Haz esto **al final**. Todo lo de arriba usa rutas dentro del repositorio, y
