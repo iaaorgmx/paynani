@@ -567,9 +567,7 @@ class Watcher(unittest.TestCase):
         while time.monotonic() < deadline:
             try:
                 os.killpg(group, 0)
-            except ProcessLookupError:
-                break
-            except OSError:
+            except OSError:  # ProcessLookupError: the group is gone
                 break
             time.sleep(0.02)
 
