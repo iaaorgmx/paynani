@@ -71,6 +71,24 @@ def account_plist_path(account_id: str) -> Path:
     return launch_agent_dir() / f"{account_label(account_id)}.plist"
 
 
+def himalaya_dir() -> str | None:
+    """
+    The folder of the himalaya this install uses, or None (#410).
+
+    The SMS gateway runs send.sh for the email to the human on every roster change
+    from PaynaniApp, and a LaunchAgent does not get the login shell's PATH: a
+    himalaya in ~/.local/bin or ~/.cargo/bin is invisible to it unless its folder is
+    in the agent's PATH. ~/.local/bin is also tried when the installer's own PATH
+    lacks it.
+    """
+    found = shutil.which("himalaya")
+    if not found:
+        local = Path.home() / ".local" / "bin" / "himalaya"
+        if local.is_file() and os.access(local, os.X_OK):
+            found = str(local)
+    return str(Path(found).parent) if found else None
+
+
 def agent_env(runtime: str, runtime_bin: str | None = None) -> dict[str, str]:
     path_parts = [
         "/opt/homebrew/bin",
@@ -80,6 +98,9 @@ def agent_env(runtime: str, runtime_bin: str | None = None) -> dict[str, str]:
         "/usr/sbin",
         "/sbin",
     ]
+    himalaya = himalaya_dir()
+    if himalaya:
+        path_parts.insert(0, himalaya)
     if runtime_bin:
         path_parts.insert(0, str(Path(runtime_bin).parent))
     env = {

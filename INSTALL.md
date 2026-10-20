@@ -868,7 +868,11 @@ manifest. From then on `--upgrade` keeps it current and `--uninstall` removes it
 with or without the flag.
 
 A manual install copies the unit like the others, replaces its placeholders
-(`/path/to/paynani`, `/path/to/state`, `/path/to/config`) and enables it:
+(`/path/to/paynani`, `/path/to/state`, `/path/to/config`, and
+`/path/to/service-path` with the folder of `command -v himalaya` followed by
+`/usr/local/bin:/usr/bin:/bin`) and enables it. The gateway emails your human
+through `send.sh`, which needs `himalaya`, and a user service does not see the
+`PATH` of your shell:
 
 ```bash
 install -Dm644 systemd/paynani-sms.service ~/.config/systemd/user/
