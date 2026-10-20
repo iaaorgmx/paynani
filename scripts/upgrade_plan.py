@@ -293,8 +293,7 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
     out = {"from": from_ref, "to": to_ref, "ok": False, "reason": None, "runtime": runtime,
            "system": system, "files": [], "restart_units": [], "reinstall": False,
            "reinstall_commands": [], "restart_runtime": [], "next_session": False,
-           "unknown": [], "drift": [], "manifest": None, "overlays": [], "to_oid": None,
-           "installer_restarts": False}
+           "unknown": [], "drift": [], "manifest": None, "overlays": [], "to_oid": None}
     for ref in (from_ref, to_ref):
         if not ref_exists(ref, repo=repo):
             out["reason"] = (f"{ref} is not in this clone; run `git fetch --tags origin` "
@@ -356,37 +355,16 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
         if u not in seen:
             seen.append(u)
     out["restart_units"] = seen
-    # install.sh --upgrade restarts paynani-idle and paynani-dispatch itself, but
-    # only when it rewrote an artifact it owns (`runtime_filesystem_changed`,
-    # scripts/install.sh converge_required_services). A changed systemd/ template
-    # guarantees that write on Linux; a changed installer alone does not, and
-    # skipping the restart then would leave both services on the old code (#302).
-    out["installer_restarts"] = out["reinstall"] and system != "Darwin" and any(
-        f["verb"] == "reinstall-and-restart" and f["command"] is INSTALLER
-        and f["path"].startswith("systemd/") and f["here"] is not False
-        for f in files)
+    # The plan always restarts what it names, even after install.sh --upgrade. The
+    # installer restarts paynani-idle and paynani-dispatch only when it rewrote an
+    # artifact it owns, and a changed systemd/ template does not guarantee that on
+    # every host: the template can be for a unit this host does not have (0.13.1
+    # changed paynani-sms.service only, and a host without the gateway answered
+    # "already converged" and kept both services on 0.13.0, #410). A second restart
+    # costs a second; a missing one leaves the old code running until doctor says so.
     out["drift"] = manifest_drift(manifest) if out["reinstall"] else []
     out["overlays"] = overlays(from_ref, to_ref, repo=repo)
     return out
-
-
-INSTALLER_RESTARTS = ("paynani-idle.service", "paynani-dispatch.service")
-INSTALLER_RESTARTED_NOTE = ("# install.sh --upgrade already restarted paynani-idle and "
-                            "paynani-dispatch")
-
-
-def _units_after_installer(p):
-    """Systemd units still to restart once the installer has done its own.
-
-    On Linux, when the installer rewrote a unit it already ran daemon-reload and
-    restarted the two main services, so repeating either only makes the reader
-    decide whether to run it. Everything else stays: the per-account
-    paynani-idle@* instances and the SMS gateway are not in the installer's list.
-    """
-    units = list(p["restart_units"])
-    if not p.get("installer_restarts"):
-        return units, False
-    return [(u, label) for u, label in units if u not in INSTALLER_RESTARTS], True
 
 
 def commands(p):
@@ -408,13 +386,10 @@ def commands(p):
                 else:
                     lines.append(f'launchctl kickstart -k "gui/$(id -u)/{label}"')
         else:
-            units, installer_did = _units_after_installer(p)
+            units = list(p["restart_units"])
             normal_units = [u for u, _ in units if "*" not in u]
             wildcard_units = [u for u, _ in units if "*" in u]
-            if installer_did:
-                lines.append(INSTALLER_RESTARTED_NOTE)
-            else:
-                lines.append("systemctl --user daemon-reload")
+            lines.append("systemctl --user daemon-reload")
             if normal_units:
                 lines.append("systemctl --user restart " + " ".join(normal_units))
             for unit in wildcard_units:
@@ -604,13 +579,8 @@ def apply_plan(p, repo=ROOT, runner=subprocess.run, sleeper=time.sleep, wait_sec
                     _run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{label}"],
                          repo, runner=runner)
             else:
-                units, installer_did = _units_after_installer(p)
-                if installer_did:
-                    print("apply: install.sh --upgrade already restarted paynani-idle and "
-                          "paynani-dispatch")
-                else:
-                    _run(["systemctl", "--user", "daemon-reload"], repo, runner=runner)
-                _systemd_restart_units([unit for unit, _ in units], repo, runner)
+                _run(["systemctl", "--user", "daemon-reload"], repo, runner=runner)
+                _systemd_restart_units([unit for unit, _ in p["restart_units"]], repo, runner)
         for notice in p["restart_runtime"]:
             print(f"apply: manual harness action required: {notice}")
         if p["next_session"]:

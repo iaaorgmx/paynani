@@ -2,6 +2,15 @@
 
 ## Sin publicar
 
+- **`upgrade_plan.py` siempre pide reiniciar el listener y el dispatcher.** Antes
+  suponía que `install.sh --upgrade` ya los había reiniciado cuando cambiaba una
+  plantilla de `systemd/`, y decía `# install.sh --upgrade already restarted …`. Pero
+  el instalador sólo reinicia si reescribió algo suyo, y la plantilla puede ser de una
+  unidad que ese host no tiene. En 0.13.1 cambió sólo `paynani-sms.service`, y un host
+  sin pasarela respondió «already converged» y siguió corriendo 0.13.0 hasta que
+  `doctor` dio `warning` (#410). Ahora el plan pide siempre `daemon-reload` y el
+  reinicio, y `--apply` los corre. Un reinicio de más cuesta un segundo.
+
 ## 0.13.1 (2026-10-20)
 
 **El correo al dueño por cada cambio desde la pantalla «Roster» ya sale.** Desde
