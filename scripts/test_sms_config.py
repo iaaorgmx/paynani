@@ -6,6 +6,7 @@ An assertion script, like the rest of this suite.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -98,23 +99,26 @@ check("paynani lo carga antes de despachar cualquier subcomando sms", True,
       src.index("sms_config.load_sms_env()") < src.index("sms_cli.run_pair"))
 
 # --- de punta a punta: el comando real lee el archivo real -----------------------------------------
+# Sobre una copia del clon, sin nada de la instalación (#418): en una instalación real ya hay un
+# sms.env, y escribir uno junto al de verdad, o correr su `sms pair`, tocaría lo del usuario.
+copy = tmp / "copia-del-clon"
+shutil.copytree(ROOT, copy, symlinks=True, ignore=shutil.ignore_patterns(
+    ".git", "__pycache__", "state", "rules", "hermes", ".env", "runtime.env", "install.manifest", "roster.md",
+    "sms.env", "accounts.json", "rosters"))
+fake = copy / "sms.env"
 real = ROOT / "sms.env"
-if real.exists():
-    print("skip e2e: ya hay un sms.env en este clon, no lo piso")
-else:
-    try:
-        real.write_text("PAYNANI_SMS_PUBLIC_URL=https://desde-sms-env.example\n", encoding="utf-8")
-        r = run([str(ROOT / "scripts" / "paynani"), "sms", "pair"])
-        check("paynani sms pair saca la dirección del túnel de sms.env, sin exportar nada", (0, True),
-              (r.returncode, "https://desde-sms-env.example/sms/pair" in r.stdout))
-        check("paynani sms pair explica que un código vencido no es error", True,
-              "Si vence antes de usarlo, no es un error" in r.stdout)
-        r = run([str(ROOT / "scripts" / "paynani"), "sms", "pair"], {"PAYNANI_SMS_PUBLIC_URL": "https://del-entorno.example"})
-        check("y el entorno gana al archivo en el comando real", True,
-              "https://del-entorno.example/sms/pair" in r.stdout and "desde-sms-env" not in r.stdout)
-    finally:
-        real.unlink(missing_ok=True)
-check("el clon no se queda con un sms.env", False, real.exists())
+real_before = real.read_bytes() if real.exists() else None
+fake.write_text("PAYNANI_SMS_PUBLIC_URL=https://desde-sms-env.example\n", encoding="utf-8")
+r = run([str(copy / "scripts" / "paynani"), "sms", "pair"])
+check("paynani sms pair saca la dirección del túnel de sms.env, sin exportar nada", (0, True),
+      (r.returncode, "https://desde-sms-env.example/sms/pair" in r.stdout))
+check("paynani sms pair explica que un código vencido no es error", True,
+      "Si vence antes de usarlo, no es un error" in r.stdout)
+r = run([str(copy / "scripts" / "paynani"), "sms", "pair"], {"PAYNANI_SMS_PUBLIC_URL": "https://del-entorno.example"})
+check("y el entorno gana al archivo en el comando real", True,
+      "https://del-entorno.example/sms/pair" in r.stdout and "desde-sms-env" not in r.stdout)
+check("el sms.env del clon de verdad no cambió (o sigue sin existir)", real_before,
+      real.read_bytes() if real.exists() else None)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
