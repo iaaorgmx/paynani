@@ -2,6 +2,19 @@
 
 ## Sin publicar
 
+- **Instrucciones del agente por contacto, desde PaynaniApp** (#413, R3 del
+  paraguas #410, PRD #409 I-1 a I-6). `rules/<id>.md` por contacto y
+  `rules/default.md` para todos, en la instalación y fuera de git, como `roster.md`.
+  Cada uno lleva una cabecera validada (`version`, `enabled` y `reply` por canal,
+  con `normal` o `never`) y Markdown libre, hasta 32 KB. La pasarela los lee y los
+  escribe con `rules.get`, `rules.preview`, `rules.save`, `rules.get_default` y
+  `rules.save_default` (SMS_GATEWAY.md §11). La primera vez escribe el id en una
+  columna `Rules` nueva del roster. Cada cambio deja una copia fechada, una línea en
+  el log y un correo al dueño, sin el texto. La regla efectiva es `default.md` con
+  las secciones del contacto sustituyendo a las del mismo nombre. La baja de un
+  contacto renombra sus reglas a `<id>.removed-<fecha>.md` en lugar de borrarlas.
+  Las reglas no autorizan nada: no agregan destinatarios ni permisos.
+
 - **La pasarela lee y edita los rosters desde PaynaniApp** (#412, R2 del paraguas
   #410, PRD #409). `roster.accounts`, `roster.list`, `roster.save` y `roster.delete`
   (SMS_GATEWAY.md §11), sólo desde el teléfono emparejado. Cada cambio se valida

@@ -30,10 +30,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 from paynani_lib import roster_edit  # noqa: E402
+from paynani_lib import rules as rules_mod  # noqa: E402
 from paynani_lib.roster_edit import EditError  # noqa: E402
 
-TYPES = ("roster.accounts", "roster.list", "roster.save", "roster.delete")
-WRITES = {"roster.save", "roster.delete"}
+TYPES = ("roster.accounts", "roster.list", "roster.save", "roster.delete",
+         "rules.get", "rules.preview", "rules.save", "rules.get_default", "rules.save_default")
+WRITES = {"roster.save", "roster.delete", "rules.save", "rules.save_default"}
 ID_RE = re.compile(r"^q_[0-9a-f]{32}$")
 ACCOUNT_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
 REPLAY_MAX = 64
@@ -80,13 +82,15 @@ class RosterService:
 
     def __init__(self, agent_roster: Path, state_dir: Path, *, accounts_file: Path | None = None,
                  agent_email: str = "", notifier=None, template: Path = roster_edit.TEMPLATE,
-                 log=None):
+                 log=None, rules_root: Path | None = None):
         self.agent_roster = Path(agent_roster)
         self.state_dir = Path(state_dir)
         self.accounts_file = Path(accounts_file) if accounts_file else None
         self.agent_email = agent_email
         self.notifier = notifier
         self.template = template
+        # La carpeta de la instalación donde vive rules/ (el clon, junto a roster.md).
+        self.rules_root = rules_root
         self.log = log or (lambda line: None)
         self.replays: collections.OrderedDict = collections.OrderedDict()
         self.lock = threading.Lock()
@@ -133,12 +137,34 @@ class RosterService:
         out.update(self._listing_extra())
         return out
 
+    def _rules_path(self, rules_id: str) -> Path:
+        return rules_mod.path_for(rules_id, self.rules_root)
+
+    def _rules_text(self, rules_id) -> str | None:
+        """El archivo de reglas como texto, o None si no hay id o no existe."""
+        if not rules_id:
+            return None
+        try:
+            data = roster_edit.read_bytes(self._rules_path(rules_id))
+        except EditError:
+            return None
+        if data is None:
+            return None
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise EditError("unreadable", detail=f"rules/{rules_id}.md: {exc}") from exc
+
     def _rules_flags(self, rules_id) -> dict:
-        """`has_rules` y `rules_enabled`. Sin archivos de reglas todavía (R3), los dos son falsos."""
-        return {"has_rules": False, "rules_enabled": False}
+        """`has_rules` (existe rules/<id>.md) y `rules_enabled` (además es válido y está activo)."""
+        try:
+            text = self._rules_text(rules_id)
+        except EditError:
+            return {"has_rules": True, "rules_enabled": False}
+        return {"has_rules": text is not None, "rules_enabled": rules_mod._active(text) is not None}
 
     def _listing_extra(self) -> dict:
-        return {"default_rules": False}
+        return {"default_rules": self._rules_path(rules_mod.DEFAULT_ID).exists()}
 
     # --- mensajes ----------------------------------------------------------
     def roster_accounts(self, msg: dict, device_id: str) -> dict:
@@ -218,7 +244,131 @@ class RosterService:
         return self._listing(path, account, roster_edit.read_bytes(path), done["text"])
 
     def _after_delete(self, gone: dict) -> None:
-        """Lo que pasa con las reglas del contacto que se fue: R3."""
+        """
+        Las reglas del contacto que se fue no se borran: `rules/<id>.md` pasa a
+        `rules/<id>.removed-<fecha>.md`, salvo que otra fila, de cualquier roster,
+        tenga el mismo `Rules` (una edición a mano).
+        """
+        rules_id = gone.get("rules")
+        if not rules_id or rules_id in self._all_rules_ids():
+            return
+        try:
+            path = self._rules_path(rules_id)
+        except EditError:
+            return
+        if not path.exists():
+            return
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        with roster_edit.locked(path, self.state_dir):
+            if path.exists():
+                path.rename(path.with_name(rules_mod.removed_name(rules_id, stamp)))
+        self.log(f"roster: las reglas {rules_id} pasaron a {rules_mod.removed_name(rules_id, stamp)}")
+
+    def _all_rules_ids(self) -> set:
+        """Los `Rules` de todas las filas de todos los rosters de la instalación."""
+        ids = set()
+        targets = [self.agent_roster]
+        from paynani_lib import accounts
+
+        try:
+            targets += [accounts.roster_path(a, self.accounts_file) for a in self._additional()]
+        except EditError:
+            pass
+        for path in targets:
+            try:
+                data = roster_edit.read_bytes(path)
+            except OSError:
+                continue
+            if data is not None:
+                ids |= {m["rules"] for m in roster_edit.members(data.decode("utf-8", "replace"))[1] if m["rules"]}
+        return ids
+
+    # --- reglas ------------------------------------------------------------
+    def _member_at(self, msg: dict) -> tuple[Path, str, bytes | None, str, dict]:
+        """`(ruta, ruta para mostrar, bytes, texto, contacto)` de la fila, con `roster_etag` comprobado."""
+        account = msg.get("account")
+        path, shown, _ = self._target(account)
+        data, text = self._read(path)
+        expected = msg.get("roster_etag")
+        if not isinstance(expected, str):
+            raise EditError("missing_field", field="roster_etag", detail="falta roster_etag")
+        if expected != roster_edit.etag_of(data):
+            raise EditError("conflict", field="roster_etag", detail="el roster cambió",
+                            etag=roster_edit.etag_of(data))
+        row = msg.get("row")
+        _, current = roster_edit.members(text)
+        if not isinstance(row, int) or isinstance(row, bool) or not 1 <= row <= len(current):
+            raise EditError("not_found", field="row", detail=f"no hay fila {row!r}")
+        return path, shown, data, text, current[row - 1]
+
+    def _default_text(self) -> str | None:
+        return self._rules_text(rules_mod.DEFAULT_ID)
+
+    def _rules_reply(self, member: dict, contact_text: str | None) -> dict:
+        return {"row": member["row"], "name": member["name"], "email": member["email"]}
+
+    def rules_get(self, msg: dict, device_id: str) -> dict:
+        _, _, _, _, member = self._member_at(msg)
+        text = self._rules_text(member["rules"])
+        return {**self._rules_reply(member, text), "rules": member["rules"], "exists": text is not None,
+                "etag": roster_edit.etag_of(text.encode("utf-8")) if text is not None else "",
+                "text": text or "", "effective": rules_mod.effective(self._default_text(), text)}
+
+    def rules_preview(self, msg: dict, device_id: str) -> dict:
+        _, _, _, _, member = self._member_at(msg)
+        text = msg.get("text")
+        rules_mod.parse(text)
+        return {**self._rules_reply(member, text),
+                "effective": rules_mod.effective(self._default_text(), text)}
+
+    def _rendered(self, text, device_id: str) -> tuple[str, dict]:
+        parsed = rules_mod.parse(text)
+        return rules_mod.render(parsed, updated_at=_now_iso(), updated_by=f"phone {device_id}"), parsed
+
+    def rules_save(self, msg: dict, device_id: str) -> dict:
+        new_text, parsed = self._rendered(msg.get("text"), device_id)
+        account = msg.get("account")
+        path, shown, data, text, member = self._member_at(msg)
+        roster_etag = roster_edit.etag_of(data)
+        rules_id = member["rules"]
+        if not rules_id:
+            # La primera vez: un id nuevo en la columna Rules de esa fila (I-1), con el
+            # mismo paso único del roster, que vuelve a comprobar roster_etag.
+            rules_id = rules_mod.new_id(member["name"], self._all_rules_ids())
+            row = member["row"]
+            done = roster_edit.apply(path, msg["roster_etag"],
+                                     lambda t: (roster_edit.set_rules_text(t, row, rules_id), {}),
+                                     state_dir=self.state_dir, label=self._label(account), template=self.template)
+            roster_etag = done["etag"]
+        target = self._rules_path(rules_id)
+        done = roster_edit.apply_file(target, msg.get("etag"), new_text, state_dir=self.state_dir,
+                                      label=f"rules__{rules_id}")
+        self._changed(device_id, msg["type"], account, shown, member["row"], member["name"], done,
+                      action="rules", rules=self._rules_summary(rules_id, parsed, new_text))
+        return {"rules": rules_id, "etag": done["etag"], "roster_etag": roster_etag,
+                "effective": rules_mod.effective(self._default_text(), new_text)}
+
+    def rules_get_default(self, msg: dict, device_id: str) -> dict:
+        text = self._default_text()
+        return {"rules": rules_mod.DEFAULT_ID, "exists": text is not None,
+                "etag": roster_edit.etag_of(text.encode("utf-8")) if text is not None else "",
+                "text": text or "", "effective": rules_mod.effective(text, None)}
+
+    def rules_save_default(self, msg: dict, device_id: str) -> dict:
+        new_text, parsed = self._rendered(msg.get("text"), device_id)
+        target = self._rules_path(rules_mod.DEFAULT_ID)
+        done = roster_edit.apply_file(target, msg.get("etag"), new_text, state_dir=self.state_dir,
+                                      label="rules__default")
+        self._changed(device_id, msg["type"], None, "rules/default.md", None, "reglas generales", done,
+                      action="rules_default", rules=self._rules_summary(rules_mod.DEFAULT_ID, parsed, new_text))
+        return {"rules": rules_mod.DEFAULT_ID, "etag": done["etag"], "effective": rules_mod.effective(new_text, None)}
+
+    @staticmethod
+    def _rules_summary(rules_id: str, parsed: dict, text: str) -> dict:
+        """Lo que va al log y al correo de un cambio de reglas: nunca el texto (§11)."""
+        return {"file": f"rules/{rules_id}.md", "enabled": parsed["enabled"],
+                "reply": {c: parsed["reply"][c] for c in sorted(parsed["reply_set"])},
+                "bytes": len(text.encode("utf-8"))}
 
     @staticmethod
     def _label(account) -> str:
@@ -226,12 +376,14 @@ class RosterService:
 
     # --- log y aviso -------------------------------------------------------
     def _changed(self, device_id, kind, account, shown, row, name, done, *, action, fields=(),
-                 member=None, before=None) -> None:
+                 member=None, before=None, rules=None) -> None:
         # `change` y no el etag: dos cambios pueden dejar el mismo archivo (una alta y su baja).
         entry = {"at": _now_iso(), "change": "c_" + secrets.token_hex(8), "device_id": device_id,
                  "type": kind, "action": action,
                  "account": account, "roster": shown, "row": row, "name": name, "fields": list(fields),
                  "etag_before": done["etag_before"], "etag_after": done["etag"], "backup": done["backup"]}
+        if rules is not None:
+            entry["rules"] = rules
         self._append(entry)
         self.log(f"roster: {action} fila {row} de {shown} desde {device_id}")
         self._notify(entry, member or {}, before or {})
@@ -309,7 +461,10 @@ class RosterService:
                             "detail": "ese id ya se usó con otro pedido"}
                 return {**seen[1], "replayed": True}
         handler = {"roster.accounts": self.roster_accounts, "roster.list": self.roster_list,
-                   "roster.save": self.roster_save, "roster.delete": self.roster_delete}[kind]
+                   "roster.save": self.roster_save, "roster.delete": self.roster_delete,
+                   "rules.get": self.rules_get, "rules.preview": self.rules_preview,
+                   "rules.save": self.rules_save, "rules.get_default": self.rules_get_default,
+                   "rules.save_default": self.rules_save_default}[kind]
         try:
             response = {"type": "result", "ref": rid, "ok": True, "data": handler(msg, device_id)}
         except EditError as exc:
@@ -376,6 +531,19 @@ def unnotified(state_dir: Path, *, now: float | None = None, window_s: int = NOT
 
 def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
     """El asunto y el cuerpo del correo al humano: qué cambió y desde qué teléfono (Q5)."""
+    if entry["action"] in ("rules", "rules_default"):
+        info = entry["rules"]
+        whose = "las reglas generales" if entry["action"] == "rules_default" else \
+            f"las instrucciones de «{entry['name']}» ({entry['roster']}, fila {entry['row']})"
+        reply = ", ".join(f"{c}: {v}" for c, v in info["reply"].items()) or "la de las reglas generales"
+        lines = [f"Desde el teléfono {entry['device_id']}, a las {entry['at']}:", "",
+                 f"Cambiaron {whose}, en {info['file']}.", "",
+                 f"  Activas: {'sí' if info['enabled'] else 'no'}", f"  Respuesta: {reply}",
+                 f"  Tamaño: {info['bytes']:,} bytes", "",
+                 f"Copia anterior: {entry['backup'] or '(el archivo no existía)'}", "",
+                 "El texto no va en este correo: está en ese archivo de la instalación.",
+                 "Si no fuiste tú, revisa el archivo y revoca el teléfono con `paynani sms revoke`."]
+        return f"paynani: cambio de reglas en {info['file']} desde PaynaniApp", "\n".join(lines) + "\n"
     what = {"add": "alta", "edit": "edición", "delete": "baja"}[entry["action"]]
     subject = f"paynani: {what} en {entry['roster']} desde PaynaniApp"
     lines = [f"Desde el teléfono {entry['device_id']}, a las {entry['at']}:", "",

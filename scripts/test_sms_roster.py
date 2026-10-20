@@ -101,7 +101,8 @@ async def main():
     journal = state / "events.jsonl"
     mails = []
     service = roster_api.RosterService(roster, state, accounts_file=accounts_file, agent_email="agente@example.com",
-                                       notifier=lambda to, subject, body: mails.append((to, subject, body)))
+                                       notifier=lambda to, subject, body: mails.append((to, subject, body)),
+                                       rules_root=tmp)
     g = gw.Gateway(state, journal, roster, roster_service=service)
     server = await gw.serve(g, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
@@ -117,7 +118,7 @@ async def main():
     welcome = await recv_until(ws, "welcome")
     check("welcome anuncia los cuatro roster.*", True,
           all(t in welcome["accepts"] for t in ("roster.accounts", "roster.list", "roster.save", "roster.delete")))
-    check("welcome todavía no anuncia rules.* (R3)", False, any(t.startswith("rules.") for t in welcome["accepts"]))
+    check("welcome anuncia también rules.* (R3)", True, "rules.get" in welcome["accepts"])
 
     # --- cuentas y lista ---
     r = await ask(ws, {"type": "roster.accounts", "id": qid()})
