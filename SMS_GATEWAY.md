@@ -783,9 +783,17 @@ reglas y lo que paynani hace con ellas están en el PRD (I-1 a I-6).
  "reason": "email_format", "detail": "«ana@» no es un correo válido"}
 ```
 
-- La app espera la respuesta **15 segundos**. Si no llega, o se cae la conexión, el
-  cambio **no** se muestra como guardado (R-5): la app avisa y vuelve a leer la lista
-  al reconectar.
+- La app arma el mensaje para el dueño con `code`, `field` y `reason`, en su idioma.
+  `detail` es opcional, en español y para el log: la app lo muestra sólo si no conoce
+  el `reason`.
+
+- La app espera la respuesta **15 segundos**. Mientras no llegue, el cambio **no** se
+  muestra como guardado (R-5).
+  - Si pasan los 15 segundos con la conexión viva, la escritura pudo haberse aplicado:
+    la app reenvía el pedido **una vez, con el mismo `id`**. Si ya se aplicó, la
+    pasarela contesta `replayed`. Si tampoco llega esa respuesta, la app avisa y vuelve
+    a leer la lista.
+  - Si se cae la conexión, la app avisa y vuelve a leer la lista al reconectar.
 - **Reenvío seguro.** Si la app reenvía un pedido de escritura con el **mismo `id`**
   (porque se cortó antes de la respuesta), la pasarela no lo aplica dos veces:
   contesta el mismo `result` de la primera vez, con `"replayed": true`. Guarda las
@@ -809,6 +817,9 @@ tipo nuevo (sección 10):
 
 - La app muestra «Roster» en el menú sólo si `accepts` incluye `roster.list`, y el
   editor de instrucciones sólo si incluye `rules.get`.
+- Además, la app revisa **cada tipo** en `accepts` antes de mandarlo. Por ejemplo, sin
+  `rules.preview` la vista previa usa el `effective` que trajo `rules.get`, y sin
+  `roster.delete` no ofrece la baja.
 - Una pasarela anterior no los anuncia, y si la app los mandara de todos modos
   contestaría `unknown_type` (sección 5).
 
@@ -853,6 +864,7 @@ tipo nuevo (sección 10):
 ```json
 {"type": "result", "ref": "q_…", "ok": true, "data": {
   "account": null, "etag": "9c1e…(64 hex)",
+  "columns": ["Name", "Email", "Type", "GitHub", "Phone", "Rules"],
   "members": [
     {"row": 1, "name": "Julián Flores", "email": "julian@dominio.com", "type": "Human",
      "github": "julianflores", "phones": ["+525511112222"], "owner": true,
@@ -863,8 +875,13 @@ tipo nuevo (sección 10):
   "default_rules": true}}
 ```
 
-- `phones` es la celda `Phone` separada por comas, cada número ya en E.164. Un roster
-  sin columna `Phone` da `[]` en todas las filas; lo mismo con `GitHub` y `""`.
+- `columns` son las columnas que tiene la tabla de contactos de ese roster, en su
+  orden y con los nombres canónicos (`Name`, `Email`, `Type`, `GitHub`, `Phone`,
+  `Rules`). Así la app distingue «este contacto no tiene teléfono» de «este roster no
+  tiene la columna `Phone`», y deshabilita el campo en el segundo caso.
+- `phones` es la celda `Phone` separada por comas, cada número ya en E.164. Una fila
+  puede traer varios, y la app los edita como lista. Sin columna `Phone`, `phones` es
+  `[]`; sin `GitHub`, `github` es `""`.
 - `rules` es el valor de la columna `Rules` (o `null`). `has_rules` dice si
   `rules/<id>.md` existe, y `rules_enabled`, si además tiene `enabled: true`.
 - `default_rules` dice si existe `rules/default.md`.
@@ -901,8 +918,8 @@ tipo nuevo (sección 10):
 
 - **Columnas.** La pasarela no agrega columnas por su cuenta (Q3: los cinco campos de
   hoy). Si el roster no tiene la columna `Phone` o `GitHub` y el campo viene lleno,
-  responde `invalid`. La app deja esos campos deshabilitados si
-  `roster.list` no los trae, y el dueño agrega la columna con `paynani roster`.
+  responde `invalid`. La app deja esos campos deshabilitados si no están en
+  `columns`, y el dueño agrega la columna con `paynani roster`.
 - **Escritura** (sección 4.4 del PRD): copia fechada de `roster.md` antes, escritura
   atómica con el mismo mecanismo de `roster_cli` (temporal, relectura, y se revierte si
   no cuadra), una línea en el log de cambios y el correo al humano. Si la relectura no
@@ -911,7 +928,8 @@ tipo nuevo (sección 10):
   de la fila guardada:
 
 ```json
-{"type": "result", "ref": "q_…", "ok": true, "data": {"row": 7, "etag": "41aa…", "members": [ … ]}}
+{"type": "result", "ref": "q_…", "ok": true, "data": {"row": 7, "etag": "41aa…",
+ "columns": [ … ], "members": [ … ]}}
 ```
 
 - Cuando la edición cambia un teléfono, la pasarela manda además el `allowed` nuevo,
@@ -933,16 +951,21 @@ tipo nuevo (sección 10):
 ### `rules.get` y `rules.preview`: leer las instrucciones
 
 ```json
-{"type": "rules.get", "id": "q_…", "account": null, "row": 1}
+{"type": "rules.get", "id": "q_…", "account": null, "row": 1, "roster_etag": "9c1e…"}
 ```
 
 ```json
 {"type": "result", "ref": "q_…", "ok": true, "data": {
+  "row": 1, "name": "Julián Flores", "email": "julian@dominio.com",
   "rules": "julian-flores-3f2a", "exists": true, "etag": "77b0…",
   "text": "---\nversion: 1\nenabled: true\nreply:\n  email: normal\n  sms: never\n…---\n\n## General\n…",
   "effective": "## General\n…\n\n## SMS\n…"}}
 ```
 
+- `roster_etag` es el de la lista que tiene la app. Si `roster.md` cambió (alguien quitó
+  una fila desde la terminal y `row: 3` ya es otro contacto), responde `conflict` y no
+  muestra las reglas de otra persona. La respuesta trae además `name` y `email` de la
+  fila, y la app comprueba que sean los del contacto que abrió.
 - `text` es el archivo completo, cabecera incluida. Sin archivo: `exists: false`,
   `text` y `etag` vacíos (`""`), y `effective` es la regla general sola.
 - `effective` es la **regla efectiva** (R-7): `rules/default.md` con las secciones del
@@ -953,10 +976,12 @@ tipo nuevo (sección 10):
   vista previa mientras se edita:
 
 ```json
-{"type": "rules.preview", "id": "q_…", "account": null, "row": 1, "text": "---\n…"}
+{"type": "rules.preview", "id": "q_…", "account": null, "row": 1, "roster_etag": "9c1e…",
+ "text": "---\n…"}
 ```
 
-  Responde `effective` o el mismo `invalid` que daría `rules.save`. No escribe nada.
+  Lleva `roster_etag` por lo mismo que `rules.get`. Responde `row`, `name`, `email` y
+  `effective`, o el mismo `invalid` que daría `rules.save`. No escribe nada.
 
 ### `rules.save`: escribir las instrucciones
 
