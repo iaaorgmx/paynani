@@ -5,7 +5,7 @@
 ## 0.13.1 (2026-10-20)
 
 **El correo al dueño por cada cambio desde la pantalla «Roster» ya sale.** Desde
-0.13.0, un PR de Andy (#427), más el de esta release. Sin requisitos nuevos. Con
+0.13.0, dos PRs de Andy (#427 y #430), más el de esta release. Sin requisitos nuevos. Con
 PaynaniApp 0.7.1, que deja ver «Tipo» en pantallas chicas y pinta blancos los
 diálogos (PaynaniApp #131 y #132).
 
@@ -21,6 +21,9 @@ diálogos (PaynaniApp #131 y #132).
     `himalaya`.
   - `healthcheck.py` advierte si la pasarela no encuentra `himalaya` con el `PATH` de
     su propio servicio, antes de que falle un aviso.
+  - La línea va entre comillas (`Environment="PATH=…"`), para que una carpeta con
+    espacios no rompa la unidad, y una unidad que no se puede leer no tumba
+    `healthcheck.py` (#430).
   - Para actualizar basta `install.sh --upgrade` y reiniciar la pasarela; el plan de
     `scripts/upgrade_plan.py` ya lo pide porque cambia `systemd/`.
 
