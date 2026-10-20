@@ -2,6 +2,18 @@
 
 ## Sin publicar
 
+## 0.13.0 (2026-10-20)
+
+**El roster y las instrucciones del agente, desde el teléfono.** Desde 0.12.0, 9 PRs
+en paynani de Iris, Andy y Metis (#406, #407 y #419–#425), más el de esta release,
+con PaynaniApp 0.7.0 (PaynaniApp #128, #129 y #130). El dueño ve y edita el roster
+de cada cuenta en la pantalla «Roster» de PaynaniApp, y escribe instrucciones por
+contacto y reglas generales (`rules/<id>.md`, `rules/default.md`). El protocolo está
+en la sección 11 de `SMS_GATEWAY.md` (#419). `reply: never` es una barrera mecánica,
+y cada aviso nombra las reglas que hay que leer. PRD #409, paraguas #410. Sin
+requisitos nuevos: himalaya **v2.x** y Python **3.10** o mayor. Con una PaynaniApp
+anterior la pasarela funciona igual que en 0.12.0, sólo que sin la pantalla «Roster».
+
 - **Cada aviso de un contacto del roster dice qué reglas leer** (#415, R5 del paraguas
   #410, PRD #409 A-1 a A-3). La línea de un correo o un SMS del roster nombra, dentro
   de su primer corchete, el archivo que el agente lee antes de actuar:
@@ -24,7 +36,8 @@
   la orden explícita del dueño por un canal confiable, nunca porque el mensaje que se
   está procesando lo pida. Cada override queda en `state/reply_overrides.jsonl`, con
   quién, por qué, cuándo, a quién y qué barrera se saltó. Un `--dry-run` no lo
-  registra.
+  registra. Si el archivo de reglas de un destinatario falta o no valida, lo dice en
+  stderr con un `WARNING`, y la política cae a la de `rules/default.md` o a `normal`.
 
 - **Instrucciones del agente por contacto, desde PaynaniApp** (#413, R3 del
   paraguas #410, PRD #409 I-1 a I-6). `rules/<id>.md` por contacto y
@@ -58,6 +71,44 @@
   anteriores. Baja el APK de las releases de PaynaniApp, con la de paynani como
   copia, y dice qué hacer con un teléfono que tiene la app firmada con la llave
   anterior: desinstalar, instalar la nueva y emparejar con un código nuevo.
+
+- **Pruebas.** `test_rules_notice.py` cubre el criterio 6 del PRD: un SMS que pide
+  cambiar las reglas o el roster no cambia nada (#424). `test_sms_config.py` corre su
+  `sms pair` de punta a punta sobre una copia del clon, así que ya no falla en una
+  instalación con `sms.env` ni toca la de verdad (#425; lo encontró John en #418).
+  `test_bootstrap.sh` crea su `$HOME` falso con 755 aunque el umask sea 002 (#407).
+
+### Si actualizas desde 0.12.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.13.0
+python3 scripts/upgrade_plan.py --from v0.12.0     # y haz lo que imprima
+```
+
+El plan corre `scripts/install.sh --runtime <runtime> --upgrade` (el inventario
+conserva `rules/`), recarga `systemd` y reinicia el listener, el dispatcher, las
+cuentas adicionales (`paynani-idle@*`) y la pasarela SMS si la tienes. Después,
+`scripts/paynani doctor | grep version_drift` tiene que dar `ok` en todas las líneas.
+
+Si tienes el teléfono emparejado, haz un cambio de prueba desde la pantalla «Roster»
+y comprueba que llega el correo al dueño. Ese correo sale con `send.sh` desde el
+servicio de la pasarela. Si no llega, `scripts/healthcheck.py` lo advierte y
+`state/roster_changes.jsonl` dice por qué.
+
+No se crea ninguna regla al actualizar: sin `rules/`, paynani se comporta como en
+0.12.0, y los avisos no cambian hasta que exista un archivo de reglas. Si tu agente
+tiene reglas o excepciones escritas en otro lado, la migración es a mano y la
+decide el dueño (criterio 7 de #418).
+
+**Si un agente lee el tag `, roster]`** (la regla de OpenClaw, la memoria del agente):
+la línea de un contacto con reglas es `[mail …, reglas: rules/<id>.md, roster]`, y
+sigue cerrando con `, roster]`.
+
+Si usas el teléfono: instala PaynaniApp 0.7.0 encima de la que tengas (comprueba el
+SHA-256 y el certificado como en `INSTALL.md` §5.2). Sigue emparejado. Con la
+pasarela en 0.13.0, el menú muestra «Roster».
 
 ## 0.12.0 (2026-10-19)
 
