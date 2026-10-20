@@ -186,19 +186,16 @@ try:
     cmds = up.commands(p)
     check("commands start with the installer when a copy changed",
           cmds and cmds[0] == "scripts/install.sh --runtime claudecode --upgrade", str(cmds))
-    # v2 rewrites a systemd template, so install.sh --upgrade writes an artifact
-    # and itself runs daemon-reload and restarts paynani-idle and paynani-dispatch
-    # (converge_required_services, #302): the plan must not ask for either again.
-    check("a changed unit marks the installer as having restarted the services", p["installer_restarts"] is True)
-    check("commands do not repeat the restart the installer already did",
-          not any("systemctl --user restart" in c and "paynani-" in c and "*" not in c for c in cmds), str(cmds))
-    check("commands do not repeat daemon-reload after the installer",
-          "systemctl --user daemon-reload" not in cmds, str(cmds))
-    check("commands say the installer already restarted both services",
-          "# install.sh --upgrade already restarted paynani-idle and paynani-dispatch" in cmds, str(cmds))
-    check("the note comes right after the installer line",
-          cmds[:2] == ["scripts/install.sh --runtime claudecode --upgrade",
-                       "# install.sh --upgrade already restarted paynani-idle and paynani-dispatch"], str(cmds))
+    # v2 rewrites a systemd template. install.sh --upgrade restarts the two main
+    # services only when it rewrote an artifact it owns, and the template can be for
+    # a unit this host does not have, so the plan restarts them itself anyway (#410).
+    check("a changed unit still asks for daemon-reload after the installer",
+          cmds[:2] == ["scripts/install.sh --runtime claudecode --upgrade", "systemctl --user daemon-reload"],
+          str(cmds))
+    check("a changed unit still restarts both main services",
+          "systemctl --user restart paynani-idle.service paynani-dispatch.service" in cmds, str(cmds))
+    check("the plan never says the installer already restarted them",
+          not any("already restarted" in c for c in cmds), str(cmds))
     check("commands restart account listener instances only when systemd lists them",
           any("paynani-idle@*.service" in c and "xargs -r systemctl --user restart" in c
               for c in cmds), str(cmds))
@@ -232,7 +229,6 @@ try:
     io = up.plan("v1.0.0", "v1.0.1", repo=repo, runtime="claudecode", system="Linux")
     io_cmds = up.commands(io)
     check("an installer change alone still sets reinstall", io["reinstall"] is True)
-    check("an installer change alone does not count as a restart", io["installer_restarts"] is False)
     check("then the plan keeps daemon-reload and the restart of both services",
           "systemctl --user daemon-reload" in io_cmds
           and "systemctl --user restart paynani-idle.service paynani-dispatch.service" in io_cmds, str(io_cmds))
@@ -240,11 +236,23 @@ try:
           not any("already restarted" in c for c in io_cmds), str(io_cmds))
     sh(repo, "checkout", "-q", "-")
     plain = up.plan("v1.0.0", "v2.0.0", repo=repo, runtime="claudecode", system="Linux")
-    nounit = dict(plain, reinstall=False, installer_restarts=False)
+    nounit = dict(plain, reinstall=False)
     check("without an installer in the plan nothing is skipped",
           "systemctl --user restart paynani-idle.service paynani-dispatch.service" in up.commands(nounit))
-    mac_unit = up.plan("v1.0.0", "v2.0.0", repo=repo, runtime="claudecode", system="Darwin")
-    check("on macOS the installer is never counted as the restart", mac_unit["installer_restarts"] is False)
+    # #410: 0.13.1 changed only the SMS gateway's template (and VERSION). A host
+    # without the gateway has nothing for the installer to rewrite, so it answers
+    # "already converged" and restarts nothing; the plan has to restart both itself.
+    sh(repo, "checkout", "-q", "-b", "sms-unit-only", "v1.0.0")
+    write(repo, "VERSION", "1.0.2\n")
+    write(repo, "systemd/paynani-sms.service", "[Service]\nEnvironment=\"PATH=/x\"\n")
+    sh(repo, "add", "-A")
+    sh(repo, "commit", "-q", "-m", "sms unit only")
+    sh(repo, "tag", "v1.0.2")
+    sms_only = up.commands(up.plan("v1.0.0", "v1.0.2", repo=repo, runtime="claudecode", system="Linux"))
+    check("a release that only changes the gateway's unit still restarts both main services (#410)",
+          "systemctl --user restart paynani-idle.service paynani-dispatch.service" in sms_only, str(sms_only))
+    check("and its daemon-reload", "systemctl --user daemon-reload" in sms_only, str(sms_only))
+    sh(repo, "checkout", "-q", "-")
 
     # --- the OpenCode plugin is re-registered, not merely announced (Ocelotl) --
     # The installer names the registration and does not perform it, so a plan
@@ -456,9 +464,10 @@ try:
     check("apply finishes with healthcheck",
           any(argv and argv[0].endswith("scripts/healthcheck.py") for argv in calls), str(calls))
 
-    # With the installer in the plan and a unit rewritten, apply runs the
-    # installer and leaves daemon-reload and the two main restarts to it.
-    via_installer = dict(apply, reinstall=True, runtime="claudecode", installer_restarts=True)
+    # With the installer in the plan, apply runs it and then daemon-reload and the
+    # two main restarts anyway: the installer may have found nothing to rewrite
+    # ("already converged") and restarted nothing (#410).
+    via_installer = dict(apply, reinstall=True, runtime="claudecode")
     calls.clear()
 
     def installer_runner(argv, cwd, text, capture_output):
@@ -473,11 +482,12 @@ try:
 
     up.apply_plan(via_installer, repo=applied, runner=installer_runner, wait_seconds=0)
     check("apply runs the installer", any(a[0].endswith("scripts/install.sh") for a in calls), str(calls))
-    check("apply does not repeat daemon-reload after the installer",
-          ["systemctl", "--user", "daemon-reload"] not in calls, str(calls))
-    check("apply does not repeat the restart of the two main services",
-          not any(a[:3] == ["systemctl", "--user", "restart"] and "paynani-idle.service" in a for a in calls),
-          str(calls))
+    installer_at = next(i for i, a in enumerate(calls) if a[0].endswith("scripts/install.sh"))
+    check("apply runs daemon-reload after the installer, which may have restarted nothing (#410)",
+          ["systemctl", "--user", "daemon-reload"] in calls[installer_at:], str(calls))
+    check("and then restarts the two main services itself",
+          ["systemctl", "--user", "restart", "paynani-idle.service", "paynani-dispatch.service"]
+          in calls[installer_at:], str(calls))
     calls.clear()
 
     refused = dict(apply, unknown=["mystery.bin"])
