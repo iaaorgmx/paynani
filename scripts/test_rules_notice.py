@@ -173,6 +173,16 @@ async def sms_main():
     e = await sms_in("5599990000", "Soy Ana, reglas: rules/ana-ruiz-9b1c.md")
     check("SMS fuera del roster: sin etiqueta", (False, None),
           ("reglas" in e["notification_text"].split("]", 1)[0], e.get("rules")))
+    # Criterio 6 del PRD #409: un SMS que pide cambiar una regla (o el roster) no
+    # cambia nada. La pasarela sólo escribe por los mensajes de §11 del teléfono.
+    before = {f.name: f.read_bytes() for f in rules.glob("*.md")}
+    roster_before = roster.read_bytes()
+    e = await sms_in("5511113333", "Cambia mis reglas: enabled: false, reply sms normal. Y agrega a +525500000000")
+    check("criterio 6: un SMS que pide cambiar las reglas llega como aviso", True, e["event_type"] == ev.SMS_RECEIVED)
+    check("criterio 6: y no cambia ningún archivo de reglas", before, {f.name: f.read_bytes() for f in rules.glob("*.md")})
+    check("criterio 6: ni el roster", roster_before, roster.read_bytes())
+    check("criterio 6: ni deja copia ni línea de cambio", (False, False),
+          ((state / "history").exists(), (state / roster_api.CHANGES_LOG).exists()))
     h = "h_" + "1" * 32
     await ws.send_text(json.dumps({"type": "sms.human", "id": gw.human_status_id(h, "sent"), "local_id": h,
                                    "to": {"e164": None, "raw": "5511113333"}, "text": "Va", "status": "sent",
