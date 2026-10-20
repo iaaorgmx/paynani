@@ -797,12 +797,23 @@ reglas y lo que paynani hace con ellas están en el PRD (I-1 a I-6).
 - **Reenvío seguro.** Si la app reenvía un pedido de escritura con el **mismo `id`**
   (porque se cortó antes de la respuesta), la pasarela no lo aplica dos veces:
   contesta el mismo `result` de la primera vez, con `"replayed": true`. Guarda las
-  respuestas de los últimos 64 `id` durante 10 minutos.
+  respuestas de los últimos 64 `id` durante 10 minutos, junto con el SHA-256 del
+  pedido.
+  - Un `id` ya visto con un pedido **distinto** responde `invalid` con `field: "id"` y
+    `reason: "id_reused"`, y no aplica nada.
+  - Esa memoria se pierde si la pasarela se reinicia. Entonces el reenvío de una
+    escritura que sí se aplicó llega como `conflict`, porque el `etag` ya cambió. La app
+    lo trata como «vuelve a leer», no como un error que mostrar.
 - **Sin pisar cambios ajenos.** Cada lectura trae un `etag`: el SHA-256 en hex del
   archivo tal como está en disco. Cada escritura manda el `etag` que leyó. Si el
   archivo cambió entretanto (otra edición, `paynani roster add` en la terminal), la
   pasarela no escribe y responde `conflict` con el `etag` actual. La app vuelve a
   leer y le muestra al dueño la versión nueva.
+- **Comparar y escribir es un solo paso.** La pasarela compara el `etag` y escribe
+  dentro del mismo bloqueo de archivo que usa `paynani roster` (`roster_cli`), así que
+  un `paynani roster add` que entre en medio espera y no se pierde. Si `roster_cli` no
+  tiene bloqueo, R2 lo agrega para los dos lados. Las reglas usan el mismo bloqueo. No
+  es el bloqueo del teléfono de Q6.
 
 ### Anuncio en el `welcome`
 
@@ -943,10 +954,14 @@ tipo nuevo (sección 10):
 
 - La fila del dueño responde `owner_row` y no se toca.
 - Misma copia fechada, escritura, log y correo que `roster.save`. Responde la lista
-  nueva con su `etag`.
+  nueva con su `etag` y sus `columns`.
+- Si el contacto tenía teléfono, la pasarela manda además el `allowed` nuevo, igual
+  que en `roster.save`.
 - Si el contacto tenía reglas, `rules/<id>.md` **no se borra**: se renombra a
   `rules/<id>.removed-<AAAAMMDDTHHMMSSZ>.md`. Si alguien vuelve a darlo de alta, sus
   reglas se recuperan a mano.
+- Si otra fila, de ese roster o de otra cuenta, tiene el mismo valor en `Rules` (por
+  una edición a mano), el archivo se queda como está.
 
 ### `rules.get` y `rules.preview`: leer las instrucciones
 
@@ -972,6 +987,9 @@ tipo nuevo (sección 10):
   contacto aplicadas como dice I-4b (una sección con el mismo nombre sustituye a la
   general completa). La calcula la pasarela, para que la app y el agente vean
   exactamente lo mismo.
+  - Si el contacto tiene `enabled: false`, `effective` es `default.md` solo (I-4).
+  - Si `default.md` no existe o tiene `enabled: false`, sólo cuentan las del contacto.
+    Si las dos faltan o están apagadas, `effective` sale vacío (`""`).
 - `rules.preview` es igual pero con un `text` que manda la app y no se guarda, para la
   vista previa mientras se edita:
 
@@ -1020,6 +1038,12 @@ tipo nuevo (sección 10):
   el archivo desde la app no entra en v1.
 
 ### `rules.get_default` y `rules.save_default`: las reglas generales
+
+**`rules/` es uno por instalación**, en la carpeta de paynani, junto a `roster.md`
+(I-1), y lo comparten todas las cuentas: el contacto de `ventas` y el de la cuenta del
+agente guardan sus reglas en la misma carpeta, cada uno con su id. Por eso
+`rules/default.md` es también uno solo y aplica a los contactos de todas las cuentas,
+y estos dos mensajes no llevan `account`.
 
 Iguales a `rules.get` y `rules.save`, sin `account`, `row` ni `roster_etag`, sobre
 `rules/default.md`. `rules.get_default` sin archivo responde `exists: false`, y el
