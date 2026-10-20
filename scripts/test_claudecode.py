@@ -557,6 +557,21 @@ class Watcher(unittest.TestCase):
             holder.wait(timeout=5)
         except Exception:
             pass
+        # Reaping the leader is not the group being gone: SIGKILL reaches the
+        # children (tail, sleep) asynchronously, and one still alive can write into
+        # the state directory while TemporaryDirectory removes it. That was the
+        # intermittent `OSError: [Errno 66] Directory not empty` on macOS (#423,
+        # #427). Wait until no process of the group is left.
+        import time
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.killpg(group, 0)
+            except ProcessLookupError:
+                break
+            except OSError:
+                break
+            time.sleep(0.02)
 
     def _recorded_chain(self, timeout=8):
         """The chain the watcher wrote into the lock, once it has written one."""
