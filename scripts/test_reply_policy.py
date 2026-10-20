@@ -94,6 +94,25 @@ check("el contacto con email: normal manda sobre default.md", ["julian@example.c
 write_rules("ana-9b1c", "## sin cabecera\n")
 check("un archivo de reglas inválido no bloquea (como sin reglas)", [],
       reply_policy.blocked(roster, "email", ["ana@example.com"]))
+blocked_, problems = reply_policy.check(roster, "email", ["ana@example.com"])
+check("pero check() lo dice, con el reason de parse y a qué cae",
+      [("ana@example.com", "rules/ana-9b1c.md", "header: header_missing", "normal")],
+      [(p["recipient"], p["file"], p["reason"], p["fallback"]) for p in problems])
+check("warning_lines: WARNING con el archivo, el motivo y a qué cae", True,
+      reply_policy.warning_lines("email", problems)[0].startswith(
+          "WARNING: rules/ana-9b1c.md is invalid (header: header_missing); reply.email policy for ana@example.com falls back to normal"))
+write_rules("default", rules_file())
+check("con default.md válido, cae a default.md", "rules/default.md",
+      reply_policy.check(roster, "email", ["ana@example.com"])[1][0]["fallback"])
+(rules / "ana-9b1c.md").unlink()
+check("Rules apunta a un archivo que no está -> missing", ["missing"],
+      [p["reason"] for p in reply_policy.check(roster, "email", ["ana@example.com"])[1]])
+write_rules("default", "---\nversion: 1\nenabled: true\nreply:\nemail: never\n---\n")
+check("default.md roto (sangría) -> problema para cada destinatario, cae a normal",
+      [("julian@example.com", "rules/default.md", "normal")],
+      [(p["recipient"], p["file"], p["fallback"]) for p in reply_policy.check(roster, "email", ["julian@example.com"])[1]])
+check("sin problemas, check() no dice nada", [], reply_policy.check(roster, "email", ["nadie@example.com"])[1])
+(rules / "default.md").unlink()
 write_rules("ana-9b1c", rules_file(email="never", channels=("email",)))
 
 # --- override_problem -----------------------------------------------------------
@@ -146,6 +165,11 @@ run, calls = send("--cc", "ana@example.com", "julian@example.com")
 check("send.sh: también por --cc", 2, run.returncode)
 run, calls = send("--dry-run", "beto@example.com")
 check("send.sh: reply.sms: never no frena el correo", 0, run.returncode)
+write_rules("beto-1a2b", "---\nversion: 1\nenabled: si\n---\n")
+run, calls = send("--dry-run", "beto@example.com")
+check("send.sh: un archivo de reglas inválido avisa en stderr y sigue", (0, True),
+      (run.returncode, "WARNING: rules/beto-1a2b.md is invalid (header.enabled: value)" in run.stderr))
+write_rules("beto-1a2b", rules_file(sms="never", channels=("sms",)))
 run, calls = send("--dry-run", "nadie@example.com")
 check("send.sh: el roster sigue primero", (2, True), (run.returncode, "is not in" in run.stderr))
 run, calls = send("--override", "Julián lo pidió en su terminal", "ana@example.com")
@@ -184,6 +208,11 @@ check("sms send: reply.sms: never -> exit 2 sin orden", (2, True, False),
       (code, "reply.sms: never in rules/beto-1a2b.md" in err, orders.exists()))
 code, out, err = sms("+525511114444", override="Julián lo pidió por SMS", override_by=None)
 check("sms send: --override sin --override-by -> rechazado sin orden", (2, False), (code, orders.exists()))
+write_rules("ana-9b1c", "## roto\n")
+code, out, err = sms("+525511113333")
+check("sms send: un archivo de reglas inválido avisa en stderr", True,
+      "WARNING: rules/ana-9b1c.md is invalid" in err)
+write_rules("ana-9b1c", rules_file(email="never", channels=("email",)))
 code, out, err = sms("+525511113333")
 check("sms send: reply.email: never no frena el SMS", True, code != 2 or "never" not in err)
 before = len(overrides.read_text(encoding="utf-8").splitlines())

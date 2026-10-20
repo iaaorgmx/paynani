@@ -52,18 +52,42 @@ def _read(path: Path) -> str | None:
         return None
 
 
+def _problem(text: str | None, label: str, *, missing_is_problem: bool) -> str | None:
+    """Por qué `text` no cuenta como reglas: `missing` o el `reason` de parse; None si vale."""
+    if text is None:
+        return "missing" if missing_is_problem else None
+    try:
+        rules.parse(text)
+    except roster_edit.EditError as exc:
+        return f"{exc.field}: {exc.reason}" if exc.field else exc.reason
+    return None
+
+
 def blocked(roster_path: Path, channel: str, recipients, *, rules_root: Path | None = None) -> list[dict]:
+    """Sólo los bloqueados de `check()`."""
+    return check(roster_path, channel, recipients, rules_root=rules_root)[0]
+
+
+def check(roster_path: Path, channel: str, recipients, *, rules_root: Path | None = None):
     """
-    Los destinatarios que este canal no puede escribir: `[{"recipient", "name",
-    "rules"}]`, con `rules` la ruta que lo dijo (`rules/<id>.md` o
-    `rules/default.md`). Un destinatario que no está en el roster no sale aquí: ya lo
-    rechazó la barrera del roster.
+    `(blocked, problems)`. `blocked` son los destinatarios que este canal no puede
+    escribir: `[{"recipient", "name", "rules"}]`, con `rules` la ruta que lo dijo
+    (`rules/<id>.md` o `rules/default.md`). Un destinatario que no está en el roster
+    no sale aquí: ya lo rechazó la barrera del roster.
+
+    `problems` son los archivos de reglas que no cuentan aunque deberían: el de un
+    contacto cuya columna `Rules` apunta a un archivo que no está o que no valida, o
+    un `default.md` que no valida: `[{"recipient", "file", "reason", "fallback"}]`.
+    La barrera no falla cerrada por ellos (un `default.md` roto dejaría al agente
+    sin poder escribirle a nadie), pero quien llama los dice en stderr (#422).
     """
     if channel not in CHANNEL_KEYS:
         raise ValueError(f"canal {channel!r}")
     text = _read(roster_path) or ""
     _, members = roster_edit.members(text)
     default_text = _read(rules.path_for(rules.DEFAULT_ID, rules_root))
+    default_problem = _problem(default_text, "rules/default.md", missing_is_problem=False)
+    problems = []
     out = []
     for recipient in recipients:
         if channel == "email":
@@ -76,17 +100,33 @@ def blocked(roster_path: Path, channel: str, recipients, *, rules_root: Path | N
             continue
         contact_text = None
         if member["rules"]:
+            file = f"rules/{member['rules']}.md"
             try:
                 contact_text = _read(rules.path_for(member["rules"], rules_root))
-            except roster_edit.EditError:
-                contact_text = None
+                reason = _problem(contact_text, file, missing_is_problem=True)
+            except roster_edit.EditError as exc:
+                reason = exc.reason
+            if reason:
+                fallback = "rules/default.md" if default_text is not None and default_problem is None else "normal"
+                problems.append({"recipient": recipient, "file": file, "reason": reason, "fallback": fallback})
+        if default_problem:
+            problems.append({"recipient": recipient, "file": "rules/default.md", "reason": default_problem,
+                             "fallback": "normal"})
         policy = rules.effective_reply(default_text, contact_text)
         if policy[channel] != "never":
             continue
         own = rules._active(contact_text)
         source = f"rules/{member['rules']}.md" if own and channel in own["reply_set"] else "rules/default.md"
         out.append({"recipient": recipient, "name": member["name"], "rules": source})
-    return out
+    return out, problems
+
+
+def warning_lines(channel: str, problems: list[dict]) -> list[str]:
+    """Una línea por archivo de reglas que no cuenta, para stderr (#422)."""
+    return [f"WARNING: {p['file']} is {'missing' if p['reason'] == 'missing' else 'invalid'}"
+            + ("" if p["reason"] == "missing" else f" ({p['reason']})")
+            + f"; reply.{channel} policy for {p['recipient']} falls back to {p['fallback']}. "
+            "Tell your human so they can fix it." for p in problems]
 
 
 def log_override(state_dir: Path, *, tool: str, channel: str, items: list[dict], by: str, reason: str) -> Path:
@@ -140,7 +180,9 @@ def main(argv=None) -> int:
     if problem:
         print(f"Not sent: {problem}.", file=sys.stderr)
         return 1
-    items = blocked(Path(args.roster), args.channel, args.recipients)
+    items, problems = check(Path(args.roster), args.channel, args.recipients)
+    for line in warning_lines(args.channel, problems):
+        print(line, file=sys.stderr)
     if not items:
         return 0
     if args.override is None:

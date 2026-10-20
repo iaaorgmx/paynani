@@ -95,7 +95,9 @@ def run_send(args) -> int:
     problem = reply_policy.override_problem(override, override_by)
     if problem:
         return _refuse(f"{problem}. Nothing was sent.")
-    never = reply_policy.blocked(roster, "sms", [number])
+    never, problems = reply_policy.check(roster, "sms", [number])
+    for line in reply_policy.warning_lines("sms", problems):
+        print(line, file=sys.stderr)
     if never and override is None:
         for line in reply_policy.refusal_lines("sms", never):
             print(line, file=sys.stderr)
