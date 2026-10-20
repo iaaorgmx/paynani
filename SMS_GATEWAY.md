@@ -926,6 +926,8 @@ tipo nuevo (sección 10):
 | `type` | `owner_type` | La fila del dueño dejaría de ser `Human` |
 | `phones` | `no_phone_column` | Trae teléfonos y el roster no tiene columna `Phone` (ver abajo) |
 | `github` | `no_github_column` | Trae GitHub y el roster no tiene columna `GitHub` |
+| `type` | `no_type_column` | Trae `type` y el roster no tiene columna `Type` |
+| `email` | `no_email_column` | Trae correo y el roster no tiene columna `Email` |
 
 - **Columnas.** La pasarela no agrega columnas por su cuenta (Q3: los cinco campos de
   hoy). Si el roster no tiene la columna `Phone` o `GitHub` y el campo viene lleno,
@@ -1061,7 +1063,8 @@ Además de los de la sección 5:
 | `invalid` | Un campo no pasa la validación. Van `field` y `reason` |
 | `owner_row` | Se quiso borrar la fila del dueño |
 | `write_failed` | La escritura no se pudo hacer o no cuadró al releer, y se revirtió. Nada cambió |
-| `unreadable` | El roster o el archivo de reglas no se puede leer |
+| `unreadable` | El roster o el archivo de reglas no se puede leer, o el roster no tiene tabla de contactos |
+| `missing_field` | Falta `id` (o no es `q_` y 32 hex), `etag` o `member`. Va `field` |
 
 Ningún error cierra la conexión.
 

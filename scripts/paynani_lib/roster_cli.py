@@ -29,11 +29,35 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "harness"))
 sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 from paths import roster as roster_file  # noqa: E402
+from paths import state_dir  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
 # What a missing roster.md starts from when the onboard form (#134) or
 # `paynani roster add` (#135) creates it.
 _TEMPLATE = _REPO_ROOT / "roster.md.example"
+
+# `base` not given: the caller does not say what the change was computed from,
+# and nothing is compared (the old behaviour).
+_UNSET = object()
+
+CONFLICT_DETAIL = ("roster.md changed while this command was running (PaynaniApp or another "
+                   "`paynani roster`); nothing written. Run it again.")
+
+
+def _changed_since(path: Path, base) -> bool:
+    """
+    Whether `path` is no longer what the change was computed from (#410 R2).
+    `base` is that text, or None for "the file did not exist yet".
+
+    Checked inside the same lock PaynaniApp's roster screen takes (roster_edit.locked),
+    so an edit from the phone between this command's read and its write is caught
+    instead of being overwritten.
+    """
+    if base is _UNSET:
+        return False
+    if not path.exists():
+        return base is not None
+    return base is None or _read(path) != base
 
 
 def _read(path: Path) -> str:
@@ -139,13 +163,30 @@ def _write_bytes_atomic(path: Path, data: bytes) -> None:
     os.chmod(path, mode)
 
 
-def _apply_roster_text(path: Path, new_text: str, expected_addresses) -> tuple[str, str]:
-    """Run tests, make a backup, atomically write, verify, and restore bytes on failure."""
-    existed = path.exists()
-    original_bytes = path.read_bytes() if existed else b""
+def _apply_roster_text(path: Path, new_text: str, expected_addresses, base=_UNSET) -> tuple[str, str]:
+    """Run tests, make a backup, atomically write, verify, and restore bytes on failure.
+
+    The write, from the `base` check to the verify, holds the roster lock
+    (roster_edit.locked); the regression suite runs before it, so the phone's
+    roster screen never waits on it. "conflict" means `path` is not `base` any more
+    and nothing was written."""
     ok, output = _run_regression_tests()
     if not ok:
         return "test_failed", output
+    from . import roster_edit
+
+    try:
+        with roster_edit.locked(path, state_dir()):
+            if _changed_since(path, base):
+                return "conflict", CONFLICT_DETAIL
+            return _write_roster_text(path, new_text, expected_addresses)
+    except TimeoutError as exc:
+        return "verify_failed", f"{exc}; nothing written"
+
+
+def _write_roster_text(path: Path, new_text: str, expected_addresses) -> tuple[str, str]:
+    existed = path.exists()
+    original_bytes = path.read_bytes() if existed else b""
     if existed:
         backup = path.with_suffix(path.suffix + ".bak")
         try:
@@ -324,7 +365,8 @@ def _revert(path: Path, original: str, reason: str) -> int:
     return 1
 
 
-def _apply_change_core(path: Path, new_text: str, expected_addresses, run_tests: bool = True) -> tuple[str, str]:
+def _apply_change_core(path: Path, new_text: str, expected_addresses, run_tests: bool = True,
+                       base=_UNSET) -> tuple[str, str]:
     """
     The non-interactive heart of add()/remove(): run the regression suite,
     write, verify, revert on failure. Shared by the CLI (_apply_change below,
@@ -353,18 +395,35 @@ def _apply_change_core(path: Path, new_text: str, expected_addresses, run_tests:
       "test_failed"    — nothing written; detail is the combined test output.
       "verify_failed"  — written then reverted; detail explains why, and
                           whether the revert itself succeeded.
+      "conflict"       — nothing written: `path` is no longer `base`, the text
+                          the change was computed from (#410 R2).
+
+    From the `base` check to the verify, the write holds the roster lock that
+    PaynaniApp's roster screen also takes (roster_edit.locked). The regression
+    suite runs before it, outside the lock.
     """
+    if run_tests:
+        ok, output = _run_regression_tests()
+        if not ok:
+            return "test_failed", output
+    from . import roster_edit
+
+    try:
+        with roster_edit.locked(path, state_dir()):
+            if _changed_since(path, base):
+                return "conflict", CONFLICT_DETAIL
+            return _write_checked_core(path, new_text, expected_addresses)
+    except TimeoutError as exc:
+        return "verify_failed", f"{exc}; nothing written"
+
+
+def _write_checked_core(path: Path, new_text: str, expected_addresses) -> tuple[str, str]:
     original = _read(path)
     # A file this call creates has no original to put back. Writing "" over it
     # would leave an empty roster.md behind, which send.sh, healthcheck.py and
     # the step-7 check in AGENTS.md would all take for a real one (#134), so
     # undoing a creation means removing the file.
     existed = path.exists()
-
-    if run_tests:
-        ok, output = _run_regression_tests()
-        if not ok:
-            return "test_failed", output
 
     _write_atomic(path, new_text)
 
@@ -396,6 +455,7 @@ def _apply_change(
     base_text: str | None = None,
     creating: bool = False,
     path: Path | None = None,
+    base=_UNSET,
 ) -> int:
     """CLI wrapper around _apply_change_core: confirm and print, on top of
     the same write/verify/revert core the web form uses.
@@ -418,7 +478,10 @@ def _apply_change(
         print("Not saved: cancelled.")
         return 1
 
-    status, detail = _apply_change_core(path, new_text, expected_addresses)
+    status, detail = _apply_change_core(path, new_text, expected_addresses, base=base)
+    if status == "conflict":
+        print(f"Not saved: {detail}", file=sys.stderr)
+        return 1
     if status == "test_failed":
         print(
             "Not saved: scripts/test_roster.sh or scripts/test_listener.py "
@@ -464,6 +527,7 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
                           contacts table, ...); detail is its reason.
       "test_failed"    — see _apply_change_core.
       "verify_failed"  — see _apply_change_core.
+      "conflict"       — see _apply_change_core.
     """
     path = roster_file()
     text, _creating = _starting_text(path)
@@ -474,7 +538,8 @@ def add_contact_noninteractive(name: str, address: str, *, type_: str = "", gith
         status = "duplicate" if result.endswith("is already on the roster") else "rejected"
         return status, result
     expected = roster_mod.roster_addresses(path) | {roster_mod.normalise(address)}
-    status, detail = _apply_change_core(path, result, expected, run_tests=run_tests)
+    status, detail = _apply_change_core(path, result, expected, run_tests=run_tests,
+                                        base=None if _creating else text)
     return ("added", detail) if status == "ok" else (status, detail)
 
 
@@ -494,11 +559,11 @@ def run_migrate(args) -> int:
     if not _confirm("Write this change?", args.yes):
         print("Not saved: cancelled.")
         return 1
-    status, detail = _apply_roster_text(path, new_text, expected)
+    status, detail = _apply_roster_text(path, new_text, expected, base=text)
     if status == "test_failed":
         print("Not saved: regression tests failed. Nothing written. Output:\n" + detail, file=sys.stderr)
         return 1
-    if status == "verify_failed":
+    if status in ("verify_failed", "conflict"):
         print(f"Not saved: {detail}", file=sys.stderr)
         return 1
     backup = path.with_suffix(path.suffix + ".bak")
@@ -529,11 +594,11 @@ def run_apply(args) -> int:
     if not _confirm("Write this change?", args.yes):
         print("Not saved: cancelled.")
         return 1
-    status, detail = _apply_roster_text(path, new_text, expected)
+    status, detail = _apply_roster_text(path, new_text, expected, base=None if creating else text)
     if status == "test_failed":
         print("Not saved: regression tests failed. Nothing written. Output:\n" + detail, file=sys.stderr)
         return 1
-    if status == "verify_failed":
+    if status in ("verify_failed", "conflict"):
         print(f"Not saved: {detail}", file=sys.stderr)
         return 1
     created = "created and " if creating else ""
@@ -585,7 +650,8 @@ def run_add(args) -> int:
         return 1
     expected = roster_mod.roster_addresses(path) | {roster_mod.normalise(args.address)}
     return _apply_change(
-        result, expected, "add a contact to", args.yes, base_text=text, creating=creating, path=path
+        result, expected, "add a contact to", args.yes, base_text=text, creating=creating, path=path,
+        base=None if creating else text,
     )
 
 
@@ -599,4 +665,4 @@ def run_remove(args) -> int:
         print(f"Not saved: {result}", file=sys.stderr)
         return 1
     expected = roster_mod.roster_addresses(path) - {roster_mod.normalise(args.address)}
-    return _apply_change(result, expected, "remove a contact from", args.yes, path=path)
+    return _apply_change(result, expected, "remove a contact from", args.yes, path=path, base=text)

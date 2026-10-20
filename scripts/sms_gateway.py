@@ -28,8 +28,27 @@ sys.path.insert(0, str(ROOT / "harness"))
 import paths  # noqa: E402
 from paynani_lib.sms import config as sms_config  # noqa: E402
 from paynani_lib.sms import gateway as gw  # noqa: E402
+from paynani_lib.sms import roster_api  # noqa: E402
 
 DEFAULT_PORT = 8770  # 8765 es del onboarding y de `sms pair --web`, que corren a la vez
+
+
+def roster_service(state: Path, roster: Path) -> roster_api.RosterService:
+    """
+    La pantalla «Roster» de la instalación (SMS_GATEWAY.md §11): el roster del
+    agente, las cuentas de accounts.json y el correo al humano por send.sh. De .env
+    sólo se lee la dirección del agente, para mostrarla; nunca la contraseña.
+    """
+    from paynani_lib import accounts, envfile
+
+    agent_email = ""
+    try:
+        agent_email = envfile.read_env().get("AGENT_EMAIL_ACCOUNT", "")
+    except Exception as exc:  # noqa: BLE001 -- sólo es para mostrar
+        gw.log(f"roster: no se leyó la dirección del agente ({type(exc).__name__})")
+    return roster_api.RosterService(roster, state, accounts_file=accounts.accounts_path(),
+                                    agent_email=agent_email, notifier=roster_api.send_sh_notifier,
+                                    log=gw.log)
 
 
 def main(argv=None) -> int:
@@ -53,7 +72,8 @@ def main(argv=None) -> int:
         gw.log(f"sms.env: {problem}")
     gw.log(f"avisos de batería: warn bajo {warn} %, critical bajo {critical} %")
     gateway = gw.Gateway(state, state / "events.jsonl", Path(args.roster), public_url=args.public_url,
-                         battery_warn_pct=warn, battery_critical_pct=critical)
+                         battery_warn_pct=warn, battery_critical_pct=critical,
+                         roster_service=roster_service(state, Path(args.roster)))
 
     async def run():
         server = await gw.serve(gateway, args.host, args.port)

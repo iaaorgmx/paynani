@@ -2,6 +2,19 @@
 
 ## Sin publicar
 
+- **La pasarela lee y edita los rosters desde PaynaniApp** (#412, R2 del paraguas
+  #410, PRD #409). `roster.accounts`, `roster.list`, `roster.save` y `roster.delete`
+  (SMS_GATEWAY.md §11), sólo desde el teléfono emparejado. Cada cambio se valida
+  (correo, E.164, sin duplicados y con un correo o un teléfono). Se hace en un solo
+  paso con el bloqueo del roster y el `etag`, deja una copia fechada en
+  `state/history/` y se escribe con el mismo mecanismo atómico de `paynani roster`.
+  Queda una línea en `state/roster_changes.jsonl` y sale un correo al dueño con qué
+  cambió y desde qué teléfono. La fila del dueño no se borra. Una app anterior no
+  manda estos mensajes y no cambia nada.
+- **`paynani roster` ya no pisa un cambio hecho entretanto.** Su escritura toma el
+  mismo bloqueo que la pantalla «Roster» (`state/locks/`) y comprueba que el roster
+  sigue siendo el que leyó. Si cambió, no escribe y pide correrlo otra vez.
+
 - `INSTALL.md` §5.2 muestra el certificado con el que se firma PaynaniApp hoy
   (`58f8e922…b53c4531`); el anterior (`5edb93e3…3f679c2f`) es el de la 0.3.0 y
   anteriores. Baja el APK de las releases de PaynaniApp, con la de paynani como
