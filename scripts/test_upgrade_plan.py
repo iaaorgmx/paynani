@@ -490,6 +490,36 @@ try:
           in calls[installer_at:], str(calls))
     calls.clear()
 
+    # install.sh --upgrade exits 10 (EX_CHANGED) when it succeeded and changed
+    # something. --apply took it as a failure and stopped before the restarts, which
+    # left the old gateway running (#435, found by Metis upgrading to e9cfada).
+    def installer_exit(code):
+        def runner(argv, cwd, text, capture_output):
+            argv = [str(value) for value in argv]
+            if argv and argv[0].endswith("scripts/install.sh"):
+                calls.append(argv)
+                with (state / "idle.err.log").open("a", encoding="utf-8") as handle:
+                    handle.write("listening on INBOX, resuming from uid 7\n")
+                return subprocess.CompletedProcess(argv, code, "", "")
+            return apply_runner(argv, cwd, text, capture_output)
+        return runner
+
+    up.apply_plan(via_installer, repo=applied, runner=installer_exit(10), wait_seconds=0)
+    installer_at = next(i for i, a in enumerate(calls) if a[0].endswith("scripts/install.sh"))
+    check("installer exit 10 (EX_CHANGED) is success: apply goes on to restart the services",
+          ["systemctl", "--user", "restart", "paynani-idle.service", "paynani-dispatch.service"]
+          in calls[installer_at:], str(calls))
+    for code in (1, 64, 78):
+        calls.clear()
+        try:
+            up.apply_plan(via_installer, repo=applied, runner=installer_exit(code), wait_seconds=0)
+            stopped = False
+        except up.ApplyError as exc:
+            stopped = f"exit {code}" in str(exc)
+        check(f"installer exit {code} still stops apply before any restart",
+              (True, False), (stopped, any(a[:3] == ["systemctl", "--user", "restart"] for a in calls)))
+    calls.clear()
+
     refused = dict(apply, unknown=["mystery.bin"])
     before_calls = len(calls)
     try:

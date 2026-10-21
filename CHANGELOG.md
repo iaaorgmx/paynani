@@ -2,6 +2,15 @@
 
 ## Sin publicar
 
+- **`upgrade_plan.py --apply` acepta la salida 10 de `install.sh`** (#435, lo
+  encontró Metis al actualizar a `e9cfada`). `install.sh --upgrade` (e
+  `install_macos.py`) sale con 10, `EX_CHANGED`, cuando terminó bien y cambió algo,
+  que es lo normal en una actualización. `--apply` lo tomaba como error y se detenía
+  antes de los reinicios, así que la pasarela vieja seguía corriendo. Ahora 0 y 10
+  son éxito y sigue con `daemon-reload` y los reinicios. Cualquier otra salida (1,
+  64, 78…) lo sigue deteniendo antes de reiniciar nada. Las pruebas están en
+  `test_upgrade_plan.py`, con un instalador falso que sale con 10, 1, 64 y 78.
+
 - **PaynaniWeb: seguridad, rendimiento y `PAYNANI_WEB.md`** (T10 del paraguas #435;
   PRD #434 §5 y NFR-1 a NFR-3). `scripts/test_web_security.py` recorre todas las
   pantallas, con sesión y sin ella, y comprueba en cada una:

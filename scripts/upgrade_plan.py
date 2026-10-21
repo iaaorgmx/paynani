@@ -464,9 +464,15 @@ def _state_dir(repo):
     return pathlib.Path(repo) / "state"
 
 
-def _run(argv, repo, runner=subprocess.run, capture=False):
+# install.sh and install_macos.py exit 10 (EX_CHANGED) for "succeeded and changed
+# something", which is the usual outcome of --upgrade. Taking it as a failure
+# stopped --apply before the restarts and left the old gateway running (#435).
+INSTALL_OK = (0, 10)
+
+
+def _run(argv, repo, runner=subprocess.run, capture=False, ok=(0,)):
     result = runner(argv, cwd=str(repo), text=True, capture_output=capture)
-    if result.returncode != 0:
+    if result.returncode not in ok:
         detail = ((result.stderr or result.stdout or "").strip()
                   if capture else f"exit {result.returncode}")
         raise ApplyError(f"command failed: {shlex.join(str(v) for v in argv)}: {detail}")
@@ -610,7 +616,7 @@ def apply_plan(p, repo=ROOT, runner=subprocess.run, sleeper=time.sleep, wait_sec
 
         if p["reinstall"]:
             _run([str(repo / "scripts/install.sh"), "--runtime", p["runtime"], "--upgrade"],
-                 repo, runner=runner)
+                 repo, runner=runner, ok=INSTALL_OK)
         for command in p["reinstall_commands"]:
             _run(shlex.split(command), repo, runner=runner)
         if p["restart_units"]:
