@@ -36,7 +36,12 @@ LABELS = {
 # run says --with-sms, and kept up to date or removed afterwards while its
 # LaunchAgent exists and belongs to this checkout.
 SMS_LABEL = "com.paynani.sms"
-ALL_LABELS = {**LABELS, "sms": SMS_LABEL}
+# PaynaniWeb (PRD #434) goes with the gateway: it is reached only through it, so a
+# host with a gateway gets it (an upgrade of such a host adds it) and a host
+# without one never runs it (#435, Q-T2-1). Keyed on the gateway's LaunchAgent.
+WEB_LABEL = "com.paynani.web"
+ALL_LABELS = {**LABELS, "sms": SMS_LABEL, "web": WEB_LABEL}
+OPTIONAL = ("sms", "web")
 # The port and the tunnel address are not written into the LaunchAgent: the gateway
 # reads them from the user's sms.env itself (paynani_lib/sms/config.py).
 
@@ -61,6 +66,11 @@ def plist_path(name: str) -> Path:
 def sms_wanted(args: argparse.Namespace) -> bool:
     """--with-sms, or a gateway LaunchAgent that is already here (and so is ours to keep)."""
     return bool(getattr(args, "with_sms", False)) or plist_path("sms").exists()
+
+
+def optional_names(args: argparse.Namespace) -> list[str]:
+    """The gateway and PaynaniWeb, together, when the gateway is wanted."""
+    return list(OPTIONAL) if sms_wanted(args) else []
 
 
 def account_label(account_id: str) -> str:
@@ -153,6 +163,17 @@ def plist_for(name: str, python: str, runtime: str, runtime_bin: str | None = No
             "EnvironmentVariables": env,
             "StandardOutPath": str(state / "sms.log"),
             "StandardErrorPath": str(state / "sms.err.log"),
+        }
+    if name == "web":
+        return {
+            "Label": WEB_LABEL,
+            "ProgramArguments": [python, str(ROOT / "scripts" / "paynani_web.py")],
+            "WorkingDirectory": str(ROOT),
+            "RunAtLoad": True,
+            "KeepAlive": True,
+            "EnvironmentVariables": env,
+            "StandardOutPath": str(state / "web.log"),
+            "StandardErrorPath": str(state / "web.err.log"),
         }
     if name == "logrotate":
         return {
@@ -375,7 +396,7 @@ def print_plan(runtime: str, runtime_bin: str | None, python: str, args: argpars
     print(f"state_dir={state_dir()}")
     print(f"launch_agent_dir={launch_agent_dir()}")
     print("runtime_probe=deferred (dry-run never executes runtime code)" if args.dry_run else "runtime_probe=launchd")
-    names = ["idle", "dispatch", "logrotate"] + (["sms"] if sms_wanted(args) else [])
+    names = ["idle", "dispatch", "logrotate"] + optional_names(args)
     for name in names:
         path = plist_path(name)
         if not plist_owned_by_this_checkout(path):
@@ -391,7 +412,7 @@ def uninstall(args: argparse.Namespace) -> int:
     changed = False
     for name, label in ALL_LABELS.items():
         path = plist_path(name)
-        if name == "sms" and not path.exists():
+        if name in OPTIONAL and not path.exists():
             continue  # optional: nothing to remove on a host that never had the gateway
         if path.exists() and not plist_owned_by_this_checkout(path):
             die(f"refusing to remove unowned LaunchAgent: {path}")
@@ -455,7 +476,7 @@ def install(args: argparse.Namespace) -> int:
     ensure_manifest(args.runtime)
     changed = write_runtime_env(args.runtime, runtime_bin) or changed
     record_artifact(args.runtime, runtime_env())
-    install_names = list(LABELS) + (["sms"] if sms_wanted(args) else [])
+    install_names = list(LABELS) + optional_names(args)
     for name in install_names:
         label = ALL_LABELS[name]
         path = plist_path(name)

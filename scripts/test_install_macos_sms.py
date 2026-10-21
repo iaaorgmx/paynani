@@ -74,6 +74,7 @@ def run(argv, env=None):
 
 
 sms = agents / "com.paynani.sms.plist"
+web = agents / "com.paynani.web.plist"  # PaynaniWeb va con la pasarela (#435, Q-T2-1)
 
 # --- parse ---------------------------------------------------------------------------
 try:
@@ -123,9 +124,9 @@ m.shutil.which = real_which
 
 # --- instalar -------------------------------------------------------------------------------
 code, out, _ = run(["--runtime", "codex"])
-check("sin --with-sms: se instalan los tres de siempre y ninguno de SMS", (True, False, False),
+check("sin --with-sms: se instalan los tres de siempre y ninguno de SMS ni PaynaniWeb", (True, False, False, False),
       (all((agents / f"com.paynani.{n}.plist").exists() for n in ("idle", "dispatch", "logrotate")),
-       sms.exists(), "com.paynani.sms" in out))
+       sms.exists(), web.exists(), "com.paynani.sms" in out or "com.paynani.web" in out))
 code, out, _ = run(["--runtime", "codex", "--dry-run"])
 check("el dry-run sin --with-sms no menciona la pasarela", False, "com.paynani.sms" in out)
 code, out, _ = run(["--runtime", "codex", "--dry-run", "--with-sms"])
@@ -135,6 +136,21 @@ code, out, _ = run(["--runtime", "codex", "--with-sms"])
 check("--with-sms instala y arranca el LaunchAgent de la pasarela", (True, True, True),
       (sms.exists(), ("bootstrap", "com.paynani.sms") in calls, f"launchagent={sms} label=com.paynani.sms" in out))
 check("el plist escrito es el de plist_for", "com.paynani.sms", plistlib.loads(sms.read_bytes())["Label"])
+check("--with-sms instala y arranca también PaynaniWeb", (True, True, True),
+      (web.exists(), ("bootstrap", "com.paynani.web") in calls, f"launchagent={web} label=com.paynani.web" in out))
+web_plist = plistlib.loads(web.read_bytes())
+check("plist de PaynaniWeb: paynani_web.py de este clon, siempre vivo, con sus registros",
+      (str(ROOT / "scripts" / "paynani_web.py"), 2, True, str(state / "web.log"), str(state / "web.err.log")),
+      (web_plist["ProgramArguments"][-1], len(web_plist["ProgramArguments"]), web_plist["KeepAlive"],
+       web_plist["StandardOutPath"], web_plist["StandardErrorPath"]))
+# Un host que ya tenía la pasarela, de antes de PaynaniWeb: el upgrade la agrega.
+run(["--runtime", "codex", "--uninstall"])
+run(["--runtime", "codex", "--with-sms"])
+web.unlink()
+calls.clear()
+code, out, _ = run(["--runtime", "codex", "--upgrade"])
+check("un upgrade de un host con pasarela agrega PaynaniWeb", (True, True),
+      (web.exists(), ("bootstrap", "com.paynani.web") in calls))
 calls.clear()
 code, out, _ = run(["--runtime", "codex", "--upgrade"])
 check("un upgrade sin la bandera sigue atendiendo la pasarela instalada", (True, True),
@@ -152,6 +168,8 @@ calls.clear()
 code, out, _ = run(["--runtime", "codex", "--uninstall"])
 check("uninstall quita también la pasarela instalada", (False, True), (sms.exists(), "removed_launchagent=" + str(sms) in out))
 check("uninstall la detiene con bootout", True, any(c[:1] == ("bootout",) and "com.paynani.sms" in str(c) for c in calls))
+check("uninstall quita y detiene PaynaniWeb", (False, True),
+      (web.exists(), any(c[:1] == ("bootout",) and "com.paynani.web" in str(c) for c in calls)))
 calls.clear()
 code, out, _ = run(["--runtime", "codex", "--uninstall"])
 check("uninstall sin pasarela no la menciona ni la toca", (False, False),

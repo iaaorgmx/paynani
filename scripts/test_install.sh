@@ -1026,11 +1026,14 @@ rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
 reset_install; rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
 : >"$FAKE_SYSTEMD_LOG"
 sms_unit="$sandbox/.config/systemd/user/paynani-sms.service"
+# PaynaniWeb (PRD #434) goes with the gateway (#435, Q-T2-1): every check of the
+# gateway below holds for it too.
+web_unit="$sandbox/.config/systemd/user/paynani-web.service"
 
 check_status '--with-sms does not apply to --uninstall' 64 --runtime codex --uninstall --with-sms
 check_status 'a plain install does not plan the SMS gateway' 10 --runtime codex --dry-run
-[[ "$LAST_OUTPUT" != *paynani-sms* ]] || {
-    printf 'FAIL a dry-run without --with-sms mentioned the SMS gateway\n'
+[[ "$LAST_OUTPUT" != *paynani-sms* && "$LAST_OUTPUT" != *paynani-web* ]] || {
+    printf 'FAIL a dry-run without --with-sms mentioned the SMS gateway or PaynaniWeb\n'
     fail=$((fail + 1))
 }
 check_status 'a dry-run with --with-sms plans the SMS unit' 10 --runtime codex --dry-run --with-sms
@@ -1038,16 +1041,20 @@ check_status 'a dry-run with --with-sms plans the SMS unit' 10 --runtime codex -
     printf 'FAIL --with-sms --dry-run did not plan the unit, or wrote it\n'
     fail=$((fail + 1))
 }
+[[ "$LAST_OUTPUT" == *paynani-web.service* && ! -e "$web_unit" ]] || {
+    printf 'FAIL --with-sms --dry-run did not plan the PaynaniWeb unit, or wrote it\n'
+    fail=$((fail + 1))
+}
 
 check_status 'a plain install converges without the SMS gateway' 10 --runtime codex
-[[ ! -e "$sms_unit" && "$(<"$clone/runtime.env")" == 'PAYNANI_RUNTIME=codex' ]] &&
-    ! grep -q 'paynani-sms' "$clone/install.manifest" "$FAKE_SYSTEMD_LOG" || {
+[[ ! -e "$sms_unit" && ! -e "$web_unit" && "$(<"$clone/runtime.env")" == 'PAYNANI_RUNTIME=codex' ]] &&
+    ! grep -q 'paynani-sms\|paynani-web' "$clone/install.manifest" "$FAKE_SYSTEMD_LOG" || {
     printf 'FAIL a plain install touched the SMS gateway (unit, runtime.env, manifest or services)\n'
     fail=$((fail + 1))
 }
 check_status 'a plain upgrade still does not install it' 0 --runtime codex --upgrade
-[[ ! -e "$sms_unit" ]] || {
-    printf 'FAIL an upgrade without --with-sms installed the SMS gateway\n'
+[[ ! -e "$sms_unit" && ! -e "$web_unit" ]] || {
+    printf 'FAIL an upgrade without --with-sms installed the SMS gateway or PaynaniWeb\n'
     fail=$((fail + 1))
 }
 
@@ -1092,7 +1099,46 @@ fi
     printf 'FAIL the verification report does not list the SMS unit\n'
     fail=$((fail + 1))
 }
+[[ -f "$web_unit" && "$(file_mode "$web_unit")" == 644 ]] || {
+    printf 'FAIL --with-sms did not write the PaynaniWeb unit as a 0644 file\n'
+    fail=$((fail + 1))
+}
+if grep -q '/path/to' "$web_unit"; then
+    printf 'FAIL the rendered PaynaniWeb unit still has placeholders\n'
+    fail=$((fail + 1))
+fi
+grep -q "^ExecStart=/usr/bin/python3 $clone/scripts/paynani_web.py\$" "$web_unit" &&
+grep -q "^EnvironmentFile=-$clone/runtime.env\$" "$web_unit" &&
+grep -q "^StandardOutput=append:$clone/state/web.log\$" "$web_unit" &&
+grep -q "^StandardError=append:$clone/state/web.err.log\$" "$web_unit" &&
+grep -q "^RestartPreventExitStatus=2\$" "$web_unit" || {
+    printf 'FAIL the rendered PaynaniWeb unit has the wrong ExecStart, EnvironmentFile, logs or restart rule\n'
+    fail=$((fail + 1))
+}
+grep -q "$web_unit" "$clone/install.manifest" &&
+grep -q -- 'enable --now paynani-web.service' "$FAKE_SYSTEMD_LOG" &&
+grep -q -- "$web_unit" "$FAKE_SYSTEMD_LOG" || {
+    printf 'FAIL the PaynaniWeb unit was not recorded, verified and enabled\n'
+    fail=$((fail + 1))
+}
+[[ "$LAST_OUTPUT" == *"verification_unit=$web_unit validated=true"* ]] || {
+    printf 'FAIL the verification report does not list the PaynaniWeb unit\n'
+    fail=$((fail + 1))
+}
 check_status 'the SMS gateway install is idempotent' 0 --runtime codex --with-sms
+
+# A host that installed the gateway before PaynaniWeb existed: the manifest owns
+# the gateway's unit and not PaynaniWeb's. A plain --upgrade adds it (#435).
+grep -v "$web_unit" "$clone/install.manifest" >"$clone/install.manifest.tmp" &&
+    cat "$clone/install.manifest.tmp" >"$clone/install.manifest" && rm -f "$clone/install.manifest.tmp"
+rm -f "$web_unit" "$FAKE_SYSTEMD_STATE/paynani-web.service.enabled" "$FAKE_SYSTEMD_STATE/paynani-web.service.active"
+: >"$FAKE_SYSTEMD_LOG"
+check_status 'an upgrade of a host with the gateway adds PaynaniWeb' 10 --runtime codex --upgrade
+[[ -f "$web_unit" ]] && grep -q "$web_unit" "$clone/install.manifest" &&
+    grep -q -- 'enable --now paynani-web.service' "$FAKE_SYSTEMD_LOG" || {
+    printf 'FAIL an upgrade of a host that owns the gateway did not install and enable PaynaniWeb\n'
+    fail=$((fail + 1))
+}
 
 # The gateway runs send.sh for the email to the human on every roster change from
 # PaynaniApp, and a user service does not get the login shell's PATH (#410). The unit
@@ -1143,6 +1189,11 @@ check_status 'uninstall removes the owned SMS unit and stops it' 10 --runtime co
 [[ ! -e "$sms_unit" && ! -e "$FAKE_SYSTEMD_STATE/paynani-sms.service.enabled" ]] &&
     grep -q -- 'disable --now paynani-sms.service' "$FAKE_SYSTEMD_LOG" || {
     printf 'FAIL uninstall left the SMS unit behind or did not stop it\n'
+    fail=$((fail + 1))
+}
+[[ ! -e "$web_unit" && ! -e "$FAKE_SYSTEMD_STATE/paynani-web.service.enabled" ]] &&
+    grep -q -- 'disable --now paynani-web.service' "$FAKE_SYSTEMD_LOG" || {
+    printf 'FAIL uninstall left the PaynaniWeb unit behind or did not stop it\n'
     fail=$((fail + 1))
 }
 [[ "$(cat "$clone/sms.env" 2>/dev/null)" == "$sms_env_bytes" ]] || {
