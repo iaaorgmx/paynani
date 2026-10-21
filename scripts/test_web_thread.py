@@ -266,8 +266,8 @@ check("un enviado sin copia: Para y Cc del registro", True, "para ana@example.co
 check("... y el nombre con el que firma send.sh (PAYNANI_FROM_NAME), no la dirección (revisión de #459)", (True, True),
       ("<b>Agente Paynani</b> <span class=\"direccion\">&lt;agente@example.com&gt;</span>" in page,
        'avatar-agente" aria-hidden="true">AP<' in page))
-check("la hora va en <time datetime> (T4 la pasa a la zona del navegador)", True,
-      '<time datetime="2026-10-20T10:00:00Z">' in page)
+check("la hora va en <time datetime> con la fecha completa en title (T4)", True,
+      '<time datetime="2026-10-20T10:00:00Z" title="' in page)
 check("cada recibido conserva su estado y la marca del roster junto a la hora (4.7)", True,
       'class="estado estado-observed"' in page and 'class="marca-roster"' in page)
 check("el enviado con copia trae su texto, escapado", (True, False),

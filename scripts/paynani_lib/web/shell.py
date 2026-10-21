@@ -146,6 +146,7 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
 {FAVICON_LINK}
 <link rel="stylesheet" href="/assets/app.css">
 <link rel="stylesheet" href="/assets/web.css">
+<script src="/assets/time.js" defer></script>
 </head>
 <body class="web-shell">
 <aside class="lateral">
