@@ -157,7 +157,8 @@ user_file = tmp / "web" / "user.json"
 users.create("dueno@example.com", "Dueño", "una-contraseña-larga", user_file)
 ctx = app.Context(user_file, notifier=notify.Notifier(send=lambda *a: None, log=lambda line: None),
                   agent_email="agente@example.com", accounts_file=accounts_file, ledger_path=lifecycle,
-                  env_path=env_path, imap_connect=FakeIMAP, imap_uidvalidity=lambda conn, mb: FakeIMAP.validity)
+                  env_path=env_path, imap_connect=FakeIMAP, imap_uidvalidity=lambda conn, mb: FakeIMAP.validity,
+                  state_dir=tmp / "state")
 httpd = app.serve("127.0.0.1", 0, ctx=ctx)
 port = httpd.server_address[1]
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -193,7 +194,7 @@ def get(path):
 
 status, _, page = get("/email/main")
 check("la lista: 200", 200, status)
-items = re.findall(r'<li><a href="(/email/main/ver\?e=[^"]+)"', page)
+items = re.findall(r'<li class="correo-in"><a href="(/email/main/ver\?e=[^"]+)"', page)
 check("50 correos en la primera página", 50, len(items))
 check("el primero es el más reciente", "/email/main/ver?e=" + quote("imap:INBOX:77:120", safe=""), items[0])
 check("dice cuántos son", True, "120 correos" in page)
@@ -202,12 +203,12 @@ check("el estado respondido y la marca del roster", True,
 check("«Ver más» a la siguiente página", True, 'href="/email/main?desde=50"' in page)
 status, _, page = get("/email/main?desde=100")
 check("la última página: 20 y sin «Ver más»", (20, False),
-      (len(re.findall(r'<li><a href="/email/main/ver', page)), "desde=" in page))
+      (len(re.findall(r'<li class="correo-in"><a href="/email/main/ver', page)), "desde=" in page))
 status, _, page = get("/email/main?desde=abc")
-check("un desde que no es número es 0", 50, len(re.findall(r'<li><a href="/email/main/ver', page)))
+check("un desde que no es número es 0", 50, len(re.findall(r'<li class="correo-in"><a href="/email/main/ver', page)))
 status, _, page = get("/email/ventas")
 check("ventas: su correo, con el asunto y el nombre escapados", (1, True, False),
-      (len(re.findall(r'<li><a href="/email/ventas/ver', page)), "&lt;b&gt;Cotización&lt;/b&gt;" in page,
+      (len(re.findall(r'<li class="correo-in"><a href="/email/ventas/ver', page)), "&lt;b&gt;Cotización&lt;/b&gt;" in page,
        "<script>" in page))
 status, _, _ = get("/email/nadie")
 check("una cuenta que no existe: 404", 404, status)
@@ -221,7 +222,7 @@ check("el texto escapado: un <script> del cuerpo no es marcado", (True, False),
 check("con el login de la cuenta del agente", [("agente@example.com", "imap.example.com")], FakeIMAP.logins)
 check("De, Para y el asunto", True, "ana@example.com" in page and "agente@example.com" in page and "Asunto 120" in page)
 check("dice que solo se muestra (FR-15)", True, "Solo se muestra" in page)
-check("y que las respuestas todavía no", True, "todavía no se muestran" in page)
+check("y su conversación, sola: no hay otro correo con ese asunto y esa persona", True, "No hay más correos en esta conversación" in page)
 status, _, page = get("/email/main/ver?e=" + quote("imap:INBOX:77:119", safe=""))
 check("un correo en HTML: el texto, el aviso y el adjunto nombrado", (200, True, True, True, False),
       (status, "Hola desde HTML" in page, "venía en HTML" in page, "cotizacion.pdf" in page, "x()" in page))

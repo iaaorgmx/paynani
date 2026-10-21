@@ -73,6 +73,27 @@ con PaynaniWeb y todavía no hay usuario.
 Cuentas de correo y Mensajes solo muestran: cerrar o responder un aviso sigue
 siendo trabajo del agente.
 
+### Recibido y enviado, como un webmail
+
+Cada cuenta tiene una sola lista, como un webmail: lo que recibió (del ledger) y lo
+que envió (de `state/sent.log`, filtrado por `account=`), mezclados por hora, el más
+reciente primero, de 50 en 50. Cada fila dice si entró (↙ «De:») o salió (↗ «Para:»),
+con el asunto y la hora. Los recibidos llevan su estado y la marca del roster; los
+enviados, «Enviado».
+
+Al abrir cualquiera se ve solo su conversación: los correos de esa cuenta con el
+mismo asunto (sin `Re:`, `Fw:` ni mayúsculas) y la misma otra persona (el remitente
+de un recibido, o un destinatario o Cc de un enviado), en orden. `send.sh` no anota
+a qué correo responde (#442 se cerró: los destinatarios ven los correos como
+siempre), así que el hilo se arma así.
+
+- **Un recibido** se lee de IMAP, como antes, y en su conversación los otros
+  recibidos son enlaces para abrirlos.
+- **Un enviado** muestra Para, Cc, Cco y la hora de `sent.log`, y su texto, pedido a
+  IMAP en Enviados por su Message-ID. `send.sh` guarda esa copia desde #449 (salvo en
+  Gmail, que la guarda solo). Si no hay copia, por ejemplo en envíos de antes, la
+  página lo dice.
+
 ## Lo que guarda y lo que no
 
 - **Guarda** el usuario y las direcciones desde las que entró (`web/user.json` y

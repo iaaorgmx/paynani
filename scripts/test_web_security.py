@@ -79,6 +79,8 @@ with open(lifecycle, "w", encoding="utf-8") as fh:
         fh.write(json.dumps({"schema_version": 1, "event_id": eid, "state": "observed", "at": env["observed_at"],
                              "envelope": env}) + "\n")
         fh.write(json.dumps({"schema_version": 1, "event_id": eid, "state": "handled", "at": env["observed_at"]}) + "\n")
+(state / "sent.log").write_text("2026-10-20T10:05:00Z\tto=p0@example.org\tcc=\tbcc=\tsubject=Re: Asunto 0"
+                                 "\tsent-copy=skipped\tmessage-id=<s1@agente.example>\n", encoding="utf-8")
 st = sms_store.Store(state)
 with open(state / "events.jsonl", "w", encoding="utf-8") as fh:
     for i in range(3000):
@@ -164,6 +166,7 @@ pages = {
     "/": ("/", cookie),
     "/email/main": ("/email/main?" + SECRET_QUERY, cookie),
     "un correo abierto": ("/email/main/ver?e=" + quote("imap:INBOX:7:1", safe=""), cookie),
+    "un enviado abierto": ("/email/main/ver?s=" + quote("<s1@agente.example>", safe=""), cookie),
     "/messages": ("/messages", cookie),
     "una conversación": ("/messages/ver?n=" + quote("+525500000000", safe=""), cookie),
     "/roster": ("/roster", cookie),
