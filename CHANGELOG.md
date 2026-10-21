@@ -2,6 +2,29 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el Roster y las instrucciones por contacto** (T8 del paraguas #435;
+  PRD #434 FR-20 y FR-9). Es lo mismo que la pantalla «Roster» de PaynaniApp, con
+  el mismo servicio de la pasarela (`sms/roster_api.RosterService`), así que el
+  teléfono y el navegador validan igual: correo válido, teléfono en E.164 (la web
+  lo normaliza antes, como la app, con `PAYNANI_SMS_DEFAULT_REGION`), sin
+  duplicados, un correo o un teléfono por fila, y la fila del dueño que no se
+  quita. Cada cambio usa el `etag` (un roster que cambió mientras se editaba da
+  `409` y no escribe nada), deja la copia en `state/history/` y la línea en
+  `state/roster_changes.jsonl` con `device_id` `web:<dirección>`, y le manda el
+  correo al dueño. Ese correo dice ahora «desde PaynaniWeb (dirección …)» y aconseja
+  cambiar la contraseña con `paynani web passwd`; los cambios desde el teléfono
+  siguen diciendo lo de antes. Las pantallas son:
+  - las cuentas como pestañas (la del agente y las de `accounts.json`, con cuántos
+    contactos tiene cada una);
+  - la lista, con la marca del dueño y de quién tiene instrucciones;
+  - agregar y editar;
+  - quitar, con su confirmación;
+  - el editor de instrucciones de cada contacto y el de las reglas generales, con
+    «Vista previa» de la regla efectiva antes de guardar.
+
+  Las reglas que se guardan desde la web llevan `updated_by: PaynaniWeb
+  <dirección>`. Todo `POST` lleva el token de la sesión.
+
 - **PaynaniWeb: Messages, las conversaciones SMS** (T7 del paraguas #435; PRD #434
   FR-17 a FR-19). `/messages` muestra una fila por número, con lo más reciente
   primero y de 50 en 50 con «Ver más». Cada fila lleva el nombre del roster (o el
