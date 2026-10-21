@@ -28,7 +28,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import auth, mail, mail_pages, notify, shell, users
+from . import auth, mail, mail_pages, messages_pages, notify, shell, users
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 STATIC = {
@@ -227,7 +227,8 @@ class Context:
 
     def __init__(self, user_file: Path | None = None, notifier: notify.Notifier | None = None, clock=time.time,
                  agent_email=None, accounts_file: Path | None = None, ledger_path: Path | None = None,
-                 env_path: Path | None = None, imap_connect=None, imap_uidvalidity=None):
+                 env_path: Path | None = None, imap_connect=None, imap_uidvalidity=None,
+                 state_dir: Path | None = None, roster_path: Path | None = None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -243,6 +244,30 @@ class Context:
         self._env_path = env_path
         self.imap_connect = imap_connect
         self.imap_uidvalidity = imap_uidvalidity
+        # Messages (FR-17): el diario y el store de la pasarela, y los nombres del
+        # roster del agente por teléfono.
+        self._state_dir = state_dir
+        self._roster_path = roster_path
+
+    def state_dir(self) -> Path:
+        if self._state_dir is not None:
+            return Path(self._state_dir)
+        import paths
+        return paths.state_dir()
+
+    def roster_path(self) -> Path:
+        if self._roster_path is not None:
+            return Path(self._roster_path)
+        import paths
+        return paths.roster()
+
+    def phone_names(self) -> dict:
+        import roster as roster_mod
+        try:
+            return {entry["phone"]: entry.get("name", "") or entry["phone"]
+                    for entry in roster_mod.roster_phone_entries(self.roster_path())}
+        except OSError:
+            return {}
 
     def ledger_path(self) -> Path:
         if self._ledger_path is not None:
@@ -456,8 +481,8 @@ def make_handler(ctx: Context):
             if self.route.startswith("/email/"):
                 self._email()
                 return
-            if self.route == "/messages":
-                self._page(200, title=t("web.nav.messages"), body=soon_body(), active="messages", icon_name="inbox")
+            if self.route in ("/messages", "/messages/ver"):
+                self._messages()
                 return
             if self.route == "/roster":
                 self._page(200, title=t("web.nav.roster"), body=soon_body(), active="roster", icon_name="roster")
@@ -504,6 +529,41 @@ def make_handler(ctx: Context):
                 sys.stderr.write(f"paynani-web: no se abrió {event_id}: {exc.code}\n")
             self._page(200 if error is None else 502, title=match["email"], icon_name="mail",
                        back=f"/email/{account_id}", body=mail_pages.message_body(account_id, row, message, error), **kw)
+
+        def _offset(self) -> int:
+            try:
+                return max(0, int(self.query.get("desde", ["0"])[0]))
+            except ValueError:
+                return 0
+
+        def _messages(self):
+            """FR-17 y FR-18: /messages, las conversaciones; /messages/ver?n=<número>, una."""
+            from ..sms import cli as sms_cli
+            from ..sms import store as sms_store
+            from ..sms import thread as sms_thread
+            t = i18n.t
+            store = sms_store.Store(self.CTX.state_dir())
+            items = sms_thread.items(store, self.CTX.state_dir() / "events.jsonl", calls=True)
+            names = self.CTX.phone_names()
+            kw = dict(active="messages", icon_name="inbox")
+            if self.route == "/messages":
+                convs = sms_thread.conversations(items)
+                offset = self._offset()
+                chunk = convs[offset:offset + messages_pages.PAGE]
+                nxt = offset + messages_pages.PAGE if offset + messages_pages.PAGE < len(convs) else None
+                self._page(200, title=t("web.nav.messages"),
+                           body=messages_pages.list_body(chunk, names, offset, nxt, len(convs)), **kw)
+                return
+            number = self.query.get("n", [""])[0]
+            mine = [i for i in items if i["number"] == number]
+            if not number or not mine:
+                self._page(404, title=t("web.nav.messages"), back="/messages",
+                           body=f'<p class="lead">{i18n.th("web.sms.thread_empty")}</p>', **kw)
+                return
+            who = names.get(number) or next((i["name"] for i in mine if i["name"]), "") or number
+            self._page(200, title=t("web.nav.messages"), back="/messages",
+                       body=messages_pages.thread_body(number, who, mine, self._offset(),
+                                                       sms_cli.human_pause(store, number)), **kw)
 
         def do_HEAD(self):  # noqa: N802
             self.do_GET()

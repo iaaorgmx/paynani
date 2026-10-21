@@ -261,3 +261,22 @@ body.web-shell {
   .web-shell .correos li a { grid-template-columns: 1fr auto; }
   .web-shell .correos .asunto { grid-column: 1 / -1; }
 }
+
+/* Messages (T7): la conversación como globos, el del contacto a la izquierda y lo
+   del agente y del dueño a la derecha; las llamadas, una línea en medio. */
+.web-shell .marca-llamada { font-size: .7rem; color: var(--bad-ink); margin-left: .35rem; }
+.web-shell .aviso-caja { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-ink); border-radius: 8px; padding: .6rem .9rem; }
+.web-shell .hilo { list-style: none; margin: 1rem 0; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+.web-shell .hilo .sms { display: flex; }
+.web-shell .hilo .sms-agent, .web-shell .hilo .sms-human { justify-content: flex-end; }
+.web-shell .hilo .globo { max-width: 80%; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: .55rem .8rem; }
+.web-shell .hilo .sms-agent .globo { background: #f6ecea; border-color: #e7cfcb; }
+.web-shell .hilo .sms-human .globo { background: var(--ok-bg); border-color: var(--ok-line); }
+@media (prefers-color-scheme: dark) { .web-shell .hilo .sms-agent .globo { background: #2a1c1b; border-color: #5e3229; } }
+.web-shell .hilo .de { font-size: .78rem; font-weight: 600; color: var(--quiet); margin-bottom: .2rem; }
+.web-shell .hilo .texto { white-space: pre-wrap; overflow-wrap: anywhere; }
+.web-shell .hilo time { display: block; font-size: .72rem; color: var(--quiet); margin-top: .25rem; text-align: right; }
+.web-shell .hilo .llamada { align-self: center; font-size: .85rem; color: var(--quiet); background: var(--bg); border: 1px dashed var(--line); border-radius: 999px; padding: .25rem .8rem; }
+.web-shell .hilo .llamada time { display: inline; margin: 0 0 0 .4rem; }
+.web-shell .estado-sms-delivered, .web-shell .estado-sms-sent { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-ink); }
+.web-shell .estado-sms-failed, .web-shell .estado-sms-rejected, .web-shell .estado-sms-expired { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad-ink); }

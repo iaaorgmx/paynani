@@ -2,6 +2,20 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: Messages, las conversaciones SMS** (T7 del paraguas #435; PRD #434
+  FR-17 a FR-19). `/messages` muestra una fila por número, con lo más reciente
+  primero y de 50 en 50 con «Ver más». Cada fila lleva el nombre del roster (o el
+  que mandó el teléfono), lo último que pasó, cuántos elementos tiene la
+  conversación y si hubo llamadas perdidas. Al abrir una se ve la conversación como
+  `paynani sms thread`: lo que llegó, lo que mandó el agente con su estado
+  (en cola, enviado, entregado, falló…) y lo que contestó el dueño desde
+  PaynaniApp, en globos y en orden de hora real. Las llamadas van en medio, como
+  «Llamada perdida de …» (FR-18) o «Llamada contestada de … · 2 min 5 s». Se ven
+  los 50 más recientes, con «Ver anteriores», y la pausa del agente cuando el dueño
+  contestó. Solo muestra (FR-19). La conversación sale de un módulo nuevo,
+  `paynani_lib/sms/thread.py`, que ahora usa también `paynani sms thread`: una sola
+  fuente para la terminal y la web. La salida de la CLI no cambia.
+
 - **PaynaniWeb: Email Accounts, la lista y el correo abierto** (T5 del paraguas #435,
   primera parte; PRD #434 FR-13 a FR-15). Al elegir una cuenta del menú se ven sus
   correos, de 50 en 50 con «Ver más», el más reciente primero. La lista sale del

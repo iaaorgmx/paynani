@@ -22,6 +22,7 @@ import phone  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
 from . import pairing  # noqa: E402
+from . import thread as thread_mod  # noqa: E402
 from .gateway import status_id  # noqa: E402
 from .store import CODE_TTL_S, Store, now_utc, valid_order_id  # noqa: E402
 
@@ -167,63 +168,12 @@ def run_status(args) -> int:
 
 
 def _when(stamp: str) -> tuple[float, str]:
-    """
-    (segundos de época, hora local con zona) de una hora ISO 8601. Los SMS recibidos
-    traen la zona del teléfono («-05:00») y lo demás va en UTC («Z»): ordenarlos como
-    texto mezclaba los de un mismo día (QA de PaynaniApp#111 en el teléfono de Rock).
-    """
-    from datetime import datetime
-    try:
-        moment = datetime.fromisoformat(str(stamp).strip().replace("Z", "+00:00"))
-    except ValueError:
-        return 0.0, str(stamp)
-    if moment.tzinfo is None:
-        return moment.timestamp(), moment.isoformat(timespec="seconds")
-    return moment.timestamp(), moment.astimezone().isoformat(timespec="seconds")
+    return thread_mod.when(stamp)
 
 
 def _thread_items(store: Store, number: str, journal: Path) -> list[tuple[str, str, str, str]]:
     """(hora local, quién, estado, texto) de la conversación con `number`, en orden de hora."""
-    items = []
-    for record, _ in ev.read_from(journal, 0):
-        if not isinstance(record, dict) or record.get("event_type") != ev.SMS_RECEIVED:
-            continue
-        if (record.get("sender") or {}).get("address") != number:
-            continue
-        message_id = str(record.get("provider_id", "")).split(":", 1)[-1]
-        saved = store.inbox(message_id) or {}
-        when = str(record.get("sent_at") or record.get("observed_at") or "")
-        items.append((when, "received", "", str(saved.get("text", ""))))
-    statuses: dict[str, str] = {}
-    path = store.root / "orders.jsonl"
-    if path.exists():
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    rec = json.loads(line)
-                except ValueError:
-                    continue
-                if rec.get("status") != "queued":
-                    statuses[rec.get("order_id", "")] = rec.get("status", "")
-    for order in store.sent_orders() + store.pending_orders():
-        if order.get("to") != number:
-            continue
-        queued = next((r.get("at", "") for r in store.order_statuses(order["id"]) if r.get("status") == "queued"), "")
-        items.append((queued, "agent", statuses.get(order["id"], "queued"), str(order.get("text", ""))))
-    by_send: dict[str, dict] = {}
-    last: dict[str, str] = {}
-    for rec in store.human_records():
-        if rec.get("to") != number:
-            continue
-        if rec.get("event_id"):
-            by_send[rec["local_id"]] = rec
-        last[rec["local_id"]] = rec.get("status", "")
-    for local_id, rec in by_send.items():
-        saved = store.inbox(rec["id"]) or {}
-        items.append((rec.get("at", ""), "human", last.get(local_id, ""), str(saved.get("text", ""))))
-    timed = sorted((_when(when) + (who, status, text) for when, who, status, text in items),
-                   key=lambda item: item[0])
-    return [(local, who, status, text) for _, local, who, status, text in timed]
+    return [(i["local"], i["kind"], i["status"], i["text"]) for i in thread_mod.items(store, journal, number=number)]
 
 
 def run_thread(args) -> int:
