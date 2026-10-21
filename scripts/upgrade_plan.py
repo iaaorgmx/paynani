@@ -765,7 +765,11 @@ def render(p):
         if p["overlays"]:
             lines.append("  git stash pop")
             lines.append("  scripts/test_all.sh")
-        lines.append("  verify disk and listener version, a new 'resuming from uid N', and healthcheck")
+        # The same check apply_plan() makes (#451): the listener only when it restarts.
+        if LISTENER in p["restart_units"]:
+            lines.append("  verify disk and listener version, a new 'resuming from uid N', and healthcheck")
+        else:
+            lines.append("  verify disk version and healthcheck (the plan does not restart the listener)")
     return "\n".join(lines) + "\n"
 
 
