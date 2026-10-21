@@ -11,6 +11,9 @@
  *   earlier  "Oct 21, 12:25 PM", with the year when it is another one
  *   title    the full date with the zone, seen on hover
  *
+ * The mail and SMS lists (.correos) use it too, with data-corto: today is
+ * only the time there, as in Gmail's list.
+ *
  * and refreshes the "ago" once a minute.
  */
 (function () {
@@ -34,7 +37,7 @@
   function paint() {
     var now = new Date();
     var clock = new Intl.DateTimeFormat(lang, { hour: 'numeric', minute: '2-digit' });
-    var nodes = document.querySelectorAll('.mensajes time[datetime]');
+    var nodes = document.querySelectorAll('.mensajes time[datetime], .correos time[datetime]');
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
       var when = new Date(node.getAttribute('datetime'));
@@ -43,7 +46,9 @@
       }
       var text;
       if (when.toDateString() === now.toDateString()) {
-        text = clock.format(when) + ' (' + ago((now - when) / 1000) + ')';
+        // In a list (data-corto), only the time, like Gmail's list.
+        text = node.hasAttribute('data-corto') ? clock.format(when)
+          : clock.format(when) + ' (' + ago((now - when) / 1000) + ')';
       } else {
         var date = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
         if (when.getFullYear() !== now.getFullYear()) {

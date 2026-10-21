@@ -99,10 +99,12 @@ def parse(stamp: str) -> datetime | None:
     return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
 
 
-def render(stamp: str, lang: str, *, now: datetime | None = None, tz=None) -> tuple[str, str, str]:
+def render(stamp: str, lang: str, *, now: datetime | None = None, tz=None,
+           short: bool = False) -> tuple[str, str, str]:
     """
     (ISO en UTC para `datetime`, el texto que se ve, la fecha completa para `title`), en
     la zona `tz` (la del host si es None). Un `stamp` que no se entiende sale tal cual.
+    `short` es para las listas, como Gmail: de hoy, solo la hora, sin «hace …».
     """
     when = parse(stamp)
     if when is None:
@@ -111,7 +113,7 @@ def render(stamp: str, lang: str, *, now: datetime | None = None, tz=None) -> tu
     now = (now or datetime.now(timezone.utc)).astimezone(tz)
     iso = when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if local.date() == now.date():
-        shown = f"{clock(local, lang)} ({ago((now - local).total_seconds())})"
+        shown = clock(local, lang) if short else f"{clock(local, lang)} ({ago((now - local).total_seconds())})"
     else:
         shown = f"{short_date(local, lang, year=local.year != now.year)}, {clock(local, lang)}"
     return iso, shown, full(local, lang)

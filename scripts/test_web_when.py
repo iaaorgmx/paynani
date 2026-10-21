@@ -63,6 +63,12 @@ check("hace una hora y hace tres", ("11:34 a. m. (hace 1 hora)", "9:30 a. m. (ha
 check("medianoche y mediodía en 12 h", ("12:05 a. m. (hace 12 horas)", "12:00 PM (34 minutes ago)"),
       (shown("2026-10-21T05:05:00Z", "es-MX")[1], shown("2026-10-21T17:00:00Z", "en-US")[1]))
 
+check("short (las listas): de hoy solo la hora, sin «hace …»", ("12:25 PM", "12:25 p. m."),
+      (when.render("2026-10-21T17:25:00Z", "en-US", now=NOW, tz=CDT, short=True)[1],
+       when.render("2026-10-21T17:25:00Z", "es-MX", now=NOW, tz=CDT, short=True)[1]))
+check("short: de otro día, igual que sin short", shown("2026-10-20T17:25:00Z", "es-MX")[1],
+      when.render("2026-10-20T17:25:00Z", "es-MX", now=NOW, tz=CDT, short=True)[1])
+
 # --- antes de hoy: la fecha corta ---------------------------------------------------------------
 check("de otro día del año: la fecha corta y la hora, sin año",
       ("Oct 20, 12:25 PM", "20 oct, 12:25 p. m.", "20 oct, 12:25", "20 oct., 12:25", "20 de out., 12:25"),
@@ -96,7 +102,9 @@ r = conn.getresponse()
 body = r.read().decode("utf-8")
 check("/assets/time.js se sirve como JavaScript, sin sesión", (200, True, True),
       (r.status, r.getheader("Content-Type", "").startswith("application/javascript"), "Intl.RelativeTimeFormat" in body))
-check("y solo toca los <time datetime> del hilo", True, "'.mensajes time[datetime]'" in body)
+check("y solo toca los <time datetime> del hilo y de las listas", True,
+      "'.mensajes time[datetime], .correos time[datetime]'" in body)
+check("en las listas (data-corto), de hoy solo la hora, como Gmail", True, "hasAttribute('data-corto')" in body)
 check("con menos de un minuto dice «ahora», como when.py, y no «este minuto» (revisión de #460)", True,
       "if (minutes === 0) {" in body and "rtf.format(0, 'second')" in body)
 httpd.shutdown()

@@ -15,13 +15,6 @@ from . import quote, shell, when
 from .shell import e
 
 
-def _when(stamp: str) -> str:
-    """`2026-10-21T08:08:03Z` como `2026-10-21 08:08 UTC`: la hora del ledger es UTC."""
-    if len(stamp) >= 16 and "T" in stamp:
-        return stamp[:10] + " " + stamp[11:16] + " UTC"
-    return stamp
-
-
 def _state(state: str) -> str:
     if not state:
         return ""
@@ -41,6 +34,15 @@ def account_head(account_id: str, *, removable: bool, ok: str = "") -> str:
         out += (f'<p class="acciones-cuenta"><a class="peligro-enlace" href="/cuentas/{urlquote(account_id)}/quitar">'
                 f'{th("web.acct.remove_nav")}</a></p>\n')
     return out
+
+
+def list_time(stamp: str) -> str:
+    """La hora de una fila de lista: `<time>` en la zona del navegador (`time.js`), o en la
+    del host si el script no corre, y de hoy solo la hora, como Gmail (revisión de #464)."""
+    iso, shown, title = when.render(stamp, i18n.current_lang(), short=True)
+    if not iso:
+        return e(shown)
+    return f'<time datetime="{e(iso)}" title="{e(title)}" data-corto>{e(shown)}</time>'
 
 
 def href(account_id: str, row: dict) -> str:
@@ -89,7 +91,7 @@ def list_body(account_id: str, rows: list[dict], total: int, offset: int, next_o
         out.append(f"""<li class="correo-{r['kind']}"><a href="{href(account_id, r)}#{anchor(r)}">
   <span class="quien">{_who(r)}{_roster(r)}</span>
   <span class="asunto">{e(subject)}</span>
-  <span class="cuando">{e(_when(r['at']))}</span>
+  <span class="cuando">{list_time(r['at'])}</span>
   <span class="estado-celda">{_mark(r)}</span>
   <span class="flecha" aria-hidden="true">›</span>
 </a></li>""")

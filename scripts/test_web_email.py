@@ -199,6 +199,8 @@ check("50 correos en la primera página", 50, len(items))
 check("el primero es el más reciente, con el ancla del mensaje (#455)", True,
       items[0].startswith("/email/main/ver?e=" + quote("imap:INBOX:77:120", safe="") + "#m-"))
 check("dice cuántos son", True, "120 correos" in page)
+check("la hora de cada fila en <time datetime>, corta, en la zona del host hasta que corra time.js (revisión de #464)",
+      (True, False), ('<time datetime="2026-10-12T09:00:00Z"' in page and "data-corto" in page, " UTC</span>" in page))
 check("el estado respondido y la marca del roster", True,
       'estado-replied">respondido' in page and 'class="marca-roster"' in page)
 check("«Ver más» a la siguiente página", True, 'href="/email/main?desde=50"' in page)
