@@ -28,7 +28,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import auth, notify, shell, users
+from . import auth, mail, mail_pages, notify, shell, users
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 STATIC = {
@@ -226,7 +226,8 @@ class Context:
     """Lo que comparten todas las peticiones de un servidor."""
 
     def __init__(self, user_file: Path | None = None, notifier: notify.Notifier | None = None, clock=time.time,
-                 agent_email=None, accounts_file: Path | None = None):
+                 agent_email=None, accounts_file: Path | None = None, ledger_path: Path | None = None,
+                 env_path: Path | None = None, imap_connect=None, imap_uidvalidity=None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -236,6 +237,31 @@ class Context:
         # se lee la dirección, nunca la contraseña.
         self._agent_email = agent_email
         self.accounts_file = accounts_file
+        # Email Accounts (FR-13, FR-14): el ledger y el login de cada cuenta. Las
+        # pruebas pasan los suyos, y un IMAP de prueba.
+        self._ledger_path = ledger_path
+        self._env_path = env_path
+        self.imap_connect = imap_connect
+        self.imap_uidvalidity = imap_uidvalidity
+
+    def ledger_path(self) -> Path:
+        if self._ledger_path is not None:
+            return Path(self._ledger_path)
+        import paths
+        return paths.state_dir() / "lifecycle.jsonl"
+
+    def env_path(self) -> Path:
+        if self._env_path is not None:
+            return Path(self._env_path)
+        import paths
+        return paths.env_file()
+
+    def known_ids(self) -> set[str]:
+        from .. import accounts as accounts_mod
+        try:
+            return {a["id"] for a in accounts_mod.load(self.accounts_file)}
+        except accounts_mod.AccountsError:
+            return set()
 
     def agent_email(self) -> str:
         if self._agent_email is not None:
@@ -428,14 +454,7 @@ def make_handler(ctx: Context):
                 self._page(200, title=t("web.home.title"), body=home_body(self.user), icon_name="home")
                 return
             if self.route.startswith("/email/"):
-                account_id = self.route[len("/email/"):]
-                accounts, _ = self.CTX.mail_accounts()
-                match = next((a for a in accounts if a["id"] == account_id), None)
-                if match is None:
-                    self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
-                    return
-                self._page(200, title=match["email"], body=soon_body(), active="email",
-                           active_account=account_id, icon_name="mail")
+                self._email()
                 return
             if self.route == "/messages":
                 self._page(200, title=t("web.nav.messages"), body=soon_body(), active="messages", icon_name="inbox")
@@ -447,6 +466,44 @@ def make_handler(ctx: Context):
                 self._page(200, title=t("web.nav.profile"), body=soon_body(), icon_name="profile", back="/")
                 return
             self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
+
+        def _email(self):
+            """FR-13 y FR-14: /email/<cuenta> es la lista; /email/<cuenta>/ver?e=<evento>, uno."""
+            t = i18n.t
+            rest = self.route[len("/email/"):]
+            account_id, _, view = rest.partition("/")
+            accounts, _ = self.CTX.mail_accounts()
+            match = next((a for a in accounts if a["id"] == account_id), None)
+            if match is None or view not in ("", "ver"):
+                self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
+                return
+            rows = mail.mail_events(self.CTX.ledger_path(), account_id, self.CTX.known_ids())
+            kw = dict(active="email", active_account=account_id)
+            if view == "":
+                try:
+                    offset = int(self.query.get("desde", ["0"])[0])
+                except ValueError:
+                    offset = 0
+                chunk, nxt = mail.page_of(rows, offset)
+                self._page(200, title=match["email"], icon_name="mail",
+                           body=mail_pages.list_body(account_id, chunk, len(rows), offset, nxt), **kw)
+                return
+            event_id = self.query.get("e", [""])[0]
+            row = next((r for r in rows if r["event_id"] == event_id), None)
+            if row is None:
+                self._page(404, title=match["email"], icon_name="mail", back=f"/email/{account_id}",
+                           body=f'<p class="lead">{i18n.th("web.mail.not_found")}</p>', **kw)
+                return
+            message, error = None, None
+            try:
+                env = mail.env_for(account_id, self.CTX.accounts_file, self.CTX.env_path())
+                message = mail.fetch(row["envelope"], env, connect=self.CTX.imap_connect,
+                                     uidvalidity=self.CTX.imap_uidvalidity)
+            except mail.MailError as exc:
+                error = exc
+                sys.stderr.write(f"paynani-web: no se abrió {event_id}: {exc.code}\n")
+            self._page(200 if error is None else 502, title=match["email"], icon_name="mail",
+                       back=f"/email/{account_id}", body=mail_pages.message_body(account_id, row, message, error), **kw)
 
         def do_HEAD(self):  # noqa: N802
             self.do_GET()
