@@ -131,6 +131,22 @@ code, out = cli("passwd", "--password-stdin", stdin="nueva-contraseña-1\n")
 check("passwd cambia", (0, True), (code, users.verify_password("nueva-contraseña-1", users.load(user_file)["password"])))
 user_file.unlink()
 
+# Un user.json roto no deja al dueño sin salida (Metis en #437).
+user_file.write_text("{roto", encoding="utf-8")
+try:
+    users.create("ana@example.com", "Ana", GOOD, user_file)
+    check("create con un user.json roto se niega", "UserError", "nada")
+except users.UserError as exc:
+    check("create con un user.json roto dice que lo apartes con mv", True, "mv " in str(exc) and ".broken" in str(exc))
+code, out = cli("user", "add", "--email", "ana@example.com", "--name", "Ana", "--password-stdin", stdin=GOOD + "\n")
+check("user add con un user.json roto: 1 y dice cómo salir", (1, True, True),
+      (code, "not a valid PaynaniWeb user file" in out, f"mv {user_file} {user_file}.broken" in out))
+user_file.rename(str(user_file) + ".broken")
+code, out = cli("user", "add", "--email", "ana@example.com", "--name", "Ana", "--password-stdin", stdin=GOOD + "\n")
+check("después de apartarlo, user add funciona", (0, True), (code, users.exists(user_file)))
+user_file.unlink()
+Path(str(user_file) + ".broken").unlink()
+
 # --- textos -----------------------------------------------------------------------
 keys = set(strings.STRINGS["es-MX"])
 for lang in i18n.LANGUAGES:
@@ -207,8 +223,24 @@ status, _, page = get("/no-existe")
 check("con usuario, una ruta desconocida -> 404", 404, status)
 status, _, page = get("/", method="POST", headers={"Content-Length": "0"})
 check("con usuario, POST todavía no hace nada (405)", 405, status)
-status, _, _ = get("/", method="HEAD")
-check("HEAD responde", 200, status)
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+conn.request("HEAD", "/")
+head = conn.getresponse()
+head_body = head.read()
+conn.close()
+check("HEAD responde 200 con Content-Length y sin cuerpo", (200, True, b""),
+      (head.status, int(head.getheader("Content-Length", "0")) > 0, head_body))
+import socket
+raw = socket.create_connection(("127.0.0.1", port), timeout=10)
+raw.sendall(b"HEAD / HTTP/1.1\r\nHost: x\r\n\r\n")
+chunks = b""
+while True:
+    piece = raw.recv(65536)
+    if not piece:
+        break
+    chunks += piece
+raw.close()
+check("en el socket, después de los encabezados no viene nada", b"", chunks.split(b"\r\n\r\n", 1)[1])
 
 # --- varios a la vez, cada uno en su idioma ----------------------------------------------
 results = {}

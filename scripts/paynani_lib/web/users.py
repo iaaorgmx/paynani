@@ -137,6 +137,11 @@ def create(email: str, name: str, password: str, path: Path | None = None) -> di
     if problem:
         raise UserError(problem)
     if path.exists():
+        if load(path) is None:
+            # Sin esto, un archivo roto deja al dueño sin salida: la web pide
+            # «crea tu usuario», create() diría «usa passwd» y passwd «no hay usuario».
+            raise UserError(f"{path} exists but is not a valid PaynaniWeb user file; move it aside "
+                            f"(mv {path} {path}.broken) and run `scripts/paynani web user add` again")
         raise UserError(f"PaynaniWeb already has a user ({path}); change its password with "
                         "`scripts/paynani web passwd`")
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

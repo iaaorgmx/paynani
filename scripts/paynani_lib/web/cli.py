@@ -35,6 +35,10 @@ def run_user_add(args) -> int:
         print(f"PaynaniWeb already has a user ({path}). There is only one (the owner); "
               "change its password with `scripts/paynani web passwd`.", file=sys.stderr)
         return 1
+    if path.exists():
+        print(f"{path} exists but is not a valid PaynaniWeb user file; move it aside "
+              f"(mv {path} {path}.broken) and run `scripts/paynani web user add` again.", file=sys.stderr)
+        return 1
     password = _read_password(args)
     if password is None:
         return 1
