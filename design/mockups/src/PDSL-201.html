@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PDSL-201 · paynani profile</title>
+<!--
+  Mockup PDSL-201: Profile de paynani, sobre la composición de NDSL-201.
+  Marca según brand/README.md de iaaorgmx/paynani: sobre el menú oscuro va
+  paynani-horizontal-claro.svg (se cambia de archivo, no de opacidad); el único
+  acento es la grana #8f2d2b; tipografía del sistema. Los íconos son trazos
+  propios en línea, sin fuentes de íconos remotas.
+-->
+<style>
+  :root {
+    --grana: #8f2d2b; --tinta: #1c1c1a; --papel: #f7f7f5; --gris: #66655f; --linea: #dedcd6;
+    --menu: #262b36; --menu-borde: #343a47; --menu-texto: #d5d7dc; --menu-tenue: #8b909b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 953px; overflow: hidden; }
+  body {
+    background: #efeeea; color: var(--tinta); position: relative;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Ubuntu, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* Menú lateral */
+  aside { position: absolute; left: 0; top: 0; bottom: 0; width: 245px; background: var(--menu); color: var(--menu-texto); }
+  .marca { height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px 0 10px; border-bottom: 1px solid var(--menu-borde); background: #20242e; }
+  .marca img { height: 40px; display: block; }
+  .marca svg.i { color: var(--menu-tenue); width: 22px; height: 22px; }
+  .usuario { height: 82px; padding: 14px 12px 0 12px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--menu-borde); }
+  .usuario b { display: block; font-size: 20px; font-weight: 600; color: #fff; }
+  .usuario small { display: block; margin-top: 3px; font-size: 15px; color: var(--menu-texto); }
+  .usuario svg.i { width: 22px; height: 22px; color: #fff; margin-top: 2px; }
+  .buscar { margin: 16px 7px 10px; height: 38px; border: 1px solid #5b6170; border-radius: 3px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 15px; color: var(--menu-texto); }
+  .grupo { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px 10px 16px; font-size: 14px; color: var(--menu-tenue); }
+  .grupo svg.i { width: 15px; height: 15px; }
+  nav a { display: flex; align-items: center; gap: 10px; height: 41.5px; padding: 0 16px 0 18px; font-size: 13.5px; color: var(--menu-texto); }
+  nav a svg.i { width: 16px; height: 16px; color: var(--menu-tenue); }
+  nav a .flecha { margin-left: auto; width: 14px; height: 14px; }
+  nav a.sub { height: 38px; padding-left: 44px; font-size: 13px; color: var(--menu-tenue); }
+  nav a.sub.activo { color: #fff; background: #20242e; box-shadow: inset 3px 0 0 #d8887f; }
+  nav a.abierto { color: #fff; }
+  .separa { border-top: 1px solid var(--menu-borde); margin-top: 6px; padding-top: 6px; }
+
+  /* Barra superior */
+  .barra { position: absolute; left: 245px; right: 0; top: 0; height: 64px; background: #fff; display: flex; justify-content: flex-end; }
+  .barra div { width: 62px; border-left: 1px solid #ecebe7; display: flex; align-items: center; justify-content: center; color: #3c3b37; }
+  .barra svg.i { width: 22px; height: 22px; }
+
+  /* Encabezado */
+  .encabezado { position: absolute; left: 245px; right: 0; top: 64px; height: 81px; background: var(--grana); color: #fff; display: flex; align-items: center; padding: 0 22px 0 24px; }
+  .encabezado h1 { font-size: 32px; font-weight: 600; margin-left: 18px; }
+  .encabezado svg.i { width: 30px; height: 30px; stroke-width: 2; }
+  .encabezado .atras { margin-left: auto; }
+
+  /* Contenido */
+  .panel { position: absolute; left: 245px; top: 145px; bottom: 0; width: 815px; background: #fff; }
+  .perfil { text-align: center; padding-top: 31px; }
+  .avatar { width: 113px; height: 113px; border-radius: 50%; margin: 0 auto; background: #efe3e1; color: var(--grana);
+            display: flex; align-items: center; justify-content: center; font-size: 42px; font-weight: 600; letter-spacing: 1px; }
+  .perfil h2 { margin-top: 12px; font-size: 23px; font-weight: 600; line-height: 1.12; }
+  .perfil h3 { font-size: 23px; font-weight: 600; line-height: 1.12; }
+  .perfil p { margin-top: 2px; font-size: 15.5px; color: #3c3b37; }
+  ul { list-style: none; margin: 37px 17px 0 30px; border-top: 1px solid var(--linea); }
+  li { height: 67px; border-bottom: 1px solid var(--linea); display: flex; align-items: center; gap: 18px; padding: 0 12px 0 2px; font-size: 16.5px; color: #2a2a27; }
+  li svg.i { width: 24px; height: 24px; color: var(--tinta); }
+  li .flecha { margin-left: auto; width: 20px; height: 20px; }
+
+  /* Botón de chat: su propio ícono, nunca la voluta en un contenedor */
+  .chat { position: absolute; right: 26px; bottom: 16px; width: 72px; height: 72px; border-radius: 50%; background: var(--grana);
+          display: flex; align-items: center; justify-content: center; color: #fff; box-shadow: 0 6px 18px rgba(28,28,26,.22); }
+  .chat svg.i { width: 34px; height: 34px; stroke-width: 1.7; }
+</style>
+</head>
+<body>
+  <aside>
+    <div class="marca">
+      <img src="../../../brand/paynani-horizontal-claro.svg" alt="paynani">
+      <svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M14 9l3 3-3 3"/></svg>
+    </div>
+    <div class="usuario">
+      <div><b>John Doe</b><small>paynani</small></div>
+      <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 18.7a6 6 0 0 1 10 0"/></svg>
+    </div>
+    <div class="buscar">Search <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></div>
+    <div class="grupo">Management <svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div>
+    <nav>
+      <a><svg class="i" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg>AI Assistant</a>
+      <a class="abierto"><svg class="i" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>Email Accounts<svg class="i flecha" viewBox="0 0 24 24"><path d="M5 15l7-7 7 7"/></svg></a>
+      <a class="sub">email-account-1@domain.com</a>
+      <a class="sub">email-account-2@domain.com</a>
+      <a><svg class="i" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/></svg>Messages</a>
+      <a><svg class="i" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>Roster</a>
+    </nav>
+    <div class="grupo separa">Tools <svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div>
+    <nav>
+      <a><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</a>
+      <a><svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 11-5.7"/><circle cx="18" cy="17" r="3"/><path d="M18 15.5V17l1 .7"/></svg>Sessions</a>
+      <a><svg class="i" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Logout</a>
+    </nav>
+  </aside>
+
+  <div class="barra">
+    <div><svg class="i" viewBox="0 0 24 24"><path d="M10 6h11M10 12h11M10 18h11M3 6l1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg></div>
+    <div><svg class="i" viewBox="0 0 24 24" style="fill:currentColor"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0" style="fill:none"/></svg></div>
+  </div>
+
+  <header class="encabezado">
+    <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 18.7a6 6 0 0 1 10 0"/></svg>
+    <h1>Profile</h1>
+    <svg class="i atras" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+  </header>
+
+  <main class="panel">
+    <section class="perfil">
+      <div class="avatar">JD</div>
+      <h2>John Doe</h2>
+      <h3>Staff Member</h3>
+      <p>Last login Today, 11:56 AM</p>
+    </section>
+    <ul>
+      <li><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><circle cx="12" cy="7" r="4.5"/><path d="M3.5 22a8.5 8.5 0 0 1 17 0z"/></svg>Personal Info<svg class="i flecha" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></li>
+      <li><svg class="i" viewBox="0 0 24 24"><path d="M3 18h18M6 8v6M3.5 9.5l5 3M8.5 9.5l-5 3M12 8v6M9.5 9.5l5 3M14.5 9.5l-5 3M18 8v6M15.5 9.5l5 3M20.5 9.5l-5 3"/></svg>Account Password<svg class="i flecha" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></li>
+      <li><svg class="i" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="12" rx="2" style="fill:currentColor"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="16" r="1.5" style="fill:#fff;stroke:none"/></svg>Security &amp; Sign In<svg class="i flecha" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></li>
+    </ul>
+  </main>
+
+  <div class="chat">
+    <svg class="i" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h9"/><path d="M8 9h6M8 13h8"/><path d="M19 2l.8 1.7L21.5 4.5l-1.7.8L19 7l-.8-1.7-1.7-.8 1.7-.8z" style="fill:currentColor;stroke-width:1"/></svg>
+  </div>
+</body>
+</html>
