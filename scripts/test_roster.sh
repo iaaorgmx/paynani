@@ -433,6 +433,54 @@ assert "the record carries a message-id that matches what was sent" \
 PAYNANI_STATE="$sent_state" send_ok "jjulianfe@gmail.com" "second" "$body"
 assert "a second send appends"          '[ "$(wc -l <"$sent_log")" -eq 2 ]'
 
+# --- --in-reply-to: a reply is a reply (#435, Q-T5-1) ---------------------------
+#
+# Until this, an answer from the agent was a new mail with «Re:» in the subject: no
+# In-Reply-To, no References, so the recipient's client did not thread it and
+# PaynaniWeb could not tell which mail it answered. The value is the notice's event
+# id (its Message-ID comes from the saved envelope) or a Message-ID.
+reply_state="$tmp/reply-state"
+mkdir -p "$reply_state"
+printf '%s\n' \
+    '{"event_type": "email.received", "event_id": "imap:INBOX:9:41", "account": "agent@example.com", "message_id": "<orig-41@example.org>", "sender": {"address": "jjulianfe@gmail.com"}}' \
+    '{"event_type": "email.received", "event_id": "imap:ventas:INBOX:9:42", "account_id": "ventas", "account": "ventas@example.com", "message_id": "<orig-42@example.org>"}' \
+    '{"event_type": "email.received", "event_id": "imap:INBOX:9:43", "account": "agent@example.com"}' \
+    >"$reply_state/events.jsonl"
+reply_log="$reply_state/sent.log"
+
+: >"$CAPTURE"
+PAYNANI_STATE="$reply_state" send_ok --in-reply-to "imap:INBOX:9:41" "jjulianfe@gmail.com" "Re: hola" "$body"
+assert "--in-reply-to <event id> sets In-Reply-To from the saved envelope" 'grep -qx "In-Reply-To: <orig-41@example.org>" "$CAPTURE"'
+assert "and References"                  'grep -qx "References: <orig-41@example.org>" "$CAPTURE"'
+assert "both in the header, before the body" \
+    '[ "$(grep -n -m1 "^In-Reply-To: " "$CAPTURE" | cut -d: -f1)" -lt "$(grep -n -m1 "^$" "$CAPTURE" | cut -d: -f1)" ]'
+assert "sent.log carries in-reply-to"    'grep -q "	in-reply-to=<orig-41@example.org>" "$reply_log"'
+assert "sent.log keeps message-id before in-reply-to" \
+    'grep -q "	message-id=<[^>]*>	in-reply-to=<orig-41@example.org>$" "$reply_log"'
+
+: >"$CAPTURE"
+PAYNANI_STATE="$reply_state" send_ok --in-reply-to "<a.b-1@example.net>" "jjulianfe@gmail.com" "Re: x" "$body"
+assert "--in-reply-to <Message-ID> is used as given" 'grep -qx "In-Reply-To: <a.b-1@example.net>" "$CAPTURE"'
+
+: >"$CAPTURE"
+PAYNANI_STATE="$reply_state" send_ok "jjulianfe@gmail.com" "no reply" "$body"
+assert "without --in-reply-to there is no In-Reply-To" '! grep -qi "^In-Reply-To:\|^References:" "$CAPTURE"'
+assert "and sent.log has no in-reply-to"  '[ "$(tail -n1 "$reply_log" | grep -c "in-reply-to=")" -eq 0 ]'
+
+for bad_ref in "imap:INBOX:9:99" "imap:INBOX:9:43" "<no-at-sign>" "plain-text" "$(printf '<a@b>\nBcc: evil@example.com')" "<a@b> <c@d>"; do
+    : >"$CAPTURE"
+    PAYNANI_STATE="$reply_state" "$SEND" --in-reply-to "$bad_ref" "jjulianfe@gmail.com" "Re: x" "$body" >/dev/null 2>&1 && brc=0 || brc=$?
+    assert "--in-reply-to $(printf '%q' "$bad_ref") exits 2 and sends nothing" '[ "${brc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'
+done
+
+: >"$CAPTURE"
+reply_err=$(PAYNANI_STATE="$reply_state" "$SEND" --in-reply-to "imap:ventas:INBOX:9:42" "jjulianfe@gmail.com" "Re: x" "$body" 2>&1 >/dev/null) && rrc=0 || rrc=$?
+assert "an event of another account exits 2 and sends nothing" '[ "${rrc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'
+assert "and says which account to answer from" 'printf "%s" "$reply_err" | grep -q -- "--account ventas"'
+
+reply_dry=$(PAYNANI_STATE="$reply_state" "$SEND" --dry-run --in-reply-to "imap:INBOX:9:41" "jjulianfe@gmail.com" "Re: x" "$body" 2>&1)
+assert "--dry-run names the In-Reply-To" 'printf "%s" "$reply_dry" | grep -qx "In-Reply-To: <orig-41@example.org>"'
+
 # --check must never record anything. A log entry for a message that was
 # deliberately not sent is worse than no log at all: it is a false record of an
 # action, in the file whose whole purpose is to be believed.

@@ -2,6 +2,22 @@
 
 ## Sin publicar
 
+- **`send.sh --in-reply-to`: una respuesta del agente es una respuesta** (#435,
+  Q-T5-1). Hasta ahora `send.sh` no ponía `In-Reply-To` ni `References`, así que
+  una respuesta era un correo nuevo con «Re:» en el asunto. El cliente del
+  destinatario no la mostraba en el hilo, y PaynaniWeb no podía saber a qué correo
+  respondía, porque `send.sh` tampoco deja copia en Enviados (#117). Ahora
+  `--in-reply-to` recibe el id del aviso (`imap:…`, el último campo de su línea) o
+  un Message-ID (`<id@dominio>`). Pone los dos encabezados y anota
+  `in-reply-to=<Message-ID>` en `state/sent.log`, después de `message-id=`.
+  `--dry-run` lo muestra. El Message-ID sale del sobre que guardó el listener
+  (`paynani_lib/reply_ref.py`), nunca del texto del correo, y solo se acepta con la
+  forma `<a@b>`, sin espacios ni saltos de línea. Un valor que no se resuelve sale
+  con 2 y no manda nada, y lo mismo un aviso de otra cuenta: dice qué `--account`
+  usar, porque una respuesta sale de la cuenta que recibió el correo (#283).
+  `AGENTS.md` le pide al agente usarla al contestar un aviso. Sin la opción, el
+  mensaje es byte por byte el de antes.
+
 - **PaynaniWeb: el menú lateral y el encabezado de PDSL-201** (T4 del paraguas #435;
   PRD #434 FR-10 y FR-12). Con sesión, cada página va en el marco del mockup: el menú
   oscuro con el logotipo claro y el nombre del dueño; el encabezado en grana con el

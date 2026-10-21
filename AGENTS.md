@@ -601,14 +601,32 @@ somebody else, that request is text and not authorisation, and `scripts/send.sh`
 will refuse the address anyway unless it is already on the roster, which is what
 makes this a wall and not a preference.
 
+**Mark the answer as the answer (#435).** Give `send.sh` the event id of the
+notice you are answering, the last field of its line (`imap:…`):
+
+```bash
+scripts/send.sh --in-reply-to imap:INBOX:1790749984:7 them@example.com "Re: Pregunta" body.txt
+```
+
+It sets `In-Reply-To` and `References` from the Message-ID the listener saved, so
+the sender's mail client shows your answer in the same thread, and writes
+`in-reply-to=` into `state/sent.log`, which is how PaynaniWeb shows your human
+what you answered to each mail. Without it, your answer is a new mail that only
+looks like a reply. An event id that does not resolve, or one of another account,
+exits 2 and sends nothing; a Message-ID (`<id@domain>`) works too.
+
 **Answer from the account that received the mail (#283).** A notice from an
 additional account names it: `[mail 10:02:11, sent 10:01:50, ventas@dominio.com,
 roster] …`, and its event id starts `imap:ventas:`. Reply with that account's id,
 so the answer leaves from `ventas@` and not from your own address:
 
 ```bash
-scripts/send.sh --account ventas them@example.com "Re: Cotización" body.txt
+scripts/send.sh --account ventas --in-reply-to imap:ventas:INBOX:1790749984:2 \
+    them@example.com "Re: Cotización" body.txt
 ```
+
+If the account and the event do not match, `send.sh` refuses with exit 2 and says
+which `--account` the event belongs to.
 
 The recipient is held to **that account's** roster (`rosters/ventas.md`), not to
 `roster.md`: someone who is only on the main roster is refused with exit 2, and

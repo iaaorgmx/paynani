@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Send via Himalaya, but only to allowlisted recipients.
 #
-#   send.sh [--check|--dry-run] [--account <id>] [--override <why> --override-by <who>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>
+#   send.sh [--check|--dry-run] [--account <id>] [--override <why> --override-by <who>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... [--in-reply-to <event_id|Message-ID>] <to> <subject> <body-file>
 #
 # --account <id> sends from one of the additional accounts in accounts.json
 # (#276, #283): the message comes from that account's address and display name,
@@ -35,6 +35,16 @@
 # single-part text/plain. With one or more it becomes multipart/mixed, and the
 # body is the first part rather than the whole message. A field report that could
 # only be pasted into the body is what asked for this (#38).
+#
+# --in-reply-to makes the message a reply (#435, Q-T5-1): it sets In-Reply-To and
+# References, so the recipient's client shows it in the same thread, and writes
+# in-reply-to=<Message-ID> into state/sent.log, which is how PaynaniWeb shows what
+# the agent answered to each mail. Give it the event id of the notice being
+# answered (imap:…, the last field of the notice line) or a Message-ID. The
+# Message-ID comes from the envelope the listener saved, never from the mail's own
+# text. An event of another account is refused with exit 2, like a recipient off
+# the roster: an answer leaves from the account that received the mail (#283).
+# A value that cannot be resolved exits 2 and sends nothing.
 #
 # --check prints the exact message it would send and sends nothing. Use it to
 # prove this script can find its credentials, which the roster tests cannot: the
@@ -92,6 +102,7 @@ override_by=""
 override_by_given=""
 attachments=()
 attachments_count=0
+reply_ref=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --check)
@@ -140,13 +151,17 @@ while [ $# -gt 0 ]; do
             attachments_count=$(( attachments_count + 1 ))
             shift 2
             ;;
+        --in-reply-to)
+            reply_ref=${2:?--in-reply-to requires an event id or a Message-ID}
+            shift 2
+            ;;
         *)
             break
             ;;
     esac
 done
 
-to=${1:?usage: send.sh [--check|--dry-run] [--account <id>] [--override <why> --override-by <who>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... <to> <subject> <body-file>}
+to=${1:?usage: send.sh [--check|--dry-run] [--account <id>] [--override <why> --override-by <who>] [--to <address>]... [--cc <address>]... [--bcc <address>]... [--html <path>] [--attach <path>]... [--in-reply-to <event_id|Message-ID>] <to> <subject> <body-file>}
 subject=${2:?missing subject}
 bodyfile=${3:?missing body file}
 if [ "$to_recipients_count" -gt 0 ]; then
@@ -161,6 +176,28 @@ if [ -n "$htmlfile" ] && { [ ! -f "$htmlfile" ] || [ ! -r "$htmlfile" ]; }; then
     echo "REFUSED: cannot read html body $htmlfile" >&2
     echo "Nothing was sent. Check the path, or drop the --html." >&2
     exit 2
+fi
+
+# What this answers, resolved before anything is built: a value that does not
+# resolve, or an event of another account, sends nothing (exit 2).
+in_reply_to=""
+if [ -n "$reply_ref" ]; then
+    _paynani_reply=$(python3 "$(cd "$(dirname "$0")" && pwd)/paynani_lib/reply_ref.py" "$reply_ref") || {
+        echo "Nothing was sent. Check the event id or the Message-ID, or drop --in-reply-to." >&2
+        exit 2
+    }
+    in_reply_to=${_paynani_reply%%$'\t'*}
+    _paynani_reply_account=${_paynani_reply#*$'\t'}
+    if [ -n "$_paynani_reply_account" ] && [ "$_paynani_reply_account" != "${account_id:-main}" ]; then
+        echo "REFUSED: $reply_ref was received by account '$_paynani_reply_account', not '${account_id:-main}'" >&2
+        if [ "$_paynani_reply_account" = "main" ]; then
+            echo "Answer from the agent's own account: drop --account." >&2
+        else
+            echo "Answer from the account that received it: add --account $_paynani_reply_account." >&2
+        fi
+        echo "Nothing was sent." >&2
+        exit 2
+    fi
 fi
 
 # Attachments are checked before anything is built, so a bad path costs nothing
@@ -678,6 +715,10 @@ build_message() {
         printf 'Cc: %s\n' "$cc_header"
     fi
     printf 'Subject: %s\n' "$(encode_header "$subject")"
+    if [ -n "$in_reply_to" ]; then
+        printf 'In-Reply-To: %s\n' "$in_reply_to"
+        printf 'References: %s\n' "$in_reply_to"
+    fi
     printf '\n'
     if [ -z "$boundary" ] && [ -z "$htmlfile" ]; then
         body_with_signature
@@ -791,6 +832,7 @@ if [ -n "$dry_run" ]; then
     fi
     printf 'Envelope recipients: %s\n' "$(join_addresses "${envelope_recipients[@]}")"
     printf 'Subject: %s\n' "$subject"
+    printf 'In-Reply-To: %s\n' "${in_reply_to:-none}"
     if [ -n "$htmlfile" ]; then
         body_formats='text/plain, text/html'
     else
@@ -868,9 +910,10 @@ build_message | himalaya "${smtp_args[@]}"
 sent_log="$(paynani_state_dir)/sent.log"
 if ! {
     mkdir -p "$(dirname "$sent_log")" &&
-    printf '%s\tto=%s\tcc=%s\tbcc=%s\tsubject=%s\tmessage-id=%s%s\n' \
+    printf '%s\tto=%s\tcc=%s\tbcc=%s\tsubject=%s\tmessage-id=%s%s%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$to_header" "$cc_header" \
         "$(if [ "$bcc_recipients_count" -gt 0 ]; then join_addresses "${bcc_recipients[@]}"; fi)" "$subject" "$msgid" \
+        "$(if [ -n "$in_reply_to" ]; then printf '\tin-reply-to=%s' "$in_reply_to"; fi)" \
         "$(if [ -n "$account_id" ]; then printf '\taccount=%s' "$account_id"; fi)" >> "$sent_log"
 } 2>/dev/null; then
     echo "warning: sent, but could not record it in $sent_log" >&2
