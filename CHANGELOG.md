@@ -32,6 +32,19 @@
     su nombre, y un `APPEND` o un `LIST` que fallan (el envío sigue y queda
     `failed`).
 
+- **PaynaniWeb: Email Accounts como un webmail** (T5 del paraguas #435, segunda
+  parte; PRD #434 FR-13 y FR-14; decisión de Julian en Q44 = No). Una sola lista por
+  cuenta con lo recibido (del ledger) y lo enviado (de `state/sent.log`, por su
+  `account=`), mezclados por hora, el más reciente primero, de 50 en 50. Cada fila
+  marca si entró (↙ «De:») o salió (↗ «Para:»). Un enviado se abre por su Message-ID
+  (`/email/<cuenta>/ver?s=…`).
+
+  Al abrir cualquiera, solo su conversación: el mismo asunto sin `Re:`/`Fw:` y la
+  misma otra persona (el remitente, o un destinatario o Cc), dentro de la cuenta,
+  en orden. El texto de los enviados se pide a IMAP en Enviados por su Message-ID
+  (la carpeta `\Sent` o una de nombre conocido), en una sola conexión. Si no hay
+  copia, la página lo dice con Para, Cc, Cco y la hora del registro. Nada se guarda.
+
 - **PaynaniWeb: seguridad, rendimiento y `PAYNANI_WEB.md`** (T10 del paraguas #435;
   PRD #434 §5 y NFR-1 a NFR-3). `scripts/test_web_security.py` recorre todas las
   pantallas, con sesión y sin ella, y comprueba en cada una:

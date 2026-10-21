@@ -332,3 +332,20 @@ body.web-shell {
 .web-shell .pasos li::before { content: "✓ "; color: var(--ok-ink); }
 .web-shell .pasos li.mal::before { content: "✕ "; color: var(--bad-ink); }
 .web-shell .pasos .detalle { color: var(--quiet); font-size: .82rem; margin-left: 1.2rem; }
+
+/* Email Accounts como webmail (T5): recibido o enviado, y la conversación del abierto. */
+.web-shell .dir { display: inline-block; width: 1.1em; text-align: center; font-weight: 700; }
+.web-shell .dir-in { color: var(--quiet); }
+.web-shell .dir-out { color: var(--accent); }
+.web-shell .estado-sent { color: var(--accent); }
+.web-shell .estado-actual { background: var(--ink); border-color: var(--ink); color: var(--card, #fff); }
+.web-shell .hilo { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .75rem; }
+.web-shell .hilo li { border-left: 3px solid var(--line); padding: .2rem 0 .2rem .9rem; }
+.web-shell .hilo li.hilo-out { border-left-color: var(--accent); }
+.web-shell .hilo li.hilo-actual { background: var(--bg); }
+.web-shell .hilo .de { font-weight: 600; font-size: .92rem; overflow-wrap: anywhere; }
+.web-shell .hilo .cuerpo { margin-top: .4rem; }
+.web-shell .hilo-out .cuerpo { background: #f6ecea; border-color: #e7cfcb; }
+@media (prefers-color-scheme: dark) { .web-shell .hilo-out .cuerpo { background: #2a1c1b; border-color: #5e3229; } }
+.web-shell .hilo .quiet { margin: .15rem 0 .25rem; font-size: .85rem; }
+.web-shell .hilo a { color: var(--accent); font-weight: 600; text-decoration: none; margin-right: .4rem; }

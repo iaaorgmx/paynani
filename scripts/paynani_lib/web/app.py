@@ -29,7 +29,7 @@ from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (accounts_pages, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell,
-               users)
+               thread, users)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 STATIC = {
@@ -523,7 +523,8 @@ def make_handler(ctx: Context):
             self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
 
         def _email(self):
-            """FR-13 y FR-14: /email/<cuenta> es la lista; /email/<cuenta>/ver?e=<evento>, uno."""
+            """FR-13 y FR-14: /email/<cuenta> es la lista de recibidos y enviados; /email/<cuenta>/ver?e=<evento>
+            o ?s=<Message-ID>, uno con su conversación."""
             t = i18n.t
             rest = self.route[len("/email/"):]
             account_id, _, view = rest.partition("/")
@@ -532,7 +533,9 @@ def make_handler(ctx: Context):
             if match is None or view not in ("", "ver"):
                 self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
                 return
-            rows = mail.mail_events(self.CTX.ledger_path(), account_id, self.CTX.known_ids())
+            received = mail.mail_events(self.CTX.ledger_path(), account_id, self.CTX.known_ids())
+            sent = thread.sent_rows(thread.parse_sent_log(self.CTX.state_dir() / "sent.log"), account_id)
+            rows = thread.mailbox(received, sent)
             kw = dict(active="email", active_account=account_id)
             if view == "":
                 try:
@@ -545,22 +548,44 @@ def make_handler(ctx: Context):
                 self._page(200, title=match["email"], icon_name="mail",
                            body=head + mail_pages.list_body(account_id, chunk, len(rows), offset, nxt), **kw)
                 return
-            event_id = self.query.get("e", [""])[0]
-            row = next((r for r in rows if r["event_id"] == event_id), None)
+            # FR-14: un recibido por su evento (?e=), un enviado por su Message-ID (?s=).
+            event_id, sent_id = self.query.get("e", [""])[0], self.query.get("s", [""])[0]
+            if sent_id:
+                row = next((r for r in rows if r["kind"] == "out" and r["message_id"] == sent_id), None)
+            else:
+                row = next((r for r in rows if r["kind"] == "in" and r["event_id"] == event_id), None)
             if row is None:
                 self._page(404, title=match["email"], icon_name="mail", back=f"/email/{account_id}",
                            body=f'<p class="lead">{i18n.th("web.mail.not_found")}</p>', **kw)
                 return
-            message, error = None, None
+            convo = thread.conversation(rows, row, own=match["email"])
+            wanted = [r["message_id"] for r in convo if r["kind"] == "out"]
+            env, env_error = None, None
             try:
                 env = mail.env_for(account_id, self.CTX.accounts_file, self.CTX.env_path())
-                message = mail.fetch(row["envelope"], env, connect=self.CTX.imap_connect,
-                                     uidvalidity=self.CTX.imap_uidvalidity)
             except mail.MailError as exc:
-                error = exc
-                sys.stderr.write(f"paynani-web: no se abrió {event_id}: {exc.code}\n")
+                env_error = exc
+            if row["kind"] == "out":
+                # Lo enviado no está en el ledger: su texto solo existe si el servidor guardó
+                # copia en Enviados. Sin ella, o sin login, la página lo dice.
+                texts = thread.fetch_texts(env, wanted, connect=self.CTX.imap_connect) if env and wanted else {}
+                self._page(200, title=match["email"], icon_name="mail", back=f"/email/{account_id}",
+                           body=mail_pages.sent_body(account_id, row, convo, texts), **kw)
+                return
+            message, error, texts = None, env_error, {}
+            if error is None:
+                try:
+                    message = mail.fetch(row["envelope"], env, connect=self.CTX.imap_connect,
+                                         uidvalidity=self.CTX.imap_uidvalidity)
+                except mail.MailError as exc:
+                    error = exc
+            if error is not None:
+                sys.stderr.write(f"paynani-web: no se abrió {event_id}: {error.code}\n")
+            elif wanted:
+                texts = thread.fetch_texts(env, wanted, connect=self.CTX.imap_connect)
             self._page(200 if error is None else 502, title=match["email"], icon_name="mail",
-                       back=f"/email/{account_id}", body=mail_pages.message_body(account_id, row, message, error), **kw)
+                       back=f"/email/{account_id}",
+                       body=mail_pages.message_body(account_id, row, message, error, convo, texts), **kw)
 
         def _offset(self) -> int:
             try:
