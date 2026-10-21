@@ -44,7 +44,8 @@ check("iniciales de tres palabras: primera y última", "AR", shell.initials("Ana
 check("una palabra: sus dos primeras letras", "AN", shell.initials("ana"))
 check("sin nombre", "?", shell.initials(""))
 check("sólo letras y números", "JB", shell.initials("John <b>Doe</b>"))
-check("el id de la cuenta del agente no choca con los de accounts.json", True, "_" in shell.AGENT_ID)
+from paynani_lib import accounts as accounts_mod  # noqa: E402
+check("la cuenta del agente usa el id que accounts.py reserva (main)", accounts_mod.MAIN, shell.AGENT_ID)
 
 tmp = Path(tempfile.mkdtemp())
 user_file = tmp / "web" / "user.json"
@@ -102,7 +103,7 @@ check("el nombre escapado", (True, False), ("John &lt;b&gt;Doe&lt;/b&gt;" in pag
 check("Email Accounts es un desplegable abierto", True, '<details class="cuentas" open>' in page)
 links = re.findall(r'href="(/email/[^"]+)"', page)
 check("una entrada por cuenta: la del agente primero, luego accounts.json en orden (dos veces: lateral y celular)",
-      ["/email/_agent", "/email/ventas", "/email/soporte"] * 2, links)
+      ["/email/main", "/email/ventas", "/email/soporte"] * 2, links)
 check("la cuenta apagada va marcada", True, 'class="sub apagada"' in page and "apagada</span>" in page)
 check("Mensajes y Roster", True, 'href="/messages"' in page and 'href="/roster"' in page)
 check("cerrar sesión: formularios POST con el token de la sesión", True,
@@ -120,8 +121,8 @@ status, _, page = get("/email/ventas")
 check("/email/ventas: 200 con la dirección en el encabezado", (200, True), (status, "<h1>ventas@example.com</h1>" in page))
 check("y su entrada marcada en el menú", True,
       'class="sub activo" href="/email/ventas" title="ventas@example.com" aria-current="page"' in page)
-status, _, page = get("/email/_agent")
-check("/email/_agent es la cuenta del agente", (200, True), (status, "<h1>agente@example.com</h1>" in page))
+status, _, page = get("/email/main")
+check("/email/main es la cuenta del agente", (200, True), (status, "<h1>agente@example.com</h1>" in page))
 status, _, page = get("/email/nope")
 check("una cuenta que no existe: 404 dentro del marco", (404, True), (status, 'class="web-shell"' in page))
 for path, key in (("/messages", "Mensajes"), ("/roster", "Roster")):
@@ -147,7 +148,7 @@ check("en inglés el menú dice Email Accounts, Messages y Roster", True,
 accounts_file.write_text("{roto", encoding="utf-8")
 status, _, page = get("/")
 check("accounts.json roto: la página sale igual", 200, status)
-check("con la cuenta del agente y el aviso", (["/email/_agent"] * 2, True),
+check("con la cuenta del agente y el aviso", (["/email/main"] * 2, True),
       (re.findall(r'href="(/email/[^"]+)"', page), "No se pudo leer accounts.json" in page))
 accounts_file.unlink()
 agent["email"] = ""

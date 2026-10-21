@@ -25,7 +25,9 @@ import html
 from .. import i18n
 from ..brand import brand_svg
 
-AGENT_ID = "_agent"   # los ids de accounts.json no llevan «_», así que no choca
+# La cuenta del agente en las rutas (/email/main): `main` es el id que
+# accounts.py reserva para el .env, así que ninguna cuenta adicional lo tiene.
+AGENT_ID = "main"
 
 ICONS = {
     "mail": '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>',
