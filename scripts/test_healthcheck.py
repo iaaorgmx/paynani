@@ -1108,6 +1108,36 @@ check("named by commit, not by version", "commit", vd_commit["drift_detail"]["li
 check("carrying the disk and process commits in full", {"disk": _c1, "process": _c2, "field": "commit"},
       vd_commit["drift_detail"]["listener"])
 
+# #451: a differing commit is drift only when something that process loads
+# changed between the two, by upgrade_plan's own table. A plan that restarted
+# only PaynaniWeb left doctor warning about a listener that had nothing to load.
+import upgrade_plan  # noqa: E402
+
+_real_restarts = upgrade_plan.restarts_between
+try:
+    upgrade_plan.restarts_between = lambda a, b, repo=None, system=None: {upgrade_plan.WEB}
+    vd_web = hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                                    listener={"version": "0.7.2", "commit": _c2},
+                                    dispatcher={"version": "0.7.2", "commit": _c2})
+    check("commits differ, but only PaynaniWeb's files changed: no drift (#451)", [], vd_web["drift"])
+    check("... and the facts say which differ with nothing to load", ["listener", "dispatcher"],
+          vd_web["commit_differs_nothing_loaded"])
+    upgrade_plan.restarts_between = lambda a, b, repo=None, system=None: {upgrade_plan.DISPATCHER}
+    check("only the dispatcher's files changed: the dispatcher drifts, the listener does not", ["dispatcher"],
+          hc.version_drift_facts(disk="0.7.2", commit=_c1,
+                                 listener={"version": "0.7.2", "commit": _c2},
+                                 dispatcher={"version": "0.7.2", "commit": _c2})["drift"])
+    upgrade_plan.restarts_between = lambda a, b, repo=None, system=None: None
+    check("the table cannot tell (unknown commit or file): drift, the old rule", True,
+          hc.commit_restart_needed("listener", _c2, _c1))
+
+    def boom(*a, **k):
+        raise RuntimeError("x")
+    upgrade_plan.restarts_between = boom
+    check("an error asking the table: drift, never a crash", True, hc.commit_restart_needed("dispatcher", _c2, _c1))
+finally:
+    upgrade_plan.restarts_between = _real_restarts
+
 check("a differing version wins over a differing commit", ["dispatcher"],
       hc.version_drift_facts(disk="0.7.2", commit=_c1,
                              listener={"version": "0.7.2", "commit": _c1},

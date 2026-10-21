@@ -457,6 +457,7 @@ def version_drift_facts(disk=None, listener=None, dispatcher=None, commit=None):
     unknown = []
     detail = {}
     unknown_detail = {}
+    current_enough = []
     for name, state in services.items():
         pid = state.get("pid")
         if pid is not None and process_alive(pid, state.get("pid_ns")) is False:
@@ -475,6 +476,11 @@ def version_drift_facts(disk=None, listener=None, dispatcher=None, commit=None):
             continue
         proc_commit = state.get("commit")
         if proc_commit is not None and commit is not None and proc_commit != commit:
+            if not commit_restart_needed(name, proc_commit, commit):
+                # Nothing it loads changed between the two commits: by the
+                # upgrade plan's own table there is no restart due (#451).
+                current_enough.append(name)
+                continue
             drift.append(name)
             detail[name] = {"field": "commit", "disk": commit, "process": proc_commit}
     return {"disk": disk, "disk_commit": commit,
@@ -482,7 +488,28 @@ def version_drift_facts(disk=None, listener=None, dispatcher=None, commit=None):
            "listener_commit": listener.get("commit"),
            "dispatcher_commit": dispatcher.get("commit"),
            "unknown": unknown, "unknown_detail": unknown_detail,
-           "drift": drift, "drift_detail": detail}
+           "drift": drift, "drift_detail": detail,
+           "commit_differs_nothing_loaded": current_enough}
+
+
+def commit_restart_needed(name, process_commit, disk_commit_sha):
+    """
+    Whether a process (`listener` or `dispatcher`) that loaded `process_commit`
+    must restart to be current at `disk_commit_sha`. Asked of upgrade_plan's
+    table, the one that says which file each service loads: a commit that moved
+    only docs or files read on each call needs no restart, and a plan that did
+    not restart the listener must not leave doctor in `warning` (#451). Any doubt
+    (an unknown commit, an unknown file, an error) answers True, the old rule.
+    """
+    try:
+        import upgrade_plan
+        units = upgrade_plan.restarts_between(process_commit, disk_commit_sha, repo=repo_root())
+    except Exception:  # noqa: BLE001 -- doctor must not fail on this
+        return True
+    if units is None:
+        return True
+    unit = upgrade_plan.LISTENER if name == "listener" else upgrade_plan.DISPATCHER
+    return unit in units
 
 
 def python_facts(listener=None, dispatcher=None):
