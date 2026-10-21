@@ -2,6 +2,54 @@
 
 ## Sin publicar
 
+## 0.14.0 (2026-10-21)
+
+**PaynaniWeb: el dueño administra paynani desde el navegador** (PRD #434, umbrella
+#435). Una aplicación web, en la misma dirección del túnel de la pasarela, con:
+- **Email Accounts:** un webmail con lo recibido y lo enviado de cada cuenta. Al
+  abrir un correo se lee todo su hilo como en Gmail (PRD #455, umbrella #456).
+- **Messages:** las conversaciones SMS.
+- **Roster:** las mismas altas, cambios, bajas y reglas que en PaynaniApp.
+- **Profile:** la contraseña.
+
+También:
+- `send.sh` guarda copia de lo enviado en Enviados, salvo en Gmail (#449).
+- `upgrade_plan --apply` ya no se queda esperando a un listener que nadie
+  reinició (#432, #450, #452, #453).
+
+Todo lo hicieron Iris y Metis. Sin requisitos nuevos: solo biblioteca estándar de
+Python 3.10 o mayor. Con PaynaniApp 0.8.1.
+
+### Si actualizas desde 0.13.1
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.14.0
+python3 scripts/upgrade_plan.py --from v0.13.1     # y haz lo que imprima
+```
+
+El plan pide `scripts/install.sh --upgrade`, que en un host con la pasarela SMS
+instala y enciende `paynani-web.service` (en macOS, `com.paynani.web`), y reiniciar
+la pasarela, el listener y el dispatcher. Con `--apply` lo hace todo, con el
+`upgrade_plan.py` de esta versión, que ya no se cuelga esperando al listener.
+
+Después, si tienes la pasarela, crea el usuario de PaynaniWeb en la computadora del
+agente. Pide la contraseña dos veces:
+
+```bash
+scripts/paynani web user add --email you@example.com --name "Your Name"
+```
+
+y abre la dirección de tu túnel en el navegador. `PAYNANI_WEB.md` explica el resto.
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`.
+
+Si actualizas desde 0.13.0 o 0.12.0, sigue primero «Si actualizas desde …» de esas
+versiones y después esto, con `--from v0.13.1`.
+
+### Los cambios
+
 - **PaynaniWeb: sin hueco antes de «•••» en los correos de Gmail** (T5 de #456, lo
   encontró Metis). Gmail manda el cuerpo con `\r\n`, y `quote.split()` dejaba
   cada línea visible con un `\r` al final. Ahora normaliza `\r\n` y `\r` a `\n`
