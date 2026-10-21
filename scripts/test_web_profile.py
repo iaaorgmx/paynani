@@ -144,6 +144,36 @@ codes = [req("POST", "/profile/password", form={"csrf": csrf2, "current": f"mala
 check("5 contraseñas actuales malas y la sexta ya dice que está bloqueada", True,
       all("no es correcta" in c for c in codes[:5]) and "Demasiados intentos" in codes[5])
 
+# --- user.json con candado (revisión de Metis en #445) ---------------------------------------
+race_file = tmp / "race" / "user.json"
+users.create("r@example.com", "Race", "contraseña-inicial-0", race_file)
+last = {"pw": "contraseña-inicial-0", "key": ""}
+
+
+def logins():
+    for i in range(200):
+        users.update(race_file, last_login_at=f"2026-10-21T00:00:{i % 60:02d}Z", last_login_ip="192.0.2.1")
+
+
+def changes():
+    for i in range(20):
+        pw = f"contraseña-nueva-{i:02d}"
+        data = users.set_password(pw, race_file)
+        last.update(pw=pw, key=data["session_key"])
+
+
+workers = [threading.Thread(target=logins), threading.Thread(target=changes)]
+for w in workers:
+    w.start()
+for w in workers:
+    w.join()
+final = users.load(race_file)
+check("200 updates y 20 set_password a la vez: queda la última contraseña", True,
+      users.verify_password(last["pw"], final["password"]))
+check("y la session_key del último set_password", last["key"], final["session_key"])
+check("el candado vive junto al usuario, en modo 600", 0o600,
+      __import__("stat").S_IMODE((race_file.parent / ".user.lock").stat().st_mode))
+
 httpd.shutdown()
 httpd.server_close()
 print(f"\n{passed} passed, {failed} failed")

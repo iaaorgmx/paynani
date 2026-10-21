@@ -13,6 +13,8 @@ viejo: se verifica con los suyos.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import hmac
 import json
@@ -123,6 +125,26 @@ def _write(path: Path, data: dict) -> None:
         raise
 
 
+@contextlib.contextmanager
+def _locked(path: Path):
+    """
+    Un candado entre procesos alrededor de cada leer-cambiar-escribir de user.json
+    (revisión de Metis en #445). Sin él, un login que anota `last_login_at` y un
+    `paynani web passwd` a la vez podían devolver la contraseña y la `session_key`
+    a las de antes: el login reescribía lo que había leído antes del cambio.
+    `.user.lock` vive en la misma carpeta 700, dentro de `/web/` de .gitignore.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    with open(path.parent / ".user.lock", "a") as fh:
+        os.fchmod(fh.fileno(), 0o600)
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
 def create(email: str, name: str, password: str, path: Path | None = None) -> dict:
     """El usuario nuevo. Se niega si ya hay uno (FR-6): para cambiar la contraseña
     está `set_password`."""
@@ -136,6 +158,12 @@ def create(email: str, name: str, password: str, path: Path | None = None) -> di
     problem = password_problem(password)
     if problem:
         raise UserError(problem)
+    hashed = hash_password(password)
+    with _locked(path):
+        return _create_locked(path, email, name, hashed)
+
+
+def _create_locked(path: Path, email: str, name: str, hashed: str) -> dict:
     if path.exists():
         if load(path) is None:
             # Sin esto, un archivo roto deja al dueño sin salida: la web pide
@@ -145,7 +173,7 @@ def create(email: str, name: str, password: str, path: Path | None = None) -> di
         raise UserError(f"PaynaniWeb already has a user ({path}); change its password with "
                         "`scripts/paynani web passwd`")
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    data = {"version": VERSION, "email": email, "name": name, "password": hash_password(password),
+    data = {"version": VERSION, "email": email, "name": name, "password": hashed,
             "created_at": now, "password_changed_at": now, "session_key": secrets.token_hex(16)}
     _write(path, data)
     return data
@@ -153,13 +181,19 @@ def create(email: str, name: str, password: str, path: Path | None = None) -> di
 
 def set_password(password: str, path: Path | None = None) -> dict:
     path = user_path() if path is None else Path(path)
-    data = load(path)
-    if data is None:
-        raise UserError("PaynaniWeb has no user yet; create it with `scripts/paynani web user add`")
     problem = password_problem(password)
     if problem:
         raise UserError(problem)
-    data["password"] = hash_password(password)
+    hashed = hash_password(password)   # fuera del candado: scrypt tarda
+    with _locked(path):
+        return _set_password_locked(path, hashed)
+
+
+def _set_password_locked(path: Path, hashed: str) -> dict:
+    data = load(path)
+    if data is None:
+        raise UserError("PaynaniWeb has no user yet; create it with `scripts/paynani web user add`")
+    data["password"] = hashed
     data["password_changed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     # Cierra las sesiones abiertas (web/auth.py), aunque el cambio sea en el mismo
     # segundo que el anterior.
@@ -175,9 +209,6 @@ def update(path: Path | None = None, **fields) -> dict:
     sesiones: para eso está `set_password`.
     """
     path = user_path() if path is None else Path(path)
-    data = load(path)
-    if data is None:
-        raise UserError("PaynaniWeb has no user yet; create it with `scripts/paynani web user add`")
     allowed = {"name", "email", "last_login_at", "last_login_ip"}
     unknown = set(fields) - allowed
     if unknown:
@@ -192,9 +223,13 @@ def update(path: Path | None = None, **fields) -> dict:
         if not name:
             raise UserError("a name is needed: it is shown in Profile")
         fields["name"] = name[:200]
-    data.update(fields)
-    _write(path, data)
-    return data
+    with _locked(path):
+        data = load(path)
+        if data is None:
+            raise UserError("PaynaniWeb has no user yet; create it with `scripts/paynani web user add`")
+        data.update(fields)
+        _write(path, data)
+        return data
 
 
 def public(data: dict) -> dict:
