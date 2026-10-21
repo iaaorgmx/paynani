@@ -2,6 +2,23 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: todo el hilo de un correo con una sola conexión** (T1 del paraguas
+  #456; PRD #455, 4.3). `web/thread.py` suma `load(env, conversación)`, que lee
+  cada mensaje del hilo:
+  - los recibidos de su buzón, con un `SELECT` de solo lectura y un solo
+    `UID FETCH … (BODY.PEEK[])` por buzón, verificados como `mail.fetch()` (la
+    misma `UIDVALIDITY`, el `From` y el `Message-ID` del sobre);
+  - los enviados de Enviados, por su `Message-ID`.
+
+  Todo va por una sola conexión de la cuenta. Nada queda leído ni se mueve, y
+  nada se guarda. Un mensaje que no se puede leer trae su razón (`MailError`: de
+  otra cuenta, sin UID, otro `UIDVALIDITY`, ya no está, otro remitente, otro
+  Message-ID, buzón que no existe, sin copia en Enviados, sin carpeta de
+  Enviados), y el resto sale igual. Si el servidor se cae a mitad, lo leído se
+  queda. `mail.fetch()` se parte en `verify()` y `message_dict()` para que las dos
+  vías usen la misma verificación. La página lo usa desde T3. Las pruebas están
+  en `scripts/test_web_thread_data.py`.
+
 - **PaynaniWeb tiene favicon** (lo pidió Julian). Es `brand/favicon.svg`, la voluta
   reducida, servido en `/assets/favicon.svg` y también en `/favicon.ico`, que antes
   llevaba al login. Las páginas sin sesión, el login y el marco con sesión lo

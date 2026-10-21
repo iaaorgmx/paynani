@@ -141,6 +141,146 @@ def _sent_folder(conn) -> str | None:
     return None
 
 
+def key(row: dict) -> str:
+    """El id de un correo de la conversación: su evento si se recibió, `s:<Message-ID>` si se envió."""
+    return row["event_id"] if row["kind"] == "in" else "s:" + row["message_id"]
+
+
+def _by_uid(payload) -> dict:
+    """`{UID: bytes}` de la respuesta a un `UID FETCH` de varios: cada parte trae su UID en la meta."""
+    out = {}
+    for part in payload or []:
+        if not isinstance(part, tuple) or len(part) < 2:
+            continue
+        meta = part[0] if isinstance(part[0], bytes) else str(part[0]).encode()
+        m = re.search(rb"\bUID\s+([0-9]+)", meta)
+        if m:
+            out[m.group(1).decode("ascii")] = part[1]
+    return out
+
+
+def _received(conn, rows: list[dict], env: dict, uidvalidity, out: dict) -> None:
+    """Los recibidos, agrupados por buzón: un SELECT de solo lectura y un solo UID FETCH por buzón."""
+    import idle_listener
+    configured = (idle_listener.lookup(env, "user", default="") or "").strip().lower()
+    boxes: dict[str, list[dict]] = {}
+    for row in rows:
+        envelope = row["envelope"]
+        if configured != str(envelope.get("account") or "").strip().lower():
+            out[key(row)] = {"error": mail.MailError("account")}
+        elif not str(envelope.get("uid") or "").isdigit():
+            out[key(row)] = {"error": mail.MailError("nouid")}
+        else:
+            boxes.setdefault(str(envelope.get("mailbox") or "INBOX"), []).append(row)
+    for box, items in boxes.items():
+        typ, _ = conn.select(box, readonly=True)
+        if typ != "OK":
+            for row in items:
+                out[key(row)] = {"error": mail.MailError("mailbox", box)}
+            continue
+        current = str(uidvalidity(conn, box) or "")
+        wanted = []
+        for row in items:
+            if current != str(row["envelope"].get("uidvalidity") or ""):
+                out[key(row)] = {"error": mail.MailError("uidvalidity")}
+            else:
+                wanted.append(row)
+        if not wanted:
+            continue
+        typ, payload = conn.uid("fetch", ",".join(str(r["envelope"]["uid"]) for r in wanted), "(BODY.PEEK[])")
+        found = _by_uid(payload) if typ == "OK" else {}
+        for row in wanted:
+            raw = found.get(str(row["envelope"]["uid"]))
+            if raw is None:
+                out[key(row)] = {"error": mail.MailError("gone")}
+                continue
+            message = email.message_from_bytes(raw, policy=email.policy.compat32)
+            try:
+                mail.verify(message, row["envelope"])
+            except mail.MailError as exc:
+                out[key(row)] = {"error": exc}
+                continue
+            out[key(row)] = {"message": mail.message_dict(message)}
+
+
+def _sent(conn, rows: list[dict], out: dict) -> None:
+    """Los enviados, de Enviados por su Message-ID: un SEARCH por cada uno y un solo UID FETCH."""
+    def all_fail(code):
+        for row in rows:
+            out[key(row)] = {"error": mail.MailError(code)}
+    folder = _sent_folder(conn)
+    if not folder:
+        return all_fail("no_sent")
+    quoted = '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    typ, _ = conn.select(quoted, readonly=True)
+    if typ != "OK":
+        return all_fail("no_sent")
+    uids = {}
+    for row in rows:
+        mid = row["message_id"]
+        if not MESSAGE_ID.fullmatch(mid or ""):
+            out[key(row)] = {"error": mail.MailError("no_copy")}
+            continue
+        typ, data = conn.uid("search", None, "HEADER", "Message-ID", mid)
+        if typ == "OK" and data and data[0]:
+            uids[key(row)] = data[0].split()[-1].decode("ascii", "replace")
+        else:
+            out[key(row)] = {"error": mail.MailError("no_copy")}
+    if not uids:
+        return
+    typ, payload = conn.uid("fetch", ",".join(uids.values()), "(BODY.PEEK[])")
+    found = _by_uid(payload) if typ == "OK" else {}
+    for row in rows:
+        uid = uids.get(key(row))
+        if uid is None:
+            continue
+        raw = found.get(uid)
+        message = email.message_from_bytes(raw, policy=email.policy.compat32) if raw is not None else None
+        if message is None or (message.get("Message-ID") or "").strip().lower() != row["message_id"].lower():
+            out[key(row)] = {"error": mail.MailError("no_copy")}
+            continue
+        out[key(row)] = {"message": mail.message_dict(message)}
+
+
+def load(env: dict, convo: list[dict], *, connect=None, uidvalidity=None) -> dict:
+    """
+    Todo el hilo de una cuenta con una sola conexión (PRD #455, 4.3): `{key(row): {"message":
+    dict}}` para cada mensaje que se pudo leer y `{key(row): {"error": MailError}}` para el
+    que no, con su razón, sin tumbar el resto. Los recibidos se leen del INBOX y los
+    enviados de Enviados, siempre de solo lectura y con `BODY.PEEK[]`: nada queda leído ni
+    se mueve, y nada se guarda.
+    """
+    if connect is None or uidvalidity is None:
+        import idle_listener
+        connect = connect or idle_listener.connect
+        uidvalidity = uidvalidity or idle_listener.uidvalidity
+    out: dict = {}
+    if not convo:
+        return out
+    try:
+        conn = connect(env)
+    except SystemExit:
+        return {key(r): {"error": mail.MailError("login")} for r in convo}
+    except Exception as exc:  # noqa: BLE001 -- red, TLS, DNS: se dice cuál
+        return {key(r): {"error": mail.MailError("connect", type(exc).__name__)} for r in convo}
+    try:
+        received = [r for r in convo if r["kind"] == "in"]
+        sent = [r for r in convo if r["kind"] == "out"]
+        if received:
+            _received(conn, received, env, uidvalidity, out)
+        if sent:
+            _sent(conn, sent, out)
+    except Exception as exc:  # noqa: BLE001 -- lo que falte lleva la razón; lo leído se queda
+        for r in convo:
+            out.setdefault(key(r), {"error": mail.MailError("connect", type(exc).__name__)})
+    finally:
+        try:
+            conn.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
 def fetch_texts(env: dict, message_ids: list[str], *, connect=None) -> dict:
     """
     `{Message-ID: texto}` de las copias que el servidor guardó en Enviados. Una que

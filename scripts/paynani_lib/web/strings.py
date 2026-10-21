@@ -11,6 +11,8 @@ from ..i18n_data import CATALOGUES
 
 STRINGS = {
     "es-MX": {
+        'web.mail.err.no_copy': 'El servidor no guardó copia de este envío en Enviados.',
+        'web.mail.err.no_sent': 'No se encontró la carpeta de Enviados de esta cuenta.',
         'web.mail.dir_in': 'Recibido',
         'web.mail.dir_out': 'Enviado',
         'web.mail.from_who': 'De: {who}',
@@ -253,6 +255,8 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "en-US": {
+        'web.mail.err.no_copy': 'The server kept no copy of this message in Sent.',
+        'web.mail.err.no_sent': "This account's Sent folder was not found.",
         'web.mail.dir_in': 'Received',
         'web.mail.dir_out': 'Sent',
         'web.mail.from_who': 'From: {who}',
@@ -495,6 +499,8 @@ STRINGS = {
         "web.lang.apply": "Change",
     },
     "es-ES": {
+        'web.mail.err.no_copy': 'El servidor no ha guardado copia de este envío en Enviados.',
+        'web.mail.err.no_sent': 'No se ha encontrado la carpeta de Enviados de esta cuenta.',
         'web.mail.dir_in': 'Recibido',
         'web.mail.dir_out': 'Enviado',
         'web.mail.from_who': 'De: {who}',
@@ -737,6 +743,8 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "fr-FR": {
+        'web.mail.err.no_copy': 'Le serveur n’a gardé aucune copie de cet envoi dans Envoyés.',
+        'web.mail.err.no_sent': 'Le dossier Envoyés de ce compte est introuvable.',
         'web.mail.dir_in': 'Reçu',
         'web.mail.dir_out': 'Envoyé',
         'web.mail.from_who': 'De : {who}',
@@ -979,6 +987,8 @@ STRINGS = {
         "web.lang.apply": "Changer",
     },
     "pt-BR": {
+        'web.mail.err.no_copy': 'O servidor não guardou cópia deste envio em Enviados.',
+        'web.mail.err.no_sent': 'A pasta Enviados desta conta não foi encontrada.',
         'web.mail.dir_in': 'Recebido',
         'web.mail.dir_out': 'Enviado',
         'web.mail.from_who': 'De: {who}',
