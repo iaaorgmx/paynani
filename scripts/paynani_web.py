@@ -9,8 +9,8 @@ reenvía lo que no es de /sms/ (FR-1), así que comparte el dominio del túnel. 
 puerto sale de PAYNANI_WEB_PORT (sms.env), el mismo que lee la pasarela.
 
 Mientras no exista el usuario, toda página dice cómo crearlo:
-`scripts/paynani web user add` (FR-4). stderr lleva una línea por petición, con
-el método y la ruta, nunca la consulta ni el cuerpo.
+`scripts/paynani web user add` (FR-4). stdout lleva una línea por petición, con
+el método y la ruta, nunca la consulta ni el cuerpo; stderr, los errores.
 """
 from __future__ import annotations
 

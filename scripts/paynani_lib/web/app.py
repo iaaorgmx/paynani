@@ -162,8 +162,12 @@ def make_handler(user_file: Path | None = None):
         def log_message(self, fmt, *args):  # noqa: A003
             # Sólo el método y la ruta: nunca la consulta ni el cuerpo, que pueden
             # llevar datos de un correo o de un contacto (PRD #434 §5).
+            # A stdout, que el servicio manda a state/web.log (logrotate lo rota);
+            # stderr queda para los errores del proceso.
             path = self.path.split("?", 1)[0]
-            sys.stderr.write(f"{self.command} {path} {args[1] if len(args) > 1 else ''}\n")
+            sys.stdout.write(f"{self.log_date_time_string()} {self.command} {path} "
+                             f"{args[1] if len(args) > 1 else ''}\n")
+            sys.stdout.flush()
 
         def _send(self, code: int, content_type: str, body: bytes, extra=None):
             self.send_response(code)
