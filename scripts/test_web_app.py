@@ -77,7 +77,8 @@ saved = user_file.read_text(encoding="utf-8")
 check("el archivo no trae la contraseña en claro", False, GOOD in saved)
 check("archivo en modo 600", 0o600, stat.S_IMODE(user_file.stat().st_mode))
 check("carpeta en modo 700", 0o700, stat.S_IMODE(user_file.parent.stat().st_mode))
-check("no quedan temporales", [], [p.name for p in user_file.parent.iterdir() if p.name != "user.json"])
+check("no quedan temporales (solo el candado, #445)", [],
+      [p.name for p in user_file.parent.iterdir() if p.name not in ("user.json", ".user.lock")])
 try:
     users.create("otro@example.com", "Otro", GOOD, user_file)
     check("un segundo usuario se niega (FR-6)", "UserError", "nada")

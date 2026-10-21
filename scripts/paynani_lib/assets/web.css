@@ -309,3 +309,16 @@ body.web-shell {
 .web-shell .formulario textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; line-height: 1.5; min-height: 18rem; }
 .web-shell .formulario > button { margin-top: 1rem; align-self: flex-start; }
 .web-shell .formulario .botones { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+
+/* Profile (T9), como el Profile del /dash: el avatar, el nombre, el puesto y las
+   opciones como filas con flecha. */
+.web-shell .perfil { text-align: center; padding: .5rem 0 1.5rem; }
+.web-shell .avatar-grande { width: 113px; height: 113px; margin: 0 auto .75rem; border-radius: 50%; background: #efe3e1; color: #8f2d2b; display: flex; align-items: center; justify-content: center; font-size: 2.6rem; font-weight: 600; letter-spacing: .03em; }
+.web-shell .perfil h2 { margin: 0; font-size: 1.45rem; }
+.web-shell .perfil .puesto { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.web-shell .perfil .quiet { margin: .2rem 0 0; }
+.web-shell .opciones-perfil { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.web-shell .opciones-perfil a { display: flex; align-items: center; gap: 1rem; min-height: 4.2rem; padding: 0 .75rem 0 .25rem; border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; font-size: 1.02rem; }
+.web-shell .opciones-perfil a:hover { background: var(--bg); }
+.web-shell .opciones-perfil svg.i { width: 24px; height: 24px; }
+.web-shell .opciones-perfil .flecha-der { margin-left: auto; transform: rotate(-90deg); width: 20px; height: 20px; }

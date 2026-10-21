@@ -2,6 +2,17 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: Profile** (T9 del paraguas #435; PRD #434 FR-21). Está hecho como el
+  Profile del `/dash` de Service Button: arriba el avatar con iniciales, el nombre,
+  «Dueño» y el último ingreso, que ahora se guarda en `web/user.json` en cada
+  entrada; abajo, solo **Datos personales** y **Contraseña de la cuenta** (Q25).
+  Datos personales cambia el nombre y el correo, con el que se entra y al que
+  llegan los avisos; cambiar el correo pide la contraseña actual. Contraseña de la
+  cuenta pide la actual y la nueva dos veces, de al menos 12 caracteres y distinta
+  de la actual. Al cambiarla se cierran las otras sesiones y la de quien la cambió
+  sigue abierta. La contraseña actual pasa por el mismo bloqueo de 5 intentos de la
+  entrada.
+
 - **PaynaniWeb: el Roster y las instrucciones por contacto** (T8 del paraguas #435;
   PRD #434 FR-20 y FR-9). Es lo mismo que la pantalla «Roster» de PaynaniApp, con
   el mismo servicio de la pasarela (`sms/roster_api.RosterService`), así que el
