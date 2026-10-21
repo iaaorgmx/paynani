@@ -333,23 +333,11 @@ body.web-shell {
 .web-shell .pasos li.mal::before { content: "✕ "; color: var(--bad-ink); }
 .web-shell .pasos .detalle { color: var(--quiet); font-size: .82rem; margin-left: 1.2rem; }
 
-/* Email Accounts como webmail (T5): recibido o enviado, y la conversación del abierto. */
+/* Email Accounts como webmail (T5): recibido o enviado en la lista. */
 .web-shell .dir { display: inline-block; width: 1.1em; text-align: center; font-weight: 700; }
 .web-shell .dir-in { color: var(--quiet); }
 .web-shell .dir-out { color: var(--accent); }
 .web-shell .estado-sent { color: var(--accent); }
-.web-shell .estado-actual { background: var(--ink); border-color: var(--ink); color: var(--card, #fff); }
-.web-shell .conversacion { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .75rem; }
-.web-shell .conversacion li { border-left: 3px solid var(--line); padding: .2rem 0 .2rem .9rem; }
-.web-shell .conversacion li.conv-out { border-left-color: var(--accent); }
-.web-shell .conversacion li.conv-actual { background: var(--bg); }
-.web-shell .conversacion .de { font-weight: 600; font-size: .92rem; overflow-wrap: anywhere; }
-.web-shell .conversacion .cuerpo { margin-top: .4rem; }
-.web-shell .conv-out .cuerpo { background: #f6ecea; border-color: #e7cfcb; }
-@media (prefers-color-scheme: dark) { .web-shell .conv-out .cuerpo { background: #2a1c1b; border-color: #5e3229; } }
-.web-shell .conversacion .quiet { margin: .15rem 0 .25rem; font-size: .85rem; }
-.web-shell .conversacion a { color: var(--accent); font-weight: 600; text-decoration: none; margin-right: .4rem; }
-
 /* La lista de correos a todo lo ancho, como Orders en el /dash: una cabecera gris y
    columnas De/Para, Asunto, Fecha y Estado. En el celular se apila, sin cabecera. */
 .web-shell .panel.panel-ancho { max-width: none; }
@@ -366,4 +354,45 @@ body.web-shell {
   .web-shell .correos .correos-cabecera { display: none; }
   .web-shell .correos li a { grid-template-columns: 1fr auto; }
   .web-shell .correos .flecha { display: none; }
+}
+
+/* Un correo abierto como un hilo de Gmail (PRD #455): todos los mensajes con el mismo
+   formato, sin fondos ni barras de color; el abierto con un borde suave. */
+.web-shell .mensajes { list-style: none; margin: 0; padding: 0; }
+.web-shell .mensajes .mensaje { padding: 1rem .25rem 1.1rem; border-bottom: 1px solid var(--line); scroll-margin-top: 1rem; }
+.web-shell .mensajes .mensaje.abierto { border: 1px solid var(--line); border-radius: 10px; padding: 1rem; margin: .5rem 0; }
+.web-shell .mensaje .cabecera { display: grid; grid-template-columns: 2.5rem 1fr auto; gap: .2rem .8rem; align-items: start; }
+.web-shell .avatar-mensaje {
+  width: 2.5rem; height: 2.5rem; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: .9rem; color: #fff; background: #5b6b7a;
+}
+.web-shell .avatar-mensaje.avatar-agente { background: var(--accent); }
+.web-shell .mensaje .quien { min-width: 0; overflow-wrap: anywhere; }
+.web-shell .mensaje .direccion { color: var(--quiet); font-size: .85rem; }
+.web-shell .mensaje .para { color: var(--quiet); font-size: .82rem; }
+.web-shell .mensaje .cuando { color: var(--quiet); font-size: .82rem; white-space: nowrap; display: flex; gap: .4rem; align-items: center; }
+.web-shell .mensaje .cuando .estado { font-size: .68rem; padding: 0 .35rem; }
+.web-shell .mensaje .cuando .marca-roster { margin-left: 0; }
+.web-shell .mensaje .nota { margin: .5rem 0 0 3.3rem; font-size: .82rem; }
+.web-shell .mensaje .texto { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; margin: .6rem 0 0 3.3rem; }
+.web-shell .mensaje .aviso-caja { margin: .6rem 0 0 3.3rem; }
+.web-shell .mensaje .sin-copia { margin-top: .6rem; font-style: italic; }
+.web-shell .mensaje .cita { margin: .4rem 0 0 3.3rem; }
+.web-shell .mensaje .cita summary {
+  list-style: none; cursor: pointer; display: inline-block; padding: 0 .45rem; line-height: 1.1rem;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--quiet); font-size: .8rem;
+}
+.web-shell .mensaje .cita summary::-webkit-details-marker { display: none; }
+.web-shell .mensaje .cita .texto { margin-left: 0; color: var(--quiet); }
+.web-shell .mensajes .plegados > details > summary {
+  list-style: none; cursor: pointer; padding: .7rem .25rem; border-bottom: 1px solid var(--line);
+  color: var(--accent); font-weight: 600; font-size: .9rem;
+}
+.web-shell .mensajes .plegados > details > summary::-webkit-details-marker { display: none; }
+@media (max-width: 900px) {
+  .web-shell .mensaje .cabecera { grid-template-columns: 2.2rem 1fr; }
+  .web-shell .mensaje .cuando { grid-column: 2; }
+  .web-shell .avatar-mensaje { width: 2.2rem; height: 2.2rem; font-size: .8rem; }
+  .web-shell .mensaje .texto, .web-shell .mensaje .cita, .web-shell .mensaje .nota,
+  .web-shell .mensaje .aviso-caja { margin-left: 0; }
 }

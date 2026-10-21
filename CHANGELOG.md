@@ -2,6 +2,29 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: un correo abierto se lee como un hilo de Gmail** (T3 del paraguas
+  #456; PRD #455, 4.1, 4.2 y 4.6 a 4.9). La página de un correo, recibido o
+  enviado, es ahora una sola lista:
+  - el asunto una vez, sin «Re:»;
+  - todos los mensajes del hilo, completos y una vez cada uno, del más viejo al
+    más nuevo, con el mismo formato (avatar con iniciales, nombre, `<dirección>`,
+    «para mí» o «para Ana» y Cc, la hora y el cuerpo), sin fondos ni barras de
+    color;
+  - el abierto con un borde suave. Cada enlace de la lista lleva `#m-<id>`, así
+    que la página baja hasta él sin JavaScript;
+  - el texto citado detrás de «•••» (`<details>`, T2);
+  - el estado y la marca del roster de cada recibido, chicos, junto a la hora;
+  - con más de 10 mensajes, los dos primeros y los tres últimos completos y el
+    resto en «N mensajes más», salvo el abierto.
+
+  Se quitan «Conversación», «N correos de esta cuenta…», «Solo se muestra…»,
+  «este correo» y el sobre grande de arriba. Todo el hilo se lee con
+  `thread.load()` (T1), con una sola conexión. Un mensaje que no se pudo leer dice
+  por qué dentro de su lugar: un enviado sin copia, como nota; un recibido, como
+  aviso. Abrir un recibido que no se pudo leer sigue dando 502. Las cadenas nuevas
+  van en los cinco idiomas, y en el celular la cabecera de cada mensaje pasa a dos
+  líneas. La hora va en la zona del host hasta T4.
+
 - **PaynaniWeb: todo el hilo de un correo con una sola conexión** (T1 del paraguas
   #456; PRD #455, 4.3). `web/thread.py` suma `load(env, conversación)`, que lee
   cada mensaje del hilo:

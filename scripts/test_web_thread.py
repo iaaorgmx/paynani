@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "harness"))
 
 import ledger  # noqa: E402
-from paynani_lib.web import app, auth, notify, thread, users  # noqa: E402
+from paynani_lib.web import app, auth, mail, notify, thread, users  # noqa: E402
 
 passed = failed = 0
 
@@ -117,7 +117,10 @@ def inbox_message(uid):
     m["To"] = "agente@example.com"
     m["Subject"] = "Cotización" if uid == "1" else "Re: Cotización"
     m["Message-ID"] = "<orig@example.com>" if uid == "1" else "<segundo@example.com>"
-    m.set_content("¿Me cotizan 40 mesas?" if uid == "1" else "Gracias, ¿y 50?")
+    m["Date"] = "Tue, 20 Oct 2026 10:00:00 +0000" if uid == "1" else "Tue, 20 Oct 2026 11:00:00 +0000"
+    m.set_content("¿Me cotizan 40 mesas?" if uid == "1" else
+                  "Gracias, ¿y 50?\n\n-- \nAna\n\nOn Tue, Oct 20, 2026 at 10:05 AM Agente <agente@example.com>\nwrote:\n\n"
+                  "> Sí, Ana: 40 mesas a 3000.\n")
     return m.as_bytes()
 
 
@@ -126,6 +129,7 @@ class FakeIMAP:
     selected = None
     sent_folder = b'(\\HasNoChildren \\Sent) "/" "Enviados"'
     connections = 0
+    queries: list = []
 
     def __init__(self, env):
         FakeIMAP.connections += 1
@@ -141,12 +145,16 @@ class FakeIMAP:
         if command == "search":
             mid = args[-1]
             return "OK", [b"9" if mid == "<r1@agente.example>" and FakeIMAP.selected == '"Enviados"' else b""]
-        uid, query = args
-        if FakeIMAP.selected == "INBOX":
-            data = inbox_message(uid)
-        else:
-            data = message("<r1@agente.example>", "Sí, Ana: 40 mesas a <b>3000</b>.")
-        return "OK", [(f"1 (UID {uid} BODY[]".encode(), data), b")"]
+        uids, query = args
+        FakeIMAP.queries.append(query)
+        out = []
+        for uid in uids.split(","):
+            if FakeIMAP.selected == "INBOX":
+                data = inbox_message(uid)
+            else:
+                data = message("<r1@agente.example>", "Sí, Ana: 40 mesas a <b>3000</b>.")
+            out += [(f"{len(out) + 1} (UID {uid} BODY[]".encode(), data), b")"]
+        return "OK", out
 
     def logout(self):
         pass
@@ -221,7 +229,7 @@ check("un enviado: la flecha de salida, «Para:» y «Enviado»", True,
 check("un recibido: la flecha de entrada, «De:», su estado y la marca del roster", True,
       'class="dir dir-in"' in page and "De: Ana" in page and 'estado-observed' in page and 'class="marca-roster"' in page)
 check("el enlace de un enviado va por su Message-ID", True,
-      'href="/email/main/ver?s=' + quote("<r1@agente.example>", safe="") + '"' in page)
+      'href="/email/main/ver?s=' + quote("<r1@agente.example>", safe="") + '#m-' in page)
 check("el asunto de un enviado va escapado", (True, False), ("Otra cosa &lt;b&gt;" in page, "Otra cosa <b>" in page))
 check("a todo lo ancho, con la cabecera De / Para, Asunto, Fecha y Estado (como Orders del /dash)", True,
       '<main class="panel panel-ancho">' in page and '<li class="correos-cabecera" aria-hidden="true"><span>De / Para</span>'
@@ -232,40 +240,92 @@ check("el CSS del webmail no toca .hilo, que es la conversación de SMS de Messa
 status, _, page = req("GET", "/email/ventas", cookie=cookie)
 check("una cuenta que no existe sigue siendo 404", 404, status)
 
-# --- abrir un recibido: el correo y su conversación ---------------------------------------
-FakeIMAP.connections = 0
-status, _, page = req("GET", "/email/main/ver?e=" + quote("imap:INBOX:7:1", safe=""), cookie=cookie)
-check("el recibido abierto: 200 con su texto", (200, True), (status, "40 mesas?" in page))
-hilo = page[page.index('<ol class="conversacion">'):page.index("</ol>", page.index('<ol class="conversacion">'))]
-check("la conversación: 5 correos, en orden", 5, hilo.count("<li class="))
-check("dice cómo se agrupó", True, "5 correos de esta cuenta con el mismo asunto" in page)
-check("el abierto va marcado", True, 'conv-in conv-actual' in hilo and ">este correo<" in hilo)
-check("el otro recibido es un enlace para abrirlo", True,
-      'href="/email/main/ver?e=' + quote("imap:INBOX:7:2", safe="") + '">Abrir</a>' in hilo)
-check("el enviado con copia trae su texto, escapado", (True, False),
-      ("40 mesas a &lt;b&gt;3000&lt;/b&gt;." in hilo, "<b>3000</b>" in hilo))
-check("el enviado sin copia lo dice, con su Cc", (True, True), ("no guardó copia" in hilo, "Cc jefe@example.com" in hilo))
-check("ni Beto ni «Otra cosa» en la conversación", (False, False), ("beto@" in hilo, "Otra cosa" in hilo))
-check("dos conexiones: el correo y los textos de Enviados de una vez", 2, FakeIMAP.connections)
-check("un correo abierto no va a todo lo ancho", False, "panel-ancho" in page)
+# --- abrir un recibido: todo el hilo como en Gmail (PRD #455) ------------------------------
+from paynani_lib.web import mail_pages  # noqa: E402
 
-# --- abrir un enviado ----------------------------------------------------------------------
+FakeIMAP.connections = 0
+FakeIMAP.queries = []
+status, _, page = req("GET", "/email/main/ver?e=" + quote("imap:INBOX:7:1", safe=""), cookie=cookie)
+check("el recibido abierto: 200", 200, status)
+check("una sola conexión para todo el hilo (4.3)", 1, FakeIMAP.connections)
+check("... y solo BODY.PEEK[]: nada queda leído", True, bool(FakeIMAP.queries) and set(FakeIMAP.queries) == {"(BODY.PEEK[])"})
+check("los 5 mensajes, una vez cada uno (4.1)", 5, page.count('<li id="m-'))
+order = [page.index(t) for t in ("¿Me cotizan 40 mesas?", "Sí, Ana: 40 mesas a", "Gracias, ¿y 50?")]
+check("... del más viejo al más nuevo", sorted(order), order)
+check("el otro recibido trae su cuerpo completo, no un enlace", (True, False), ("Gracias, ¿y 50?" in page, ">Abrir<" in page))
+opened = mail_pages.anchor({"kind": "in", "event_id": "imap:INBOX:7:1"})
+check("el abierto va con borde y su id es el ancla (#m-…)", (1, True),
+      (page.count('class="mensaje abierto"'), f'<li id="{opened}" class="mensaje abierto">' in page))
+check("el asunto una sola vez, sin Re:", (1, True, False),
+      (page.count('<h2 class="asunto-correo">'), '<h2 class="asunto-correo">Cotización</h2>' in page, "Re: Cotización</h2>" in page))
+check("todos con el mismo formato: avatar, nombre y «para …» (4.2)", (5, 3, 2, 5),
+      (page.count('class="avatar-mensaje'), page.count("avatar-agente"), page.count("avatar-contacto"), page.count('class="para"')))
+check("a un recibido: «para mí»", True, '<div class="para">para mí</div>' in page)
+check("un enviado sin copia: Para y Cc del registro", True, "para ana@example.com · cc jefe@example.com" in page)
+check("la hora va en <time datetime> (T4 la pasa a la zona del navegador)", True,
+      '<time datetime="2026-10-20T10:00:00Z">' in page)
+check("cada recibido conserva su estado y la marca del roster junto a la hora (4.7)", True,
+      'class="estado estado-observed"' in page and 'class="marca-roster"' in page)
+check("el enviado con copia trae su texto, escapado", (True, False),
+      ("40 mesas a &lt;b&gt;3000&lt;/b&gt;." in page, "<b>3000</b>" in page))
+check("el enviado sin copia dice por qué, dentro de su mensaje", True,
+      '<p class="quiet nota sin-copia">El servidor no guardó copia de este envío en Enviados.</p>' in page)
+check("el texto citado plegado detrás de «•••», con <details> (4.5)", True,
+      '<details class="cita"><summary' in page and ">•••</summary>" in page and "&gt; Sí, Ana: 40 mesas a 3000." in page)
+check("... y la firma a la vista, fuera de la cita", True, page.index("-- \nAna") < page.index('<details class="cita">'))
+for gone in ("Conversación", "correos de esta cuenta con el mismo asunto", "Solo se muestra", "este correo", 'class="sobre"'):
+    check(f"sin «{gone}» (4.6)", False, gone in page)
+check("ni Beto ni «Otra cosa» en el hilo", (False, False), ("beto@" in page, "Otra cosa" in page))
+check("un correo abierto no va a todo lo ancho", False, "panel-ancho" in page)
+status, _, listing = req("GET", "/email/main", cookie=cookie)
+check("la lista enlaza cada correo con su ancla, para que la página baje a él", True,
+      f'href="/email/main/ver?e={quote("imap:INBOX:7:1", safe="")}#{opened}"' in listing)
+
+# --- abrir otro del mismo hilo, y un enviado -----------------------------------------------
+status, _, page = req("GET", "/email/main/ver?e=" + quote("imap:INBOX:7:2", safe=""), cookie=cookie)
+check("abrir el segundo: el mismo hilo, ahora marcado él", (200, 5, True),
+      (status, page.count('<li id="m-'), f'<li id="{mail_pages.anchor({"kind": "in", "event_id": "imap:INBOX:7:2"})}" class="mensaje abierto">' in page))
 status, _, page = req("GET", "/email/main/ver?s=" + quote("<r1@agente.example>", safe=""), cookie=cookie)
-check("el enviado abierto: 200, su texto de Enviados y su conversación", (200, True, True),
-      (status, "40 mesas a &lt;b&gt;3000&lt;/b&gt;." in page, 'conv-out conv-actual' in page))
+check("un enviado abierto: el mismo hilo, él marcado, con su texto", (200, 5, True, True),
+      (status, page.count('<li id="m-'), "mensaje abierto" in page, "40 mesas a &lt;b&gt;3000" in page))
 status, _, page = req("GET", "/email/main/ver?s=" + quote("<r2@agente.example>", safe=""), cookie=cookie)
-check("uno sin copia: el aviso, con Para, Cc y Cco del registro", (200, True, True, True),
-      (status, 'class="aviso-caja">El servidor no guardó copia' in page, "jefe@example.com" in page,
-       "<dt>Cco</dt><dd>archivo@example.com</dd>" in page))
-check("y su estado dice «Enviado»", True, 'estado-sent">Enviado' in page)
+check("uno sin copia: 200 y la razón, no un error de página", (200, True), (status, "no guardó copia de este envío" in page))
 status, _, page = req("GET", "/email/main/ver?s=" + quote("<sin-asunto@agente.example>", safe=""), cookie=cookie)
-check("uno sin asunto: solo él", (200, True, True),
-      (status, "(sin asunto)" in page, "No hay más correos en esta conversación" in page))
+check("uno sin asunto: solo él", (200, True, 1), (status, "(sin asunto)" in page, page.count('<li id="m-')))
 for label, mid in (("que no está en sent.log", "<nadie@agente.example>"), ("de otra cuenta", "<de-ventas@ventas.example>")):
     status, _, _ = req("GET", "/email/main/ver?s=" + quote(mid, safe=""), cookie=cookie)
     check(f"un Message-ID {label}: 404", 404, status)
 status, _, _ = req("GET", "/email/main/ver?s=" + quote("<r1@agente.example>", safe=""))
 check("sin sesión: a /login", 303, status)
+
+
+# --- hilos largos: con más de 10, los del medio plegados (4.8) ---------------------------
+def fake_in(i):
+    return {"kind": "in", "event_id": f"imap:INBOX:7:{100 + i}", "sender_name": "Ana", "sender_address": "ana@example.com",
+            "subject": "Re: Largo", "at": f"2026-10-20T{8 + i:02d}:00:00Z", "state": "handled", "roster": True}
+
+
+long_convo = [fake_in(i) for i in range(12)]
+loaded = {r["event_id"]: {"message": {"from": "Ana <ana@example.com>", "to": "agente@example.com", "cc": "",
+                                      "date": r["at"], "text": f"cuerpo {i}", "truncated": False, "source": "plain",
+                                      "attachments": []}} for i, r in enumerate(long_convo)}
+html = mail_pages.thread_page("main", long_convo[-1], long_convo, loaded, own="agente@example.com")
+check("12 mensajes, el abierto al final: 2 + 3 a la vista y 7 en «7 mensajes más»", (1, True, 12),
+      (html.count('<li class="plegados">'), "7 mensajes más</summary>" in html, html.count('<li id="m-')))
+visible = html.split('<li class="plegados">')[0] + html.split("</details></li>")[-1]
+check("... los dos primeros y los tres últimos fuera del pliegue", True,
+      all(f"cuerpo {i}<" in visible for i in (0, 1, 9, 10, 11)) and "cuerpo 5<" not in visible)
+html = mail_pages.thread_page("main", long_convo[6], long_convo, loaded, own="agente@example.com")
+check("el abierto en medio siempre se ve: dos pliegues, de 4 y de 2", (2, True, True),
+      (html.count('<li class="plegados">'), "4 mensajes más</summary>" in html, "2 mensajes más</summary>" in html))
+check("... y el abierto queda fuera de ellos", True,
+      'class="mensaje abierto"' in html.split('<li class="plegados">')[1].split("</details></li>")[-1])
+check("10 mensajes no se pliegan", 0,
+      mail_pages.thread_page("main", long_convo[0], long_convo[:10], loaded, own="agente@example.com").count("plegados"))
+loaded[long_convo[3]["event_id"]] = {"error": mail.MailError("gone")}
+html = mail_pages.thread_page("main", long_convo[0], long_convo[:5], loaded, own="agente@example.com")
+check("uno que no se pudo leer dice por qué y el resto sale (4.3)", (True, 5, True),
+      ("aviso-caja" in html, html.count('<li id="m-'), "cuerpo 4<" in html))
 
 httpd.shutdown()
 httpd.server_close()

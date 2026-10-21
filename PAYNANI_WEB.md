@@ -81,18 +81,27 @@ reciente primero, de 50 en 50. Cada fila dice si entró (↙ «De:») o salió (
 con el asunto y la hora. Los recibidos llevan su estado y la marca del roster; los
 enviados, «Enviado».
 
-Al abrir cualquiera se ve solo su conversación: los correos de esa cuenta con el
-mismo asunto (sin `Re:`, `Fw:` ni mayúsculas) y la misma otra persona (el remitente
-de un recibido, o un destinatario o Cc de un enviado), en orden. `send.sh` no anota
-a qué correo responde (#442 se cerró: los destinatarios ven los correos como
-siempre), así que el hilo se arma así.
+Al abrir cualquiera se ve su hilo como en Gmail (PRD #455). El hilo son los correos
+de esa cuenta con el mismo asunto (sin `Re:`, `Fw:` ni mayúsculas) y la misma otra
+persona (el remitente de un recibido, o un destinatario o Cc de un enviado).
+`send.sh` no anota a qué correo responde (#442 se cerró: los destinatarios ven los
+correos como siempre), así que el hilo se arma así.
 
-- **Un recibido** se lee de IMAP, como antes, y en su conversación los otros
-  recibidos son enlaces para abrirlos.
-- **Un enviado** muestra Para, Cc, Cco y la hora de `sent.log`, y su texto, pedido a
-  IMAP en Enviados por su Message-ID. `send.sh` guarda esa copia desde #449 (salvo en
-  Gmail, que la guarda solo). Si no hay copia, por ejemplo en envíos de antes, la
-  página lo dice.
+- **Arriba,** el asunto una vez, sin «Re:».
+- **Debajo,** todos los mensajes, del más viejo al más nuevo y con el mismo
+  formato: avatar, nombre, dirección, «para …» (y Cc), la hora y el cuerpo
+  completo. Cada recibido lleva su estado y la marca del roster junto a la hora.
+- **El abierto** va con un borde suave, y la página baja hasta él (`#m-<id>`).
+- **El texto citado** («On … wrote:», «El … escribió:», la cabecera de Outlook)
+  queda plegado detrás de «•••». La firma y los reenvíos se quedan a la vista.
+- **Con más de 10 mensajes,** los del medio se pliegan en «N mensajes más»; el
+  abierto siempre se ve.
+- **Todo se lee de IMAP en ese momento,** con una sola conexión de la cuenta y
+  `BODY.PEEK[]`: los recibidos de su buzón y los enviados de Enviados, por su
+  Message-ID. `send.sh` guarda esa copia desde #449, salvo en Gmail, que la guarda
+  sola. Nada queda leído, nada se mueve y nada se guarda en paynani. Un mensaje
+  que no se puede leer dice por qué (un enviado sin copia, por ejemplo), y el
+  resto se ve igual.
 
 ## Lo que guarda y lo que no
 

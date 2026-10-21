@@ -565,34 +565,21 @@ def make_handler(ctx: Context):
                 self._page(404, title=match["email"], icon_name="mail", back=f"/email/{account_id}",
                            body=f'<p class="lead">{i18n.th("web.mail.not_found")}</p>', **kw)
                 return
+            # PRD #455: todo el hilo, completo, con una sola conexión de la cuenta.
             convo = thread.conversation(rows, row, own=match["email"])
-            wanted = [r["message_id"] for r in convo if r["kind"] == "out"]
-            env, env_error = None, None
             try:
                 env = mail.env_for(account_id, self.CTX.accounts_file, self.CTX.env_path())
+                loaded = thread.load(env, convo, connect=self.CTX.imap_connect, uidvalidity=self.CTX.imap_uidvalidity)
             except mail.MailError as exc:
-                env_error = exc
-            if row["kind"] == "out":
-                # Lo enviado no está en el ledger: su texto solo existe si el servidor guardó
-                # copia en Enviados. Sin ella, o sin login, la página lo dice.
-                texts = thread.fetch_texts(env, wanted, connect=self.CTX.imap_connect) if env and wanted else {}
-                self._page(200, title=match["email"], icon_name="mail", back=f"/email/{account_id}",
-                           body=mail_pages.sent_body(account_id, row, convo, texts), **kw)
-                return
-            message, error, texts = None, env_error, {}
-            if error is None:
-                try:
-                    message = mail.fetch(row["envelope"], env, connect=self.CTX.imap_connect,
-                                         uidvalidity=self.CTX.imap_uidvalidity)
-                except mail.MailError as exc:
-                    error = exc
-            if error is not None:
-                sys.stderr.write(f"paynani-web: no se abrió {event_id}: {error.code}\n")
-            elif wanted:
-                texts = thread.fetch_texts(env, wanted, connect=self.CTX.imap_connect)
-            self._page(200 if error is None else 502, title=match["email"], icon_name="mail",
-                       back=f"/email/{account_id}",
-                       body=mail_pages.message_body(account_id, row, message, error, convo, texts), **kw)
+                loaded = {thread.key(r): {"error": exc} for r in convo}
+            mine = loaded.get(thread.key(row), {})
+            # Un recibido que no se pudo leer es un 502, como antes; un enviado sin copia es normal.
+            failed = row["kind"] == "in" and "message" not in mine
+            if failed:
+                code = getattr(mine.get("error"), "code", "gone")
+                sys.stderr.write(f"paynani-web: no se abrió {event_id}: {code}\n")
+            self._page(502 if failed else 200, title=match["email"], icon_name="mail", back=f"/email/{account_id}",
+                       body=mail_pages.thread_page(account_id, row, convo, loaded, own=match["email"]), **kw)
 
         def _offset(self) -> int:
             try:
