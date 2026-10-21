@@ -28,7 +28,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import auth, notify, users
+from . import auth, notify, shell, users
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 STATIC = {
@@ -191,17 +191,16 @@ def login_page(lang: str, *, email: str = "", notice: str = "", error: str = "",
 """
 
 
-def home_page(lang: str, user: dict, csrf: str) -> str:
+def home_body(user: dict) -> str:
     th = i18n.th
-    body = f"""
-<h1>{th('web.home.hello', name=user.get('name', ''))}</h1>
+    return f"""
+<h2>{th('web.home.hello', name=user.get('name', ''))}</h2>
 <p class="lead">{th('web.home.lead')}</p>
-<form method="post" action="/logout">
-  <input type="hidden" name="csrf" value="{e(csrf)}">
-  <button type="submit" class="secundario">{th('web.logout')}</button>
-</form>
 """
-    return document(lang, i18n.t("web.title"), body)
+
+
+def soon_body() -> str:
+    return f'<p class="lead">{i18n.th("web.soon")}</p>\n'
 
 
 def message_page(lang: str, title_key: str, h1_key: str, lead_key: str = "") -> str:
@@ -226,11 +225,37 @@ def form_fields(raw: bytes) -> dict:
 class Context:
     """Lo que comparten todas las peticiones de un servidor."""
 
-    def __init__(self, user_file: Path | None = None, notifier: notify.Notifier | None = None, clock=time.time):
+    def __init__(self, user_file: Path | None = None, notifier: notify.Notifier | None = None, clock=time.time,
+                 agent_email=None, accounts_file: Path | None = None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
         self.notifier = notifier or notify.Notifier()
+        # La cuenta del agente y las de accounts.json, para el menú (FR-10). Las
+        # pruebas pasan las suyas; sin ellas, las de la instalación. Del .env sólo
+        # se lee la dirección, nunca la contraseña.
+        self._agent_email = agent_email
+        self.accounts_file = accounts_file
+
+    def agent_email(self) -> str:
+        if self._agent_email is not None:
+            return self._agent_email() if callable(self._agent_email) else self._agent_email
+        from .. import envfile
+        try:
+            return envfile.read_env().get("AGENT_EMAIL_ACCOUNT", "")
+        except Exception:  # noqa: BLE001 -- sólo es para mostrar
+            return ""
+
+    def mail_accounts(self) -> tuple[list[dict], str]:
+        """(cuentas, error). Un accounts.json que no se lee no tumba la página:
+        queda la cuenta del agente y el menú lo dice."""
+        from .. import accounts as accounts_mod
+        error = ""
+        try:
+            additional = accounts_mod.load(self.accounts_file)
+        except accounts_mod.AccountsError as exc:
+            additional, error = [], str(exc)
+        return shell.mail_accounts(self.agent_email(), additional), error
 
     def user(self) -> dict | None:
         return users.load(self.user_file)
@@ -392,11 +417,36 @@ def make_handler(ctx: Context):
                 return
             self.dispatch_get()
 
+        def _page(self, code: int, *, title: str, body: str, **kw):
+            accounts, error = self.CTX.mail_accounts()
+            self._html(code, shell.page(self.lang, self.user, self.session["csrf"], title=title, body=body,
+                                        accounts=accounts, accounts_error=error, **kw))
+
         def dispatch_get(self):
+            t = i18n.t
             if self.route == "/":
-                self._html(200, home_page(self.lang, self.user, self.session["csrf"]))
+                self._page(200, title=t("web.home.title"), body=home_body(self.user), icon_name="home")
                 return
-            self._html(404, message_page(self.lang, "web.notfound.title", "web.notfound.h1"))
+            if self.route.startswith("/email/"):
+                account_id = self.route[len("/email/"):]
+                accounts, _ = self.CTX.mail_accounts()
+                match = next((a for a in accounts if a["id"] == account_id), None)
+                if match is None:
+                    self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
+                    return
+                self._page(200, title=match["email"], body=soon_body(), active="email",
+                           active_account=account_id, icon_name="mail")
+                return
+            if self.route == "/messages":
+                self._page(200, title=t("web.nav.messages"), body=soon_body(), active="messages", icon_name="inbox")
+                return
+            if self.route == "/roster":
+                self._page(200, title=t("web.nav.roster"), body=soon_body(), active="roster", icon_name="roster")
+                return
+            if self.route == "/profile":
+                self._page(200, title=t("web.nav.profile"), body=soon_body(), icon_name="profile", back="/")
+                return
+            self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
 
         def do_HEAD(self):  # noqa: N802
             self.do_GET()
