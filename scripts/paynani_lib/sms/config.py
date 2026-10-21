@@ -12,6 +12,10 @@ en Linux y en macOS.
     PAYNANI_SMS_PUBLIC_URL=https://<tu túnel>
     PAYNANI_SMS_BATTERY_WARN_PCT=25
     PAYNANI_SMS_BATTERY_CRITICAL_PCT=10
+    PAYNANI_WEB_PORT=8771
+
+`PAYNANI_WEB_PORT` es el de PaynaniWeb (PRD #434): la pasarela le reenvía lo que
+no es de /sms/, y PaynaniWeb escucha ahí.
 """
 from __future__ import annotations
 
@@ -24,11 +28,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "harness"))
 import paths  # noqa: E402
 
 KEYS = ("PAYNANI_SMS_PORT", "PAYNANI_SMS_PUBLIC_URL", "PAYNANI_SMS_DEFAULT_REGION",
-        "PAYNANI_SMS_BATTERY_WARN_PCT", "PAYNANI_SMS_BATTERY_CRITICAL_PCT")
+        "PAYNANI_SMS_BATTERY_WARN_PCT", "PAYNANI_SMS_BATTERY_CRITICAL_PCT", "PAYNANI_WEB_PORT")
 # Los avisos de batería del teléfono (PaynaniApp#109, Q88): aviso y crítico.
 BATTERY_WARN_PCT = 25
 BATTERY_CRITICAL_PCT = 10
 FILE_NAME = "sms.env"
+WEB_PORT = 8771
 
 
 def sms_env_path() -> Path:
@@ -97,3 +102,28 @@ def battery_thresholds(environ=None, problems=None) -> tuple[int, int]:
                         f"{BATTERY_WARN_PCT} y {BATTERY_CRITICAL_PCT}")
         return BATTERY_WARN_PCT, BATTERY_CRITICAL_PCT
     return warn, critical
+
+
+def web_port(arg=None, gateway_port=None, environ=None) -> tuple[int, str]:
+    """
+    (puerto, problema) de PaynaniWeb: `arg` (--web-port) si viene, si no
+    `PAYNANI_WEB_PORT`, si no 8771. 0 apaga el reenvío. Un valor que no es un
+    puerto vuelve a 8771, y uno igual al de la pasarela apaga el reenvío: la
+    pasarela se estaría reenviando a sí misma. `problema` es la línea para el log,
+    o "".
+    """
+    environ = os.environ if environ is None else environ
+    raw = arg if arg is not None else environ.get("PAYNANI_WEB_PORT")
+    if raw is None or str(raw).strip() == "":
+        port, problem = WEB_PORT, ""
+    else:
+        try:
+            port, problem = int(str(raw).strip()), ""
+        except ValueError:
+            port, problem = WEB_PORT, f"PAYNANI_WEB_PORT={raw!r} no es un número; se usa {WEB_PORT}"
+        if not problem and not 0 <= port <= 65535:
+            port, problem = WEB_PORT, f"PAYNANI_WEB_PORT={port} no es un puerto; se usa {WEB_PORT}"
+    if port and gateway_port is not None and port == int(gateway_port):
+        return 0, (f"PaynaniWeb y la pasarela tienen el mismo puerto ({port}); se apaga el reenvío "
+                   "para no reenviarse a sí misma")
+    return port, problem

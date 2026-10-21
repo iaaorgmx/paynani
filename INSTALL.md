@@ -894,9 +894,13 @@ The gateway, `scripts/paynani sms pair` and `scripts/paynani sms send` all read 
 themselves, on Linux and on macOS. A variable already set in the environment of
 the process wins over the file, and only `PAYNANI_SMS_PORT`,
 `PAYNANI_SMS_PUBLIC_URL`, `PAYNANI_SMS_DEFAULT_REGION`,
-`PAYNANI_SMS_BATTERY_WARN_PCT` and `PAYNANI_SMS_BATTERY_CRITICAL_PCT` are read.
-The last two are the phone's battery alerts (25 % and 10 % if unset; a critical
-value at or above the warning falls back to both defaults). After editing
+`PAYNANI_SMS_BATTERY_WARN_PCT`, `PAYNANI_SMS_BATTERY_CRITICAL_PCT` and
+`PAYNANI_WEB_PORT` are read.
+The battery pair are the phone's alerts (25 % and 10 % if unset; a critical
+value at or above the warning falls back to both defaults). `PAYNANI_WEB_PORT`
+(8771 if unset) is where the gateway forwards every request outside `/sms/`, for
+PaynaniWeb on the same tunnel domain (PRD #434); with nothing listening there
+the gateway answers `503` and texts keep flowing. `0` turns the forward off. After editing
 it, restart the gateway: `systemctl --user restart paynani-sms.service`, or on
 macOS `launchctl kickstart -k gui/$(id -u)/com.paynani.sms`.
 

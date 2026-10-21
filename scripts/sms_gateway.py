@@ -2,7 +2,7 @@
 """
 Pasarela SMS de paynani (SMS_GATEWAY.md, SRV-1).
 
-    python3 scripts/sms_gateway.py [--host 127.0.0.1] [--port 8770]
+    python3 scripts/sms_gateway.py [--host 127.0.0.1] [--port 8770] [--web-port 8771]
 
 Escucha sólo en loopback; el teléfono llega por el túnel (DEC-2). La dirección
 pública que va en el QR sale de PAYNANI_SMS_PUBLIC_URL (por ejemplo
@@ -11,6 +11,9 @@ https://metis-grill.ngrok.io), o del Host de la petición si no está.
 stdout es para el operador: una línea por SMS o llamada (la misma que llega al
 agente) y los cambios de conexión. Nunca el texto completo de un SMS, tokens ni
 códigos.
+
+Lo que no es de /sms/ se reenvía a PaynaniWeb en 127.0.0.1:--web-port
+(PAYNANI_WEB_PORT, 8771 por omisión; PRD #434 FR-1). `--web-port 0` lo apaga.
 """
 from __future__ import annotations
 
@@ -61,11 +64,19 @@ def main(argv=None) -> int:
     parser.add_argument("--state", default=str(paths.state_dir()))
     parser.add_argument("--roster", default=str(paths.roster()))
     parser.add_argument("--public-url", default=os.environ.get("PAYNANI_SMS_PUBLIC_URL", ""))
+    parser.add_argument("--web-port", type=int, default=None,
+                        help=f"PaynaniWeb (PAYNANI_WEB_PORT, {gw.WEB_PORT} por omisión); 0 apaga el reenvío")
     args = parser.parse_args(argv)
 
     if args.host not in ("127.0.0.1", "::1", "localhost"):
         print("La pasarela sólo escucha en loopback; el teléfono llega por el túnel.", file=sys.stderr)
         return 2
+
+    web_port, web_problem = sms_config.web_port(args.web_port, args.port)
+    if web_problem:
+        gw.log(web_problem)
+    gw.log(f"fuera de /sms/: reenvío a PaynaniWeb en 127.0.0.1:{web_port}" if web_port
+           else "fuera de /sms/: 404 (reenvío a PaynaniWeb apagado)")
 
     state = Path(args.state)
     problems = []
@@ -75,7 +86,7 @@ def main(argv=None) -> int:
     gw.log(f"avisos de batería: warn bajo {warn} %, critical bajo {critical} %")
     gateway = gw.Gateway(state, state / "events.jsonl", Path(args.roster), public_url=args.public_url,
                          battery_warn_pct=warn, battery_critical_pct=critical,
-                         roster_service=roster_service(state, Path(args.roster)))
+                         roster_service=roster_service(state, Path(args.roster)), web_port=web_port)
 
     async def run():
         server = await gw.serve(gateway, args.host, args.port)
