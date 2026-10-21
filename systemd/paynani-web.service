@@ -1,0 +1,47 @@
+# Template. scripts/install.sh renders it together with paynani-sms.service
+# (`--with-sms`, or when it already owns the gateway unit); a manual install
+# edits it by hand. Four placeholders:
+#
+#   /path/to/paynani      your clone's absolute path, which is also the install
+#   /path/to/state        the state tree, normally <clone>/state
+#   /path/to/config       where runtime.env lives, normally the clone itself
+#   /path/to/service-path the PATH it runs with: the folder of
+#                         `command -v himalaya` first, then the system's
+#
+# PaynaniWeb (PRD #434) is the web app to manage paynani. It listens on
+# 127.0.0.1 only (PAYNANI_WEB_PORT in sms.env, 8771 if unset), and the SMS
+# gateway forwards to it everything outside /sms/, so it shares the gateway's
+# tunnel domain. Without the gateway nothing reaches it, which is why it is
+# installed only alongside it. Until `scripts/paynani web user add` has been
+# run, every page only says how to create the user.
+#
+#   install -Dm644 systemd/paynani-web.service ~/.config/systemd/user/
+#   then replace the placeholders.
+
+[Unit]
+Description=PaynaniWeb (paynani web app, loopback only, behind the SMS gateway)
+Documentation=file:///path/to/paynani/INSTALL.md
+
+[Service]
+Type=simple
+Environment="PATH=/path/to/service-path"
+EnvironmentFile=-/path/to/config/runtime.env
+ExecStart=/usr/bin/python3 /path/to/paynani/scripts/paynani_web.py
+WorkingDirectory=/path/to/paynani
+
+# A crash is restarted; exit 2 is a configuration it will never get past on its
+# own (a non-loopback --host, or PAYNANI_WEB_PORT equal to the gateway's port),
+# and restarting it every ten seconds would only fill the log. The gateway answers
+# 503 meanwhile, and texts keep flowing.
+Restart=always
+RestartSec=10
+RestartPreventExitStatus=2
+
+# stdout carries one line per request: the method and the path, never the query
+# string or the body. stderr is the process's own errors.
+StandardOutput=append:/path/to/state/web.log
+StandardError=append:/path/to/state/web.err.log
+SyslogIdentifier=paynani-web
+
+[Install]
+WantedBy=default.target

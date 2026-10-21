@@ -174,10 +174,10 @@ try:
     check("a test file -> none", verbs.get("scripts/test_x.py") == "none")
     check("a file outside the table -> unknown", verbs.get("tools/new_thing.py") == "unknown")
     check("unknown files are listed by name", p["unknown"] == ["tools/new_thing.py"])
-    check("VERSION restarts the listener, dispatcher and SMS gateway",
+    check("VERSION restarts the listener, dispatcher, SMS gateway and PaynaniWeb",
           [u for u, _ in p["restart_units"]]
           == ["paynani-idle.service", "paynani-idle@*.service", "paynani-dispatch.service",
-              "paynani-sms*.service"])
+              "paynani-sms*.service", "paynani-web*.service"])
     check("a copied unit sets reinstall", p["reinstall"] is True)
 
     here = {f["path"]: f["here"] for f in p["files"]}
@@ -518,10 +518,10 @@ try:
     sh(only, "tag", "v1.0.1")
     manifest_for(only)
     patch = up.plan("v1.0.0", "v1.0.1", repo=only, runtime="claudecode", system="Linux")
-    check("a VERSION-only release restarts the listener, its instances, dispatcher and SMS gateway",
+    check("a VERSION-only release restarts the listener, its instances, dispatcher, SMS gateway and PaynaniWeb",
           [u for u, _ in patch["restart_units"]]
           == ["paynani-idle.service", "paynani-idle@*.service", "paynani-dispatch.service",
-              "paynani-sms*.service"],
+              "paynani-sms*.service", "paynani-web*.service"],
           str(patch["restart_units"]))
     check("and names both services in the commands",
           any("paynani-dispatch.service" in c for c in up.commands(patch)))
@@ -559,6 +559,77 @@ try:
     check("and the commands restart the account instances",
           any("paynani-idle@*.service" in c and "xargs -r systemctl --user restart" in c
               for c in up.commands(shared)), str(up.commands(shared)))
+
+    # --- PaynaniWeb (PRD #434, T2 of #435) -------------------------------------
+    for path in ("scripts/paynani_web.py", "scripts/paynani_lib/web/app.py", "scripts/paynani_lib/web/users.py",
+                 "scripts/paynani_lib/i18n.py", "scripts/paynani_lib/guard.py", "scripts/paynani_lib/brand.py",
+                 "scripts/paynani_lib/i18n_data/es_MX.py"):
+        c = up.classify(path)
+        check(f"{path} -> restart PaynaniWeb", (c["verb"], c["unit"], c["label"])
+              == ("restart", "paynani-web*.service", "com.paynani.web*"), str(c))
+    c = up.classify("scripts/paynani_lib/sms/config.py")
+    check("sms/config.py restarts the gateway and PaynaniWeb (both read sms.env at start)",
+          (c["verb"], c["unit"]) == ("restart", "gateway-web"), str(c))
+    check("assets are read on each request: nothing restarts",
+          up.classify("scripts/paynani_lib/assets/web.css")["verb"] == "none")
+    check("paynani-web.service has its systemd row",
+          up.classify("systemd/paynani-web.service")["verb"] == "reinstall-and-restart")
+
+    # A host that already has the gateway, upgrading to a version with PaynaniWeb
+    # and no user yet (#435: Metis asked for this one in Q-T2-2).
+    web = tmp / "web-host"
+    web.mkdir()
+    sh(web, "init", "-q")
+    write(web, "VERSION", "1.0.0\n")
+    write(web, "scripts/sms_gateway.py", "# gateway\n")
+    write(web, ".gitignore", "install.manifest\nweb/\n")
+    sh(web, "add", "-A")
+    sh(web, "commit", "-q", "-m", "one")
+    sh(web, "tag", "v1.0.0")
+    write(web, "VERSION", "1.1.0\n")
+    write(web, "scripts/paynani_web.py", "# web\n")
+    write(web, "scripts/paynani_lib/sms/config.py", "# web port\n")
+    write(web, "systemd/paynani-web.service", "[Service]\n")
+    sh(web, "add", "-A")
+    sh(web, "commit", "-q", "-m", "web")
+    sh(web, "tag", "v1.1.0")
+    sms_unit = web / "paynani-sms.service"
+    sms_unit.write_text("[Service]\n", encoding="utf-8")
+    manifest_for(web, sms_unit)
+    old_user = __import__("os").environ.pop("PAYNANI_WEB_USER", None)
+    try:
+        wp = up.plan("v1.0.0", "v1.1.0", repo=web, runtime="claudecode", system="Linux")
+        check("a host with the gateway upgrading to PaynaniWeb: the plan is computed", wp["ok"], wp["reason"])
+        check("it reinstalls (the new unit) and restarts the gateway and PaynaniWeb",
+              wp["reinstall"] and {"paynani-sms*.service", "paynani-web*.service"}
+              <= {u for u, _ in wp["restart_units"]}, str(wp["restart_units"]))
+        check("and says PaynaniWeb has no user yet (FR-4)", wp["web_user_missing"] is True)
+        text = up.render(wp)
+        check("render names `paynani web user add`", "scripts/paynani web user add --email" in text, text)
+        check("after the steps, not instead of them",
+              text.index("run, in this order:") < text.index("PaynaniWeb has no user yet"), text)
+        check("the Linux commands restart PaynaniWeb by pattern",
+              any("'paynani-web*.service'" in c for c in up.commands(wp)), str(up.commands(wp)))
+        (web / "web").mkdir()
+        (web / "web" / "user.json").write_text("{}", encoding="utf-8")
+        check("with the user file there, no warning",
+              up.plan("v1.0.0", "v1.1.0", repo=web, runtime="claudecode", system="Linux")["web_user_missing"] is False)
+        (web / "web" / "user.json").unlink()
+        manifest_for(web)
+        nogw = up.plan("v1.0.0", "v1.1.0", repo=web, runtime="claudecode", system="Linux")
+        check("a host without the gateway gets no PaynaniWeb warning", nogw["web_user_missing"] is False)
+        check("and render does not mention it", "PaynaniWeb has no user" not in up.render(nogw))
+        manifest_for(web, sms_unit)
+        check("a target without PaynaniWeb gives no warning either",
+              up.plan("v1.0.0", "v1.0.0", repo=web, runtime="claudecode", system="Linux")["web_user_missing"] is False)
+        mac = web / "com.paynani.sms.plist"
+        mac.write_text("<plist/>", encoding="utf-8")
+        manifest_for(web, mac)
+        check("on macOS the gateway's LaunchAgent counts as having the gateway",
+              up.plan("v1.0.0", "v1.1.0", repo=web, runtime="claudecode", system="Darwin")["web_user_missing"] is True)
+    finally:
+        if old_user is not None:
+            __import__("os").environ["PAYNANI_WEB_USER"] = old_user
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

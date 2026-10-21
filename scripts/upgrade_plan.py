@@ -85,6 +85,9 @@ DISPATCHER = ("paynani-dispatch.service", "com.paynani.dispatch")
 # plan restarts whatever matches and nothing when nothing does (the same way the
 # per-account listeners are found).
 SMS_GATEWAY = ("paynani-sms*.service", "com.paynani.sms*")
+# PaynaniWeb (PRD #434) goes with the gateway, and is just as absent from most
+# hosts: a pattern, for the same reason.
+WEB = ("paynani-web*.service", "com.paynani.web*")
 INSTALLER = None
 OPENCODE_PLUGIN = "python3 scripts/opencode_plugin.py --install"
 OPENCODE_RESTART = "OpenCode (close and reopen it)"
@@ -103,6 +106,12 @@ RULES = (
     (r"^scripts/idle_listener\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
     (r"^scripts/roster\.py$", "restart", "listener and SMS gateway", "listener-all", "listener-all", None, None),
     (r"^scripts/(sms_gateway\.py|paynani_lib/sms/(__init__|gateway|store|websocket)\.py)$", "restart", "SMS gateway", *SMS_GATEWAY, None, None),
+    # Both read sms.env at start: the gateway for its own port and PaynaniWeb's,
+    # PaynaniWeb for its port.
+    (r"^scripts/paynani_lib/sms/config\.py$", "restart", "SMS gateway and PaynaniWeb", "gateway-web", "gateway-web", None, None),
+    # PaynaniWeb imports these once at start; the CSS and the script under
+    # assets/ are read on each request.
+    (r"^scripts/(paynani_web\.py|paynani_lib/web/.*\.py|paynani_lib/(i18n|guard|brand)\.py|paynani_lib/i18n_data/.*\.py)$", "restart", "PaynaniWeb", *WEB, None, None),
     (r"^harness/dispatch\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
     (r"^harness/adapters/.*\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
     (r"^harness/(event|paths|ledger|python_floor|phone)\.py$", "restart", "listener, account listeners, dispatcher and SMS gateway", "both", "both", None, None),
@@ -293,7 +302,8 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
     out = {"from": from_ref, "to": to_ref, "ok": False, "reason": None, "runtime": runtime,
            "system": system, "files": [], "restart_units": [], "reinstall": False,
            "reinstall_commands": [], "restart_runtime": [], "next_session": False,
-           "unknown": [], "drift": [], "manifest": None, "overlays": [], "to_oid": None}
+           "unknown": [], "drift": [], "manifest": None, "overlays": [], "to_oid": None,
+           "web_user_missing": False}
     for ref in (from_ref, to_ref):
         if not ref_exists(ref, repo=repo):
             out["reason"] = (f"{ref} is not in this clone; run `git fetch --tags origin` "
@@ -328,11 +338,13 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
                 # The per-account listeners (paynani-idle@<id>) import the same
                 # harness modules as the main one; leaving them out kept doctor
                 # in `warning` after following the plan exactly (#336).
-                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY])
+                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB])
+            elif f["unit"] == "gateway-web":
+                units.extend([SMS_GATEWAY, WEB])
             elif f["unit"] == "listener-all":
                 units.extend([LISTENER, LISTENER_INSTANCES, SMS_GATEWAY])
             elif f["unit"] == "all":
-                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY])
+                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB])
             else:
                 units.append((f["unit"], f["label"]))
         elif f["verb"] == "reinstall-and-restart":
@@ -364,7 +376,35 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
     # costs a second; a missing one leaves the old code running until doctor says so.
     out["drift"] = manifest_drift(manifest) if out["reinstall"] else []
     out["overlays"] = overlays(from_ref, to_ref, repo=repo)
+    out["web_user_missing"] = web_user_missing(manifest, to_ref, repo=repo)
     return out
+
+
+def web_user_path(repo=ROOT):
+    """Where PaynaniWeb keeps its one user (paynani_lib/web/users.py)."""
+    override = (os.environ.get("PAYNANI_WEB_USER") or "").strip()
+    if override:
+        return pathlib.Path(override).expanduser()
+    if pathlib.Path(repo) == ROOT:
+        return harness_paths.config_dir() / "web" / "user.json"
+    return pathlib.Path(repo) / "web" / "user.json"
+
+
+def web_user_missing(manifest_lines, to_ref, repo=ROOT):
+    """
+    True when, after this upgrade, PaynaniWeb runs here and nobody can sign in yet
+    (PRD #434 FR-4): the target has PaynaniWeb, this install owns the gateway (so
+    `install.sh --upgrade` installs PaynaniWeb with it, #435 Q-T2-1), and the user
+    file does not exist. Until it does, every page only says how to create it.
+    """
+    has_gateway = any(("paynani-sms.service" in line or "com.paynani.sms.plist" in line)
+                      for line in manifest_lines or [])
+    if not has_gateway:
+        return False
+    code, _ = git("cat-file", "-e", f"{to_ref}:scripts/paynani_web.py", repo=repo)
+    if code != 0:
+        return False
+    return not web_user_path(repo).exists()
 
 
 def commands(p):
@@ -660,6 +700,10 @@ def render(p):
     if cmds:
         lines.append("run, in this order:")
         lines.extend(f"  {c}" for c in cmds)
+    if p.get("web_user_missing"):
+        lines.append("PaynaniWeb has no user yet: after the steps, on this machine, run")
+        lines.append('  scripts/paynani web user add --email <owner address> --name "<owner name>"')
+        lines.append("  until then its pages (your tunnel's address, outside /sms/) only say how")
     elif not p["unknown"]:
         lines.append("no service needs a restart: every changed file is read on each call or not executed")
     lines.append("automatic apply (--apply), in order:")

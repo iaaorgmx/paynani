@@ -2,6 +2,26 @@
 
 ## Sin publicar
 
+- **PaynaniWeb se instala con la pasarela SMS** (T2 del paraguas #435, segunda
+  parte; PRD #434 FR-4). Solo se llega a ella por la pasarela (FR-1), así que va
+  donde va la pasarela (#435, Q-T2-1): `install.sh --with-sms` instala y enciende
+  `paynani-web.service` junto a `paynani-sms.service`, y en macOS
+  `install_macos.py --with-sms` hace lo mismo con el LaunchAgent `com.paynani.web`.
+  Un `--upgrade` de un host que ya es dueño de la pasarela la agrega, y
+  `--uninstall` la detiene y la quita. Un host sin pasarela no la ve. La unidad
+  reinicia la web si se cae, salvo con salida 2 (una configuración que no se arregla
+  sola: `--host` fuera de loopback, o `PAYNANI_WEB_PORT` igual al puerto de la
+  pasarela), para no llenar el log. Registra en `state/web.log` y
+  `state/web.err.log`, que rota `paynani-logrotate` como los demás. El instalador
+  exige ahora que `web/` esté en `.gitignore`. `upgrade_plan` reinicia PaynaniWeb
+  cuando cambia lo que carga al arrancar (`scripts/paynani_web.py`,
+  `paynani_lib/web/`, `i18n`, `guard`, `brand`, los catálogos). Cuando cambia
+  `paynani_lib/sms/config.py`, que leen las dos al arrancar, reinicia la pasarela y
+  PaynaniWeb. Si un host con pasarela llega a una versión con PaynaniWeb y todavía
+  no hay usuario, el plan lo dice al final, con el comando
+  `scripts/paynani web user add`. `INSTALL.md`, `UPGRADE.md` y `UNINSTALL.md` (y su
+  traducción) nombran la unidad nueva.
+
 - **PaynaniWeb: el esqueleto de la aplicación** (T2 del paraguas #435, primera parte;
   PRD #434 FR-3, FR-4, FR-5 y FR-11). `scripts/paynani_web.py` escucha en
   `127.0.0.1:8771` (`PAYNANI_WEB_PORT`, el mismo que lee la pasarela), solo con la

@@ -283,7 +283,14 @@ what it runs, and only on a host that has it:
 ```bash
 systemctl --user enable paynani-sms.service
 systemctl --user restart paynani-sms.service
+systemctl --user enable paynani-web.service
+systemctl --user restart paynani-web.service
 ```
+
+PaynaniWeb (`paynani-web.service`) goes with the gateway since 0.14.0. A
+host that has the gateway and is upgrading to 0.14.0 gets it from
+`install.sh --upgrade`; until `scripts/paynani web user add` creates its
+user, its pages only say how.
 
 An `install.sh --upgrade` keeps an installed gateway converged without the flag;
 add `--with-sms` to install it on a host that does not have it yet.
@@ -308,9 +315,9 @@ for label in com.paynani.idle com.paynani.dispatch com.paynani.logrotate; do
 done
 ```
 
-With the SMS gateway installed there is a fourth agent, `com.paynani.sms`:
-load and enable it in the loop above the same way, and `kickstart -k` it with
-the others.
+With the SMS gateway installed there are two more agents, `com.paynani.sms` and
+PaynaniWeb's `com.paynani.web`: load and enable them in the loop above the same
+way, and `kickstart -k` them with the others.
 
 Then restart the listener and the dispatcher. `-k` stops the running process
 before starting it again; `com.paynani.logrotate` runs on a calendar and has

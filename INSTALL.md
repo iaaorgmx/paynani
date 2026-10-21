@@ -862,10 +862,22 @@ scripts/install.sh --runtime <runtime> --with-sms --dry-run   # what it would ad
 scripts/install.sh --runtime <runtime> --with-sms
 ```
 
-That adds one more unit to the ones above, `paynani-sms.service` (a LaunchAgent,
-`com.paynani.sms`, on macOS), enables it and records it in the ownership
-manifest. From then on `--upgrade` keeps it current and `--uninstall` removes it,
-with or without the flag.
+That adds two more units to the ones above, `paynani-sms.service` and
+`paynani-web.service` (LaunchAgents `com.paynani.sms` and `com.paynani.web` on
+macOS), enables them and records them in the ownership manifest. From then on
+`--upgrade` keeps them current and `--uninstall` removes them, with or without the
+flag. An `--upgrade` of a host that already has the gateway adds PaynaniWeb too.
+
+`paynani-web.service` is PaynaniWeb, the web app to manage paynani (PRD #434). It
+listens on `127.0.0.1:8771` (`PAYNANI_WEB_PORT` in `sms.env`), and the gateway
+forwards to it every request outside `/sms/`, so it is reached at your tunnel's
+own address with nothing to configure in ngrok. It goes with the gateway because
+nothing else can reach it. Until its one user exists, every page only says how to
+create it, on this machine:
+
+```bash
+scripts/paynani web user add --email you@example.com --name "Your Name"
+```
 
 A manual install copies the unit like the others, replaces its placeholders
 (`/path/to/paynani`, `/path/to/state`, `/path/to/config`, and
@@ -876,8 +888,10 @@ through `send.sh`, which needs `himalaya`, and a user service does not see the
 
 ```bash
 install -Dm644 systemd/paynani-sms.service ~/.config/systemd/user/
+install -Dm644 systemd/paynani-web.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now paynani-sms.service
+systemctl --user enable --now paynani-web.service
 ```
 
 The gateway listens on `127.0.0.1` only, on port **8770** unless you change it.
