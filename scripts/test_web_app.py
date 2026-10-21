@@ -217,14 +217,15 @@ check("/_health sin usuario", (200, {"ok": True, "configured": False}), (status,
 users.create("ana@example.com", "Ana Ruiz", GOOD, user_file)
 status, _, body = get("/_health")
 check("/_health con usuario", {"ok": True, "configured": True}, json.loads(body))
-status, _, page = get("/")
-check("con usuario, / ya no es «crea tu usuario»", (200, False), (status, "web user add" in page))
-status, _, page = get("/no-existe")
-check("con usuario, una ruta desconocida -> 404", 404, status)
-status, _, page = get("/", method="POST", headers={"Content-Length": "0"})
-check("con usuario, POST todavía no hace nada (405)", 405, status)
+status, hdrs, page = get("/")
+check("con usuario y sin sesión, / lleva a /login (T3)", (303, "/login"), (status, hdrs.get("location")))
+status, _, page = get("/login")
+check("y /login ya no es «crea tu usuario»", (200, False), (status, "web user add" in page))
+status, hdrs, page = get("/no-existe")
+check("sin sesión, una ruta desconocida también lleva a /login", (303, True),
+      (status, hdrs.get("location", "").startswith("/login")))
 conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-conn.request("HEAD", "/")
+conn.request("HEAD", "/login")
 head = conn.getresponse()
 head_body = head.read()
 conn.close()
@@ -232,7 +233,7 @@ check("HEAD responde 200 con Content-Length y sin cuerpo", (200, True, b""),
       (head.status, int(head.getheader("Content-Length", "0")) > 0, head_body))
 import socket
 raw = socket.create_connection(("127.0.0.1", port), timeout=10)
-raw.sendall(b"HEAD / HTTP/1.1\r\nHost: x\r\n\r\n")
+raw.sendall(b"HEAD /login HTTP/1.1\r\nHost: x\r\n\r\n")
 chunks = b""
 while True:
     piece = raw.recv(65536)
@@ -247,7 +248,7 @@ results = {}
 
 
 def worker(lang):
-    _, _, page = get(f"/?lang={lang}")
+    _, _, page = get(f"/login?lang={lang}")
     results[lang] = re.search(r'<html lang="([^"]+)"', page).group(1)
 
 
