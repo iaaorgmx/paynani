@@ -101,7 +101,9 @@ def page_of(rows: list[dict], offset: int, size: int = PAGE) -> tuple[list[dict]
 class _Text(HTMLParser):
     """El texto de un HTML: sin scripts, estilos, imágenes ni enlaces activos. Un
     enlace deja su texto y, entre paréntesis, la dirección, para que se vea a dónde
-    iba sin que se pueda abrir con un clic."""
+    iba sin que se pueda abrir con un clic. Lo citado (`<blockquote>`, el
+    `<div class="gmail_quote">` de Gmail) queda entre QUOTE_ON y QUOTE_OFF, y
+    html_to_text() le pone `> ` a cada línea, como en un correo de texto (#455)."""
 
     BLOCK = {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "table", "hr", "pre"}
 
@@ -110,8 +112,20 @@ class _Text(HTMLParser):
         self.parts: list[str] = []
         self.skip = 0
         self.href: list[str] = []
+        self.divs: list[bool] = []   # por cada <div> abierto, si es una cita
+        self.quotes = 0              # <blockquote> abiertos
+
+    def _depth(self) -> int:
+        return self.quotes + sum(self.divs)
 
     def handle_starttag(self, tag, attrs):
+        before = self._depth()
+        if tag == "blockquote":
+            self.quotes += 1
+        elif tag == "div":
+            self.divs.append("gmail_quote" in (dict(attrs).get("class") or "").split())
+        if before == 0 and self._depth() > 0:
+            self.parts.append(QUOTE_ON)
         if tag in ("script", "style", "head", "title"):
             self.skip += 1
         if tag in self.BLOCK:
@@ -130,10 +144,21 @@ class _Text(HTMLParser):
                 self.parts.append(f" ({href})")
         if tag in self.BLOCK:
             self.parts.append("\n")
+        before = self._depth()
+        if tag == "blockquote":
+            self.quotes = max(0, self.quotes - 1)
+        elif tag == "div" and self.divs:
+            self.divs.pop()
+        if before > 0 and self._depth() == 0:
+            self.parts.append(QUOTE_OFF)
 
     def handle_data(self, data):
         if not self.skip:
-            self.parts.append(data)
+            # Los marcadores de cita son nuestros: si el correo los trae, se van (revisión de #458).
+            self.parts.append(data.replace(QUOTE_ON, "").replace(QUOTE_OFF, ""))
+
+
+QUOTE_ON, QUOTE_OFF = "\x01", "\x02"
 
 
 def html_to_text(markup: str) -> str:
@@ -143,7 +168,17 @@ def html_to_text(markup: str) -> str:
     text = "".join(parser.parts)
     text = re.sub(r"[ \t\r\f\v]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
-    return re.sub(r"\n{3,}", "\n\n", text).strip()
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # Lo citado lleva `> ` en cada línea con texto, y los marcadores se van.
+    out, quoted = [], False
+    for piece in re.split(f"([{QUOTE_ON}{QUOTE_OFF}])", text):
+        if piece in (QUOTE_ON, QUOTE_OFF):
+            quoted = piece == QUOTE_ON
+        elif quoted:
+            out.append("\n".join(f"> {l}" if l.strip() else l for l in piece.split("\n")))
+        else:
+            out.append(piece)
+    return re.sub(r"\n{3,}", "\n\n", "".join(out)).strip()
 
 
 def body_text(message) -> tuple[str, str]:

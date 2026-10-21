@@ -19,6 +19,26 @@
   vías usen la misma verificación. La página lo usa desde T3. Las pruebas están
   en `scripts/test_web_thread_data.py`.
 
+- **PaynaniWeb: el texto citado de un correo, aparte** (T2 del paraguas #456; PRD
+  #455, 4.5). `web/quote.py` parte un cuerpo en lo que se ve y lo que se pliega
+  detrás de «•••»:
+  - la atribución («On … wrote:», «El … escribió:», «Le … a écrit :», «Em …
+    escreveu:», «Am … schrieb:»), aunque Gmail la parta en dos o tres líneas,
+    seguida de líneas con `>`;
+  - las líneas con `>` del final;
+  - la cabecera de Outlook (From/Sent/To/Subject o De/Enviado/Para/Asunto, con la
+    raya o «-----Original Message-----»), de ahí al final.
+
+  `mail.html_to_text()` pone `> ` en lo que viene dentro de `<blockquote>` o del
+  `<div class="gmail_quote">`, así que la cita de la parte HTML se pliega igual.
+  La firma (`-- ` y lo que sigue) y las respuestas intercaladas se quedan a la
+  vista. Un reenvío también: la cabecera después de «---------- Forwarded message
+  ---------» (y sus versiones en es, fr, pt y de) o de «Begin forwarded message:»
+  de Apple Mail no se pliega, porque es lo que el dueño le pasa al agente para que
+  lo lea. La página lo usa desde T3. Las pruebas están en
+  `scripts/test_web_quote.py`, con la forma exacta en que citan Gmail, Outlook y
+  Apple Mail.
+
 - **PaynaniWeb tiene favicon** (lo pidió Julian). Es `brand/favicon.svg`, la voluta
   reducida, servido en `/assets/favicon.svg` y también en `/favicon.ico`, que antes
   llevaba al login. Las páginas sin sesión, el login y el marco con sesión lo
