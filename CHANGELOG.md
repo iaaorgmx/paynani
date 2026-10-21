@@ -11,6 +11,27 @@
   64, 78…) lo sigue deteniendo antes de reiniciar nada. Las pruebas están en
   `test_upgrade_plan.py`, con un instalador falso que sale con 10, 1, 64 y 78.
 
+- **`send.sh` guarda una copia de cada envío en Enviados** (#435, decisión de Julian
+  en Q45 = A). `send.sh` manda por SMTP con `himalaya smtp send`, que no deja nada
+  en el buzón (#117). Ahora, después de enviar, `scripts/paynani_lib/sent_copy.py`
+  hace un `himalaya imap append` del mismo archivo que recibió SMTP (los mismos
+  bytes y el mismo `Message-ID`, sin Bcc) a la carpeta marcada `\Sent` (RFC 6154),
+  o a una de nombre conocido, con la marca `\Seen`. Los destinatarios no notan nada.
+  - **Gmail** ya guarda su copia de lo que sale por su SMTP, así que no se copia
+    (servidor IMAP `imap.gmail.com` o `imap.googlemail.com`).
+  - **Nunca tumba un envío:** si la copia falla (sin carpeta de Enviados, el
+    `APPEND` rechazado, más de 60 s), el correo ya salió, `send.sh` sale con 0 y
+    avisa en stderr. No se crea ninguna carpeta.
+  - **`sent.log`** anota el resultado en cada línea, antes de `message-id=`:
+    `sent-copy=saved|skipped|failed`.
+  - **`paynani doctor`** tiene una fila `sent_copy` por cuenta, más
+    `account:<id>:sent_copy` para cada cuenta adicional. Da aviso si la cuenta de
+    himalaya no tiene IMAP o si su último envío no pudo guardar la copia.
+  - Pruebas en `scripts/test_send_sent_copy.py`, con un himalaya falso: una cuenta
+    que no es Gmail (se guarda la copia), Gmail (no), sin IMAP (no), Enviados por
+    su nombre, y un `APPEND` o un `LIST` que fallan (el envío sigue y queda
+    `failed`).
+
 - **PaynaniWeb: seguridad, rendimiento y `PAYNANI_WEB.md`** (T10 del paraguas #435;
   PRD #434 §5 y NFR-1 a NFR-3). `scripts/test_web_security.py` recorre todas las
   pantallas, con sesión y sin ella, y comprueba en cada una:

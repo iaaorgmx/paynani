@@ -228,6 +228,7 @@ def _facts() -> dict:
     facts["dispatcher_unit"] = facts["dispatcher"]["unit"]
     facts["python"] = healthcheck.python_facts(facts["listener"], facts["dispatcher"])
     facts["account_checks"] = _account_checks()
+    facts["sent_copy_checks"] = _sent_copy_checks()
     facts["spool"] = healthcheck.spool_facts(facts["runtime"].get("selected"))
     facts["reply"] = healthcheck.reply_facts(facts["queue"]["cursor"])
     facts["dependencies"] = _dependency_facts(facts["runtime"].get("selected"), facts["python"])
@@ -742,6 +743,67 @@ def _account_checks() -> list[dict]:
     return checks
 
 
+def _last_sent(sent_log: Path, account_id: str) -> dict | None:
+    """The last line of sent.log for one account (`""` is the agent's own), as its fields."""
+    last = None
+    try:
+        lines = sent_log.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        fields = dict(part.partition("=")[::2] for part in line.split("\t")[1:] if "=" in part)
+        if fields.get("message-id") and fields.get("account", "") == account_id:
+            last = fields
+    return last
+
+
+def _sent_copy_check(name: str, himalaya_account: str, account_id: str, sent_log: Path) -> dict:
+    """
+    Whether this account keeps a copy of what it sends in Sent (#435, Q45). send.sh
+    does it after every send when the himalaya account has IMAP and is not Gmail;
+    this says when it cannot, or when the last send could not.
+    """
+    from . import sent_copy
+
+    try:
+        host = sent_copy.imap_host(himalaya_account)
+    except (OSError, ValueError) as exc:
+        return _check(name, "unknown", f"the himalaya config could not be read: {type(exc).__name__}",
+                      {"himalaya_account": himalaya_account})
+    facts = {"himalaya_account": himalaya_account, "imap_host": host}
+    if host is None:
+        return _check(name, "warning", f"sent mail is not copied to Sent: [accounts.{himalaya_account}] has no IMAP",
+                      facts, "INSTALL.md section 4.3 (the [accounts.<name>.imap] table)")
+    if sent_copy.is_gmail(host):
+        return _check(name, "ok", "Gmail keeps its own copy of sent mail; paynani adds none", facts)
+    last = _last_sent(sent_log, account_id)
+    state = (last or {}).get("sent-copy", "")
+    facts["last_sent_copy"] = state or None
+    if state == "failed":
+        return _check(name, "warning", "the last send could not save its copy in Sent; the mail itself went out",
+                      facts, "scripts/send.sh prints why on stderr; check the account's Sent folder")
+    if state == "saved":
+        return _check(name, "ok", "sent mail is copied to Sent", facts)
+    return _check(name, "ok", "sent mail will be copied to Sent from the next send", facts)
+
+
+def _sent_copy_checks() -> list[dict]:
+    """One row for the agent's own account and one per enabled account in accounts.json."""
+    from . import accounts
+
+    sent_log = healthcheck.STATE_DIR / "sent.log"
+    checks = [_sent_copy_check("sent_copy", "paynani", "", sent_log)]
+    try:
+        configured = accounts.load()
+    except accounts.AccountsError:
+        return checks
+    for account in configured:
+        if account["enabled"]:
+            checks.append(_sent_copy_check(f"account:{account['id']}:sent_copy", f"paynani-{account['id']}",
+                                           account["id"], sent_log))
+    return checks
+
+
 def doctor_data() -> dict:
     facts = _facts()
     checks = []
@@ -801,6 +863,7 @@ def doctor_data() -> dict:
     # Computed in _facts() like everything else doctor reads from the host, so
     # a caller that supplies its own facts is not handed this host's accounts.
     checks.extend(facts.get("account_checks") or [])
+    checks.extend(facts.get("sent_copy_checks") or [])
 
     deps = facts.get("dependencies") or {}
     checks.append(_python_check(deps))
