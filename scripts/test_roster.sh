@@ -467,7 +467,7 @@ PAYNANI_STATE="$reply_state" send_ok "jjulianfe@gmail.com" "no reply" "$body"
 assert "without --in-reply-to there is no In-Reply-To" '! grep -qi "^In-Reply-To:\|^References:" "$CAPTURE"'
 assert "and sent.log has no in-reply-to"  '[ "$(tail -n1 "$reply_log" | grep -c "in-reply-to=")" -eq 0 ]'
 
-for bad_ref in "imap:INBOX:9:99" "imap:INBOX:9:43" "<no-at-sign>" "plain-text" "$(printf '<a@b>\nBcc: evil@example.com')" "<a@b> <c@d>"; do
+for bad_ref in "imap:INBOX:9:99" "imap:INBOX:9:43" "<no-at-sign>" "plain-text" "$(printf '<a@b>\nBcc: evil@example.com')" "<a@b> <c@d>" $'<a@b>\n' $'<a@b>\r'; do
     : >"$CAPTURE"
     PAYNANI_STATE="$reply_state" "$SEND" --in-reply-to "$bad_ref" "jjulianfe@gmail.com" "Re: x" "$body" >/dev/null 2>&1 && brc=0 || brc=$?
     assert "--in-reply-to $(printf '%q' "$bad_ref") exits 2 and sends nothing" '[ "${brc:-0}" -eq 2 ] && [ ! -s "$CAPTURE" ]'

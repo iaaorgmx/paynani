@@ -23,16 +23,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness"))
 
-MESSAGE_ID = re.compile(r"^<[^<>\s@]+@[^<>\s@]+>$")
+# Con fullmatch: `$` deja pasar un «\n» final, y ese salto terminaría los
+# encabezados antes de References (revisión de Metis en #442).
+MESSAGE_ID = re.compile(r"<[^<>\s@]+@[^<>\s@]+>")
 
 
 def resolve(value: str) -> tuple[str, str]:
     """(Message-ID, cuenta). ValueError con la razón si no sirve."""
+    if any(c in str(value or "") for c in "\r\n\0"):
+        raise ValueError("--in-reply-to cannot carry a line break")
     value = (value or "").strip()
     if not value:
         raise ValueError("--in-reply-to needs an event id or a Message-ID")
     if value.startswith("<"):
-        if not MESSAGE_ID.match(value):
+        if not MESSAGE_ID.fullmatch(value):
             raise ValueError(f"{value!r} is not a Message-ID of the form <id@domain>")
         return value, ""
     if not value.startswith("imap:"):
@@ -42,7 +46,7 @@ def resolve(value: str) -> tuple[str, str]:
     if record is None:
         raise ValueError(f"event {value} is not in the journal or the ledger")
     message_id = str(record.get("message_id") or "").strip()
-    if not MESSAGE_ID.match(message_id):
+    if not MESSAGE_ID.fullmatch(message_id):
         raise ValueError(f"event {value} has no usable Message-ID")
     account_id = str(record.get("account_id") or "").strip()
     if not account_id:
