@@ -32,10 +32,15 @@ from . import (accounts_pages, auth, mail, mail_pages, messages_pages, notify, p
                thread, users)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
+FAVICON = Path(__file__).resolve().parents[3] / "brand" / "favicon.svg"
 STATIC = {
     "/assets/app.css": (ASSETS / "app.css", "text/css; charset=UTF-8"),
     "/assets/web.css": (ASSETS / "web.css", "text/css; charset=UTF-8"),
     "/assets/lang.js": (ASSETS / "lang.js", "application/javascript; charset=UTF-8"),
+    # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
+    # browser asks for on its own; without it that request ended in the login page.
+    "/assets/favicon.svg": (FAVICON, "image/svg+xml"),
+    "/favicon.ico": (FAVICON, "image/svg+xml"),
 }
 LANG_COOKIE = "paynani_web_lang"
 MAX_BODY_BYTES = 64 * 1024
@@ -97,6 +102,7 @@ def document(lang: str, title: str, body: str) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{e(title)}</title>
+{shell.FAVICON_LINK}
 <link rel="stylesheet" href="/assets/app.css">
 <link rel="stylesheet" href="/assets/web.css">
 <script src="/assets/lang.js" defer></script>
@@ -154,6 +160,7 @@ def login_page(lang: str, *, email: str = "", notice: str = "", error: str = "",
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{e(i18n.t('web.login.title'))}</title>
+{shell.FAVICON_LINK}
 <link rel="stylesheet" href="/assets/app.css">
 <link rel="stylesheet" href="/assets/web.css">
 <script src="/assets/lang.js" defer></script>

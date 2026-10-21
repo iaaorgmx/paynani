@@ -209,6 +209,14 @@ check("POST sin usuario -> «crea tu usuario»", (200, True), (status, "web user
 for path, kind in (("/assets/app.css", "text/css"), ("/assets/web.css", "text/css"), ("/assets/lang.js", "application/javascript")):
     status, hdrs, _ = get(path)
     check(f"{path} se sirve", (200, True), (status, hdrs.get("content-type", "").startswith(kind)))
+for path in ("/assets/favicon.svg", "/favicon.ico"):
+    status, hdrs, body = get(path)
+    check(f"{path} es el favicon de brand/, sin pasar por el login",
+          (200, "image/svg+xml", True), (status, hdrs.get("content-type"), 'class="voluta"' in body))
+status, hdrs, page = get("/")
+check("la página sin usuario enlaza el favicon", True, 'rel="icon" type="image/svg+xml" href="/assets/favicon.svg"' in page)
+check("la CSP deja cargar imágenes solo de este servidor (el favicon)", True,
+      "img-src 'self'" in hdrs.get("content-security-policy", ""))
 for path in ("/assets/../web/users.py", "/assets/app.css/../../web/users.py", "/assets/x.css"):
     status, _, body = get(path)
     check(f"{path}: no sirve ningún archivo fuera de la lista", False, "def verify_password" in body or "scrypt" in body)
@@ -222,6 +230,7 @@ status, hdrs, page = get("/")
 check("con usuario y sin sesión, / lleva a /login (T3)", (303, "/login"), (status, hdrs.get("location")))
 status, _, page = get("/login")
 check("y /login ya no es «crea tu usuario»", (200, False), (status, "web user add" in page))
+check("/login enlaza el favicon", True, 'href="/assets/favicon.svg"' in page)
 status, hdrs, page = get("/no-existe")
 check("sin sesión, una ruta desconocida también lleva a /login", (303, True),
       (status, hdrs.get("location", "").startswith("/login")))
