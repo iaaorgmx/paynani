@@ -345,6 +345,7 @@ propio criterio sobre a quién le das entrada.
 | Vigilar varias cuentas de correo | [`MULTI_ACCOUNT.md`](../MULTI_ACCOUNT.md) (en español de México) |
 | Recibir y enviar SMS con un teléfono Android | [`INSTALL.md` §5.1](../INSTALL.md#51-optional-the-sms-gateway-texts-and-calls-through-a-phone) (la pasarela) y [§5.2](../INSTALL.md#52-optional-install-paynaniapp-on-the-phone-and-pair-it) (PaynaniApp en el teléfono) |
 | Entender cómo se hablan el teléfono y Paynani | [`SMS_GATEWAY.md`](../SMS_GATEWAY.md) (en español de México) |
+| Administrar Paynani desde el navegador | [`PAYNANI_WEB.md`](../PAYNANI_WEB.md) (en español de México) |
 | Ver el código de la app del teléfono | [iaaorgmx/PaynaniApp](https://github.com/iaaorgmx/PaynaniApp) |
 | Enviar correo desde la frontera segura | [`scripts/send.sh`](../scripts/send.sh) |
 | Ver qué garantiza cada harness | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
