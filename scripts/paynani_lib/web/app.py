@@ -28,7 +28,8 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, users
+from . import (accounts_pages, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell,
+               users)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 STATIC = {
@@ -252,6 +253,13 @@ class Context:
         # proceso, como en la pasarela: guarda el candado y los pedidos ya hechos.
         self._roster_notifier = roster_notifier
         self._roster_service = None
+        # Agregar y quitar cuentas (FR-16): accounts_cli y probe, los de `paynani
+        # account add`; las pruebas los cambian.
+        from .. import accounts_cli
+        from .. import probe as probe_mod
+        self.account_ops = accounts_cli
+        self.probe_imap = probe_mod.probe_imap
+        self.probe_smtp = probe_mod.probe_smtp
 
     def state_dir(self) -> Path:
         if self._state_dir is not None:
@@ -500,6 +508,9 @@ def make_handler(ctx: Context):
             if self.route.startswith("/email/"):
                 self._email()
                 return
+            if self.route == "/cuentas/nueva" or (self.route.startswith("/cuentas/") and self.route.endswith("/quitar")):
+                self._accounts_get()
+                return
             if self.route in ("/messages", "/messages/ver"):
                 self._messages()
                 return
@@ -529,8 +540,10 @@ def make_handler(ctx: Context):
                 except ValueError:
                     offset = 0
                 chunk, nxt = mail.page_of(rows, offset)
+                head = mail_pages.account_head(account_id, removable=not match["agent"],
+                                               ok=self.query.get("ok", [""])[0])
                 self._page(200, title=match["email"], icon_name="mail",
-                           body=mail_pages.list_body(account_id, chunk, len(rows), offset, nxt), **kw)
+                           body=head + mail_pages.list_body(account_id, chunk, len(rows), offset, nxt), **kw)
                 return
             event_id = self.query.get("e", [""])[0]
             row = next((r for r in rows if r["event_id"] == event_id), None)
@@ -583,6 +596,105 @@ def make_handler(ctx: Context):
             self._page(200, title=t("web.nav.messages"), back="/messages",
                        body=messages_pages.thread_body(number, who, mine, self._offset(),
                                                        sms_cli.human_pause(store, number)), **kw)
+
+        # ---- Agregar y quitar cuentas (FR-16, Q23) --------------------------------
+        def _accounts_page(self, code: int, body: str, active_account: str = ""):
+            self._page(code, title=i18n.t("web.nav.email"), body=body, active="email",
+                       active_account=active_account, icon_name="mail", back="/email/main")
+
+        def _removable(self, account_id: str) -> dict | None:
+            accounts, _ = self.CTX.mail_accounts()
+            return next((a for a in accounts if a["id"] == account_id and not a["agent"]), None)
+
+        def _accounts_get(self):
+            csrf = self.session["csrf"]
+            if self.route == "/cuentas/nueva":
+                self._accounts_page(200, accounts_pages.add_body(csrf))
+                return
+            account_id = self.route[len("/cuentas/"):-len("/quitar")]
+            account = self._removable(account_id)
+            if account is None:
+                self._accounts_page(404, f'<p class="lead">{i18n.th("web.acct.agent_fixed")}</p>')
+                return
+            self._accounts_page(200, accounts_pages.remove_body(csrf, account), account_id)
+
+        def _account_notice(self, kind: str, account_id: str, email: str):
+            when = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
+            what = i18n.t(f"web.acctmail.what_{kind}", email=email, id=account_id)
+            self.CTX.notifier.owner(self.user, i18n.t(f"web.acctmail.{kind}", email=email),
+                                    i18n.t("web.acctmail.body", ip=self.ip, when=when, what=what))
+
+        def _accounts_post(self, post: dict):
+            from .. import accounts_cli
+            th = i18n.th
+            csrf = self.session["csrf"]
+            # Q23: la contraseña de la web antes de agregar o quitar, con el bloqueo de T3.
+            web_error = self._check_current(post.get("current", "")[:users.MAX_PASSWORD])
+            if self.route == "/cuentas/nueva":
+                values = {k: post.get(k, "")[:accounts_pages.MAX_FIELD]
+                          for k in ("id", "email", "from_name", "imap_host", "imap_port", "smtp_host", "smtp_port", "mailbox")}
+                password = post.get("account_password", "")[:1024].strip("\r\n")
+
+                def again(code, error, steps=None):
+                    # Nunca vuelve la contraseña de la cuenta en el formulario.
+                    self._accounts_page(code, accounts_pages.add_body(csrf, values, error, steps))
+
+                if web_error:
+                    again(403, web_error.replace(i18n.th("web.profile.err.current"), th("web.acct.web_password_bad")))
+                    return
+                if not password:
+                    again(400, th("web.acct.no_password"))
+                    return
+                if any(c in password for c in "\r\n\0"):
+                    # Antes de probar o escribir: va a una línea del .env (revisión de #446).
+                    again(400, th("web.acct.password_newline"))
+                    return
+                try:
+                    prep = self.CTX.account_ops.prepare_add(
+                        values["id"].strip(), values["email"], values["imap_host"], values["imap_port"] or 993,
+                        values["smtp_host"], values["smtp_port"] or 465, values["from_name"],
+                        [values["mailbox"].strip()] if values["mailbox"].strip() else None)
+                except accounts_cli.AccountOpError as exc:
+                    again(400, str(exc))
+                    return
+                entry = prep["entry"]
+                steps = []
+                imap = self.CTX.probe_imap(entry["imap"]["host"], entry["imap"]["port"], entry["email"], password)
+                steps.append((i18n.t("web.acct.probe_imap"), imap["steps"]))
+                ok = imap["ok"]
+                if ok and entry.get("smtp"):
+                    smtp = self.CTX.probe_smtp(entry["smtp"]["host"], entry["smtp"]["port"], entry["email"], password)
+                    steps.append((i18n.t("web.acct.probe_smtp"), smtp["steps"]))
+                    ok = smtp["ok"]
+                if not ok:
+                    again(400, th("web.acct.probe_failed"), steps)
+                    return
+                try:
+                    self.CTX.account_ops.commit_add(prep, password)
+                except accounts_cli.AccountOpError as exc:
+                    again(500, str(exc), steps)
+                    return
+                started = self.CTX.account_ops._service("enable", entry["id"])
+                self._account_notice("added", entry["id"], entry["email"])
+                self._redirect(f"/email/{entry['id']}?ok={'added' if started else 'added_noservice'}")
+                return
+            account_id = self.route[len("/cuentas/"):-len("/quitar")]
+            account = self._removable(account_id)
+            if account is None:
+                self._accounts_page(404, f'<p class="lead">{th("web.acct.agent_fixed")}</p>')
+                return
+            if web_error:
+                self._accounts_page(403, accounts_pages.remove_body(
+                    csrf, account, web_error.replace(i18n.th("web.profile.err.current"), th("web.acct.web_password_bad"))),
+                    account_id)
+                return
+            try:
+                self.CTX.account_ops.remove_account(account_id)
+            except accounts_cli.AccountOpError as exc:
+                self._accounts_page(400, accounts_pages.remove_body(csrf, account, str(exc)), account_id)
+                return
+            self._account_notice("removed", account_id, account["email"])
+            self._redirect("/email/main?ok=removed")
 
         # ---- Profile (FR-21) -------------------------------------------------------
         def _profile_page(self, code: int, body: str):
@@ -839,6 +951,9 @@ def make_handler(ctx: Context):
                 return
             if self.route in ("/profile/info", "/profile/password"):
                 self._profile_post(post)
+                return
+            if self.route == "/cuentas/nueva" or (self.route.startswith("/cuentas/") and self.route.endswith("/quitar")):
+                self._accounts_post(post)
                 return
             self._html(405, message_page(self.lang, "web.title", "web.method.h1"))
 

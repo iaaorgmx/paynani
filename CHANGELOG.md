@@ -2,6 +2,24 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: agregar y quitar cuentas de correo** (T6 del paraguas #435; PRD #434
+  FR-16, con las reglas de Q23). El desplegable de Cuentas de correo tiene
+  «+ Agregar cuenta», y cada cuenta adicional tiene «Quitar esta cuenta»; la del
+  agente no. Las dos acciones piden de nuevo la contraseña de PaynaniWeb, con el
+  bloqueo de la entrada. Agregar prueba el acceso IMAP y, si se dio un servidor de
+  salida, SMTP, antes de escribir nada, y muestra los pasos de la prueba si el
+  servidor no acepta. Escribe con lo mismo que `paynani account add`: la contraseña
+  del correo va al `.env`, y además se escriben `accounts.json`, el roster de la
+  plantilla y la cuenta de himalaya, y arranca su servicio. La contraseña del
+  correo nunca vuelve en la página, ni cuando hay un error. Quitar es lo mismo que
+  `paynani account remove`: detiene el servicio (si no se detiene, no cambia
+  nada), la saca de `accounts.json`, del `.env` y de himalaya, y guarda su roster
+  en `rosters/removed/`. El buzón y el historial no se tocan. Las dos le mandan un
+  correo al dueño, sin la contraseña. Para eso, `accounts_cli` separa lo que hace
+  `account add` y `account remove` de lo que pregunta en la terminal
+  (`prepare_add`, `commit_add`, `find_for_remove`, `remove_account`). La CLI dice y
+  hace lo mismo que antes.
+
 - **PaynaniWeb: Profile** (T9 del paraguas #435; PRD #434 FR-21). Está hecho como el
   Profile del `/dash` de Service Button: arriba el avatar con iniciales, el nombre,
   «Dueño» y el último ingreso, que ahora se guarda en `web/user.json` en cada
