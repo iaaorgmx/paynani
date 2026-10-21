@@ -154,7 +154,8 @@ class _Text(HTMLParser):
 
     def handle_data(self, data):
         if not self.skip:
-            self.parts.append(data)
+            # Los marcadores de cita son nuestros: si el correo los trae, se van (revisión de #458).
+            self.parts.append(data.replace(QUOTE_ON, "").replace(QUOTE_OFF, ""))
 
 
 QUOTE_ON, QUOTE_OFF = "\x01", "\x02"

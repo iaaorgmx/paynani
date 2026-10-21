@@ -32,7 +32,10 @@
   `mail.html_to_text()` pone `> ` en lo que viene dentro de `<blockquote>` o del
   `<div class="gmail_quote">`, así que la cita de la parte HTML se pliega igual.
   La firma (`-- ` y lo que sigue) y las respuestas intercaladas se quedan a la
-  vista. La página lo usa desde T3. Las pruebas están en
+  vista. Un reenvío también: la cabecera después de «---------- Forwarded message
+  ---------» (y sus versiones en es, fr, pt y de) o de «Begin forwarded message:»
+  de Apple Mail no se pliega, porque es lo que el dueño le pasa al agente para que
+  lo lea. La página lo usa desde T3. Las pruebas están en
   `scripts/test_web_quote.py`, con la forma exacta en que citan Gmail, Outlook y
   Apple Mail.
 

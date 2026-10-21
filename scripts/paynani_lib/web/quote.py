@@ -11,7 +11,9 @@ Una respuesta suele repetir el mensaje anterior. Lo que se pliega es:
 - **Las líneas con `>` del final**, aunque no traigan atribución.
 - **La cabecera de Outlook**: «From: … / Sent: … / To: … / Subject: …» (o «De: … /
   Enviado: … / Para: … / Asunto: …»), con la raya o «-----Original Message-----»
-  de antes si la hay. Outlook no pone `>`, así que se pliega de ahí al final.
+  de antes si la hay. Outlook no pone `>`, así que se pliega de ahí al final. La
+  misma cabecera después de «---------- Forwarded message ---------» o «Begin
+  forwarded message:» es un reenvío y se queda a la vista.
 - **La cita en la parte HTML** (`<div class="gmail_quote">`, `<blockquote>`):
   `mail.html_to_text()` ya la entrega con `> ` delante de cada línea, así que la
   regla de las `>` la pliega igual.
@@ -32,6 +34,14 @@ OUTLOOK_FIELDS = re.compile(
     r"\s*:\*?", re.IGNORECASE)
 OUTLOOK_RULE = re.compile(r"^\s*(_{10,}|-{3,}\s*(original message|mensaje original|message d'origine|"
                           r"mensagem original|ursprüngliche nachricht)\s*-{3,})\s*$", re.IGNORECASE)
+# Lo que va antes de la cabecera de un reenvío. Un reenvío no es una cita: es lo que el
+# dueño le pasa al agente para que lo lea, y Gmail lo muestra completo (revisión de #458).
+# «-----Original Message-----» no está: Outlook lo pone al responder.
+FORWARD = re.compile(
+    r"^\s*(-{3,}\s*(forwarded message|mensaje reenviado|message transféré|mensagem encaminhada|"
+    r"weitergeleitete nachricht)\s*-{3,}|begin forwarded message\s*:|inicio del mensaje reenviado\s*:|"
+    r"début du message réexpédié\s*:|início da mensagem encaminhada\s*:|anfang der weitergeleiteten nachricht\s*:)\s*$",
+    re.IGNORECASE)
 JOIN = 3   # líneas en que Gmail puede partir una atribución larga
 
 
@@ -59,8 +69,14 @@ def _attribution_at(lines: list[str], i: int) -> int:
 
 def _outlook_at(lines: list[str], i: int) -> bool:
     """Una cabecera de Outlook empieza en `i`: «From:» y, en las cuatro siguientes, al menos
-    dos campos más (fecha, para, asunto)."""
+    dos campos más (fecha, para, asunto). No si es la de un reenvío: la línea con texto de
+    antes es «---------- Forwarded message ---------» o «Begin forwarded message:»."""
     if not OUTLOOK_FROM.match(lines[i]):
+        return False
+    j = i - 1
+    while j >= 0 and _blank(lines[j]):
+        j -= 1
+    if j >= 0 and FORWARD.match(lines[j]):
         return False
     fields = sum(bool(OUTLOOK_FIELDS.match(l)) for l in lines[i + 1:i + 5])
     return fields >= 2

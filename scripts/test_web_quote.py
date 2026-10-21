@@ -141,6 +141,31 @@ Hola Carla,
 check("Outlook (es): «-----Mensaje original-----» y De/Enviado/Para/Asunto",
       (["text", "quote"], "Aprobado."), (kinds(OUTLOOK_ES), part(OUTLOOK_ES, "text")))
 
+# --- un reenvío no es una cita (revisión de #458) -----------------------------------------
+FORWARDS = (
+    ("Gmail (en)", "---------- Forwarded message ---------", "From", "Date", "Subject", "To"),
+    ("Gmail (es)", "---------- Mensaje reenviado ---------", "De", "Fecha", "Asunto", "Para"),
+    ("Gmail (fr)", "---------- Message transféré ---------", "De", "Date", "Subject", "To"),
+    ("Gmail (pt)", "---------- Mensagem encaminhada ---------", "De", "Data", "Assunto", "Para"),
+    ("Gmail (de)", "---------- Weitergeleitete Nachricht ---------", "Von", "Date", "Betreff", "An"),
+    ("Apple Mail (en)", "Begin forwarded message:", "From", "Subject", "Date", "To"),
+    ("Apple Mail (es)", "Inicio del mensaje reenviado:", "De", "Asunto", "Fecha", "Para"),
+    ("Apple Mail (fr)", "Début du message réexpédié :", "De", "Objet", "Date", "À"),
+    ("Apple Mail (pt)", "Início da mensagem encaminhada:", "De", "Assunto", "Data", "Para"),
+)
+for label, separator, f1, f2, f3, f4 in FORWARDS:
+    forward = (f"Metis, revisa este correo del cliente.\n\n{separator}\n{f1}: Ana Ruiz <ana@example.com>\n"
+               f"{f2}: Wed, Oct 21, 2026 at 11:00 AM\n{f3}: Pedido\n{f4}: Beto <beto@example.com>\n\n"
+               "Hola, necesito 3 cajas para el viernes.\nGracias, Ana\n")
+    check(f"un reenvío de {label} se ve completo, sin plegar", (["text"], True),
+          (kinds(forward), "necesito 3 cajas" in part(forward, "text")))
+check("«-----Original Message-----» de Outlook sigue siendo cita", ["text", "quote"],
+      kinds("Va.\n\n-----Original Message-----\nFrom: Ana <a@example.com>\nSent: Wed\nTo: Beto\nSubject: X\n\nHola\n"))
+REPLY_TO_FORWARD = ("Ya lo vi.\n\nOn Wed, Oct 21, 2026 at 11:05 AM Beto <beto@example.com> wrote:\n\n"
+                    "> ---------- Forwarded message ---------\n> From: Ana <ana@example.com>\n> Date: Wed\n> Subject: X\n>\n> Hola\n")
+check("la respuesta a un reenvío: la cita (con el reenvío adentro) se pliega", (["text", "quote"], "Ya lo vi."),
+      (kinds(REPLY_TO_FORWARD), part(REPLY_TO_FORWARD, "text")))
+
 # --- otros idiomas --------------------------------------------------------------------------
 for label, attribution in (("fr", "Le mer. 21 oct. 2026 à 12:27, Ana Perez <ana@example.com> a écrit :"),
                            ("pt", "Em qua., 21 de out. de 2026 às 12:27, Ana Perez <ana@example.com> escreveu:"),
@@ -182,6 +207,8 @@ APPLE_HTML = '<div>Ahí nos vemos.</div><div><br><blockquote type="cite">El 21 o
 check("HTML de Apple Mail (<blockquote type=cite>)", (["text", "quote"], "Ahí nos vemos."),
       (kinds(mail.html_to_text(APPLE_HTML)), part(mail.html_to_text(APPLE_HTML), "text")))
 check("un HTML sin cita no cambia", "Hola\n\nmundo", mail.html_to_text("<p>Hola</p><p>mundo</p>"))
+check("los marcadores de cita que traiga el correo se van y no abren una cita", "Hola\n\nmundo",
+      mail.html_to_text("<p>Hola\x01</p><p>\x02mundo</p>"))
 check("un div cualquiera dentro de la cita no la cierra antes de tiempo", True,
       "> - Jueves 22: llovizna" in mail.html_to_text(HTML))
 
