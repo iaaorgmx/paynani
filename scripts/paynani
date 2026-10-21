@@ -26,6 +26,9 @@ paynani CLI.
     paynani account test ID
     paynani account add ID --email ADDRESS --imap-host HOST [--imap-port N] [--smtp-host HOST] [--smtp-port N] [--from-name NAME] [--mailbox NAME]...
     paynani account remove ID [--yes]
+    paynani web user add --email ADDRESS --name NAME [--password-stdin]
+    paynani web user show
+    paynani web passwd [--password-stdin]
 
 `onboard` starts the mailbox onboarding flow: a local, loopback-only web
 server prints a one-time link, a human fills in the seven mailbox settings,
@@ -252,6 +255,23 @@ def main(argv: list[str] | None = None) -> int:
     account_remove.add_argument("id")
     account_remove.add_argument("--yes", action="store_true", help="Do not ask for confirmation.")
 
+    web_parser = subparsers.add_parser(
+        "web", help="PaynaniWeb, the web app to manage paynani (PRD #434): its one user."
+    )
+    web_sub = web_parser.add_subparsers(dest="web_command", required=True)
+    web_user = web_sub.add_parser("user", help="The PaynaniWeb user: the owner of this install.")
+    web_user_sub = web_user.add_subparsers(dest="web_user_command", required=True)
+    web_user_add = web_user_sub.add_parser(
+        "add", help="Create the PaynaniWeb user. Asks for the password twice; only its scrypt hash is kept.")
+    web_user_add.add_argument("--email", required=True, help="The owner's address: what they sign in with.")
+    web_user_add.add_argument("--name", required=True, help="The owner's name, shown in Profile.")
+    web_user_add.add_argument("--password-stdin", action="store_true",
+                              help="Read the password from one line of stdin instead of asking.")
+    web_user_sub.add_parser("show", help="Show the PaynaniWeb user, without the password hash.")
+    web_passwd = web_sub.add_parser("passwd", help="Change the PaynaniWeb user's password.")
+    web_passwd.add_argument("--password-stdin", action="store_true",
+                            help="Read the new password from one line of stdin instead of asking.")
+
     if argv == [] or argv == ["help"]:
         parser.print_help()
         return 0
@@ -319,6 +339,14 @@ def main(argv: list[str] | None = None) -> int:
             return accounts_cli.run_add(args)
         if args.account_command == "remove":
             return accounts_cli.run_remove(args)
+    if args.command == "web":
+        from paynani_lib.web import cli as web_cli
+        if args.web_command == "user" and args.web_user_command == "add":
+            return web_cli.run_user_add(args)
+        if args.web_command == "user" and args.web_user_command == "show":
+            return web_cli.run_user_show(args)
+        if args.web_command == "passwd":
+            return web_cli.run_passwd(args)
     if args.command == "sms":
         from paynani_lib.sms import config as sms_config
         sms_config.load_sms_env()

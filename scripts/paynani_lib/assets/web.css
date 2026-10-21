@@ -1,0 +1,26 @@
+/* PaynaniWeb, encima de app.css (PRD #434).
+   Las mismas fichas de color de app.css: el acento es la grana de brand/README.md.
+   Tipografía del sistema y nada de fuera, por la misma razón que app.css. */
+
+/* Las páginas sin sesión (crea tu usuario, entrar): la tarjeta de app.css con la
+   marca y el idioma en la misma fila. */
+.web-solo .topbar { align-items: center; margin-bottom: 1.75rem; }
+.web-solo .topbar .marca { flex: 1 1 auto; margin: 0; }
+
+.web-solo pre {
+  margin: .5rem 0 1rem;
+  padding: .85rem 1rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.web-solo pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  /* Un comando que no cabe se parte en el espacio, no se esconde tras un scroll
+     que en el celular nadie ve. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

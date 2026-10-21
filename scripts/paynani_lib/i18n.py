@@ -14,11 +14,18 @@ handles one request fully before starting the next, so "current language" for
 the duration of one request is unambiguous. set_current() is called once at
 the top of handling each request, mirroring how a fresh PHP process picks up
 current_lang() from the session at the start of each request.
+
+PaynaniWeb (scripts/paynani_lib/web/) serves several requests at once, one per
+thread, so the language is kept per thread: each thread sees the one its own
+request set, and a thread that never called set_current() sees LANG_DEFAULT.
+For the single-threaded onboarding server and the CLI this is the same as one
+global.
 """
 
 from __future__ import annotations
 
 import html
+import threading
 
 from .i18n_data import CATALOGUES
 
@@ -34,7 +41,7 @@ LANGUAGES = {
     "pt-BR": "Português (BR)",
 }
 
-_current_lang = LANG_DEFAULT
+_local = threading.local()
 
 
 def lang_is_known(tag: str) -> bool:
@@ -44,13 +51,12 @@ def lang_is_known(tag: str) -> bool:
 def set_current(lang: str) -> str:
     """Bind the language for the request now being handled. Returns the tag
     actually selected (LANG_DEFAULT when the argument is unknown)."""
-    global _current_lang
-    _current_lang = lang if lang_is_known(lang) else LANG_DEFAULT
-    return _current_lang
+    _local.lang = lang if lang_is_known(lang) else LANG_DEFAULT
+    return _local.lang
 
 
 def current_lang() -> str:
-    return _current_lang
+    return getattr(_local, "lang", LANG_DEFAULT)
 
 
 def t(key: str, **vars: object) -> str:
@@ -63,7 +69,7 @@ def t(key: str, **vars: object) -> str:
     itself — deliberately ugly, so it is obvious on the page rather than
     silently empty.
     """
-    strings = CATALOGUES[_current_lang]
+    strings = CATALOGUES[current_lang()]
     fallback = CATALOGUES[LANG_DEFAULT]
     text = strings.get(key, fallback.get(key, key))
     for name, value in vars.items():
