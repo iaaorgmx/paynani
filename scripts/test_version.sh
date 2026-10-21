@@ -410,6 +410,29 @@ leftover_before=$(ls -d "${TMPDIR:-/tmp}"/tmp.* 2>/dev/null | sort)
 leftover_after=$(ls -d "${TMPDIR:-/tmp}"/tmp.* 2>/dev/null | sort)
 assert "the extracted planner's directory is removed" '[ "$leftover_before" = "$leftover_after" ]'
 
+# #465: when the target's tree cannot be extracted (here a tar that fails), the
+# installed planner runs instead. No "unbound variable" from the cleanup, and the
+# half-extracted directory is not left behind: exec runs no EXIT trap.
+badtar="$tmp/badtar"
+mkdir -p "$badtar"
+printf '#!/bin/sh\nexit 1\n' >"$badtar/tar"
+chmod +x "$badtar/tar"
+own_tmp="$tmp/own-tmp"
+mkdir -p "$own_tmp"
+out=$(TMPDIR="$own_tmp" PATH="$badtar:$PATH" "$clone2/scripts/version.sh" --plan v0.0.2 2>&1); rc=$?
+assert "a target that cannot be extracted says so and plans with the installed table (#465)" \
+    'grep -q "could not read scripts/ and harness/ from v0.0.2; planning with the installed table" <<<"$out" && grep -q "^upgrade plan: v0.0.1 -> v0.0.2" <<<"$out"'
+assert "... with no unbound variable from the cleanup (#465)" '! grep -q "unbound variable" <<<"$out"'
+assert "... and nothing left in TMPDIR (#465)" '[ -z "$(ls -A "$own_tmp")" ]'
+own_tmp2="$tmp/own-tmp2"
+mkdir -p "$own_tmp2"
+out=$(TMPDIR="$own_tmp2" "$clone2/scripts/version.sh" --plan v0.0.2 2>&1); rc=$?
+assert "the normal path leaves TMPDIR empty too, with no unbound variable (#465)" \
+    '[ "$rc" -eq 0 ] && [ -z "$(ls -A "$own_tmp2")" ] && ! grep -q "unbound variable" <<<"$out"'
+mkdir -p "$tmp/dir with space"
+out=$(TMPDIR="$tmp/dir with space" "$clone2/scripts/version.sh" --plan v0.0.2 2>&1); rc=$?
+assert "a TMPDIR with a space still cleans up (#465)" '[ "$rc" -eq 0 ] && [ -z "$(ls -A "$tmp/dir with space")" ]'
+
 export PAYNANI_STATE="$state"
 rm -rf "$clone2" "$seed2" "$remote2"
 

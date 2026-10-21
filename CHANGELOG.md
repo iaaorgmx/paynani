@@ -2,6 +2,16 @@
 
 ## Sin publicar
 
+- **`version.sh --plan`/`--apply` ya no termina en «tmp: unbound variable» ni deja
+  basura en `$TMPDIR`** (#465, lo encontró Ares). La limpieza del árbol del planner
+  que se saca de la etiqueta destino era `trap 'rm -rf "$tmp"' EXIT`, con `tmp`
+  local a `run_planner()`. Si el trap corría cuando `tmp` ya no estaba (una
+  función que ya regresó, o un bash que suelta los locales antes, como el de
+  macOS), `set -u` lo convertía en un error. Ahora la ruta va expandida en el trap
+  al armarlo. Además, cuando ese árbol no se puede extraer y se usa el planner
+  instalado, que corre con `exec` (y `exec` no corre el trap), la carpeta se borra
+  antes, en lugar de quedarse en `$TMPDIR`.
+
 - **PaynaniWeb: la hora de las listas, en la zona del navegador; «1 perdida» en
   singular** (notas de Metis en #464).
   - La lista de correos decía «2026-10-20 12:40 UTC» y Messages no decía zona,
