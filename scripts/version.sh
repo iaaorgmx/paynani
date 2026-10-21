@@ -200,11 +200,20 @@ run_planner() {   # run_planner <extra planner args...>; "$target" may be empty
 
     if [ -n "$target" ] && git -C "$REPO" cat-file -e "$target:scripts/upgrade_plan.py" 2>/dev/null; then
         tmp=$(mktemp -d) || exit 1
-        trap 'rm -rf "$tmp"' EXIT
+        # The path is expanded now, not when the trap fires: `tmp` is local, and an
+        # EXIT trap that runs after this function has returned (or under a bash that
+        # unwinds locals before it, as on macOS) found it unset, and `set -u` turned
+        # the cleanup into "tmp: unbound variable" (#465).
+        # shellcheck disable=SC2064
+        trap "rm -rf -- $(printf '%q' "$tmp")" EXIT
         if git -C "$REPO" archive "$target" scripts harness | tar -x -C "$tmp"; then
             python3 "$tmp/scripts/upgrade_plan.py" --repo "$REPO" --to "$target" "$@"
             exit $?
         fi
+        # The installed planner below is exec'd, and exec runs no EXIT trap: clean up
+        # here, or the half-extracted tree stays behind in $TMPDIR (#465).
+        rm -rf -- "$tmp"
+        trap - EXIT
         echo "version.sh: could not read scripts/ and harness/ from $target; planning with the installed table" >&2
     elif [ -n "$target" ]; then
         echo "version.sh: $target has no upgrade_plan.py; planning with the installed table" >&2
