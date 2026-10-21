@@ -2,6 +2,13 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: Messages con la misma tabla que Email Accounts** (pedido de Julian).
+  La lista de conversaciones SMS usa ahora todo el ancho, con la cabecera gris
+  (Contacto, Último mensaje, Fecha, Mensajes) y una flecha por fila. En el celular
+  se apila sin cabecera, igual que la de correos. Las columnas de fecha y estado
+  de las dos listas tienen ancho fijo, para que una celda más ancha (las llamadas
+  perdidas, que ahora van debajo del contador) no corra las demás.
+
 ## 0.14.0 (2026-10-21)
 
 **PaynaniWeb: el dueño administra paynani desde el navegador** (PRD #434, umbrella

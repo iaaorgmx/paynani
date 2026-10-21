@@ -137,6 +137,12 @@ before = {p.name: p.read_bytes() for p in (st.root).rglob("*") if p.is_file()}
 before_journal = journal.read_bytes()
 
 status, _, page = req("GET", "/messages", cookie=cookie)
+check("la lista como la de correos: a todo lo ancho, cabecera Contacto / Último mensaje / Fecha / Mensajes (pedido de Julian)",
+      (True, True, True),
+      ('<main class="panel panel-ancho">' in page,
+       '<li class="correos-cabecera" aria-hidden="true"><span>Contacto</span><span>Último mensaje</span>'
+       '<span>Fecha</span><span>Mensajes</span><span></span></li>' in page,
+       '<span class="flecha" aria-hidden="true">›</span>' in page))
 check("/messages: 200, marcado en el menú", (200, True), (status, 'href="/messages" class="activo"' in page))
 check("dos conversaciones, Beto primero", [BETO, ANA],
       [n.replace("%2B", "+") for n in re.findall(r'href="/messages/ver\?n=([^"]+)"', page)])
