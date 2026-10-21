@@ -228,6 +228,14 @@ def fetch(envelope: dict, env: dict, *, connect=None, uidvalidity=None) -> dict:
         except Exception:  # noqa: BLE001
             pass
 
+    verify(message, envelope)
+    return message_dict(message)
+
+
+def verify(message, envelope: dict) -> None:
+    """Que el mensaje leído sea el del sobre: el mismo `From` y, si el sobre lo trae, el
+    mismo `Message-ID`. Lanza MailError si no."""
+    import idle_listener
     senders = getaddresses([message.get("From", "")])
     actual = _norm(senders[0][1]) if senders else ""
     if actual != _norm((envelope.get("sender") or {}).get("address", "")):
@@ -237,6 +245,10 @@ def fetch(envelope: dict, env: dict, *, connect=None, uidvalidity=None) -> dict:
     if expected_mid and actual_mid != expected_mid:
         raise MailError("mid")
 
+
+def message_dict(message) -> dict:
+    """Lo que la página muestra de un mensaje ya verificado: cabeceras, texto y adjuntos."""
+    import idle_listener
     text, source = body_text(message)
     truncated = len(text) > MAX_TEXT
     try:
@@ -249,7 +261,7 @@ def fetch(envelope: dict, env: dict, *, connect=None, uidvalidity=None) -> dict:
         "cc": idle_listener.decode_hdr(message.get("Cc")),
         "subject": idle_listener.decode_hdr(message.get("Subject")),
         "date": date,
-        "message_id": actual_mid,
+        "message_id": _norm(idle_listener.decode_hdr(message.get("Message-ID"))),
         "text": text[:MAX_TEXT],
         "truncated": truncated,
         "source": source,
