@@ -740,12 +740,15 @@ def render(p):
     if cmds:
         lines.append("run, in this order:")
         lines.extend(f"  {c}" for c in cmds)
+    elif not p["unknown"]:
+        lines.append("no service needs a restart: every changed file is read on each call or not executed")
+    # Separate from the branch above: the notice is not a step and does not replace
+    # "no service needs a restart". Placed between that `if` and its `elif`, it made a
+    # plan with commands print both (#462).
     if p.get("web_user_missing"):
         lines.append("PaynaniWeb has no user yet: after the steps, on this machine, run")
         lines.append('  scripts/paynani web user add --email <owner address> --name "<owner name>"')
         lines.append("  until then its pages (your tunnel's address, outside /sms/) only say how")
-    elif not p["unknown"]:
-        lines.append("no service needs a restart: every changed file is read on each call or not executed")
     lines.append("automatic apply (--apply), in order:")
     if p["unknown"]:
         lines.append("  refused: the plan contains unknown files")

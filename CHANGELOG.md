@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **`upgrade_plan.py` ya no dice «no service needs a restart» cuando sí hay
+  reinicios** (#462, lo vio Metis). El aviso de «PaynaniWeb has no user yet»
+  (`f771a73`) había quedado entre el `if` de los comandos y su `elif`, así que un
+  plan con reinicios y sin ese aviso imprimía las dos cosas, por ejemplo
+  `--from v0.13.1 --to main`. Solo cambia el texto; `--apply` hacía lo correcto.
+
 - **PaynaniWeb: Messages con la misma tabla que Email Accounts** (pedido de Julian).
   La lista de conversaciones SMS usa ahora todo el ancho, con la cabecera gris
   (Contacto, Último mensaje, Fecha, Mensajes) y una flecha por fila. En el celular

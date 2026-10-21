@@ -330,6 +330,12 @@ try:
     manifest_for(repo, unit_copy)
     quiet = up.plan("v2.1.0", "v2.0.1", repo=repo, runtime="claudecode", system="Linux")
     check("docs-only diff says no service needs a restart", "no service needs a restart" in up.render(quiet))
+    # #462: the PaynaniWeb notice sat between `if cmds:` and its `elif`, so a plan with
+    # commands and no notice also printed "no service needs a restart".
+    for missing in (False, True):
+        shown = up.render(dict(quiet, web_user_missing=missing))
+        check(f"docs-only, web user missing={missing}: still says no service needs a restart",
+              "no service needs a restart" in shown and ("PaynaniWeb has no user yet" in shown) == missing, shown)
     check("docs-only diff has no commands", up.commands(quiet) == [])
 
     # Same refs: nothing differs, and that is said as such.
@@ -451,6 +457,11 @@ try:
           == subprocess.run(["git", "-C", str(applied), "rev-parse", "v2.0.0^{commit}"],
                             capture_output=True, text=True).stdout.strip())
     check("apply restores the tracked overlay", (applied / "overlay.txt").read_text() == "local overlay\n")
+    for missing in (False, True):
+        shown = up.render(dict(apply, web_user_missing=missing))
+        check(f"a plan with restarts, web user missing={missing}: never says no service needs a restart (#462)",
+              "run, in this order:" in shown and "no service needs a restart" not in shown
+              and ("PaynaniWeb has no user yet" in shown) == missing, shown)
     check("apply records a binary-capable overlay patch",
           result["patch"] is not None and pathlib.Path(result["patch"]).read_text())
     check("apply runs the suite after restoring an overlay",
