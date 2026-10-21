@@ -267,6 +267,12 @@ def make_handler(ctx: Context):
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             for name, value in guard.SECURITY_HEADERS:
+                if name == "Referrer-Policy":
+                    # `no-referrer` (el de server.py) hace que el navegador mande
+                    # `Origin: null` en un POST de la misma página, y entonces
+                    # _same_origin() no puede saber de dónde vino. `same-origin`
+                    # sigue sin dar nada a otros sitios.
+                    value = "same-origin"
                 self.send_header(name, value)
             for name, value in extra or ():
                 self.send_header(name, value)

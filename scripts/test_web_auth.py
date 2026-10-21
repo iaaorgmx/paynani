@@ -152,6 +152,9 @@ check("sin «Sign up», Google ni teléfono (FR-5)", (False, False, False),
 check("con correo y contraseña", True, 'name="email"' in page and 'type="password"' in page)
 check("el lema y la marca de agua de PDSL-100", True, 'class="lema"' in page and 'class="marca-agua"' in page)
 check("la página no carga nada de fuera", [], re.findall(r'(?:src|href)="(?:https?:)?//[^"]+"', page))
+# Con `no-referrer`, Chromium manda `Origin: null` en el POST de la misma página y
+# el login daba 403 en un navegador de verdad (visto en T4 con Playwright).
+check("Referrer-Policy same-origin, para que el navegador mande Origin", "same-origin", hdrs.get("referrer-policy"))
 
 # --- entrar mal -------------------------------------------------------------------------
 status, hdrs, page = login(password="mala-contraseña-x")
