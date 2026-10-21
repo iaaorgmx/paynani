@@ -168,6 +168,35 @@ def set_password(password: str, path: Path | None = None) -> dict:
     return data
 
 
+def update(path: Path | None = None, **fields) -> dict:
+    """
+    Cambia el nombre, el correo o la última entrada (`name`, `email`,
+    `last_login_at`, `last_login_ip`). Nunca la contraseña ni la llave de las
+    sesiones: para eso está `set_password`.
+    """
+    path = user_path() if path is None else Path(path)
+    data = load(path)
+    if data is None:
+        raise UserError("PaynaniWeb has no user yet; create it with `scripts/paynani web user add`")
+    allowed = {"name", "email", "last_login_at", "last_login_ip"}
+    unknown = set(fields) - allowed
+    if unknown:
+        raise UserError(f"cannot change {', '.join(sorted(unknown))} here")
+    if "email" in fields:
+        email = (fields["email"] or "").strip()
+        if not EMAIL.match(email):
+            raise UserError(f"{email!r} is not an email address")
+        fields["email"] = email
+    if "name" in fields:
+        name = (fields["name"] or "").strip()
+        if not name:
+            raise UserError("a name is needed: it is shown in Profile")
+        fields["name"] = name[:200]
+    data.update(fields)
+    _write(path, data)
+    return data
+
+
 def public(data: dict) -> dict:
     """Lo que se puede mostrar: todo menos el hash y la llave de las sesiones."""
     return {k: v for k, v in data.items() if k not in ("password", "session_key")}

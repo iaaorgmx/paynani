@@ -28,7 +28,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import auth, mail, mail_pages, messages_pages, notify, roster_pages, shell, users
+from . import auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, users
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 STATIC = {
@@ -506,8 +506,8 @@ def make_handler(ctx: Context):
             if self.route in ("/roster", "/roster/editar", "/roster/quitar", "/roster/reglas"):
                 self._roster_get()
                 return
-            if self.route == "/profile":
-                self._page(200, title=t("web.nav.profile"), body=soon_body(), icon_name="profile", back="/")
+            if self.route in ("/profile", "/profile/info", "/profile/password"):
+                self._profile_get()
                 return
             self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
 
@@ -583,6 +583,70 @@ def make_handler(ctx: Context):
             self._page(200, title=t("web.nav.messages"), back="/messages",
                        body=messages_pages.thread_body(number, who, mine, self._offset(),
                                                        sms_cli.human_pause(store, number)), **kw)
+
+        # ---- Profile (FR-21) -------------------------------------------------------
+        def _profile_page(self, code: int, body: str):
+            self._page(code, title=i18n.t("web.nav.profile"), body=body, icon_name="profile",
+                       back="/" if self.route == "/profile" else "/profile")
+
+        def _profile_get(self):
+            csrf = self.session["csrf"]
+            if self.route == "/profile/info":
+                self._profile_page(200, profile_pages.info_body(self.user, csrf))
+            elif self.route == "/profile/password":
+                self._profile_page(200, profile_pages.password_body(csrf))
+            else:
+                self._profile_page(200, profile_pages.main_body(self.user, self.query.get("ok", [""])[0]))
+
+        def _check_current(self, password: str) -> str:
+            """"" si la contraseña actual es buena; si no, el texto del error. Cuenta como
+            un intento de entrada: el bloqueo de T3 vale también aquí."""
+            left = self.CTX.lockout.admit(self.ip)
+            if left:
+                return i18n.th("web.profile.err.locked", min=max(1, (left + 59) // 60))
+            if not users.verify_password(password, self.user["password"]):
+                return i18n.th("web.profile.err.current")
+            self.CTX.lockout.success(self.ip)
+            return ""
+
+        def _profile_post(self, post: dict):
+            th = i18n.th
+            csrf = self.session["csrf"]
+            path = self.CTX.user_path()
+            if self.route == "/profile/info":
+                name = post.get("name", "").strip()
+                email = post.get("email", "").strip()
+                values = {"name": name, "email": email}
+                if email.lower() != str(self.user.get("email", "")).lower():
+                    error = self._check_current(post.get("current", "")[:users.MAX_PASSWORD])
+                    if error:
+                        self._profile_page(400, profile_pages.info_body(self.user, csrf, error, values))
+                        return
+                try:
+                    users.update(path, name=name, email=email)
+                except users.UserError:
+                    self._profile_page(400, profile_pages.info_body(self.user, csrf, th("web.profile.err.invalid"), values))
+                    return
+                self._redirect("/profile?ok=info")
+                return
+            current = post.get("current", "")[:users.MAX_PASSWORD]
+            new = post.get("new", "")[:users.MAX_PASSWORD + 1]
+            again = post.get("again", "")[:users.MAX_PASSWORD + 1]
+            error = self._check_current(current)
+            if not error and new != again:
+                error = th("web.profile.err.mismatch")
+            if not error and users.password_problem(new):
+                error = th("web.profile.err.short", min=users.MIN_PASSWORD)
+            if not error and new == current:
+                error = th("web.profile.err.same")
+            if error:
+                self._profile_page(400, profile_pages.password_body(csrf, error))
+                return
+            updated = users.set_password(new, path)
+            # FR-21: las otras sesiones se cierran; la de quien la cambió sigue.
+            self.CTX.sessions.rebind(self.session["sid"], updated)
+            self.CTX.sessions.drop_others(self.session["sid"])
+            self._redirect("/profile?ok=password")
 
         # ---- Roster (FR-20) -----------------------------------------------------
         def _rq(self, kind: str, **fields) -> dict:
@@ -773,6 +837,9 @@ def make_handler(ctx: Context):
             if self.route in ("/roster/guardar", "/roster/quitar", "/roster/reglas"):
                 self._roster_post(post)
                 return
+            if self.route in ("/profile/info", "/profile/password"):
+                self._profile_post(post)
+                return
             self._html(405, message_page(self.lang, "web.title", "web.method.h1"))
 
         def _login(self, post: dict):
@@ -796,6 +863,12 @@ def make_handler(ctx: Context):
                 self.CTX.sessions.drop(self.sid)  # una sesión nueva en cada entrada
             agent = self.headers.get("User-Agent", "")
             sid = self.CTX.sessions.create(self.ip, self.user, agent)
+            # «Último ingreso» de Profile (FR-21), como el /dash.
+            try:
+                users.update(self.CTX.user_path(), last_login_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                             last_login_ip=self.ip)
+            except (users.UserError, OSError):
+                pass
             if auth.remember_ip(self.CTX.user_path(), self.ip):
                 when = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
                 self.CTX.notifier.owner(self.user, i18n.t("web.mail.newip.subject"),
