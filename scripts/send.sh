@@ -838,7 +838,32 @@ smtp_args=(-a "$ACCOUNT" smtp send --mail-from "$from_addr")
 for _paynani_recipient in "${envelope_recipients[@]}"; do
     smtp_args+=(--rcpt-to "$_paynani_recipient")
 done
-build_message | himalaya "${smtp_args[@]}"
+# The message is built once, into a file only this user can read, so the copy kept
+# in Sent below is the same bytes SMTP was given -- same Message-ID, same Date --
+# and not a second build that could differ.
+message_file=$(mktemp "${TMPDIR:-/tmp}/paynani-send.XXXXXX")
+trap 'rm -f "$message_file"' EXIT
+build_message > "$message_file"
+himalaya "${smtp_args[@]}" < "$message_file"
+
+# --- A copy in Sent (#435, Q45) -------------------------------------------------
+#
+# SMTP has no Sent folder, so until now nothing the agent sent was in its own
+# mailbox (#117), and PaynaniWeb could show who and when but never what. This
+# APPENDs that same file to the folder marked \Sent, flagged \Seen; recipients
+# see nothing different. Gmail already keeps a copy of what leaves through its
+# SMTP, so it is skipped there. Like sent.log below, it runs after the send and
+# can never fail it: the mail is gone either way, and the outcome is written down
+# (sent-copy=saved|skipped|failed) instead.
+sent_copy=$(python3 "$_paynani_scriptdir/paynani_lib/sent_copy.py" "$ACCOUNT" "$message_file" 2>/dev/null || true)
+sent_copy_state=${sent_copy%% *}
+case "$sent_copy_state" in
+    saved|skipped|failed) ;;
+    *) sent_copy_state=failed ;;
+esac
+if [ "$sent_copy_state" = "failed" ]; then
+    echo "warning: sent, but no copy was saved in Sent (${sent_copy#failed }); the message itself went out" >&2
+fi
 
 # --- What was sent, written down where it survives the process -----------------
 #
@@ -849,11 +874,12 @@ build_message | himalaya "${smtp_args[@]}"
 # mailbox and could not tell. An empty Sent folder and a message that never left
 # look identical.
 #
-# Himalaya does not save a copy unless asked -- `--save <MAILBOX>` is opt-in, and
-# sending is SMTP, which has no Sent folder at all; a copy there is a separate
-# IMAP APPEND. So this is the only record that exists by default, and it is ours
-# rather than the mail server's: readable with no network, and still true if the
-# account is later lost.
+# Sending is SMTP, which has no Sent folder at all; the copy there (above, #435)
+# is a separate IMAP APPEND that can fail or be skipped. So this is the record
+# that always exists, and it is ours rather than the mail server's: readable with
+# no network, and still true if the account is later lost. It also says what
+# became of the copy, `sent-copy=saved|skipped|failed`, so `paynani doctor` can
+# tell an account that keeps no copy.
 #
 # Deliberately not the body. The question a roster raises is who and when, and a
 # log of message bodies is a mail password's worth of liability in a different
@@ -868,9 +894,10 @@ build_message | himalaya "${smtp_args[@]}"
 sent_log="$(paynani_state_dir)/sent.log"
 if ! {
     mkdir -p "$(dirname "$sent_log")" &&
-    printf '%s\tto=%s\tcc=%s\tbcc=%s\tsubject=%s\tmessage-id=%s%s\n' \
+    printf '%s\tto=%s\tcc=%s\tbcc=%s\tsubject=%s\tsent-copy=%s\tmessage-id=%s%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$to_header" "$cc_header" \
-        "$(if [ "$bcc_recipients_count" -gt 0 ]; then join_addresses "${bcc_recipients[@]}"; fi)" "$subject" "$msgid" \
+        "$(if [ "$bcc_recipients_count" -gt 0 ]; then join_addresses "${bcc_recipients[@]}"; fi)" "$subject" \
+        "$sent_copy_state" "$msgid" \
         "$(if [ -n "$account_id" ]; then printf '\taccount=%s' "$account_id"; fi)" >> "$sent_log"
 } 2>/dev/null; then
     echo "warning: sent, but could not record it in $sent_log" >&2
