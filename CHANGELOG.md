@@ -2,6 +2,21 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: la hora de cada mensaje, en la zona de quien mira** (T4 del paraguas
+  #456; PRD #455, 4.4; Q50 = A).
+  - **`assets/time.js`**, un script chico como `lang.js`, reescribe cada
+    `<time datetime>` del hilo con `Intl` en la zona del navegador. Si es de hoy,
+    la hora y entre paréntesis hace cuánto («12:25 PM (9 minutes ago)»); si es de
+    antes, la fecha corta y la hora (con el año si es de otro). En `title` va la
+    fecha completa con la zona. Lo de «hace …» se actualiza cada minuto.
+  - **Si el script no corre**, queda lo que escribe el servidor (`web/when.py`):
+    la misma forma, en la zona del host y con el formato de cada idioma, como
+    «12:25 p. m. (hace 9 minutos)» en es-MX, «12:25 PM» en en-US y 24 h en
+    es-ES, fr-FR y pt-BR.
+  - Se sirve desde `/assets/` con `defer`, así que la CSP no cambia. La hora
+    sale de la cabecera `Date` de cada mensaje, como en Gmail, y si falta, de la
+    hora del ledger o de `sent.log`.
+
 - **PaynaniWeb: un correo abierto se lee como un hilo de Gmail** (T3 del paraguas
   #456; PRD #455, 4.1, 4.2 y 4.6 a 4.9). La página de un correo, recibido o
   enviado, es ahora una sola lista:

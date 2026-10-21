@@ -37,6 +37,7 @@ STATIC = {
     "/assets/app.css": (ASSETS / "app.css", "text/css; charset=UTF-8"),
     "/assets/web.css": (ASSETS / "web.css", "text/css; charset=UTF-8"),
     "/assets/lang.js": (ASSETS / "lang.js", "application/javascript; charset=UTF-8"),
+    "/assets/time.js": (ASSETS / "time.js", "application/javascript; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
     # browser asks for on its own; without it that request ended in the login page.
     "/assets/favicon.svg": (FAVICON, "image/svg+xml"),

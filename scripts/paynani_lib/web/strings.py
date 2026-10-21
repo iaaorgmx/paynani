@@ -11,6 +11,11 @@ from ..i18n_data import CATALOGUES
 
 STRINGS = {
     "es-MX": {
+        'web.time.now': 'ahora',
+        'web.time.min1': 'hace 1 minuto',
+        'web.time.mins': 'hace {n} minutos',
+        'web.time.hour1': 'hace 1 hora',
+        'web.time.hours': 'hace {n} horas',
         'web.mail.me': 'mí',
         'web.mail.to_line': 'para {who}',
         'web.mail.cc_line': 'cc {who}',
@@ -248,6 +253,11 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "en-US": {
+        'web.time.now': 'now',
+        'web.time.min1': '1 minute ago',
+        'web.time.mins': '{n} minutes ago',
+        'web.time.hour1': '1 hour ago',
+        'web.time.hours': '{n} hours ago',
         'web.mail.me': 'me',
         'web.mail.to_line': 'to {who}',
         'web.mail.cc_line': 'cc {who}',
@@ -485,6 +495,11 @@ STRINGS = {
         "web.lang.apply": "Change",
     },
     "es-ES": {
+        'web.time.now': 'ahora',
+        'web.time.min1': 'hace 1 minuto',
+        'web.time.mins': 'hace {n} minutos',
+        'web.time.hour1': 'hace 1 hora',
+        'web.time.hours': 'hace {n} horas',
         'web.mail.me': 'mí',
         'web.mail.to_line': 'para {who}',
         'web.mail.cc_line': 'cc {who}',
@@ -722,6 +737,11 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "fr-FR": {
+        'web.time.now': 'maintenant',
+        'web.time.min1': 'il y a 1 minute',
+        'web.time.mins': 'il y a {n} minutes',
+        'web.time.hour1': 'il y a 1 heure',
+        'web.time.hours': 'il y a {n} heures',
         'web.mail.me': 'moi',
         'web.mail.to_line': 'à {who}',
         'web.mail.cc_line': 'cc {who}',
@@ -959,6 +979,11 @@ STRINGS = {
         "web.lang.apply": "Changer",
     },
     "pt-BR": {
+        'web.time.now': 'agora',
+        'web.time.min1': 'há 1 minuto',
+        'web.time.mins': 'há {n} minutos',
+        'web.time.hour1': 'há 1 hora',
+        'web.time.hours': 'há {n} horas',
         'web.mail.me': 'mim',
         'web.mail.to_line': 'para {who}',
         'web.mail.cc_line': 'cc {who}',

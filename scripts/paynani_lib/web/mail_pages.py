@@ -7,12 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
 from email.utils import getaddresses
 from urllib.parse import quote as urlquote
 
 from .. import i18n
-from . import quote, shell
+from . import quote, shell, when
 from .shell import e
 
 
@@ -114,21 +113,6 @@ def row_key(row: dict) -> str:
     return row["event_id"] if row["kind"] == "in" else "s:" + row["message_id"]
 
 
-def _local(stamp: str) -> tuple[str, str]:
-    """(ISO 8601 en UTC para `<time datetime>`, la fecha y la hora en la zona del host). T4
-    la cambia a la zona del navegador; esta es la que queda si el script no corre (Q50 = A)."""
-    if not stamp:
-        return "", ""
-    try:
-        when = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-    except ValueError:
-        return "", stamp
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    utc = when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return utc, when.astimezone().strftime("%Y-%m-%d %H:%M")
-
-
 def display_subject(subject: str) -> str:
     """El asunto del hilo como Gmail: sin «Re:» ni «Fw:» delante, con sus mayúsculas."""
     s = (subject or "").strip()
@@ -189,7 +173,7 @@ def _message_li(account_id: str, row: dict, got: dict, current: dict, own: str, 
     th = i18n.th
     message, error = got.get("message"), got.get("error")
     name, address, to, cc = _header(row, message, own, own_name)
-    iso, shown = _local((message or {}).get("date") or row.get("at", ""))
+    iso, shown, title = when.render((message or {}).get("date") or row.get("at", ""), i18n.current_lang())
     who = "agente" if row["kind"] == "out" else "contacto"
     marks = (_state(row["state"]) + _roster(row)) if row["kind"] == "in" else ""
     dest = th("web.mail.to_line", who=to) if to else ""
@@ -215,7 +199,7 @@ def _message_li(account_id: str, row: dict, got: dict, current: dict, own: str, 
   <div class="cabecera">
     <div class="avatar-mensaje avatar-{who}" aria-hidden="true">{e(shell.initials(name))}</div>
     <div class="quien"><b>{e(name)}</b>{addr}<div class="para">{dest}</div></div>
-    <div class="cuando">{marks}<time datetime="{e(iso)}">{e(shown)}</time></div>
+    <div class="cuando">{marks}<time datetime="{e(iso)}" title="{e(title)}">{e(shown)}</time></div>
   </div>
   {''.join(notes)}
   {body}

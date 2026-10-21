@@ -90,7 +90,9 @@ correos como siempre), así que el hilo se arma así.
 - **Arriba,** el asunto una vez, sin «Re:».
 - **Debajo,** todos los mensajes, del más viejo al más nuevo y con el mismo
   formato: avatar, nombre, dirección, «para …» (y Cc), la hora y el cuerpo
-  completo. Cada recibido lleva su estado y la marca del roster junto a la hora.
+  completo. La hora va en la zona del navegador (`assets/time.js`), o en la del
+  host si el script no corre; si es de hoy, con «hace …», y con la fecha completa
+  al pasar el cursor. Cada recibido lleva su estado y la marca del roster junto a la hora.
 - **El abierto** va con un borde suave, y la página baja hasta él (`#m-<id>`).
 - **El texto citado** («On … wrote:», «El … escribió:», la cabecera de Outlook)
   queda plegado detrás de «•••». La firma y los reenvíos se quedan a la vista.
