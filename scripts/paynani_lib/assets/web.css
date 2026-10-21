@@ -212,3 +212,52 @@ body.web-shell {
   .web-shell .encabezado svg.i { width: 24px; height: 24px; }
   .web-shell .panel { padding: 1.25rem 1rem; min-height: 0; }
 }
+
+/* Email Accounts (T5): la lista de correos y uno abierto. */
+.web-shell .resumen { margin-top: 0; }
+.web-shell .correos { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.web-shell .correos li a {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) 1fr auto auto;
+  gap: .25rem 1rem;
+  align-items: baseline;
+  padding: .8rem .25rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-decoration: none;
+}
+.web-shell .correos li a:hover { background: var(--bg); }
+.web-shell .correos .quien { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-shell .correos .asunto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-shell .correos .cuando { color: var(--quiet); font-size: .85rem; white-space: nowrap; }
+.web-shell .marca-roster { font-size: .7rem; font-weight: 600; color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 .3rem; margin-left: .35rem; vertical-align: middle; }
+.web-shell .estado { font-size: .75rem; padding: .1rem .45rem; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--quiet); white-space: nowrap; }
+.web-shell .estado-replied { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-ink); }
+.web-shell .estado-handled, .web-shell .estado-closed { color: var(--ink); }
+.web-shell .estado-observed, .web-shell .estado-dispatched, .web-shell .estado-presented { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
+.web-shell .mas { margin-top: 1.25rem; }
+.web-shell a.secundario { display: inline-block; text-decoration: none; }
+.web-shell .volver { margin-top: 0; }
+.web-shell .volver a { color: var(--quiet); text-decoration: none; }
+.web-shell .asunto-correo { margin: .5rem 0 1rem; font-size: 1.3rem; overflow-wrap: anywhere; }
+.web-shell .sobre { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; margin: 0 0 1.25rem; font-size: .9rem; }
+.web-shell .sobre dt { color: var(--quiet); }
+.web-shell .sobre dd { margin: 0; overflow-wrap: anywhere; }
+.web-shell .cuerpo {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: .95rem;
+  line-height: 1.55;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+  margin: 0 0 1.25rem;
+}
+.web-shell .error-caja { background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad-ink); border-radius: 8px; padding: .8rem 1rem; margin-bottom: 1rem; }
+.web-shell .error-caja p { margin: .3rem 0 0; }
+@media (max-width: 900px) {
+  .web-shell .correos li a { grid-template-columns: 1fr auto; }
+  .web-shell .correos .asunto { grid-column: 1 / -1; }
+}

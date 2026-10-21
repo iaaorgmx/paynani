@@ -2,6 +2,24 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: Email Accounts, la lista y el correo abierto** (T5 del paraguas #435,
+  primera parte; PRD #434 FR-13 a FR-15). Al elegir una cuenta del menú se ven sus
+  correos, de 50 en 50 con «Ver más», el más reciente primero. La lista sale del
+  ledger (`state/lifecycle.jsonl`), que guarda el sobre y no el cuerpo: remitente,
+  asunto, la hora en UTC, el último estado del aviso (recibido, atendido,
+  respondido, cerrado…) y la marca «roster» si el remitente está en el roster de
+  esa cuenta. Al abrir uno, el correo se pide a IMAP en ese momento, con el login de
+  su cuenta (nunca el del agente para otra), y no se guarda. Se verifica como en
+  `event show`: el mismo buzón y `UIDVALIDITY`, el UID exacto, y que `From` y
+  `Message-ID` coincidan con el sobre. Si algo no coincide o el servidor no
+  responde, la página lo dice (`502`) y no muestra el cuerpo. No tiene la barrera
+  del roster, que es del agente: aquí lee el dueño (#435, Q-T5-2). El cuerpo se
+  muestra como texto. Del HTML queda solo el texto, sin scripts, estilos ni
+  imágenes, y los enlaces quedan como texto con su dirección entre paréntesis. Los
+  adjuntos se nombran y no se abren. Nada en estas pantallas cambia un estado ni
+  contesta (FR-15), y el cuerpo no se escribe en ningún log. Las respuestas del
+  agente en el hilo llegan con la segunda parte.
+
 - **PaynaniWeb: el menú lateral y el encabezado de PDSL-201** (T4 del paraguas #435;
   PRD #434 FR-10 y FR-12). Con sesión, cada página va en el marco del mockup: el menú
   oscuro con el logotipo claro y el nombre del dueño; el encabezado en grana con el
