@@ -2,6 +2,16 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: la hora de las listas, en la zona del navegador; «1 perdida» en
+  singular** (notas de Metis en #464).
+  - La lista de correos decía «2026-10-20 12:40 UTC» y Messages no decía zona,
+    mientras que el hilo ya iba en la zona del navegador. Ahora las dos listas
+    usan `when.py` y `time.js`, como el hilo, pero cortas, como la lista de Gmail:
+    de hoy solo la hora; de antes, la fecha corta. Al pasar el cursor se ve la
+    fecha completa con la zona.
+  - Con una sola llamada perdida, Messages dice «1 perdida» («1 missed», «1
+    manqué») en lugar de «1 perdidas».
+
 - **`upgrade_plan.py` ya no dice «no service needs a restart» cuando sí hay
   reinicios** (#462, lo vio Metis). El aviso de «PaynaniWeb has no user yet»
   (`f771a73`) había quedado entre el `if` de los comandos y su `elif`, así que un

@@ -149,7 +149,9 @@ check("dos conversaciones, Beto primero", [BETO, ANA],
 check("Ana con su nombre del roster y la marca", True, "Ana López" in page and 'class="marca-roster"' in page)
 check("Beto, fuera del roster, con el nombre del teléfono", True, "Beto (teléfono)" in page)
 check("lo último de Ana es lo del dueño, como vista previa", True, "Tú, desde PaynaniApp: Ana, te confirmo yo." in page)
-check("y que tuvo una llamada perdida", True, "1 perdidas" in page)
+check("y que tuvo una llamada perdida, en singular (revisión de #464)", (True, False), ("1 perdida<" in page, "1 perdidas" in page))
+check("la hora de la lista en <time datetime>, corta (sin «hace …»), para time.js", True,
+      bool(re.search(r'<span class="cuando"><time datetime="[0-9T:-]+Z" title="[^"]+" data-corto>[^<(]+</time></span>', page)))
 
 status, _, page = req("GET", "/messages/ver?n=" + quote(ANA, safe=""), cookie=cookie)
 check("la conversación de Ana: 200", 200, status)

@@ -11,6 +11,7 @@ from ..i18n_data import CATALOGUES
 
 STRINGS = {
     "es-MX": {
+        'web.sms.missed_1': '1 perdida',
         'web.sms.col.who': 'Contacto',
         'web.sms.col.last': 'Último mensaje',
         'web.sms.col.when': 'Fecha',
@@ -257,6 +258,7 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "en-US": {
+        'web.sms.missed_1': '1 missed',
         'web.sms.col.who': 'Contact',
         'web.sms.col.last': 'Last message',
         'web.sms.col.when': 'Date',
@@ -503,6 +505,7 @@ STRINGS = {
         "web.lang.apply": "Change",
     },
     "es-ES": {
+        'web.sms.missed_1': '1 perdida',
         'web.sms.col.who': 'Contacto',
         'web.sms.col.last': 'Último mensaje',
         'web.sms.col.when': 'Fecha',
@@ -749,6 +752,7 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "fr-FR": {
+        'web.sms.missed_1': '1 manqué',
         'web.sms.col.who': 'Contact',
         'web.sms.col.last': 'Dernier message',
         'web.sms.col.when': 'Date',
@@ -995,6 +999,7 @@ STRINGS = {
         "web.lang.apply": "Changer",
     },
     "pt-BR": {
+        'web.sms.missed_1': '1 perdida',
         'web.sms.col.who': 'Contato',
         'web.sms.col.last': 'Última mensagem',
         'web.sms.col.when': 'Data',

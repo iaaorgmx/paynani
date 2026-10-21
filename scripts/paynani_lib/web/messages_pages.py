@@ -15,6 +15,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from .. import i18n
+from . import mail_pages
 from .shell import e
 
 PAGE = 50
@@ -57,14 +58,14 @@ def list_body(convs: list[dict], names: dict, offset: int, next_offset: int | No
            f'<span>{th("web.sms.col.count")}</span><span></span></li>']
     for c in convs:
         href = f"/messages/ver?n={quote(c['number'], safe='')}"
-        missed = (f' <span class="marca-llamada">{th("web.sms.missed_n", n=c["missed"])}</span>'
+        missed = (f' <span class="marca-llamada">{th("web.sms.missed_1" if c["missed"] == 1 else "web.sms.missed_n", n=c["missed"])}</span>'
                   if c["missed"] else "")
         roster = (f' <span class="marca-roster" title="{th("web.sms.roster_title")}">{th("web.mail.roster")}</span>'
                   if c["number"] in names else "")
         out.append(f"""<li><a href="{href}">
   <span class="quien">{e(_who(c, names))}{roster}</span>
   <span class="asunto">{e(_preview(c['last']))}</span>
-  <span class="cuando">{e(_local(c['last']['local']))}</span>
+  <span class="cuando">{mail_pages.list_time(c['last']['local'])}</span>
   <span class="estado-celda"><span class="estado">{th('web.sms.n_items', n=c['count'])}</span>{missed}</span>
   <span class="flecha" aria-hidden="true">›</span>
 </a></li>""")
