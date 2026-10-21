@@ -19,15 +19,16 @@ from __future__ import annotations
 import html
 import json
 import sys
+import time
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import users
+from . import auth, notify, users
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 STATIC = {
@@ -134,24 +135,115 @@ def setup_page(lang: str) -> str:
     return document(lang, i18n.t("web.setup.title"), body)
 
 
-def ready_page(lang: str) -> str:
+VOLUTA = ('<svg class="marca-agua" viewBox="0 0 64 64" fill="none" aria-hidden="true">'
+          '<path d="M50 15C30 11 12 23 14 38c2 12 16 16 24 10 8-6 6-16-2-17-6-1-10 4-7 8" '
+          'stroke="#8f2d2b" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+
+
+def login_page(lang: str, *, email: str = "", notice: str = "", error: str = "", next_path: str = "/") -> str:
+    """PDSL-100: la tarjeta a la izquierda y el lema a la derecha, sin «Sign up»
+    ni Google ni teléfono (FR-5)."""
+    th = i18n.th
+    logo = brand_svg("paynani-horizontal.svg")
+    note = f'<p class="aviso" role="status">{notice}</p>' if notice else ""
+    err = f'<p class="error" role="alert">{error}</p>' if error else ""
+    return f"""<!doctype html>
+<html lang="{e(lang)}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{e(i18n.t('web.login.title'))}</title>
+<link rel="stylesheet" href="/assets/app.css">
+<link rel="stylesheet" href="/assets/web.css">
+<script src="/assets/lang.js" defer></script>
+</head>
+<body class="web-login">
+{VOLUTA}
+<main class="tarjeta">
+  <div class="marca">{logo}</div>
+  <h1>{th('web.login.h1')}</h1>
+  <p class="sub">{th('web.login.lead')}</p>
+  {note}{err}
+  <form method="post" action="/login" autocomplete="on">
+    <input type="hidden" name="next" value="{e(next_path)}">
+    <label for="email">{th('web.login.email')}</label>
+    <input id="email" name="email" type="email" required autocomplete="username" value="{e(email)}"{'' if email else ' autofocus'}>
+    <label for="password">{th('web.login.password')}</label>
+    <input id="password" name="password" type="password" required autocomplete="current-password"{' autofocus' if email else ''}>
+    <button type="submit" class="continuar">{th('web.login.submit')}</button>
+  </form>
+  <p class="legal">{i18n.t('web.login.forgot')}</p>
+  <form method="get" action="/login" class="langpick">
+    <span class="combo">
+      <select id="lang" name="lang" aria-label="{th('web.lang.label')}">
+        {_lang_options(lang)}
+      </select>
+    </span>
+    <button type="submit" id="langgo">{th('web.lang.apply')}</button>
+  </form>
+</main>
+<section class="lema">
+  <h2>{th('web.lema.h2')}</h2>
+  <p>{th('web.lema.p')}</p>
+</section>
+</body>
+</html>
+"""
+
+
+def home_page(lang: str, user: dict, csrf: str) -> str:
     th = i18n.th
     body = f"""
-<h1>{th('web.ready.h1')}</h1>
-<p class="lead">{th('web.ready.lead')}</p>
+<h1>{th('web.home.hello', name=user.get('name', ''))}</h1>
+<p class="lead">{th('web.home.lead')}</p>
+<form method="post" action="/logout">
+  <input type="hidden" name="csrf" value="{e(csrf)}">
+  <button type="submit" class="secundario">{th('web.logout')}</button>
+</form>
 """
-    return document(lang, i18n.t("web.ready.title"), body)
+    return document(lang, i18n.t("web.title"), body)
 
 
-def message_page(lang: str, title_key: str, h1_key: str) -> str:
-    return document(lang, i18n.t(title_key), f"<h1>{i18n.th(h1_key)}</h1>\n")
+def message_page(lang: str, title_key: str, h1_key: str, lead_key: str = "") -> str:
+    lead = f'<p class="lead">{i18n.th(lead_key)}</p>\n' if lead_key else ""
+    return document(lang, i18n.t(title_key), f"<h1>{i18n.th(h1_key)}</h1>\n{lead}")
 
 
-def make_handler(user_file: Path | None = None):
-    """Un handler atado a un archivo de usuario (las pruebas pasan uno temporal)."""
+def safe_next(value: str) -> str:
+    """Una ruta de esta misma web, o "/": nunca otro sitio (`//x`, `/\\x`, `http:`)."""
+    value = (value or "").strip()
+    if not value.startswith("/") or value.startswith("//") or "\\" in value or value.startswith("/login") \
+            or any(ord(c) < 32 for c in value):
+        return "/"
+    return value
+
+
+def form_fields(raw: bytes) -> dict:
+    text = raw.decode("utf-8", errors="replace")
+    return {k: v[0] for k, v in parse_qs(text, keep_blank_values=True).items()}
+
+
+class Context:
+    """Lo que comparten todas las peticiones de un servidor."""
+
+    def __init__(self, user_file: Path | None = None, notifier: notify.Notifier | None = None, clock=time.time):
+        self.user_file = user_file
+        self.sessions = auth.Sessions(clock)
+        self.lockout = auth.Lockout(clock)
+        self.notifier = notifier or notify.Notifier()
+
+    def user(self) -> dict | None:
+        return users.load(self.user_file)
+
+    def user_path(self) -> Path:
+        return Path(self.user_file) if self.user_file else users.user_path()
+
+
+def make_handler(ctx: Context):
+    """Un handler atado a un Context (las pruebas pasan uno con archivo temporal)."""
 
     class Handler(BaseHTTPRequestHandler):
-        USER_FILE = user_file
+        CTX = ctx
         protocol_version = "HTTP/1.1"
 
         def version_string(self):
@@ -169,11 +261,18 @@ def make_handler(user_file: Path | None = None):
                              f"{args[1] if len(args) > 1 else ''}\n")
             sys.stdout.flush()
 
+        # ---- respuesta ------------------------------------------------------
         def _send(self, code: int, content_type: str, body: bytes, extra=None):
             self.send_response(code)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             for name, value in guard.SECURITY_HEADERS:
+                if name == "Referrer-Policy":
+                    # `no-referrer` (el de server.py) hace que el navegador mande
+                    # `Origin: null` en un POST de la misma página, y entonces
+                    # _same_origin() no puede saber de dónde vino. `same-origin`
+                    # sigue sin dar nada a otros sitios.
+                    value = "same-origin"
                 self.send_header(name, value)
             for name, value in extra or ():
                 self.send_header(name, value)
@@ -183,25 +282,51 @@ def make_handler(user_file: Path | None = None):
             if self.command != "HEAD":
                 self.wfile.write(body)
 
-        def _html(self, code: int, page: str, set_lang: str = ""):
+        def _cookie(self, name: str, value: str, max_age: int | None) -> str:
+            cookie = cookies.SimpleCookie()
+            cookie[name] = value
+            cookie[name]["path"] = "/"
+            cookie[name]["samesite"] = "Strict"
+            cookie[name]["httponly"] = True
+            # FR-8: Secure siempre. Los navegadores la aceptan también en
+            # http://127.0.0.1 y localhost (ssh -L), que cuentan como contexto seguro.
+            cookie[name]["secure"] = True
+            if max_age is not None:
+                cookie[name]["max-age"] = max_age
+            return cookie[name].OutputString()
+
+        def _html(self, code: int, page: str, cookies_out=()):
             extra = [("Content-Security-Policy", guard.CSP)]
-            if set_lang:
-                cookie = cookies.SimpleCookie()
-                cookie[LANG_COOKIE] = set_lang
-                cookie[LANG_COOKIE]["path"] = "/"
-                cookie[LANG_COOKIE]["samesite"] = "Strict"
-                cookie[LANG_COOKIE]["httponly"] = True
-                cookie[LANG_COOKIE]["max-age"] = 365 * 86400
-                if self.headers.get("X-Forwarded-Proto", "") == "https":
-                    cookie[LANG_COOKIE]["secure"] = True
-                extra.append(("Set-Cookie", cookie[LANG_COOKIE].OutputString()))
+            if self.set_lang:
+                extra.append(("Set-Cookie", self._cookie(LANG_COOKIE, self.set_lang, 365 * 86400)))
+            extra.extend(("Set-Cookie", c) for c in cookies_out)
             self._send(code, "text/html; charset=UTF-8", page.encode("utf-8"), extra)
 
-        def _lang(self, query: dict) -> tuple[str, str]:
-            lang, remember = negotiate_lang(query, self.headers.get("Cookie", ""),
+        def _redirect(self, location: str, cookies_out=()):
+            extra = [("Location", location)] + [("Set-Cookie", c) for c in cookies_out]
+            if self.set_lang:
+                extra.append(("Set-Cookie", self._cookie(LANG_COOKIE, self.set_lang, 365 * 86400)))
+            self._send(303, "text/plain; charset=UTF-8", b"", extra)
+
+        # ---- contexto de la petición -----------------------------------------
+        def _begin(self):
+            parsed = urlparse(self.path)
+            self.route = parsed.path
+            self.query = parse_qs(parsed.query)
+            lang, remember = negotiate_lang(self.query, self.headers.get("Cookie", ""),
                                             self.headers.get("Accept-Language", ""))
             i18n.set_current(lang)
-            return lang, (lang if remember else "")
+            self.lang, self.set_lang = lang, (lang if remember else "")
+            self.ip = auth.client_ip(self.headers, self.client_address[0])
+            self.user = self.CTX.user()
+            sid = ""
+            try:
+                morsel = cookies.SimpleCookie(self.headers.get("Cookie", "")).get(auth.SESSION_COOKIE)
+                sid = morsel.value if morsel is not None else ""
+            except cookies.CookieError:
+                sid = ""
+            self.sid = sid
+            self.session = self.CTX.sessions.get(sid, self.user)
 
         def _static(self, path: str) -> bool:
             entry = STATIC.get(path)
@@ -216,42 +341,128 @@ def make_handler(user_file: Path | None = None):
             self._send(200, kind, data)
             return True
 
+        def _same_origin(self) -> bool:
+            """Un POST trae Origin (o Referer) de esta misma dirección. Junto con
+            SameSite=Strict y el token de cada formulario, cierra el paso a un
+            formulario de otro sitio."""
+            host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "")
+            if not host:
+                return False
+            origin = self.headers.get("Origin", "")
+            if origin:
+                return urlparse(origin).netloc == host
+            referer = self.headers.get("Referer", "")
+            return bool(referer) and urlparse(referer).netloc == host
+
+        def _to_login(self, notice: str = ""):
+            target = "/login"
+            params = []
+            if self.route not in ("/", "") and self.command == "GET":
+                params.append("next=" + quote(self.path, safe="/"))
+            if notice:
+                params.append("msg=" + notice)
+            self._redirect(target + ("?" + "&".join(params) if params else ""))
+
+        # ---- verbos ------------------------------------------------------------
         def do_GET(self):  # noqa: N802
             parsed = urlparse(self.path)
             if self._static(parsed.path):
                 return
             if parsed.path == "/_health":
-                body = json.dumps({"ok": True, "configured": users.exists(self.USER_FILE)}).encode("utf-8")
+                body = json.dumps({"ok": True, "configured": users.exists(self.CTX.user_file)}).encode("utf-8")
                 self._send(200, "application/json; charset=UTF-8", body)
                 return
-            query = parse_qs(parsed.query)
-            lang, set_lang = self._lang(query)
+            self._begin()
             # FR-4: sin usuario, cualquier ruta es «crea tu usuario».
-            if not users.exists(self.USER_FILE):
-                self._html(200, setup_page(lang), set_lang)
+            if self.user is None:
+                self._html(200, setup_page(self.lang))
                 return
-            if parsed.path == "/":
-                self._html(200, ready_page(lang), set_lang)
+            if self.route == "/login":
+                if self.session:
+                    self._redirect(safe_next(self.query.get("next", ["/"])[0]))
+                    return
+                msg = self.query.get("msg", [""])[0]
+                notice = {"out": i18n.th("web.login.out"), "expired": i18n.th("web.login.expired")}.get(msg, "")
+                self._html(200, login_page(self.lang, notice=notice,
+                                           next_path=safe_next(self.query.get("next", ["/"])[0])))
                 return
-            self._html(404, message_page(lang, "web.notfound.title", "web.notfound.h1"), set_lang)
+            if not self.session:
+                # Una cookie de sesión que ya no sirve (venció, o cambió la contraseña).
+                self._to_login("expired" if self.sid else "")
+                return
+            self.dispatch_get()
+
+        def dispatch_get(self):
+            if self.route == "/":
+                self._html(200, home_page(self.lang, self.user, self.session["csrf"]))
+                return
+            self._html(404, message_page(self.lang, "web.notfound.title", "web.notfound.h1"))
 
         def do_HEAD(self):  # noqa: N802
             self.do_GET()
 
         def do_POST(self):  # noqa: N802
-            # Ningún formulario escribe todavía (el acceso es T3). El cuerpo se lee
-            # y se descarta, hasta MAX_BODY_BYTES, para cerrar limpio.
             try:
-                length = max(0, min(int(self.headers.get("Content-Length", "0") or "0"), MAX_BODY_BYTES))
+                length = int(self.headers.get("Content-Length", "0") or "0")
             except ValueError:
-                length = 0
-            if length:
-                self.rfile.read(length)
-            lang, _ = self._lang({})
-            if not users.exists(self.USER_FILE):
-                self._html(200, setup_page(lang))
+                length = -1
+            if length < 0 or length > MAX_BODY_BYTES:
+                self._send(413, "text/plain; charset=UTF-8", b"")
                 return
-            self._html(405, message_page(lang, "web.title", "web.method.h1"))
+            raw = self.rfile.read(length) if length else b""
+            self._begin()
+            if self.user is None:
+                self._html(200, setup_page(self.lang))
+                return
+            if not self._same_origin():
+                self._html(403, message_page(self.lang, "web.title", "web.forbidden.h1", "web.forbidden.lead"))
+                return
+            post = form_fields(raw)
+            if self.route == "/login":
+                self._login(post)
+                return
+            if not self.session:
+                self._to_login("expired" if self.sid else "")
+                return
+            if not auth.check_csrf(self.session, post.get("csrf", "")):
+                self._html(403, message_page(self.lang, "web.title", "web.forbidden.h1", "web.forbidden.lead"))
+                return
+            if self.route == "/logout":
+                self.CTX.sessions.drop(self.session["sid"])
+                self._redirect("/login?msg=out", [self._cookie(auth.SESSION_COOKIE, "", 0)])
+                return
+            self.dispatch_post(post)
+
+        def dispatch_post(self, post: dict):
+            self._html(405, message_page(self.lang, "web.title", "web.method.h1"))
+
+        def _login(self, post: dict):
+            email = post.get("email", "")[:320]
+            next_path = safe_next(post.get("next", "/"))
+            # El intento se reserva antes de verificar (revisión de Metis en #439).
+            left = self.CTX.lockout.admit(self.ip)
+            if left:
+                minutes = max(1, (left + 59) // 60)
+                self._html(429, login_page(self.lang, email=email, next_path=next_path,
+                                           error=i18n.th("web.login.locked", min=minutes)))
+                return
+            password = post.get("password", "")[:users.MAX_PASSWORD]
+            if not auth.verify_login(self.user, email, password):
+                # admit() ya lo contó: no se cuenta dos veces.
+                self._html(401, login_page(self.lang, email=email, next_path=next_path,
+                                           error=i18n.th("web.login.bad")))
+                return
+            self.CTX.lockout.success(self.ip)
+            if self.sid:
+                self.CTX.sessions.drop(self.sid)  # una sesión nueva en cada entrada
+            agent = self.headers.get("User-Agent", "")
+            sid = self.CTX.sessions.create(self.ip, self.user, agent)
+            if auth.remember_ip(self.CTX.user_path(), self.ip):
+                when = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
+                self.CTX.notifier.owner(self.user, i18n.t("web.mail.newip.subject"),
+                                        i18n.t("web.mail.newip.body", name=self.user.get("name", ""), when=when,
+                                               ip=self.ip, agent=agent[:200] or "-"))
+            self._redirect(next_path, [self._cookie(auth.SESSION_COOKIE, sid, None)])
 
     return Handler
 
@@ -268,7 +479,11 @@ class Server(ThreadingHTTPServer):
         self.server_port = port
 
 
-def serve(host: str = "127.0.0.1", port: int = 8771, user_file: Path | None = None) -> Server:
+def serve(host: str = "127.0.0.1", port: int = 8771, user_file: Path | None = None,
+          ctx: Context | None = None) -> Server:
     if host not in LOOPBACK_HOSTS:
         raise ValueError("PaynaniWeb only listens on loopback; it is reached through the SMS gateway")
-    return Server((host, port), make_handler(user_file))
+    ctx = ctx or Context(user_file)
+    server = Server((host, port), make_handler(ctx))
+    server.ctx = ctx
+    return server

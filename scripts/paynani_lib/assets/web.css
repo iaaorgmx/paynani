@@ -24,3 +24,102 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Entrar (PDSL-100): la tarjeta a la izquierda y el lema a la derecha, sobre el
+   papel, con la voluta como marca de agua al 6 % desbordando la esquina (la única
+   decoración que permite brand/README.md). En el celular, la tarjeta sola. */
+body.web-login {
+  padding: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  gap: 4rem;
+  padding: 2rem clamp(1rem, 8vw, 15rem);
+  overflow-x: hidden;
+  position: relative;
+}
+.web-login .marca-agua {
+  position: fixed;
+  right: -14rem;
+  bottom: -18rem;
+  width: 52rem;
+  height: 52rem;
+  opacity: .06;
+  pointer-events: none;
+}
+.web-login .tarjeta {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 28rem;
+  max-width: 28rem;
+  margin: 0;
+  padding: 3rem 2rem 2rem;
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(28,28,26,.06), 0 12px 40px rgba(28,28,26,.10);
+  text-align: center;
+}
+.web-login .tarjeta .marca { display: flex; justify-content: center; margin-bottom: 2rem; }
+.web-login .tarjeta .marca svg { height: 3rem; }
+.web-login h1 { font-size: 1.5rem; font-weight: 500; margin: 0 0 .5rem; }
+.web-login .sub { color: var(--quiet); margin: 0 0 1.5rem; }
+.web-login form { text-align: left; }
+.web-login label { display: block; font-size: .9rem; margin: .75rem 0 .3rem; }
+.web-login input[type=email],
+.web-login input[type=password] {
+  width: 100%;
+  height: 3.25rem;
+  padding: 0 1rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.web-login input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.web-login .continuar {
+  display: block;
+  width: 100%;
+  height: 3.4rem;
+  margin-top: 1.5rem;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+@media (prefers-color-scheme: dark) { .web-login .continuar { color: #16171a; } }
+.web-login .continuar:hover { filter: brightness(.94); }
+.web-login .legal { margin: 1.25rem 0 0; font-size: .8rem; color: var(--quiet); }
+.web-login .langpick { justify-content: center; margin-top: 1.25rem; }
+.web-login .aviso, .web-login .error {
+  text-align: left;
+  font-size: .9rem;
+  padding: .6rem .8rem;
+  border-radius: 8px;
+  margin: 0 0 1rem;
+}
+.web-login .aviso { background: var(--ok-bg); border: 1px solid var(--ok-line); color: var(--ok-ink); }
+.web-login .error { background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad-ink); }
+.web-login .lema { position: relative; z-index: 1; max-width: 46rem; }
+.web-login .lema h2 { font-size: clamp(1.8rem, 3vw, 3.25rem); line-height: 1.15; margin: 0; letter-spacing: -.01em; }
+.web-login .lema p { font-size: clamp(1rem, 1.4vw, 1.4rem); line-height: 1.5; color: var(--quiet); max-width: 36rem; margin-top: 1.25rem; }
+
+@media (max-width: 900px) {
+  body.web-login { display: block; padding: 2rem 1rem; }
+  .web-login .tarjeta { max-width: 28rem; margin: 0 auto; }
+  .web-login .lema { display: none; }
+}
+
+.secundario {
+  font: inherit;
+  padding: .55rem 1rem;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.secundario:hover { border-color: var(--accent); }

@@ -2,6 +2,27 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: entrar, el bloqueo y la sesión** (T3 del paraguas #435; PRD #434 FR-5
+  a FR-9). Con el usuario creado, toda ruta pide sesión y lleva a `/login`, la
+  pantalla de PDSL-100: la tarjeta con correo y contraseña a la izquierda y el lema a
+  la derecha, sin «Sign up», Google ni teléfono. El correo no distingue mayúsculas,
+  el mensaje de error no dice si falló el correo o la contraseña, y un correo
+  equivocado corre `scrypt` igual, para que tarde lo mismo. **5 fallos en 15
+  minutos** desde una dirección la bloquean **15 minutos** (`429`), y mientras está
+  bloqueada ni la contraseña buena entra. La dirección es el último valor de
+  `X-Forwarded-For`, el que pone el túnel; los anteriores los escribe el cliente y no
+  cuentan. **La sesión** es un id al azar en una cookie `HttpOnly`, `Secure` y
+  `SameSite=Strict`. Vence tras **8 horas** sin uso y vive en memoria, así que
+  reiniciar PaynaniWeb cierra todas; cambiar la contraseña (`paynani web passwd`)
+  también las cierra. Cada entrada abre una sesión nueva. **Cerrar sesión** es un
+  `POST` con el token de la sesión. Todo `POST` tiene que traer `Origin` (o
+  `Referer`) de la misma dirección (`403` si no), y `next` solo lleva a rutas de la
+  misma web. **La primera entrada desde una dirección nueva** le manda un correo al
+  dueño por `send.sh`, en el idioma de la página, con la hora, la dirección y el
+  navegador, y le dice cómo cambiar la contraseña (FR-9). Las direcciones vistas van
+  en `web/known_ips.json`. Si el correo no sale, se entra igual y queda una línea en
+  el log, sin el cuerpo. Un cuerpo de más de 64 KB es `413`.
+
 - **PaynaniWeb se instala con la pasarela SMS** (T2 del paraguas #435, segunda
   parte; PRD #434 FR-4). Solo se llega a ella por la pasarela (FR-1), así que va
   donde va la pasarela (#435, Q-T2-1): `install.sh --with-sms` instala y enciende
