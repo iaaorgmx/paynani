@@ -2,6 +2,28 @@
 
 ## Sin publicar
 
+- **`upgrade_plan --apply` y `paynani doctor` coinciden cuando el plan no reinicia
+  el listener** (#451, lo encontró Metis al actualizar a `c2f2934`).
+  - **`--apply`** esperaba siempre una línea nueva `resuming from uid N` del
+    listener, que solo aparece cuando el listener se reinicia. Con un plan que solo
+    reiniciaba PaynaniWeb, fallaba a los 40 s después de una actualización buena.
+    Ahora la espera solo cuando el plan reinicia el listener; si no, verifica la
+    versión en disco y corre `healthcheck.py`.
+  - **`doctor`** marcaba `version_drift` en cuanto el commit del listener o del
+    dispatcher no era el del disco, aunque entre los dos commits no cambiara nada
+    de lo que cargan. Ahora pregunta a la misma tabla del plan
+    (`upgrade_plan.restarts_between`) y solo marca drift si ese proceso tenía que
+    reiniciarse. Si no lo puede saber (un commit que el clon no tiene, un archivo
+    que la tabla no conoce, un error), marca drift como antes.
+  - Pruebas en `test_upgrade_plan.py` (un plan que solo reinicia la web aplica sin
+    esperar al listener; uno que lo reinicia sigue esperando; `restarts_between`
+    con docs, web, dispatcher, un archivo desconocido y un commit ajeno) y en
+    `test_healthcheck.py`.
+  - Arreglo también varias comprobaciones de `test_send_sent_copy.py` (#449) y una
+    de `test_upgrade_plan.py` (#450) que pasaban `check(desc, esperado, obtenido)`
+    a un `check(desc, condición)`. Así pasaban siempre. Ahora comparan de verdad, y
+    pasan.
+
 - **`upgrade_plan.py --apply` acepta la salida 10 de `install.sh`** (#435, lo
   encontró Metis al actualizar a `e9cfada`). `install.sh --upgrade` (e
   `install_macos.py`) sale con 10, `EX_CHANGED`, cuando terminó bien y cambió algo,

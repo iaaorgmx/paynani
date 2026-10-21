@@ -517,7 +517,42 @@ try:
         except up.ApplyError as exc:
             stopped = f"exit {code}" in str(exc)
         check(f"installer exit {code} still stops apply before any restart",
-              (True, False), (stopped, any(a[:3] == ["systemctl", "--user", "restart"] for a in calls)))
+              stopped is True and not any(a[:3] == ["systemctl", "--user", "restart"] for a in calls), str(calls))
+    calls.clear()
+
+    # #451: a plan that restarts only PaynaniWeb never restarts the listener, so no
+    # fresh 'resuming from uid N' line is coming. --apply waited 40 s for one and
+    # failed after a good upgrade; now it checks the disk version and healthcheck.
+    def web_only_runner(argv, cwd, text, capture_output):
+        argv = [str(value) for value in argv]
+        calls.append(argv)
+        if argv[:3] == ["systemctl", "--user", "list-units"]:
+            return subprocess.CompletedProcess(argv, 0, "paynani-web.service loaded active running\n", "")
+        if argv[:2] == ["systemctl", "--user"]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return apply_runner(argv, cwd, text, capture_output)
+
+    log_before = (state / "idle.err.log").read_text(encoding="utf-8")
+    web_only = dict(apply, restart_units=[up.WEB], reinstall=False)
+    try:
+        up.apply_plan(web_only, repo=applied, runner=web_only_runner, wait_seconds=0)
+        web_ok = True
+    except up.ApplyError as exc:
+        web_ok = str(exc)
+    check("a plan that restarts only PaynaniWeb applies without waiting for the listener (#451)", web_ok is True, web_ok)
+    check("... it restarted PaynaniWeb, not the listener",
+          ["systemctl", "--user", "restart", "paynani-web.service"] in calls
+          and not any("paynani-idle.service" in a for a in calls), str(calls))
+    check("... and still ran healthcheck", any(a and a[0].endswith("scripts/healthcheck.py") for a in calls), str(calls))
+    check("... with no new listener line written", log_before == (state / "idle.err.log").read_text(encoding="utf-8"))
+    calls.clear()
+    listener_plan = dict(apply, restart_units=[up.LISTENER, up.WEB], reinstall=False)
+    try:
+        up.apply_plan(listener_plan, repo=applied, runner=web_only_runner, wait_seconds=0)
+        waited = False
+    except up.ApplyError as exc:
+        waited = "listener verification timed out" in str(exc)
+    check("a plan that does restart the listener still waits for its 'resuming from uid' line", waited is True)
     calls.clear()
 
     refused = dict(apply, unknown=["mystery.bin"])
@@ -662,6 +697,32 @@ try:
             __import__("os").environ["PAYNANI_WEB_USER"] = old_user
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
+
+# --- restarts_between: the table doctor asks before calling a commit drift (#451) ---
+rb = pathlib.Path(tempfile.mkdtemp(prefix="paynani-restarts-"))
+sh(rb, "init", "-q")
+write(rb, "VERSION", "1.0.0\n")
+write(rb, "README.md", "a\n")
+sh(rb, "add", "-A")
+sh(rb, "commit", "-q", "-m", "base")
+sh(rb, "tag", "base")
+steps = (("docs", "README.md", "b\n"), ("web", "scripts/paynani_lib/web/app.py", "x = 1\n"),
+         ("dispatcher", "harness/dispatch.py", "x = 1\n"), ("mystery", "mystery.bin", "?\n"))
+for tag, rel, text in steps:
+    write(rb, rel, text)
+    sh(rb, "add", "-A")
+    sh(rb, "commit", "-q", "-m", tag)
+    sh(rb, "tag", tag)
+check("restarts_between: docs only -> nothing to restart", up.restarts_between("base", "docs", repo=rb, system="Linux") == set())
+web_units = up.restarts_between("docs", "web", repo=rb, system="Linux")
+check("restarts_between: a web file -> PaynaniWeb, not the listener nor the dispatcher",
+      up.WEB in web_units and up.LISTENER not in web_units and up.DISPATCHER not in web_units, str(web_units))
+check("restarts_between: harness/dispatch.py -> the dispatcher",
+      up.DISPATCHER in up.restarts_between("web", "dispatcher", repo=rb, system="Linux"))
+check("restarts_between: a file the table does not know -> cannot tell (None)",
+      up.restarts_between("dispatcher", "mystery", repo=rb, system="Linux") is None)
+check("restarts_between: a commit this clone does not have -> None",
+      up.restarts_between("0" * 40, "docs", repo=rb, system="Linux") is None)
 
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

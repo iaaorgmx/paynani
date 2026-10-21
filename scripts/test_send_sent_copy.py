@@ -37,6 +37,11 @@ def check(desc, condition, detail=""):
         failed += 1
 
 
+def same(desc, expected, actual):
+    """check() for an expected value: `check(desc, expected, actual)` would pass on any truthy tuple."""
+    check(desc, expected == actual, f"     expected {expected!r}\n     got      {actual!r}")
+
+
 SENT_BOX = [{"name": "Inbox", "attributes": ["\\HasChildren"]},
             {"name": "INBOX.Sent", "attributes": ["\\HasNoChildren", "\\Sent"]},
             {"name": "INBOX.Trash", "attributes": ["\\Trash"]}]
@@ -135,7 +140,7 @@ for server in ("imaps://imap.gmail.com:993", "imap.gmail.com"):
     h = Home(imap_server=server)
     try:
         run, calls, log = h.send()
-        check(f"Gmail ({server}): sent, no APPEND, sent-copy=skipped",
+        same(f"Gmail ({server}): sent, no APPEND, sent-copy=skipped",
               (0, False, True), (run.returncode, "imap append" in calls, "\tsent-copy=skipped\t" in log))
     finally:
         h.close()
@@ -144,7 +149,7 @@ for server in ("imaps://imap.gmail.com:993", "imap.gmail.com"):
 h = Home(imap_server="")
 try:
     run, calls, log = h.send()
-    check("no IMAP block: sent, nothing asked of IMAP, sent-copy=skipped",
+    same("no IMAP block: sent, nothing asked of IMAP, sent-copy=skipped",
           (0, "", True), (run.returncode, "\n".join(l for l in calls.splitlines() if " imap " in l), "\tsent-copy=skipped\t" in log))
 finally:
     h.close()
@@ -178,16 +183,16 @@ h = Home()
 try:
     for flag in ("--check", "--dry-run"):
         run, calls, log = h.send(flag)
-        check(f"{flag}: no APPEND and no sent.log", (0, False, ""), (run.returncode, "imap append" in calls, log))
+        same(f"{flag}: no APPEND and no sent.log", (0, False, ""), (run.returncode, "imap append" in calls, log))
 finally:
     h.close()
 
 # --- sent_copy.py on its own --------------------------------------------------------
-check("is_gmail", (True, True, False, False),
+same("is_gmail", (True, True, False, False),
       (sent_copy.is_gmail("imap.gmail.com"), sent_copy.is_gmail("imap.googlemail.com"),
        sent_copy.is_gmail("gmail.example.test"), sent_copy.is_gmail("mail.example.test")))
 run = subprocess.run([sys.executable, str(ROOT / "scripts" / "paynani_lib" / "sent_copy.py")], capture_output=True, text=True)
-check("sent_copy.py with no arguments: one line, exit 0", (0, "failed usage"), (run.returncode, run.stdout.strip()))
+same("sent_copy.py with no arguments: one line, exit 0", (0, "failed usage"), (run.returncode, run.stdout.strip()))
 
 # --- paynani doctor says which account does not keep a copy -------------------------
 sys.path.insert(0, str(ROOT / "harness"))
@@ -216,20 +221,20 @@ server = "smtps://mail.x.test:465"
         c = diagnostics._sent_copy_check(*args)
         return c["status"], c["summary"]
 
-    check("doctor: a send from before this version -> ok, from the next send",
+    same("doctor: a send from before this version -> ok, from the next send",
           ("ok", "sent mail will be copied to Sent from the next send"), row("sent_copy", "paynani", "", log))
     with open(log, "a") as fh:
         fh.write("2026-10-21T10:01:00Z\tto=a@b.test\tcc=\tbcc=\tsubject=x\tsent-copy=failed\tmessage-id=<2@x>\n")
         fh.write("2026-10-21T10:02:00Z\tto=a@b.test\tcc=\tbcc=\tsubject=x\tsent-copy=saved\tmessage-id=<3@x>\taccount=otra\n")
-    check("doctor: the account's last send failed its copy -> warning",
+    same("doctor: the account's last send failed its copy -> warning",
           "warning", row("sent_copy", "paynani", "", log)[0])
-    check("doctor: ... another account's line does not count for it", True,
+    same("doctor: ... another account's line does not count for it", True,
           diagnostics._last_sent(log, "")["message-id"] == "<2@x>")
     with open(log, "a") as fh:
         fh.write("2026-10-21T10:03:00Z\tto=a@b.test\tcc=\tbcc=\tsubject=x\tsent-copy=saved\tmessage-id=<4@x>\n")
-    check("doctor: saved -> ok", ("ok", "sent mail is copied to Sent"), row("sent_copy", "paynani", "", log))
-    check("doctor: Gmail -> ok, paynani adds none", "ok", row("account:gm:sent_copy", "paynani-gm", "gm", log)[0])
-    check("doctor: no IMAP -> warning that names the account", ("warning", True),
+    same("doctor: saved -> ok", ("ok", "sent mail is copied to Sent"), row("sent_copy", "paynani", "", log))
+    same("doctor: Gmail -> ok, paynani adds none", "ok", row("account:gm:sent_copy", "paynani-gm", "gm", log)[0])
+    same("doctor: no IMAP -> warning that names the account", ("warning", True),
           (row("account:sin:sent_copy", "paynani-sin", "sin", log)[0],
            "[accounts.paynani-sin] has no IMAP" in row("account:sin:sent_copy", "paynani-sin", "sin", log)[1]))
 

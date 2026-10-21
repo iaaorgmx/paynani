@@ -294,6 +294,45 @@ def overlays(from_ref, to_ref, repo=ROOT):
     return sorted(found, key=lambda o: o["path"])
 
 
+def _units_of(f):
+    """The services a file with the verb `restart` makes the plan restart."""
+    if f["unit"] == "both":
+        # The per-account listeners (paynani-idle@<id>) import the same
+        # harness modules as the main one; leaving them out kept doctor
+        # in `warning` after following the plan exactly (#336).
+        return [LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB]
+    if f["unit"] == "gateway-web":
+        return [SMS_GATEWAY, WEB]
+    if f["unit"] == "listener-all":
+        return [LISTENER, LISTENER_INSTANCES, SMS_GATEWAY]
+    if f["unit"] == "all":
+        return [LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB]
+    return [(f["unit"], f["label"])]
+
+
+def restarts_between(from_ref, to_ref, repo=ROOT, system=None):
+    """
+    The services that must restart to load `to_ref` when they run `from_ref`, by
+    the same table the plan uses, or None when this clone cannot tell (a commit it
+    does not have, or a file the table does not know or the installer rewrites).
+    doctor's version_drift asks this before calling a commit mismatch drift, so a
+    plan and doctor never disagree about whether a restart was due (#451).
+    """
+    code, diff = git("diff", "--name-only", from_ref, to_ref, repo=repo)
+    if code != 0:
+        return None
+    units = set()
+    for path in (p for p in diff.splitlines() if p):
+        f = classify(path, system=system or platform.system())
+        if f["here"] is False:
+            continue
+        if f["verb"] in ("unknown", "reinstall-and-restart"):
+            return None
+        if f["verb"] == "restart":
+            units.update(_units_of(f))
+    return units
+
+
 def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
     """
     The plan as data. `ok` False means it could not be computed; `reason` says why.
@@ -334,19 +373,7 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
         if f["here"] is False:
             continue
         if f["verb"] == "restart":
-            if f["unit"] == "both":
-                # The per-account listeners (paynani-idle@<id>) import the same
-                # harness modules as the main one; leaving them out kept doctor
-                # in `warning` after following the plan exactly (#336).
-                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB])
-            elif f["unit"] == "gateway-web":
-                units.extend([SMS_GATEWAY, WEB])
-            elif f["unit"] == "listener-all":
-                units.extend([LISTENER, LISTENER_INSTANCES, SMS_GATEWAY])
-            elif f["unit"] == "all":
-                units.extend([LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB])
-            else:
-                units.append((f["unit"], f["label"]))
+            units.extend(_units_of(f))
         elif f["verb"] == "reinstall-and-restart":
             if f["command"] is INSTALLER:
                 out["reinstall"] = True
@@ -647,9 +674,16 @@ def apply_plan(p, repo=ROOT, runner=subprocess.run, sleeper=time.sleep, wait_sec
                              f"version.sh={installed!r}")
         timeout = wait_seconds if wait_seconds is not None else float(
             os.environ.get("PAYNANI_APPLY_WAIT_SECONDS", "40"))
-        _wait_for_listener(repo, expected, log_offset, timeout, sleeper=sleeper)
+        # A fresh 'resuming from uid N' line only appears when the listener restarts,
+        # so it is awaited only when this plan restarted it (#451).
+        listener_restarted = LISTENER in p["restart_units"]
+        if listener_restarted:
+            _wait_for_listener(repo, expected, log_offset, timeout, sleeper=sleeper)
         _run([str(repo / "scripts/healthcheck.py")], repo, runner=runner)
-        print(f"apply: verified disk and listener version {expected}, UID resume, and healthcheck")
+        if listener_restarted:
+            print(f"apply: verified disk and listener version {expected}, UID resume, and healthcheck")
+        else:
+            print(f"apply: verified disk version {expected} and healthcheck; the plan did not restart the listener")
         return {"patch": str(patch_path) if patch_path else None, "version": expected}
     except Exception:
         if stashed:
