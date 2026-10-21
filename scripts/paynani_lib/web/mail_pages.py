@@ -25,6 +25,20 @@ def _state(state: str) -> str:
     return f'<span class="estado estado-{e(state)}">{e(label if not label.startswith("web.") else state)}</span>'
 
 
+def account_head(account_id: str, *, removable: bool, ok: str = "") -> str:
+    """El aviso de lo que acaba de pasar (agregada, quitada) y «Quitar esta cuenta»
+    para una cuenta adicional (FR-16)."""
+    th = i18n.th
+    out = ""
+    if ok in ("added", "added_noservice", "removed"):
+        cls = "aviso-ok" if ok != "added_noservice" else "aviso-caja"
+        out += f'<p class="{cls}" role="status">{th("web.acct.ok." + ok)}</p>\n'
+    if removable:
+        out += (f'<p class="acciones-cuenta"><a class="peligro-enlace" href="/cuentas/{quote(account_id)}/quitar">'
+                f'{th("web.acct.remove_nav")}</a></p>\n')
+    return out
+
+
 def list_body(account_id: str, rows: list[dict], total: int, offset: int, next_offset: int | None) -> str:
     th = i18n.th
     if not total:

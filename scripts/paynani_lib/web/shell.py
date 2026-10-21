@@ -95,6 +95,7 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
         items.append(f'<span class="sub aviso-menu" role="status">{icon("warn")}{th("web.nav.accounts_error")}</span>')
     if not items:
         items.append(f'<span class="sub vacio">{th("web.nav.no_accounts")}</span>')
+    items.append(f'<a class="sub agregar" href="/cuentas/nueva">+ {th("web.acct.add_nav")}</a>')
 
     def entry(key, href, ico, label_key):
         current = ' aria-current="page"' if active == key else ""

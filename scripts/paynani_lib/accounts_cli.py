@@ -296,49 +296,50 @@ class _Undo:
                 pass
 
 
-def run_add(args) -> int:
-    account_id = str(args.id or "")
+class AccountOpError(Exception):
+    """Why an add or a remove did not happen; the message is the one the CLI prints after «Not …:»."""
+
+
+def prepare_add(account_id, email, imap_host, imap_port=993, smtp_host="", smtp_port=465,
+                from_name="", mailboxes=None) -> dict:
+    """
+    Everything `paynani account add` checks before it asks for the password, shared
+    with PaynaniWeb (#435 T6). Returns what `commit_add` needs; raises AccountOpError
+    with the reason. Writes nothing.
+    """
+    account_id = str(account_id or "")
     if account_id == accounts.MAIN or not accounts.ID_PATTERN.match(account_id):
-        print(f"Not added: {account_id!r} is not a usable id. Use lowercase letters, digits and dashes "
-              f"({accounts.ID_PATTERN.pattern}); `{accounts.MAIN}` is the account in .env.", file=sys.stderr)
-        return 1
+        raise AccountOpError(f"{account_id!r} is not a usable id. Use lowercase letters, digits and dashes "
+                             f"({accounts.ID_PATTERN.pattern}); `{accounts.MAIN}` is the account in .env.")
     path = accounts.accounts_path()
     try:
         existing = accounts.load(path)
     except accounts.AccountsError as exc:
-        print(f"Not added: accounts.json is not usable: {exc}", file=sys.stderr)
-        return 1
+        raise AccountOpError(f"accounts.json is not usable: {exc}") from exc
     if any(account["id"] == account_id for account in existing):
-        print(f"Not added: account {account_id!r} already exists. `paynani account remove {account_id}` first.",
-              file=sys.stderr)
-        return 1
+        raise AccountOpError(f"account {account_id!r} already exists. `paynani account remove {account_id}` first.")
     if len(existing) >= accounts.MAX_ACCOUNTS:
-        print(f"Not added: there are already {len(existing)} additional accounts, and the limit is "
-              f"{accounts.MAX_ACCOUNTS} per agent.", file=sys.stderr)
-        return 1
-
+        raise AccountOpError(f"there are already {len(existing)} additional accounts, and the limit is "
+                             f"{accounts.MAX_ACCOUNTS} per agent.")
     try:
-        imap_port = int(args.imap_port or 993)
-        smtp_port = int(args.smtp_port or 465)
-    except (TypeError, ValueError):
-        print("Not added: a port must be a number.", file=sys.stderr)
-        return 1
-    entry = {"id": account_id, "email": str(args.email or "").strip()}
-    if str(getattr(args, "from_name", "") or "").strip():
-        entry["from_name"] = args.from_name.strip()
-    entry["imap"] = {"host": str(args.imap_host or "").strip(), "port": imap_port}
-    if str(getattr(args, "smtp_host", "") or "").strip():
-        entry["smtp"] = {"host": args.smtp_host.strip(), "port": smtp_port}
+        imap_port = int(imap_port or 993)
+        smtp_port = int(smtp_port or 465)
+    except (TypeError, ValueError) as exc:
+        raise AccountOpError("a port must be a number.") from exc
+    entry = {"id": account_id, "email": str(email or "").strip()}
+    if str(from_name or "").strip():
+        entry["from_name"] = from_name.strip()
+    entry["imap"] = {"host": str(imap_host or "").strip(), "port": imap_port}
+    if str(smtp_host or "").strip():
+        entry["smtp"] = {"host": smtp_host.strip(), "port": smtp_port}
     entry["password_env"] = accounts.password_key(account_id)
     entry["roster"] = f"rosters/{account_id}.md"
-    entry["mailboxes"] = list(getattr(args, "mailbox", None) or accounts.DEFAULT_MAILBOXES)
+    entry["mailboxes"] = list(mailboxes or accounts.DEFAULT_MAILBOXES)
     entry["enabled"] = True
     if len(entry["mailboxes"]) > 1:
         # accounts.json allows a list (PRD, Q9), but idle_listener.py --account refuses more
         # than one (#280) rather than watching some of them: do not write what it will refuse.
-        print("Not added: the listener watches one mailbox per account for now (#280). "
-              "Give --mailbox once.", file=sys.stderr)
-        return 1
+        raise AccountOpError("the listener watches one mailbox per account for now (#280). Give --mailbox once.")
 
     raw = _read_raw(path)
     candidate = dict(raw)
@@ -346,30 +347,25 @@ def run_add(args) -> int:
     try:
         accounts.validate(candidate)
     except accounts.AccountsError as exc:
-        print(f"Not added: {exc}", file=sys.stderr)
-        return 1
+        raise AccountOpError(str(exc)) from exc
 
     himalaya = himalaya_config_path()
     himalaya_text = _read_text(himalaya)
     if himalaya_text is not None and _has_himalaya_section(himalaya_text, _himalaya_name(account_id)):
-        print(f"Not added: {himalaya} already has [accounts.{_himalaya_name(account_id)}].", file=sys.stderr)
-        return 1
+        raise AccountOpError(f"{himalaya} already has [accounts.{_himalaya_name(account_id)}].")
+    return {"entry": entry, "raw": raw, "candidate": candidate, "path": path,
+            "himalaya": himalaya, "himalaya_text": himalaya_text}
 
-    if not stdin_is_tty():
-        print("Not added: the password is asked for on a terminal, hidden, and this is not one. "
-              "It is never taken from an argument or from a pipe.", file=sys.stderr)
-        return 1
-    password = getpass.getpass(f"Password for {entry['email']} (hidden): ").strip("\r\n")
-    if not password:
-        print("Not added: no password given.", file=sys.stderr)
-        return 1
 
-    result = probe_imap(entry["imap"]["host"], entry["imap"]["port"], entry["email"], password)
-    _print_steps("IMAP", result["steps"])
-    if not result["ok"]:
-        print("\nNot added: the login above failed, and nothing was written.", file=sys.stderr)
-        return 1
-
+def commit_add(prep: dict, password: str) -> Path:
+    """
+    Writes what `prepare_add` checked, after the login was proved: the password in
+    the .env, accounts.json, the roster from the template and the himalaya account.
+    If any write fails, everything written so far is put back and AccountOpError is
+    raised. Returns the roster path. Does not start the service.
+    """
+    entry, raw, candidate, path = prep["entry"], prep["raw"], prep["candidate"], prep["path"]
+    himalaya, himalaya_text = prep["himalaya"], prep["himalaya_text"]
     undo = _Undo()
     roster = accounts.roster_path(entry, path)
     try:
@@ -394,14 +390,47 @@ def run_add(args) -> int:
         _write_himalaya(himalaya, (himalaya_text.rstrip("\n") + "\n\n" if himalaya_text else "") + block)
     except OSError as exc:
         undo.restore()
-        print(f"Not added: could not write ({exc}). Everything written so far was put back.", file=sys.stderr)
+        raise AccountOpError(f"could not write ({exc}). Everything written so far was put back.") from exc
+    return roster
+
+
+def run_add(args) -> int:
+    try:
+        prep = prepare_add(args.id, args.email, args.imap_host, args.imap_port,
+                           getattr(args, "smtp_host", ""), args.smtp_port,
+                           getattr(args, "from_name", ""), getattr(args, "mailbox", None))
+    except AccountOpError as exc:
+        print(f"Not added: {exc}", file=sys.stderr)
+        return 1
+    entry, path = prep["entry"], prep["path"]
+    account_id = entry["id"]
+
+    if not stdin_is_tty():
+        print("Not added: the password is asked for on a terminal, hidden, and this is not one. "
+              "It is never taken from an argument or from a pipe.", file=sys.stderr)
+        return 1
+    password = getpass.getpass(f"Password for {entry['email']} (hidden): ").strip("\r\n")
+    if not password:
+        print("Not added: no password given.", file=sys.stderr)
+        return 1
+
+    result = probe_imap(entry["imap"]["host"], entry["imap"]["port"], entry["email"], password)
+    _print_steps("IMAP", result["steps"])
+    if not result["ok"]:
+        print("\nNot added: the login above failed, and nothing was written.", file=sys.stderr)
+        return 1
+
+    try:
+        roster = commit_add(prep, password)
+    except AccountOpError as exc:
+        print(f"Not added: {exc}", file=sys.stderr)
         return 1
 
     print(f"Added account {account_id!r} ({entry['email']}).")
     print(f"  password   {entry['password_env']} in {envfile.env_path()}")
     print(f"  config     {path}")
     print(f"  roster     {roster}")
-    print(f"  himalaya   [accounts.{_himalaya_name(account_id)}] in {himalaya}")
+    print(f"  himalaya   [accounts.{_himalaya_name(account_id)}] in {prep['himalaya']}")
     if not _service("enable", account_id):
         print(f"\nThe account is saved, but its service did not start. Once it can: "
               f"`systemctl --user enable --now paynani-idle@{account_id}.service`.", file=sys.stderr)
@@ -420,26 +449,35 @@ def _unused_name(directory: Path, account_id: str) -> Path:
     return candidate
 
 
-def run_remove(args) -> int:
-    account_id = str(args.id or "")
+def find_for_remove(account_id) -> dict:
+    """The account `remove_account` would remove; AccountOpError with the reason if none."""
+    account_id = str(account_id or "")
     path = accounts.accounts_path()
     try:
         existing = accounts.load(path)
     except accounts.AccountsError as exc:
-        print(f"Not removed: accounts.json is not usable: {exc}", file=sys.stderr)
-        return 1
+        raise AccountOpError(f"accounts.json is not usable: {exc}") from exc
     entry = next((account for account in existing if account["id"] == account_id), None)
     if entry is None:
-        print(f"Not removed: there is no additional account {account_id!r}. "
-              "(The account in .env is not managed here.)", file=sys.stderr)
-        return 1
-    if not _confirm(f"Remove account {account_id!r} ({entry['email']})? Its service stops and its "
-                    "password leaves the .env; its roster is kept.", getattr(args, "yes", False)):
-        print("Nothing changed.", file=sys.stderr)
-        return 1
+        raise AccountOpError(f"there is no additional account {account_id!r}. "
+                             "(The account in .env is not managed here.)")
+    return entry
+
+
+def remove_account(account_id) -> Path | None:
+    """
+    What `paynani account remove` does once confirmed, shared with PaynaniWeb (#435
+    T6): stops the service first (if it does not stop, nothing changes), drops the
+    account from accounts.json, its password from the .env and its himalaya
+    section, and moves its roster to rosters/removed/. Returns where the roster was
+    kept, or None. The mailbox and the mail history are not touched.
+    """
+    account_id = str(account_id or "")
+    entry = find_for_remove(account_id)
+    path = accounts.accounts_path()
+    existing = accounts.load(path)
     if not _service("disable", account_id):
-        print("Not removed: the service could not be stopped, so nothing was changed.", file=sys.stderr)
-        return 1
+        raise AccountOpError("the service could not be stopped, so nothing was changed.")
 
     raw = _read_raw(path)
     raw["accounts"] = [a for a in raw.get("accounts", []) if a.get("id") != account_id]
@@ -467,7 +505,25 @@ def run_remove(args) -> int:
             shutil.move(str(roster), str(kept))
         else:
             print(f"Its roster is outside {base}, so it was left where it is: {roster}", file=sys.stderr)
+    return kept
 
+
+def run_remove(args) -> int:
+    account_id = str(args.id or "")
+    try:
+        entry = find_for_remove(account_id)
+    except AccountOpError as exc:
+        print(f"Not removed: {exc}", file=sys.stderr)
+        return 1
+    if not _confirm(f"Remove account {account_id!r} ({entry['email']})? Its service stops and its "
+                    "password leaves the .env; its roster is kept.", getattr(args, "yes", False)):
+        print("Nothing changed.", file=sys.stderr)
+        return 1
+    try:
+        kept = remove_account(account_id)
+    except AccountOpError as exc:
+        print(f"Not removed: {exc}", file=sys.stderr)
+        return 1
     print(f"Removed account {account_id!r}.")
     if kept:
         print(f"  roster kept at {kept}")
