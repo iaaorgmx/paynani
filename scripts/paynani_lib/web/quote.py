@@ -87,7 +87,9 @@ def split(text: str) -> list[tuple[str, str]]:
     El cuerpo en partes, en orden: `("text", …)` lo que se ve y `("quote", …)` lo que se
     pliega. Juntas dan el texto original, salvo los blancos de los bordes de cada parte.
     """
-    lines = (text or "").split("\n")
+    # Gmail manda el cuerpo con \r\n: sin esto, cada línea visible acababa en \r y se
+    # veía un hueco antes de «•••» (T5 de #456).
+    lines = (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
     parts: list[tuple[str, str]] = []
     visible: list[str] = []
 

@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: sin hueco antes de «•••» en los correos de Gmail** (T5 de #456, lo
+  encontró Metis). Gmail manda el cuerpo con `\r\n`, y `quote.split()` dejaba
+  cada línea visible con un `\r` al final. Ahora normaliza `\r\n` y `\r` a `\n`
+  antes de partir el cuerpo.
+
 - **PaynaniWeb: la hora de cada mensaje, en la zona de quien mira** (T4 del paraguas
   #456; PRD #455, 4.4; Q50 = A).
   - **`assets/time.js`**, un script chico como `lang.js`, reescribe cada

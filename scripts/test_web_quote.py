@@ -141,6 +141,13 @@ Hola Carla,
 check("Outlook (es): «-----Mensaje original-----» y De/Enviado/Para/Asunto",
       (["text", "quote"], "Aprobado."), (kinds(OUTLOOK_ES), part(OUTLOOK_ES, "text")))
 
+# --- Gmail manda \r\n (T5 de #456) --------------------------------------------------------
+CRLF = GMAIL_ES.replace("\n", "\r\n")
+check("con \\r\\n: las mismas partes que con \\n", quote.split(GMAIL_ES), quote.split(CRLF))
+check("... y ninguna línea termina en \\r", False, any("\r" in body for _, body in quote.split(CRLF)))
+check("un \\r solo (Mac viejo) también parte la línea", ["text", "quote"],
+      kinds("Va.\r\rOn Mon, Ana <a@example.com> wrote:\r> hola\r"))
+
 # --- un reenvío no es una cita (revisión de #458) -----------------------------------------
 FORWARDS = (
     ("Gmail (en)", "---------- Forwarded message ---------", "From", "Date", "Subject", "To"),
