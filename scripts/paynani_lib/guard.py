@@ -68,7 +68,9 @@ SECURITY_HEADERS = [
 # script-src 'self' and nothing more: same-origin files only, no
 # 'unsafe-inline', no 'unsafe-eval', no remote origin. Inline handlers stay
 # forbidden, so a string injected into this page still cannot execute.
+# img-src 'self' lets the browser load the favicon from this same server
+# (Firefox applies img-src to it); still nothing from another origin.
 CSP = (
-    "default-src 'none'; style-src 'self'; script-src 'self'; "
+    "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
     "form-action 'self'; base-uri 'none'"
 )

@@ -179,7 +179,7 @@ pages = {
     "/cuentas/nueva": ("/cuentas/nueva", cookie),
     "una ruta que no existe": ("/no-existe", cookie),
 }
-CSP = "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'"
+CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'"
 for label, (path, ck) in pages.items():
     status, h, page = req("GET", path, cookie=ck)
     problems = []

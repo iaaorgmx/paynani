@@ -44,6 +44,9 @@ ICONS = {
 }
 
 
+# The brand favicon (brand/favicon.svg), served by app.STATIC.
+FAVICON_LINK = '<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">'
+
 def e(value) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
@@ -140,6 +143,7 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{e(title)} · PaynaniWeb</title>
+{FAVICON_LINK}
 <link rel="stylesheet" href="/assets/app.css">
 <link rel="stylesheet" href="/assets/web.css">
 </head>

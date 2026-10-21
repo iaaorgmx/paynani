@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **PaynaniWeb tiene favicon** (lo pidió Julian). Es `brand/favicon.svg`, la voluta
+  reducida, servido en `/assets/favicon.svg` y también en `/favicon.ico`, que antes
+  llevaba al login. Las páginas sin sesión, el login y el marco con sesión lo
+  enlazan. La CSP suma `img-src 'self'` para que el navegador lo cargue; sigue sin
+  permitir nada de otro origen.
+
 - **El plan impreso dice lo mismo que `--apply`** (#451, nota de Metis). La lista de
   pasos de `upgrade_plan.py` decía siempre «verify disk and listener version, a new
   'resuming from uid N', and healthcheck». Ahora, si el plan no reinicia el
