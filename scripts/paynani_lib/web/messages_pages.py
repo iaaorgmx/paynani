@@ -48,8 +48,13 @@ def list_body(convs: list[dict], names: dict, offset: int, next_offset: int | No
     th = i18n.th
     if not total:
         return f'<p class="lead">{th("web.sms.empty")}</p>\n'
+    # La misma tabla que la lista de correos (pedido de Julian): a todo lo ancho, con la
+    # cabecera gris y una flecha por fila.
     out = [f'<p class="quiet resumen">{th("web.sms.count", n=total)} · {th("web.mail.readonly")}</p>',
-           '<ul class="correos conversaciones">']
+           '<ul class="correos conversaciones">',
+           f'<li class="correos-cabecera" aria-hidden="true"><span>{th("web.sms.col.who")}</span>'
+           f'<span>{th("web.sms.col.last")}</span><span>{th("web.sms.col.when")}</span>'
+           f'<span>{th("web.sms.col.count")}</span><span></span></li>']
     for c in convs:
         href = f"/messages/ver?n={quote(c['number'], safe='')}"
         missed = (f' <span class="marca-llamada">{th("web.sms.missed_n", n=c["missed"])}</span>'
@@ -60,7 +65,8 @@ def list_body(convs: list[dict], names: dict, offset: int, next_offset: int | No
   <span class="quien">{e(_who(c, names))}{roster}</span>
   <span class="asunto">{e(_preview(c['last']))}</span>
   <span class="cuando">{e(_local(c['last']['local']))}</span>
-  <span class="estado">{th('web.sms.n_items', n=c['count'])}{missed}</span>
+  <span class="estado-celda"><span class="estado">{th('web.sms.n_items', n=c['count'])}</span>{missed}</span>
+  <span class="flecha" aria-hidden="true">›</span>
 </a></li>""")
     out.append("</ul>")
     if next_offset is not None:

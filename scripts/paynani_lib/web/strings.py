@@ -11,6 +11,10 @@ from ..i18n_data import CATALOGUES
 
 STRINGS = {
     "es-MX": {
+        'web.sms.col.who': 'Contacto',
+        'web.sms.col.last': 'Último mensaje',
+        'web.sms.col.when': 'Fecha',
+        'web.sms.col.count': 'Mensajes',
         'web.time.now': 'ahora',
         'web.time.min1': 'hace 1 minuto',
         'web.time.mins': 'hace {n} minutos',
@@ -253,6 +257,10 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "en-US": {
+        'web.sms.col.who': 'Contact',
+        'web.sms.col.last': 'Last message',
+        'web.sms.col.when': 'Date',
+        'web.sms.col.count': 'Messages',
         'web.time.now': 'now',
         'web.time.min1': '1 minute ago',
         'web.time.mins': '{n} minutes ago',
@@ -495,6 +503,10 @@ STRINGS = {
         "web.lang.apply": "Change",
     },
     "es-ES": {
+        'web.sms.col.who': 'Contacto',
+        'web.sms.col.last': 'Último mensaje',
+        'web.sms.col.when': 'Fecha',
+        'web.sms.col.count': 'Mensajes',
         'web.time.now': 'ahora',
         'web.time.min1': 'hace 1 minuto',
         'web.time.mins': 'hace {n} minutos',
@@ -737,6 +749,10 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "fr-FR": {
+        'web.sms.col.who': 'Contact',
+        'web.sms.col.last': 'Dernier message',
+        'web.sms.col.when': 'Date',
+        'web.sms.col.count': 'Messages',
         'web.time.now': 'maintenant',
         'web.time.min1': 'il y a 1 minute',
         'web.time.mins': 'il y a {n} minutes',
@@ -979,6 +995,10 @@ STRINGS = {
         "web.lang.apply": "Changer",
     },
     "pt-BR": {
+        'web.sms.col.who': 'Contato',
+        'web.sms.col.last': 'Última mensagem',
+        'web.sms.col.when': 'Data',
+        'web.sms.col.count': 'Mensagens',
         'web.time.now': 'agora',
         'web.time.min1': 'há 1 minuto',
         'web.time.mins': 'há {n} minutos',

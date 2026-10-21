@@ -606,7 +606,7 @@ def make_handler(ctx: Context):
                 chunk = convs[offset:offset + messages_pages.PAGE]
                 nxt = offset + messages_pages.PAGE if offset + messages_pages.PAGE < len(convs) else None
                 self._page(200, title=t("web.nav.messages"),
-                           body=messages_pages.list_body(chunk, names, offset, nxt, len(convs)), **kw)
+                           body=messages_pages.list_body(chunk, names, offset, nxt, len(convs)), wide=True, **kw)
                 return
             number = self.query.get("n", [""])[0]
             mine = [i for i in items if i["number"] == number]

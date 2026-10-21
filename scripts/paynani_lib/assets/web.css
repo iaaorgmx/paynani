@@ -342,7 +342,9 @@ body.web-shell {
    columnas De/Para, Asunto, Fecha y Estado. En el celular se apila, sin cabecera. */
 .web-shell .panel.panel-ancho { max-width: none; }
 .web-shell .correos li a, .web-shell .correos .correos-cabecera {
-  grid-template-columns: minmax(12rem, 24%) 1fr minmax(9.5rem, auto) minmax(6rem, auto) 1.2rem;
+  /* Anchos fijos para fecha y estado: cada fila es su propia rejilla, y con «auto» una
+     celda más ancha (las llamadas perdidas de Messages) corría las columnas. */
+  grid-template-columns: minmax(12rem, 24%) 1fr 10.5rem 7.5rem 1.2rem;
 }
 .web-shell .correos .correos-cabecera {
   display: grid; gap: .25rem 1rem; padding: .75rem .25rem; background: var(--bg);
@@ -350,6 +352,8 @@ body.web-shell {
 }
 .web-shell .correos .correos-cabecera span:first-child { padding-left: 1.35em; }
 .web-shell .correos .flecha { color: var(--quiet); font-size: 1.3rem; line-height: 1; text-align: right; }
+.web-shell .conversaciones .estado-celda { display: flex; flex-direction: column; align-items: flex-start; gap: .15rem; }
+.web-shell .conversaciones .marca-llamada { margin-left: 0; }
 @media (max-width: 900px) {
   .web-shell .correos .correos-cabecera { display: none; }
   .web-shell .correos li a { grid-template-columns: 1fr auto; }
