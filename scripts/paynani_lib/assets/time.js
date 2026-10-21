@@ -21,6 +21,10 @@
   function ago(seconds) {
     var minutes = Math.max(0, Math.floor(seconds / 60));
     var rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' });
+    if (minutes === 0) {
+      // "now" / "ahora", like when.py; 'minute' would say "this minute" (review of #460).
+      return rtf.format(0, 'second');
+    }
     if (minutes < 60) {
       return rtf.format(-minutes, 'minute');
     }

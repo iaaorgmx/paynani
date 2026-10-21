@@ -97,6 +97,8 @@ body = r.read().decode("utf-8")
 check("/assets/time.js se sirve como JavaScript, sin sesión", (200, True, True),
       (r.status, r.getheader("Content-Type", "").startswith("application/javascript"), "Intl.RelativeTimeFormat" in body))
 check("y solo toca los <time datetime> del hilo", True, "'.mensajes time[datetime]'" in body)
+check("con menos de un minuto dice «ahora», como when.py, y no «este minuto» (revisión de #460)", True,
+      "if (minutes === 0) {" in body and "rtf.format(0, 'second')" in body)
 httpd.shutdown()
 httpd.server_close()
 shell_src = (ROOT / "scripts" / "paynani_lib" / "web" / "shell.py").read_text(encoding="utf-8")
