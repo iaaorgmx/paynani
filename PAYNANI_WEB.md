@@ -110,8 +110,9 @@ siempre), así que el hilo se arma así.
 
 - Ninguna página carga nada de fuera: ni fuentes, ni scripts, ni imágenes. La
   `Content-Security-Policy` es `default-src 'none'; style-src 'self';
-  script-src 'self'; form-action 'self'; base-uri 'none'`, con `X-Frame-Options:
-  DENY` y `nosniff`.
+  script-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'`, con
+  `X-Frame-Options: DENY` y `nosniff`. La única imagen que se carga es el favicon
+  (`brand/favicon.svg`), del mismo servidor; la marca va en línea en el HTML.
 - Todo `POST` tiene que traer `Origin` (o `Referer`) de la misma dirección, y los
   formularios con sesión llevan su token.
 - Nunca se muestra un secreto: ni la contraseña de la web, ni la de una cuenta de
