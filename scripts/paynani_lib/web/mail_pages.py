@@ -76,14 +76,18 @@ def list_body(account_id: str, rows: list[dict], total: int, offset: int, next_o
     if not total:
         return f'<p class="lead">{th("web.mail.empty")}</p>\n'
     out = [f'<p class="quiet resumen">{th("web.mail.count", n=total)} · {th("web.mail.readonly")}</p>',
-           '<ul class="correos">']
+           '<ul class="correos">',
+           f'<li class="correos-cabecera" aria-hidden="true"><span>{th("web.mail.col.from")}</span>'
+           f'<span>{th("web.mail.col.subject")}</span><span>{th("web.mail.col.when")}</span>'
+           f'<span>{th("web.mail.col.state")}</span><span></span></li>']
     for r in rows:
         subject = r["subject"] or i18n.t("web.mail.no_subject")
         out.append(f"""<li class="correo-{r['kind']}"><a href="{href(account_id, r)}">
   <span class="quien">{_who(r)}{_roster(r)}</span>
   <span class="asunto">{e(subject)}</span>
   <span class="cuando">{e(_when(r['at']))}</span>
-  {_mark(r)}
+  <span class="estado-celda">{_mark(r)}</span>
+  <span class="flecha" aria-hidden="true">›</span>
 </a></li>""")
     out.append("</ul>")
     if next_offset is not None:
@@ -156,7 +160,7 @@ def thread_html(account_id: str, current: dict, thread: list[dict], texts: dict)
         out.append(f'<p class="quiet">{th("web.mail.thread_alone")}</p>')
         return "\n".join(out)
     out.append(f'<p class="quiet">{th("web.mail.thread_lead", n=len(thread))}</p>')
-    out.append('<ol class="hilo">')
+    out.append('<ol class="conversacion">')
     for r in thread:
         this = r is current
         cc = f' · Cc {e(r["cc"])}' if r["kind"] == "out" and r.get("cc") else ""
@@ -169,7 +173,7 @@ def thread_html(account_id: str, current: dict, thread: list[dict], texts: dict)
             text = texts.get(r["message_id"])
             extra = (f'<pre class="cuerpo">{e(text)}</pre>' if text and text.strip()
                      else f'<p class="quiet">{th("web.mail.no_copy")}</p>')
-        out.append(f"""<li class="hilo-{r['kind']}{' hilo-actual' if this else ''}">
+        out.append(f"""<li class="conv-{r['kind']}{' conv-actual' if this else ''}">
   <div class="de">{_who(r)}{cc}{_roster(r)}</div>
   <div class="quiet">{meta}</div>
   {extra}

@@ -124,8 +124,9 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
 
 def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str = "",
          active_account: str = "", accounts: list[dict] | None = None, accounts_error: str = "",
-         icon_name: str = "home", back: str = "") -> str:
-    """Una página con sesión. `body` ya viene escapado."""
+         icon_name: str = "home", back: str = "", wide: bool = False) -> str:
+    """Una página con sesión. `body` ya viene escapado. `wide` deja que el panel use todo el ancho
+    (la lista de correos, como Orders en el /dash)."""
     th = i18n.th
     accounts = accounts or []
     logo = brand_svg("paynani-horizontal.svg")
@@ -176,7 +177,7 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
     <h1>{e(title)}</h1>
     {back_link}
   </div>
-  <main class="panel">
+  <main class="panel{' panel-ancho' if wide else ''}">
 {body}
   </main>
 </div>

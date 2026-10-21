@@ -546,7 +546,7 @@ def make_handler(ctx: Context):
                 head = mail_pages.account_head(account_id, removable=not match["agent"],
                                                ok=self.query.get("ok", [""])[0])
                 self._page(200, title=match["email"], icon_name="mail",
-                           body=head + mail_pages.list_body(account_id, chunk, len(rows), offset, nxt), **kw)
+                           body=head + mail_pages.list_body(account_id, chunk, len(rows), offset, nxt), wide=True, **kw)
                 return
             # FR-14: un recibido por su evento (?e=), un enviado por su Message-ID (?s=).
             event_id, sent_id = self.query.get("e", [""])[0], self.query.get("s", [""])[0]

@@ -223,6 +223,12 @@ check("un recibido: la flecha de entrada, «De:», su estado y la marca del rost
 check("el enlace de un enviado va por su Message-ID", True,
       'href="/email/main/ver?s=' + quote("<r1@agente.example>", safe="") + '"' in page)
 check("el asunto de un enviado va escapado", (True, False), ("Otra cosa &lt;b&gt;" in page, "Otra cosa <b>" in page))
+check("a todo lo ancho, con la cabecera De / Para, Asunto, Fecha y Estado (como Orders del /dash)", True,
+      '<main class="panel panel-ancho">' in page and '<li class="correos-cabecera" aria-hidden="true"><span>De / Para</span>'
+      '<span>Asunto</span><span>Fecha</span><span>Estado</span>' in page)
+css = (ROOT / "scripts" / "paynani_lib" / "assets" / "web.css").read_text(encoding="utf-8")
+webmail_css = css[css.index("/* Email Accounts como webmail (T5)"):]
+check("el CSS del webmail no toca .hilo, que es la conversación de SMS de Messages", False, ".hilo" in webmail_css)
 status, _, page = req("GET", "/email/ventas", cookie=cookie)
 check("una cuenta que no existe sigue siendo 404", 404, status)
 
@@ -230,10 +236,10 @@ check("una cuenta que no existe sigue siendo 404", 404, status)
 FakeIMAP.connections = 0
 status, _, page = req("GET", "/email/main/ver?e=" + quote("imap:INBOX:7:1", safe=""), cookie=cookie)
 check("el recibido abierto: 200 con su texto", (200, True), (status, "40 mesas?" in page))
-hilo = page[page.index('<ol class="hilo">'):page.index("</ol>", page.index('<ol class="hilo">'))]
+hilo = page[page.index('<ol class="conversacion">'):page.index("</ol>", page.index('<ol class="conversacion">'))]
 check("la conversación: 5 correos, en orden", 5, hilo.count("<li class="))
 check("dice cómo se agrupó", True, "5 correos de esta cuenta con el mismo asunto" in page)
-check("el abierto va marcado", True, 'hilo-in hilo-actual' in hilo and ">este correo<" in hilo)
+check("el abierto va marcado", True, 'conv-in conv-actual' in hilo and ">este correo<" in hilo)
 check("el otro recibido es un enlace para abrirlo", True,
       'href="/email/main/ver?e=' + quote("imap:INBOX:7:2", safe="") + '">Abrir</a>' in hilo)
 check("el enviado con copia trae su texto, escapado", (True, False),
@@ -241,11 +247,12 @@ check("el enviado con copia trae su texto, escapado", (True, False),
 check("el enviado sin copia lo dice, con su Cc", (True, True), ("no guardó copia" in hilo, "Cc jefe@example.com" in hilo))
 check("ni Beto ni «Otra cosa» en la conversación", (False, False), ("beto@" in hilo, "Otra cosa" in hilo))
 check("dos conexiones: el correo y los textos de Enviados de una vez", 2, FakeIMAP.connections)
+check("un correo abierto no va a todo lo ancho", False, "panel-ancho" in page)
 
 # --- abrir un enviado ----------------------------------------------------------------------
 status, _, page = req("GET", "/email/main/ver?s=" + quote("<r1@agente.example>", safe=""), cookie=cookie)
 check("el enviado abierto: 200, su texto de Enviados y su conversación", (200, True, True),
-      (status, "40 mesas a &lt;b&gt;3000&lt;/b&gt;." in page, 'hilo-out hilo-actual' in page))
+      (status, "40 mesas a &lt;b&gt;3000&lt;/b&gt;." in page, 'conv-out conv-actual' in page))
 status, _, page = req("GET", "/email/main/ver?s=" + quote("<r2@agente.example>", safe=""), cookie=cookie)
 check("uno sin copia: el aviso, con Para, Cc y Cco del registro", (200, True, True, True),
       (status, 'class="aviso-caja">El servidor no guardó copia' in page, "jefe@example.com" in page,

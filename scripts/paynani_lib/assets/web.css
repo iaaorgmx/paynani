@@ -339,13 +339,31 @@ body.web-shell {
 .web-shell .dir-out { color: var(--accent); }
 .web-shell .estado-sent { color: var(--accent); }
 .web-shell .estado-actual { background: var(--ink); border-color: var(--ink); color: var(--card, #fff); }
-.web-shell .hilo { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .75rem; }
-.web-shell .hilo li { border-left: 3px solid var(--line); padding: .2rem 0 .2rem .9rem; }
-.web-shell .hilo li.hilo-out { border-left-color: var(--accent); }
-.web-shell .hilo li.hilo-actual { background: var(--bg); }
-.web-shell .hilo .de { font-weight: 600; font-size: .92rem; overflow-wrap: anywhere; }
-.web-shell .hilo .cuerpo { margin-top: .4rem; }
-.web-shell .hilo-out .cuerpo { background: #f6ecea; border-color: #e7cfcb; }
-@media (prefers-color-scheme: dark) { .web-shell .hilo-out .cuerpo { background: #2a1c1b; border-color: #5e3229; } }
-.web-shell .hilo .quiet { margin: .15rem 0 .25rem; font-size: .85rem; }
-.web-shell .hilo a { color: var(--accent); font-weight: 600; text-decoration: none; margin-right: .4rem; }
+.web-shell .conversacion { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .75rem; }
+.web-shell .conversacion li { border-left: 3px solid var(--line); padding: .2rem 0 .2rem .9rem; }
+.web-shell .conversacion li.conv-out { border-left-color: var(--accent); }
+.web-shell .conversacion li.conv-actual { background: var(--bg); }
+.web-shell .conversacion .de { font-weight: 600; font-size: .92rem; overflow-wrap: anywhere; }
+.web-shell .conversacion .cuerpo { margin-top: .4rem; }
+.web-shell .conv-out .cuerpo { background: #f6ecea; border-color: #e7cfcb; }
+@media (prefers-color-scheme: dark) { .web-shell .conv-out .cuerpo { background: #2a1c1b; border-color: #5e3229; } }
+.web-shell .conversacion .quiet { margin: .15rem 0 .25rem; font-size: .85rem; }
+.web-shell .conversacion a { color: var(--accent); font-weight: 600; text-decoration: none; margin-right: .4rem; }
+
+/* La lista de correos a todo lo ancho, como Orders en el /dash: una cabecera gris y
+   columnas De/Para, Asunto, Fecha y Estado. En el celular se apila, sin cabecera. */
+.web-shell .panel.panel-ancho { max-width: none; }
+.web-shell .correos li a, .web-shell .correos .correos-cabecera {
+  grid-template-columns: minmax(12rem, 24%) 1fr minmax(9.5rem, auto) minmax(6rem, auto) 1.2rem;
+}
+.web-shell .correos .correos-cabecera {
+  display: grid; gap: .25rem 1rem; padding: .75rem .25rem; background: var(--bg);
+  border-bottom: 1px solid var(--line); font-weight: 600; font-size: .9rem; color: var(--ink);
+}
+.web-shell .correos .correos-cabecera span:first-child { padding-left: 1.35em; }
+.web-shell .correos .flecha { color: var(--quiet); font-size: 1.3rem; line-height: 1; text-align: right; }
+@media (max-width: 900px) {
+  .web-shell .correos .correos-cabecera { display: none; }
+  .web-shell .correos li a { grid-template-columns: 1fr auto; }
+  .web-shell .correos .flecha { display: none; }
+}

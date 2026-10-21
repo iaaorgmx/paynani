@@ -45,6 +45,12 @@
   (la carpeta `\Sent` o una de nombre conocido), en una sola conexión. Si no hay
   copia, la página lo dice con Para, Cc, Cco y la hora del registro. Nada se guarda.
 
+  La lista usa todo el ancho de la pantalla, como Orders en el /dash (pedido de
+  Julian): una cabecera gris con De / Para, Asunto, Fecha y Estado, y una flecha
+  por fila. En el celular se apila sin cabecera. El hilo usa la clase
+  `.conversacion`, para no chocar con `.hilo`, que es la conversación de SMS de
+  Messages.
+
 - **PaynaniWeb: seguridad, rendimiento y `PAYNANI_WEB.md`** (T10 del paraguas #435;
   PRD #434 §5 y NFR-1 a NFR-3). `scripts/test_web_security.py` recorre todas las
   pantallas, con sesión y sin ella, y comprueba en cada una:
