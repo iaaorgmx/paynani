@@ -55,21 +55,29 @@ check("IP: IPv6 normalizada", "2001:db8::1", auth.client_ip({"X-Forwarded-For": 
 
 clock = Clock()
 lock = auth.Lockout(clock)
-for i in range(4):
-    check(f"fallo {i + 1} no bloquea", False, lock.fail("a"))
-check("el quinto bloquea", True, lock.fail("a"))
-check("bloqueada 15 minutos", True, 899 <= lock.remaining("a") <= 901)
-check("otra dirección no", 0, lock.remaining("b"))
+check("los primeros 5 intentos se admiten (y cuentan)", [0, 0, 0, 0, 0], [lock.admit("a") for _ in range(5)])
+check("el sexto ya no: bloqueada 15 minutos", True, 899 <= lock.admit("a") <= 901)
+check("y sigue bloqueada", True, lock.remaining("a") > 0 and lock.admit("a") > 0)
+check("otra dirección no", 0, lock.admit("b"))
 clock.now += 15 * 60 + 1
-check("a los 15 minutos se desbloquea", 0, lock.remaining("a"))
+check("a los 15 minutos se desbloquea", 0, lock.admit("a"))
 for _ in range(4):
-    lock.fail("c")
+    lock.admit("c")
 clock.now += 15 * 60 + 1
-check("4 fallos viejos (fuera de la ventana) no cuentan con el siguiente", False, lock.fail("c"))
-for _ in range(3):
-    lock.fail("d")
+check("intentos viejos (fuera de la ventana) no cuentan", [0] * 5, [lock.admit("c") for _ in range(5)])
+for _ in range(4):
+    lock.admit("d")
 lock.success("d")
-check("una entrada buena borra los fallos", False, any(lock.fail("d") for _ in range(4)))
+check("una entrada buena borra los intentos", [0] * 5, [lock.admit("d") for _ in range(5)])
+
+# La limpieza: con más de 10 000 direcciones anotadas, se van las que ya no cuentan.
+big = auth.Lockout(clock)
+for i in range(auth.PRUNE_ABOVE + 5):
+    big.failures[f"10.0.{i // 256}.{i % 256}"] = __import__("collections").deque([clock.now - 16 * 60])
+big.locked_until["10.9.9.9"] = clock.now - 1
+big.admit("192.0.2.1")
+check("las colas fuera de la ventana y los bloqueos vencidos se limpian", (1, {}),
+      (len(big.failures), big.locked_until))
 
 user = {"password_changed_at": "t1", "name": "Ana"}
 sessions = auth.Sessions(clock)
@@ -169,8 +177,8 @@ check("sin cookie de sesión al fallar", "", session_cookie(hdrs))
 
 # --- el bloqueo ---------------------------------------------------------------------------
 ip_x = "198.51.100.20"
-codes = [login(password=f"mala-{i}-xxxxxxx", ip=ip_x)[0] for i in range(5)]
-check("5 fallos: los primeros 401, el quinto 429", [401, 401, 401, 401, 429], codes)
+codes = [login(password=f"mala-{i}-xxxxxxx", ip=ip_x)[0] for i in range(6)]
+check("5 fallos dan 401 y el sexto intento ya es 429", [401, 401, 401, 401, 401, 429], codes)
 status, hdrs, page = login(ip=ip_x)
 check("bloqueada, ni la contraseña buena entra (429)", (429, ""), (status, session_cookie(hdrs)))
 check("y dice cuántos minutos", True, "15" in page)
@@ -184,6 +192,27 @@ check("un X-Forwarded-For falsificado al principio no salta el bloqueo de quien 
 clock.now += 15 * 60 + 1
 status, hdrs, _ = login(ip=ip_x)
 check("a los 15 minutos vuelve a entrar", (303, True), (status, bool(session_cookie(hdrs))))
+
+# --- en paralelo no se pasa del límite (revisión de Metis en #439) ----------------------------
+ip_p = "198.51.100.40"
+codes = []
+lock_codes = threading.Lock()
+
+
+def attempt():
+    code = login(password="mala-en-paralelo-x", ip=ip_p)[0]
+    with lock_codes:
+        codes.append(code)
+
+
+workers = [threading.Thread(target=attempt) for _ in range(20)]
+for w in workers:
+    w.start()
+for w in workers:
+    w.join()
+check("20 intentos a la vez desde una dirección: como mucho 5 son 401, el resto 429",
+      (True, 20), (codes.count(401) <= 5 and codes.count(401) + codes.count(429) == 20, len(codes)))
+check("y al menos uno se verificó (no se bloqueó todo de entrada)", True, codes.count(401) >= 1)
 
 # --- entrar bien ---------------------------------------------------------------------------
 sent.clear()
@@ -243,8 +272,7 @@ check("/login?msg=out dice que cerraste la sesión", True, 'class="aviso"' in pa
 status, hdrs, _ = login()
 sid_cookie = session_cookie(hdrs).split(";", 1)[0]
 check("otra sesión", 200, req("GET", "/", cookie=sid_cookie)[0])
-clock.now += 1
-users.set_password("otra-contraseña-larga", user_file)
+users.set_password("otra-contraseña-larga", user_file)  # el mismo segundo que la sesión: no importa
 status, hdrs, _ = req("GET", "/", cookie=sid_cookie)
 check("después de paynani web passwd, la sesión vieja ya no sirve", (303, "/login?msg=expired"), (status, hdrs.get("location")))
 

@@ -36,6 +36,7 @@ FAILURE_WINDOW_S = 15 * 60
 LOCK_S = 15 * 60
 IDLE_S = 8 * 3600
 MAX_KNOWN_IPS = 200
+PRUNE_ABOVE = 10_000   # direcciones anotadas antes de limpiar las que ya no cuentan
 SESSION_COOKIE = "paynani_web_session"
 # Para verificar algo aunque el correo no sea el del dueño: así un correo
 # equivocado tarda lo mismo que una contraseña equivocada.
@@ -61,6 +62,41 @@ class Lockout:
         self.locked_until: dict[str, float] = {}
         self.lock = threading.Lock()
 
+    def admit(self, ip: str) -> int:
+        """
+        0 si `ip` puede intentar, y el intento ya cuenta como fallo; si no, los
+        segundos que le faltan al bloqueo. Todo dentro del candado: con un hilo por
+        petición, cien intentos a la vez desde una dirección no pasan los cinco
+        (revisión de Metis en #439). Una entrada buena llama a success(), que
+        borra los intentos.
+        """
+        now = self.clock()
+        with self.lock:
+            if len(self.failures) > PRUNE_ABOVE:
+                self._prune(now)
+            until = self.locked_until.get(ip, 0)
+            if until > now:
+                return int(until - now) + 1
+            self.locked_until.pop(ip, None)
+            q = self.failures.setdefault(ip, collections.deque())
+            while q and now - q[0] > FAILURE_WINDOW_S:
+                q.popleft()
+            if len(q) >= MAX_FAILURES:
+                self.locked_until[ip] = now + LOCK_S
+                q.clear()
+                return LOCK_S
+            q.append(now)
+            return 0
+
+    def _prune(self, now: float) -> None:
+        """Lo que ya no cuenta: colas vacías o con su último intento fuera de la
+        ventana, y bloqueos vencidos. Sin esto, una dirección que falla una vez y no
+        vuelve se queda para siempre."""
+        for ip in [ip for ip, q in self.failures.items() if not q or now - q[-1] > FAILURE_WINDOW_S]:
+            del self.failures[ip]
+        for ip in [ip for ip, until in self.locked_until.items() if until <= now]:
+            del self.locked_until[ip]
+
     def remaining(self, ip: str) -> int:
         """Segundos que le faltan al bloqueo de `ip`, o 0."""
         with self.lock:
@@ -71,23 +107,19 @@ class Lockout:
                 return 0
             return int(left) + 1
 
-    def fail(self, ip: str) -> bool:
-        """Anota un fallo. True si con este queda bloqueada."""
-        now = self.clock()
-        with self.lock:
-            q = self.failures.setdefault(ip, collections.deque())
-            q.append(now)
-            while q and now - q[0] > FAILURE_WINDOW_S:
-                q.popleft()
-            if len(q) >= MAX_FAILURES:
-                self.locked_until[ip] = now + LOCK_S
-                q.clear()
-                return True
-            return False
-
     def success(self, ip: str) -> None:
         with self.lock:
             self.failures.pop(ip, None)
+
+
+def session_key(user: dict) -> str:
+    """
+    Lo que liga una sesión a la contraseña con que se abrió. `session_key` cambia
+    al azar con cada contraseña (users.py); `password_changed_at` sólo tiene
+    segundos, y dos cambios en el mismo segundo no cerraban las sesiones (lo vio la
+    CI en #439). Un usuario de antes de `session_key` usa la fecha.
+    """
+    return str(user.get("session_key") or user.get("password_changed_at", ""))
 
 
 class Sessions:
@@ -101,7 +133,7 @@ class Sessions:
         now = self.clock()
         with self.lock:
             self.items[sid] = {"created": now, "seen": now, "ip": ip, "csrf": secrets.token_urlsafe(32),
-                               "pw_at": user.get("password_changed_at", ""), "agent": user_agent[:200]}
+                               "pw_at": session_key(user), "agent": user_agent[:200]}
         return sid
 
     def get(self, sid: str, user: dict | None) -> dict | None:
@@ -113,7 +145,7 @@ class Sessions:
             s = self.items.get(sid)
             if s is None:
                 return None
-            if now - s["seen"] > IDLE_S or s["pw_at"] != user.get("password_changed_at", ""):
+            if now - s["seen"] > IDLE_S or s["pw_at"] != session_key(user):
                 del self.items[sid]
                 return None
             s["seen"] = now
@@ -134,7 +166,7 @@ class Sessions:
         """Después de que esta misma sesión cambió la contraseña: sigue viva."""
         with self.lock:
             if sid in self.items:
-                self.items[sid]["pw_at"] = user.get("password_changed_at", "")
+                self.items[sid]["pw_at"] = session_key(user)
 
 
 def check_csrf(session: dict | None, given: str) -> bool:

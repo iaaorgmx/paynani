@@ -439,7 +439,8 @@ def make_handler(ctx: Context):
         def _login(self, post: dict):
             email = post.get("email", "")[:320]
             next_path = safe_next(post.get("next", "/"))
-            left = self.CTX.lockout.remaining(self.ip)
+            # El intento se reserva antes de verificar (revisión de Metis en #439).
+            left = self.CTX.lockout.admit(self.ip)
             if left:
                 minutes = max(1, (left + 59) // 60)
                 self._html(429, login_page(self.lang, email=email, next_path=next_path,
@@ -447,10 +448,9 @@ def make_handler(ctx: Context):
                 return
             password = post.get("password", "")[:users.MAX_PASSWORD]
             if not auth.verify_login(self.user, email, password):
-                locked = self.CTX.lockout.fail(self.ip)
-                error = (i18n.th("web.login.locked", min=auth.LOCK_S // 60) if locked
-                         else i18n.th("web.login.bad"))
-                self._html(429 if locked else 401, login_page(self.lang, email=email, next_path=next_path, error=error))
+                # admit() ya lo contó: no se cuenta dos veces.
+                self._html(401, login_page(self.lang, email=email, next_path=next_path,
+                                           error=i18n.th("web.login.bad")))
                 return
             self.CTX.lockout.success(self.ip)
             if self.sid:

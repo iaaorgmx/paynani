@@ -146,7 +146,7 @@ def create(email: str, name: str, password: str, path: Path | None = None) -> di
                         "`scripts/paynani web passwd`")
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     data = {"version": VERSION, "email": email, "name": name, "password": hash_password(password),
-            "created_at": now, "password_changed_at": now}
+            "created_at": now, "password_changed_at": now, "session_key": secrets.token_hex(16)}
     _write(path, data)
     return data
 
@@ -161,10 +161,13 @@ def set_password(password: str, path: Path | None = None) -> dict:
         raise UserError(problem)
     data["password"] = hash_password(password)
     data["password_changed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # Cierra las sesiones abiertas (web/auth.py), aunque el cambio sea en el mismo
+    # segundo que el anterior.
+    data["session_key"] = secrets.token_hex(16)
     _write(path, data)
     return data
 
 
 def public(data: dict) -> dict:
-    """Lo que se puede mostrar: todo menos el hash."""
-    return {k: v for k, v in data.items() if k != "password"}
+    """Lo que se puede mostrar: todo menos el hash y la llave de las sesiones."""
+    return {k: v for k, v in data.items() if k not in ("password", "session_key")}
