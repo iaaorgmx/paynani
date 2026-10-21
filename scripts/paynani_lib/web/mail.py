@@ -304,6 +304,22 @@ def message_dict(message) -> dict:
     }
 
 
+def sender_name(account_id: str, accounts_file: Path | None, env_path: Path) -> str:
+    """El nombre con el que firma `send.sh` en esa cuenta: PAYNANI_FROM_NAME (o
+    AGENT_EMAIL_FROM_NAME) para la del agente, y el `from_name` de accounts.json para
+    las demás. Vacío si no hay o no se puede leer (revisión de #459)."""
+    import idle_listener
+    try:
+        if account_id == accounts.MAIN:
+            env = idle_listener.load_env(env_path)
+            name = env.get("PAYNANI_FROM_NAME") or env.get("AGENT_EMAIL_FROM_NAME") or ""
+        else:
+            name = str(accounts.get(account_id, accounts_file).get("from_name") or "")
+    except (OSError, accounts.AccountsError, KeyError, ValueError):
+        return ""
+    return name.replace("\r", "").replace("\n", "").strip()
+
+
 def env_for(account_id: str, accounts_file: Path | None, env_path: Path) -> dict:
     """El login de la cuenta: el del .env para `main`, o el de accounts.json con la
     contraseña que nombra en el .env. Nunca el del agente para otra cuenta."""

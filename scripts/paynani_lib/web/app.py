@@ -579,7 +579,9 @@ def make_handler(ctx: Context):
                 code = getattr(mine.get("error"), "code", "gone")
                 sys.stderr.write(f"paynani-web: no se abrió {event_id}: {code}\n")
             self._page(502 if failed else 200, title=match["email"], icon_name="mail", back=f"/email/{account_id}",
-                       body=mail_pages.thread_page(account_id, row, convo, loaded, own=match["email"]), **kw)
+                       body=mail_pages.thread_page(account_id, row, convo, loaded, own=match["email"],
+                                                   own_name=mail.sender_name(account_id, self.CTX.accounts_file,
+                                                                             self.CTX.env_path())), **kw)
 
         def _offset(self) -> int:
             try:

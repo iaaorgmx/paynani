@@ -186,7 +186,8 @@ for uid, subject, at, mid in (("1", "Cotización", "2026-10-20T10:00:00Z", "<ori
                                 "subject": subject, "roster_match": True, "message_id": mid})
 env_path = tmp / ".env"
 env_path.write_text("AGENT_EMAIL_ACCOUNT=agente@example.com\nAGENT_EMAIL_PASSWORD=x\n"
-                    "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap.example.com\n", encoding="utf-8")
+                    "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap.example.com\nPAYNANI_FROM_NAME=Agente Paynani\n",
+                    encoding="utf-8")
 user_file = tmp / "web" / "user.json"
 users.create("dueno@example.com", "Dueño", "una-contraseña-larga", user_file)
 ctx = app.Context(user_file, notifier=notify.Notifier(send=lambda *a: None, log=lambda line: None),
@@ -262,6 +263,9 @@ check("todos con el mismo formato: avatar, nombre y «para …» (4.2)", (5, 3, 
       (page.count('class="avatar-mensaje'), page.count("avatar-agente"), page.count("avatar-contacto"), page.count('class="para"')))
 check("a un recibido: «para mí»", True, '<div class="para">para mí</div>' in page)
 check("un enviado sin copia: Para y Cc del registro", True, "para ana@example.com · cc jefe@example.com" in page)
+check("... y el nombre con el que firma send.sh (PAYNANI_FROM_NAME), no la dirección (revisión de #459)", (True, True),
+      ("<b>Agente Paynani</b> <span class=\"direccion\">&lt;agente@example.com&gt;</span>" in page,
+       'avatar-agente" aria-hidden="true">AP<' in page))
 check("la hora va en <time datetime> (T4 la pasa a la zona del navegador)", True,
       '<time datetime="2026-10-20T10:00:00Z">' in page)
 check("cada recibido conserva su estado y la marca del roster junto a la hora (4.7)", True,
@@ -298,6 +302,19 @@ for label, mid in (("que no está en sent.log", "<nadie@agente.example>"), ("de 
 status, _, _ = req("GET", "/email/main/ver?s=" + quote("<r1@agente.example>", safe=""))
 check("sin sesión: a /login", 303, status)
 
+
+# --- el nombre de la cuenta para lo enviado, como lo firma send.sh ------------------------
+import json  # noqa: E402
+
+accounts_json = tmp / "accounts-nombre.json"
+accounts_json.write_text(json.dumps({"schema_version": 1, "accounts": [
+    {"id": "ventas", "email": "ventas@example.com", "from_name": "Ventas Dominio", "imap": {"host": "imap.example.com", "port": 993},
+     "smtp": {"host": "smtp.example.com", "port": 465}, "password_env": "PAYNANI_ACCOUNT_VENTAS_PASSWORD",
+     "roster": "rosters/ventas.md", "mailboxes": ["INBOX"], "enabled": True}]}), encoding="utf-8")
+check("sender_name: PAYNANI_FROM_NAME para la del agente, from_name de accounts.json para las demás",
+      ("Agente Paynani", "Ventas Dominio", ""),
+      (mail.sender_name("main", accounts_json, env_path), mail.sender_name("ventas", accounts_json, env_path),
+       mail.sender_name("nadie", accounts_json, env_path)))
 
 # --- hilos largos: con más de 10, los del medio plegados (4.8) ---------------------------
 def fake_in(i):
