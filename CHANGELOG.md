@@ -2,6 +2,23 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: seguridad, rendimiento y `PAYNANI_WEB.md`** (T10 del paraguas #435;
+  PRD #434 §5 y NFR-1 a NFR-3). `scripts/test_web_security.py` recorre todas las
+  pantallas, con sesión y sin ella, y comprueba en cada una:
+  - la `Content-Security-Policy` sin nada de fuera, `X-Frame-Options: DENY`,
+    `nosniff` y `no-store`;
+  - que no se cargue ningún recurso de fuera, y que no haya atributos `style`,
+    scripts en línea ni manejadores `on*=`;
+  - que todo formulario `POST` con sesión lleve su token.
+
+  También revisa que el log no traiga la contraseña, la consulta, el cuerpo de un
+  correo ni el texto de un SMS. Para NFR-3, comprueba que 50 correos de un ledger
+  de 6 000 avisos y 50 conversaciones de un diario de 3 000 SMS salgan en menos de
+  2 segundos (en la CI tardan menos de 0.2 s). `PAYNANI_WEB.md` explica dónde corre,
+  el primer uso, cómo se entra, las pantallas, qué guarda y qué no, la seguridad y
+  los problemas comunes, y está enlazado desde el README y sus cuatro traducciones.
+  La página de inicio deja de decir que las pantallas «todavía no están».
+
 - **PaynaniWeb: agregar y quitar cuentas de correo** (T6 del paraguas #435; PRD #434
   FR-16, con las reglas de Q23). El desplegable de Cuentas de correo tiene
   «+ Agregar cuenta», y cada cuenta adicional tiene «Quitar esta cuenta»; la del
