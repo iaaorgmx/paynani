@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **El plan impreso dice lo mismo que `--apply`** (#451, nota de Metis). La lista de
+  pasos de `upgrade_plan.py` decía siempre «verify disk and listener version, a new
+  'resuming from uid N', and healthcheck». Ahora, si el plan no reinicia el
+  listener, dice «verify disk version and healthcheck (the plan does not restart the
+  listener)», igual que lo que hace `apply_plan()`.
+
 - **`upgrade_plan --apply` y `paynani doctor` coinciden cuando el plan no reinicia
   el listener** (#451, lo encontró Metis al actualizar a `c2f2934`).
   - **`--apply`** esperaba siempre una línea nueva `resuming from uid N` del

@@ -545,8 +545,14 @@ try:
           and not any("paynani-idle.service" in a for a in calls), str(calls))
     check("... and still ran healthcheck", any(a and a[0].endswith("scripts/healthcheck.py") for a in calls), str(calls))
     check("... with no new listener line written", log_before == (state / "idle.err.log").read_text(encoding="utf-8"))
+    shown = up.render(web_only)
+    check("... and the printed steps say the same: no listener line to wait for",
+          "verify disk version and healthcheck (the plan does not restart the listener)" in shown
+          and "resuming from uid N" not in shown, shown)
     calls.clear()
     listener_plan = dict(apply, restart_units=[up.LISTENER, up.WEB], reinstall=False)
+    check("a plan that restarts the listener still prints the listener check",
+          "verify disk and listener version, a new 'resuming from uid N', and healthcheck" in up.render(listener_plan))
     try:
         up.apply_plan(listener_plan, repo=applied, runner=web_only_runner, wait_seconds=0)
         waited = False
