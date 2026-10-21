@@ -2,6 +2,20 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el menú lateral y el encabezado de PDSL-201** (T4 del paraguas #435;
+  PRD #434 FR-10 y FR-12). Con sesión, cada página va en el marco del mockup: el menú
+  oscuro con el logotipo claro y el nombre del dueño; el encabezado en grana con el
+  ícono y el título; y el panel. *Administración* tiene **Cuentas de correo**, un
+  desplegable abierto con una entrada por cuenta (la del agente, del `.env`, y las de
+  `accounts.json` en su orden, con la apagada marcada), **Mensajes** y **Roster**.
+  *Herramientas* tiene **Cerrar sesión**. Las iniciales arriba a la derecha abren el
+  menú del avatar, con el correo, **Perfil** y **Cerrar sesión**. En el celular, por
+  debajo de 900 px, el menú lateral se vuelve un menú desplegable arriba. Los dos
+  menús son `<details>`, sin script. Lo que la v1 deja fuera (AI Assistant,
+  Settings, Sessions, el buscador, el chat flotante) no se dibuja. Un
+  `accounts.json` que no se lee no tumba la página: queda la cuenta del agente y el
+  menú lo dice. Las pantallas de cada opción llegan en T5 a T9.
+
 - **PaynaniWeb: entrar, el bloqueo y la sesión** (T3 del paraguas #435; PRD #434 FR-5
   a FR-9). Con el usuario creado, toda ruta pide sesión y lleva a `/login`, la
   pantalla de PDSL-100: la tarjeta con correo y contraseña a la izquierda y el lema a

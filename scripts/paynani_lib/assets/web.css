@@ -123,3 +123,92 @@ body.web-login {
   cursor: pointer;
 }
 .secundario:hover { border-color: var(--accent); }
+
+/* ---------------------------------------------------------------------------
+   El marco con sesión (PDSL-201): menú lateral oscuro, barra blanca arriba,
+   encabezado en grana y el panel. El encabezado va en grana fija en los dos
+   temas: es la marca, no un color de texto que cambie con el fondo. */
+body.web-shell {
+  --grana: #8f2d2b;
+  --menu: #262b36;
+  --menu-fondo: #20242e;
+  --menu-borde: #343a47;
+  --menu-texto: #d5d7dc;
+  --menu-tenue: #8b909b;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 245px 1fr;
+  background: var(--bg);
+}
+.web-shell svg.i { width: 18px; height: 18px; flex: none; }
+
+.web-shell .lateral { background: var(--menu); color: var(--menu-texto); min-height: 100vh; }
+.web-shell .marca-lateral { height: 64px; display: flex; align-items: center; padding: 0 14px; background: var(--menu-fondo); border-bottom: 1px solid var(--menu-borde); }
+.web-shell .marca-lateral svg, .web-shell .marca-movil svg { height: 40px; width: auto; display: block; }
+/* El logotipo claro de brand/ (paynani-horizontal-claro.svg): se cambia de color,
+   no de opacidad. */
+.web-shell .lateral .voluta, .web-shell .menu-movil-panel .voluta { stroke: #d8887f; }
+.web-shell .lateral .logotipo, .web-shell .menu-movil-panel .logotipo { fill: #e8e6e1; }
+.web-shell .usuario { padding: 14px 12px; border-bottom: 1px solid var(--menu-borde); }
+.web-shell .usuario b { display: block; color: #fff; font-size: 1.15rem; font-weight: 600; }
+.web-shell .usuario small { color: var(--menu-texto); }
+.web-shell .grupo { padding: 14px 16px 6px; font-size: .85rem; color: var(--menu-tenue); }
+.web-shell .grupo.separa { border-top: 1px solid var(--menu-borde); margin-top: 6px; }
+.web-shell nav a, .web-shell nav summary, .web-shell .salir button {
+  display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 16px 0 18px;
+  color: var(--menu-texto); text-decoration: none; font: inherit; font-size: .9rem;
+  background: none; border: 0; width: 100%; cursor: pointer; text-align: left;
+}
+.web-shell nav svg.i { color: var(--menu-tenue); width: 16px; height: 16px; }
+.web-shell nav a:hover, .web-shell nav summary:hover, .web-shell .salir button:hover { background: var(--menu-fondo); color: #fff; }
+.web-shell nav .activo { color: #fff; background: var(--menu-fondo); box-shadow: inset 3px 0 0 #d8887f; }
+.web-shell nav summary { list-style: none; }
+.web-shell nav summary::-webkit-details-marker { display: none; }
+.web-shell nav .flecha { margin-left: auto; transition: transform .15s; }
+.web-shell nav details:not([open]) .flecha { transform: rotate(-90deg); }
+.web-shell nav a.sub, .web-shell nav span.sub { min-height: 38px; padding-left: 44px; font-size: .82rem; color: var(--menu-tenue); }
+/* Una dirección larga se corta con «…» y se lee completa en el title. */
+.web-shell nav a.sub .dir { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-shell nav span.sub { display: flex; align-items: center; gap: 8px; }
+.web-shell nav a.sub.activo { color: #fff; }
+.web-shell nav .apagada { opacity: .7; }
+.web-shell nav .etiqueta { flex: none; margin-left: 6px; font-size: .7rem; border: 1px solid var(--menu-borde); border-radius: 4px; padding: 0 4px; }
+.web-shell nav .aviso-menu { color: #e2c583; }
+
+.web-shell .columna { display: flex; flex-direction: column; min-width: 0; }
+.web-shell .barra { height: 64px; background: var(--card); display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; border-bottom: 1px solid var(--line); gap: 8px; }
+.web-shell .marca-movil, .web-shell .menu-movil { display: none; }
+.web-shell .avatar { position: relative; }
+.web-shell .avatar summary, .web-shell .menu-movil summary { list-style: none; cursor: pointer; }
+.web-shell .avatar summary::-webkit-details-marker, .web-shell .menu-movil summary::-webkit-details-marker { display: none; }
+.web-shell .iniciales { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #efe3e1; color: var(--grana); font-weight: 600; letter-spacing: .03em; }
+.web-shell .avatar-panel { position: absolute; right: 0; top: 48px; z-index: 5; min-width: 15rem; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(28,28,26,.14); padding: .75rem; display: flex; flex-direction: column; gap: .2rem; }
+.web-shell .avatar-panel small { color: var(--quiet); overflow-wrap: anywhere; margin-bottom: .4rem; }
+.web-shell .avatar-panel a, .web-shell .avatar-panel button { display: flex; align-items: center; gap: 8px; padding: .45rem .4rem; border-radius: 6px; color: var(--ink); text-decoration: none; font: inherit; background: none; border: 0; width: 100%; cursor: pointer; text-align: left; }
+.web-shell .avatar-panel a:hover, .web-shell .avatar-panel button:hover { background: var(--bg); }
+
+.web-shell .encabezado { height: 81px; background: var(--grana); color: #fff; display: flex; align-items: center; gap: 18px; padding: 0 22px 0 24px; }
+.web-shell .encabezado svg.i { width: 30px; height: 30px; stroke-width: 2; }
+.web-shell .encabezado h1 { margin: 0; font-size: 1.75rem; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-shell .encabezado .atras { margin-left: auto; color: #fff; display: flex; }
+.web-shell .panel { margin: 0; max-width: 52rem; width: 100%; border: 0; border-radius: 0; min-height: calc(100vh - 145px); padding: 2rem; }
+
+/* FR-12: en el celular, el menú lateral se vuelve un menú desplegable arriba. */
+@media (max-width: 900px) {
+  body.web-shell { display: block; }
+  .web-shell .lateral { display: none; }
+  .web-shell .barra { justify-content: space-between; background: var(--menu); border-bottom-color: var(--menu-borde); }
+  .web-shell .marca-movil { display: block; }
+  .web-shell .marca-movil .voluta { stroke: #d8887f; }
+  .web-shell .marca-movil .logotipo { fill: #e8e6e1; }
+  .web-shell .marca-movil svg { height: 32px; }
+  .web-shell .menu-movil { display: block; margin-left: auto; }
+  .web-shell .menu-movil summary { display: flex; align-items: center; gap: 6px; color: var(--menu-texto); padding: .5rem; }
+  .web-shell .menu-movil-panel { position: absolute; left: 0; right: 0; top: 64px; z-index: 5; background: var(--menu); color: var(--menu-texto); padding-bottom: .5rem; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+  .web-shell .encabezado { height: 64px; padding: 0 16px; gap: 12px; }
+  .web-shell .encabezado h1 { font-size: 1.3rem; }
+  .web-shell .encabezado svg.i { width: 24px; height: 24px; }
+  .web-shell .panel { padding: 1.25rem 1rem; min-height: 0; }
+}
