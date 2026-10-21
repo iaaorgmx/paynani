@@ -2,6 +2,25 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el esqueleto de la aplicación** (T2 del paraguas #435, primera parte;
+  PRD #434 FR-3, FR-4, FR-5 y FR-11). `scripts/paynani_web.py` escucha en
+  `127.0.0.1:8771` (`PAYNANI_WEB_PORT`, el mismo que lee la pasarela), solo con la
+  biblioteca estándar, un hilo por petición. Mientras no exista el usuario, toda ruta
+  responde «crea tu usuario» con el comando para crearlo y nada más. El usuario es
+  uno solo, el dueño, y se crea en el host con
+  `scripts/paynani web user add --email … --name …`, que pide la contraseña dos veces
+  (al menos 12 caracteres) o la lee de una línea con `--password-stdin`. Se guarda
+  solo su hash `scrypt` en `web/user.json` (modo 600, carpeta 700, en `.gitignore`,
+  fuera de `state/`); `PAYNANI_WEB_USER` lo cambia de lugar. `paynani web passwd` la
+  cambia y `paynani web user show` muestra el nombre y el correo, sin el hash. Las
+  páginas van en los cinco idiomas del onboarding (`?lang=`, luego una cookie, luego
+  `Accept-Language`), con la marca en línea, `app.css`, la misma
+  `Content-Security-Policy` y los mismos encabezados de seguridad que `server.py`, y
+  nada de fuera. El log lleva el método y la ruta, nunca la consulta ni el cuerpo.
+  `i18n` guarda ahora el idioma por hilo, para que dos peticiones a la vez no se lo
+  cambien entre sí; para el onboarding y la CLI, que usan un hilo, no cambia nada. El
+  servicio y el instalador son la segunda parte de T2.
+
 - **La pasarela SMS le pasa a PaynaniWeb todo lo que no es de `/sms/`** (T1 del
   paraguas #435, PRD #434 FR-1 y FR-2). PaynaniWeb comparte así el dominio del túnel
   de ngrok sin tocar su configuración. Fuera de `/sms/`, la pasarela reenvía la

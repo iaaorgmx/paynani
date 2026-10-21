@@ -39,5 +39,9 @@
 # something a git pull may change.
 /rules/
 
+# PaynaniWeb's one user (paynani_lib/web/users.py): a scrypt hash, but a
+# credential all the same, and per-install like the roster.
+/web/
+
 *.log
 __pycache__/
