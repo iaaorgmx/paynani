@@ -645,6 +645,10 @@ def make_handler(ctx: Context):
                 if not password:
                     again(400, th("web.acct.no_password"))
                     return
+                if any(c in password for c in "\r\n\0"):
+                    # Antes de probar o escribir: va a una línea del .env (revisión de #446).
+                    again(400, th("web.acct.password_newline"))
+                    return
                 try:
                     prep = self.CTX.account_ops.prepare_add(
                         values["id"].strip(), values["email"], values["imap_host"], values["imap_port"] or 993,

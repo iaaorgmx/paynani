@@ -11,6 +11,7 @@ from ..i18n_data import CATALOGUES
 
 STRINGS = {
     "es-MX": {
+        'web.acct.password_newline': 'La contraseña no puede tener saltos de línea.',
         'web.acctmail.added': 'PaynaniWeb: se agregó la cuenta {email}',
         'web.acctmail.removed': 'PaynaniWeb: se dejó de vigilar {email}',
         'web.acctmail.body': 'Desde PaynaniWeb (dirección {ip}), a las {when}:\n\n{what}\n\nLa contraseña de la cuenta no va en este correo.\nSi no fuiste tú, cambia la contraseña de PaynaniWeb con `scripts/paynani web passwd` y revisa accounts.json.\n',
@@ -243,6 +244,7 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "en-US": {
+        'web.acct.password_newline': 'The password cannot contain line breaks.',
         'web.acctmail.added': 'PaynaniWeb: account {email} added',
         'web.acctmail.removed': 'PaynaniWeb: {email} no longer watched',
         'web.acctmail.body': "From PaynaniWeb (address {ip}), at {when}:\n\n{what}\n\nThe account's password is not in this email.\nIf it was not you, change the PaynaniWeb password with `scripts/paynani web passwd` and check accounts.json.\n",
@@ -475,6 +477,7 @@ STRINGS = {
         "web.lang.apply": "Change",
     },
     "es-ES": {
+        'web.acct.password_newline': 'La contraseña no puede tener saltos de línea.',
         'web.acctmail.added': 'PaynaniWeb: se ha agregado la cuenta {email}',
         'web.acctmail.removed': 'PaynaniWeb: se ha dejado de vigilar {email}',
         'web.acctmail.body': 'Desde PaynaniWeb (dirección {ip}), a las {when}:\n\n{what}\n\nLa contraseña de la cuenta no va en este correo.\nSi no has sido tú, cambia la contraseña de PaynaniWeb con `scripts/paynani web passwd` y revisa accounts.json.\n',
@@ -707,6 +710,7 @@ STRINGS = {
         "web.lang.apply": "Cambiar",
     },
     "fr-FR": {
+        'web.acct.password_newline': 'Le mot de passe ne peut pas contenir de saut de ligne.',
         'web.acctmail.added': 'PaynaniWeb : compte {email} ajouté',
         'web.acctmail.removed': 'PaynaniWeb : {email} n’est plus surveillé',
         'web.acctmail.body': 'Depuis PaynaniWeb (adresse {ip}), à {when} :\n\n{what}\n\nLe mot de passe du compte n’est pas dans cet e-mail.\nSi ce n’était pas vous, changez le mot de passe de PaynaniWeb avec `scripts/paynani web passwd` et vérifiez accounts.json.\n',
@@ -939,6 +943,7 @@ STRINGS = {
         "web.lang.apply": "Changer",
     },
     "pt-BR": {
+        'web.acct.password_newline': 'A senha não pode ter quebras de linha.',
         'web.acctmail.added': 'PaynaniWeb: conta {email} adicionada',
         'web.acctmail.removed': 'PaynaniWeb: {email} deixou de ser vigiada',
         'web.acctmail.body': 'Pelo PaynaniWeb (endereço {ip}), às {when}:\n\n{what}\n\nA senha da conta não vai neste e-mail.\nSe não foi você, troque a senha do PaynaniWeb com `scripts/paynani web passwd` e confira o accounts.json.\n',

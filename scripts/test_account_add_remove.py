@@ -478,6 +478,27 @@ finally:
     w.cleanup()
 
 
+# --- a .env value never carries a line break (Metis on #446) --------------------
+w = World()
+try:
+    before = w.env.read_bytes()
+    for bad in ("abc\nAGENT_EMAIL_PASSWORD=xyz", "abc\rdef", "abc\x00def"):
+        try:
+            accounts_cli._env_edit("PAYNANI_ACCOUNT_VENTAS_PASSWORD", bad)
+            check(f"_env_edit refuses {bad[3]!r} in a value", False)
+        except accounts_cli.AccountOpError:
+            check(f"_env_edit refuses {bad[3]!r} in a value", True)
+    check("and the .env is byte for byte the same", w.env.read_bytes() == before)
+    prep = accounts_cli.prepare_add("ventas", "ventas@example.com", "imap.example.com")
+    try:
+        accounts_cli.commit_add(prep, "abc\ndef")
+        check("commit_add with a line break in the password is refused", False)
+    except accounts_cli.AccountOpError:
+        check("commit_add with a line break in the password is refused", True)
+    check("and writes nothing", w.env.read_bytes() == before and not prep["path"].exists())
+finally:
+    w.cleanup()
+
 # ---------------------------------------------------------------------------
 
 print()

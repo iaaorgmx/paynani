@@ -154,6 +154,17 @@ status, _, page = add(id="main")
 check("el id main es de la cuenta del agente: 400 con el mensaje de la CLI", (400, True), (status, "not a usable id" in page))
 status, _, page = add(account_password="")
 check("sin contraseña del correo: 400", 400, status)
+env_before = env_file.read_bytes()
+probes.clear()
+for bad in ("abc\nAGENT_EMAIL_PASSWORD=xyz", "abc\rdef", "abc\x00def"):
+    status, _, page = add(account_password=bad)
+    check(f"contraseña con {bad[3]!r} en medio: 400, sin probar ni escribir (revisión de #446)",
+          (400, True, [], env_before), (status, "saltos de línea" in page, probes, env_file.read_bytes()))
+try:
+    accounts_cli._env_edit("PAYNANI_X", "a\nb")
+    check("_env_edit con un salto de línea se niega", "AccountOpError", "nada")
+except accounts_cli.AccountOpError:
+    check("_env_edit con un salto de línea se niega (también la CLI)", env_before, env_file.read_bytes())
 
 # --- agregar -----------------------------------------------------------------------------------
 probes.clear()

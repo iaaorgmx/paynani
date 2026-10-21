@@ -200,7 +200,14 @@ def _env_edit(key: str, value) -> tuple[bool, str]:
 
     envfile.render_env only knows the mailbox keys, so this edits the file line
     by line the way it does: comments, order and the file's own line ending survive.
+
+    A value with a line break or a NUL is refused (AccountOpError) before anything
+    is read or written: written as is, `abc\nAGENT_EMAIL_PASSWORD=xyz` would add a
+    line to the file that holds every secret. It used to come only from a hidden
+    prompt; PaynaniWeb sends it from a form (Metis on #446).
     """
+    if value is not None and any(c in value for c in "\r\n\0"):
+        raise AccountOpError("a value for the .env cannot contain a line break or a NUL")
     path = envfile.env_path()
     try:
         with open(path, "r", encoding="utf-8", newline="") as fh:
@@ -388,6 +395,9 @@ def commit_add(prep: dict, password: str) -> Path:
         undo.remember(himalaya)
         block = _himalaya_block(entry)
         _write_himalaya(himalaya, (himalaya_text.rstrip("\n") + "\n\n" if himalaya_text else "") + block)
+    except AccountOpError:
+        undo.restore()
+        raise
     except OSError as exc:
         undo.restore()
         raise AccountOpError(f"could not write ({exc}). Everything written so far was put back.") from exc
