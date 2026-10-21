@@ -2,6 +2,11 @@
 La pasarela SMS: HTTP para emparejar y WebSocket para el teléfono
 (SMS_GATEWAY.md). Un proceso de larga vida, como idle_listener.py para IMAP.
 
+Todo lo que no es de la pasarela (una ruta fuera de `/sms/`) se reenvía a
+PaynaniWeb, en `127.0.0.1:<PAYNANI_WEB_PORT>` (PRD #434 FR-1): la web comparte
+así el dominio del túnel sin tocar su configuración. Si la web no contesta, la
+pasarela responde 503 y los SMS siguen (FR-2).
+
 Escucha sólo en 127.0.0.1: el teléfono llega por el túnel (DEC-2), que pone el
 TLS. Escribe cada SMS y llamada en el diario de eventos (events.jsonl) con el
 mismo sobre que el correo, y manda `ack` sólo después de escribir.
@@ -21,6 +26,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import config as sms_config
 from . import roster_api
 from . import store as store_mod
 from .websocket import ConnectionClosed, WebSocket, accept_key
@@ -65,6 +71,29 @@ HUMAN_STATUSES = ("sent", "failed", "delivered")
 HUMAN_MAX_TEXT = 1000
 PAUSE_DEFAULT_MIN = 30
 PAUSE_MAX_MIN = 1440
+
+# PaynaniWeb detrás de la pasarela (PRD #434 FR-1, FR-2).
+WEB_PORT = sms_config.WEB_PORT
+WEB_CONNECT_TIMEOUT_S = 3
+WEB_IDLE_TIMEOUT_S = 120   # sin un byte en ningún sentido, se corta
+WEB_CHUNK = 65536
+# Encabezados de un solo salto (RFC 9110 §7.6.1): son de esta conexión, no de la
+# petición, y no pasan a la web. `Connection: close` va siempre, para que la
+# siguiente petición de una conexión persistente del túnel no le llegue a la web
+# aunque sea de /sms/.
+HOP_BY_HOP = {"connection", "keep-alive", "proxy-connection", "te", "trailer", "upgrade"}
+WEB_DOWN_HTML = """<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaynaniWeb no responde</title>
+<style>body{margin:0;padding:48px 24px;background:#f7f7f5;color:#1c1c1a;
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ubuntu,"Helvetica Neue",Arial,sans-serif}
+main{max-width:560px;margin:0 auto}h1{font-size:22px;font-weight:600}p{line-height:1.5;color:#3c3b37}</style></head>
+<body><main><h1>PaynaniWeb no responde</h1>
+<p>La aplicación web de esta instalación no está contestando. Los SMS y las llamadas
+siguen llegando al agente.</p>
+<p lang="en">PaynaniWeb is not responding. Texts and calls still reach the agent.</p>
+</main></body></html>
+"""
 
 
 def server_version() -> str | None:
@@ -130,7 +159,8 @@ class Gateway:
                  max_out_per_hour: int = MAX_OUT_PER_HOUR,
                  offline_after_s: int = OFFLINE_AFTER_S, health_every_s: float = HEALTH_EVERY_S,
                  battery_warn_pct: int = 25, battery_critical_pct: int = 10,
-                 battery_stale_s: int = BATTERY_STALE_S, roster_service=None):
+                 battery_stale_s: int = BATTERY_STALE_S, roster_service=None,
+                 web_port: int = WEB_PORT, web_host: str = "127.0.0.1"):
         self.store = store_mod.Store(state_dir)
         self.journal = Path(journal)
         self.ledger_path = ledger.path_for(self.journal)
@@ -159,6 +189,10 @@ class Gateway:
         self.clients: set = set()   # todos los writers abiertos, para cerrarlos al apagar
         self.health_task = None
         self.roster_tasks: set = set()   # los pedidos de §11 en curso
+        # 0 apaga el reenvío: fuera de /sms/ se responde 404, como antes de #434.
+        self.web_port = web_port
+        self.web_host = web_host
+        self.web_down = False   # para decir en el log cuándo cae y cuándo vuelve, no en cada petición
 
     # --- HTTP -------------------------------------------------------------
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -216,21 +250,87 @@ class Gateway:
             await self._websocket(reader, writer, headers)
         elif method == "GET" and path == "/sms/health":
             await self._respond(writer, 200, {"ok": True, "phone_connected": self.conn is not None})
-        else:
+        elif path == "/sms" or path.startswith("/sms/") or not self.web_port:
             await self._respond(writer, 404, {"error": "not_found"})
+        else:
+            await self._proxy_web(reader, writer, request_line, lines)
 
-    async def _respond(self, writer, status: int, body: dict) -> None:
+    async def _respond(self, writer, status: int, body: dict | None = None, *, html: str = "") -> None:
         reason = {200: "OK", 201: "Created", 400: "Bad Request", 401: "Unauthorized",
                   404: "Not Found", 409: "Conflict", 410: "Gone", 413: "Payload Too Large",
                   426: "Upgrade Required", 429: "Too Many Requests",
-                  431: "Request Header Fields Too Large"}.get(status, "Error")
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        writer.write(f"HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\n"
+                  431: "Request Header Fields Too Large", 502: "Bad Gateway",
+                  503: "Service Unavailable"}.get(status, "Error")
+        if html:
+            data, kind = html.encode("utf-8"), "text/html; charset=utf-8"
+        else:
+            data, kind = json.dumps(body, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8"
+        writer.write(f"HTTP/1.1 {status} {reason}\r\nContent-Type: {kind}\r\nCache-Control: no-store\r\n"
                      f"Content-Length: {len(data)}\r\nConnection: close\r\n\r\n".encode("latin-1") + data)
         try:
             await writer.drain()
         finally:
             writer.close()
+
+    async def _proxy_web(self, reader, writer, request_line: str, lines: list) -> None:
+        """
+        Reenvía la petición tal cual a PaynaniWeb y copia los bytes en los dos
+        sentidos hasta que la web cierra (FR-1). Los encabezados de un solo salto no
+        pasan y se agrega `Connection: close`; los demás, incluidos los
+        `X-Forwarded-*` del túnel, llegan como vinieron: decidir si se les cree es de
+        la web. Si la web no acepta la conexión, 503 (FR-2); si la acepta y cierra
+        sin responder, 502.
+        """
+        try:
+            up_reader, up_writer = await asyncio.wait_for(
+                asyncio.open_connection(self.web_host, self.web_port), WEB_CONNECT_TIMEOUT_S)
+        except (OSError, asyncio.TimeoutError) as exc:
+            if not self.web_down:
+                self.web_down = True
+                log(f"PaynaniWeb no responde en {self.web_host}:{self.web_port} ({type(exc).__name__}); "
+                    "se contesta 503 fuera de /sms/")
+            await self._respond(writer, 503, html=WEB_DOWN_HTML)
+            return
+        if self.web_down:
+            self.web_down = False
+            log(f"PaynaniWeb vuelve a responder en {self.web_host}:{self.web_port}")
+        self.clients.add(up_writer)
+        kept = [line for line in lines
+                if line and ":" in line and line.split(":", 1)[0].strip().lower() not in HOP_BY_HOP]
+        head = "\r\n".join([request_line, *kept, "Connection: close"]) + "\r\n\r\n"
+        answered = False
+
+        async def pump(src, dst, from_web: bool):
+            nonlocal answered
+            while True:
+                chunk = await asyncio.wait_for(src.read(WEB_CHUNK), WEB_IDLE_TIMEOUT_S)
+                if not chunk:
+                    return
+                if from_web:
+                    answered = True
+                dst.write(chunk)
+                await dst.drain()
+
+        try:
+            up_writer.write(head.encode("latin-1"))
+            await up_writer.drain()
+            to_web = asyncio.ensure_future(pump(reader, up_writer, False))
+            try:
+                await pump(up_reader, writer, True)
+            finally:
+                to_web.cancel()
+        except (asyncio.TimeoutError, ConnectionError, OSError):
+            pass
+        finally:
+            self.clients.discard(up_writer)
+            up_writer.close()
+        if answered:
+            writer.close()
+        else:
+            try:
+                await self._respond(writer, 502, html=WEB_DOWN_HTML)
+            except (ConnectionError, OSError):
+                writer.close()
 
     def _ws_url(self, headers: dict) -> str:
         if self.public_url:

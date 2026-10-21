@@ -706,6 +706,12 @@ paynani sms revoke     # su token deja de abrir la pasarela
   página sigue arriba hasta Ctrl-C.
 - La pasarela escucha sólo en `127.0.0.1` (se niega a otra dirección). El túnel
   apunta a ese puerto.
+- **Lo que no es de `/sms/` va a PaynaniWeb** (PRD #434 FR-1): la pasarela reenvía la
+  petición a `127.0.0.1:8771` (`PAYNANI_WEB_PORT` en `sms.env`, o `--web-port`) y copia
+  la respuesta, sin los encabezados de un solo salto y con `Connection: close`. Si la
+  web no contesta, `503` con una página corta (FR-2); los SMS siguen. `--web-port 0`
+  apaga el reenvío y fuera de `/sms/` responde `404`. Un `PAYNANI_WEB_PORT` igual al de
+  la pasarela también lo apaga, para no reenviarse a sí misma.
 - `GET /sms/health` responde `{"ok": true, "phone_connected": …}` sin secretos, para
   comprobar el túnel.
 - Cada SMS y llamada sale también en stdout con la misma línea que le llega al agente.

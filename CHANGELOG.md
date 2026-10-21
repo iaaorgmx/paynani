@@ -2,6 +2,24 @@
 
 ## Sin publicar
 
+- **La pasarela SMS le pasa a PaynaniWeb todo lo que no es de `/sms/`** (T1 del
+  paraguas #435, PRD #434 FR-1 y FR-2). PaynaniWeb comparte así el dominio del túnel
+  de ngrok sin tocar su configuración. Fuera de `/sms/`, la pasarela reenvía la
+  petición tal cual a `127.0.0.1:8771` (`PAYNANI_WEB_PORT` en `sms.env`, o
+  `--web-port`) y copia la respuesta. `/sms/pair`, `/sms/ws` y `/sms/health` no
+  cambian, y el WebSocket del teléfono nunca pasa por la web. Si la web no acepta la
+  conexión, responde `503` con una página corta que dice que los SMS siguen llegando;
+  si la acepta y cierra sin responder, `502`. El log lo dice una vez cuando cae y otra
+  cuando vuelve, no en cada petición. No pasan a la web los encabezados de un solo
+  salto (`Connection`, `Keep-Alive`, `Upgrade`, `TE`…), y cada petición va con
+  `Connection: close`, para que una conexión persistente del túnel no le mande a la
+  web la siguiente petición aunque sea de `/sms/`. Los `X-Forwarded-*` del túnel
+  pasan como llegan: decidir si se les cree es de la web (T3). Con un
+  `PAYNANI_WEB_PORT` igual al puerto de la pasarela (alguien con
+  `PAYNANI_SMS_PORT=8771`), el reenvío se apaga y lo dice en el log, en vez de
+  reenviarse a sí misma. `--web-port 0` lo apaga a propósito: fuera de `/sms/`
+  vuelve el `404` de antes.
+
 - **`upgrade_plan.py` siempre pide reiniciar el listener y el dispatcher.** Antes
   suponía que `install.sh --upgrade` ya los había reiniciado cuando cambiaba una
   plantilla de `systemd/`, y decía `# install.sh --upgrade already restarted …`. Pero
