@@ -196,7 +196,8 @@ status, _, page = get("/email/main")
 check("la lista: 200", 200, status)
 items = re.findall(r'<li class="correo-in"><a href="(/email/main/ver\?e=[^"]+)"', page)
 check("50 correos en la primera página", 50, len(items))
-check("el primero es el más reciente", "/email/main/ver?e=" + quote("imap:INBOX:77:120", safe=""), items[0])
+check("el primero es el más reciente, con el ancla del mensaje (#455)", True,
+      items[0].startswith("/email/main/ver?e=" + quote("imap:INBOX:77:120", safe="") + "#m-"))
 check("dice cuántos son", True, "120 correos" in page)
 check("el estado respondido y la marca del roster", True,
       'estado-replied">respondido' in page and 'class="marca-roster"' in page)
@@ -221,8 +222,8 @@ check("el texto escapado: un <script> del cuerpo no es marcado", (True, False),
       ("&lt;script&gt;no se ejecuta" in page, "<script>no se ejecuta" in page))
 check("con el login de la cuenta del agente", [("agente@example.com", "imap.example.com")], FakeIMAP.logins)
 check("De, Para y el asunto", True, "ana@example.com" in page and "agente@example.com" in page and "Asunto 120" in page)
-check("dice que solo se muestra (FR-15)", True, "Solo se muestra" in page)
-check("y su conversación, sola: no hay otro correo con ese asunto y esa persona", True, "No hay más correos en esta conversación" in page)
+check("sin los textos de ayuda que quitó el PRD #455 (4.6)", (False, False), ("Solo se muestra" in page, "Conversación" in page))
+check("y un hilo de uno: un solo mensaje, el abierto", (1, True), (page.count('<li id="m-'), 'class="mensaje abierto"' in page))
 status, _, page = get("/email/main/ver?e=" + quote("imap:INBOX:77:119", safe=""))
 check("un correo en HTML: el texto, el aviso y el adjunto nombrado", (200, True, True, True, False),
       (status, "Hola desde HTML" in page, "venía en HTML" in page, "cotizacion.pdf" in page, "x()" in page))
