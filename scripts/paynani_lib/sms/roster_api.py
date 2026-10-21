@@ -51,6 +51,13 @@ NOTIFY_GRACE_S = 300
 NOTIFY_WINDOW_S = 24 * 3600
 
 
+WEB_PREFIX = "web:"   # device_id de un cambio hecho desde PaynaniWeb (#435 T8): «web:<dirección>»
+
+
+def from_web(device_id: str) -> bool:
+    return str(device_id or "").startswith(WEB_PREFIX)
+
+
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -323,7 +330,8 @@ class RosterService:
 
     def _rendered(self, text, device_id: str) -> tuple[str, dict]:
         parsed = rules_mod.parse(text)
-        return rules_mod.render(parsed, updated_at=_now_iso(), updated_by=f"phone {device_id}"), parsed
+        who = f"PaynaniWeb {device_id[len(WEB_PREFIX):]}" if from_web(device_id) else f"phone {device_id}"
+        return rules_mod.render(parsed, updated_at=_now_iso(), updated_by=who), parsed
 
     def rules_save(self, msg: dict, device_id: str) -> dict:
         new_text, parsed = self._rendered(msg.get("text"), device_id)
@@ -533,23 +541,31 @@ def unnotified(state_dir: Path, *, now: float | None = None, window_s: int = NOT
 
 
 def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
-    """El asunto y el cuerpo del correo al humano: qué cambió y desde qué teléfono (Q5)."""
+    """El asunto y el cuerpo del correo al humano: qué cambió y desde dónde, el
+    teléfono (Q5) o PaynaniWeb y su dirección (#434 FR-9)."""
+    web = from_web(entry["device_id"])
+    origin = (f"Desde PaynaniWeb (dirección {entry['device_id'][len(WEB_PREFIX):]}), a las {entry['at']}:" if web
+              else f"Desde el teléfono {entry['device_id']}, a las {entry['at']}:")
+    app = "PaynaniWeb" if web else "PaynaniApp"
+    revoke = ("Si no fuiste tú, revisa el roster y cambia la contraseña de PaynaniWeb con "
+              "`scripts/paynani web passwd`, que cierra todas las sesiones." if web
+              else "Si no fuiste tú, revisa el roster y revoca el teléfono con `paynani sms revoke`.")
     if entry["action"] in ("rules", "rules_default"):
         info = entry["rules"]
         whose = "las reglas generales" if entry["action"] == "rules_default" else \
             f"las instrucciones de «{entry['name']}» ({entry['roster']}, fila {entry['row']})"
         reply = ", ".join(f"{c}: {v}" for c, v in info["reply"].items()) or "la de las reglas generales"
-        lines = [f"Desde el teléfono {entry['device_id']}, a las {entry['at']}:", "",
+        lines = [origin, "",
                  f"Cambiaron {whose}, en {info['file']}.", "",
                  f"  Activas: {'sí' if info['enabled'] else 'no'}", f"  Respuesta: {reply}",
                  f"  Tamaño: {info['bytes']:,} bytes", "",
                  f"Copia anterior: {entry['backup'] or '(el archivo no existía)'}", "",
                  "El texto no va en este correo: está en ese archivo de la instalación.",
-                 "Si no fuiste tú, revisa el archivo y revoca el teléfono con `paynani sms revoke`."]
-        return f"paynani: cambio de reglas en {info['file']} desde PaynaniApp", "\n".join(lines) + "\n"
+                 revoke.replace("revisa el roster", "revisa el archivo")]
+        return f"paynani: cambio de reglas en {info['file']} desde {app}", "\n".join(lines) + "\n"
     what = {"add": "alta", "edit": "edición", "delete": "baja"}[entry["action"]]
-    subject = f"paynani: {what} en {entry['roster']} desde PaynaniApp"
-    lines = [f"Desde el teléfono {entry['device_id']}, a las {entry['at']}:", "",
+    subject = f"paynani: {what} en {entry['roster']} desde {app}"
+    lines = [origin, "",
              f"{what.capitalize()} de «{entry['name']}» en {entry['roster']} (fila {entry['row']}).", ""]
 
     def show(m):
@@ -564,5 +580,5 @@ def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
     else:
         lines += show(member)
     lines += ["", f"Copia anterior del roster: {entry['backup'] or '(el archivo no existía)'}",
-              "", "Si no fuiste tú, revisa el roster y revoca el teléfono con `paynani sms revoke`."]
+              "", revoke]
     return subject, "\n".join(lines) + "\n"

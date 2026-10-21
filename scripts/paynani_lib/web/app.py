@@ -28,7 +28,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import auth, mail, mail_pages, messages_pages, notify, shell, users
+from . import auth, mail, mail_pages, messages_pages, notify, roster_pages, shell, users
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 STATIC = {
@@ -228,7 +228,7 @@ class Context:
     def __init__(self, user_file: Path | None = None, notifier: notify.Notifier | None = None, clock=time.time,
                  agent_email=None, accounts_file: Path | None = None, ledger_path: Path | None = None,
                  env_path: Path | None = None, imap_connect=None, imap_uidvalidity=None,
-                 state_dir: Path | None = None, roster_path: Path | None = None):
+                 state_dir: Path | None = None, roster_path: Path | None = None, roster_notifier=None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -248,6 +248,10 @@ class Context:
         # roster del agente por teléfono.
         self._state_dir = state_dir
         self._roster_path = roster_path
+        # Roster (FR-20): el mismo servicio que la pantalla de PaynaniApp. Uno por
+        # proceso, como en la pasarela: guarda el candado y los pedidos ya hechos.
+        self._roster_notifier = roster_notifier
+        self._roster_service = None
 
     def state_dir(self) -> Path:
         if self._state_dir is not None:
@@ -260,6 +264,21 @@ class Context:
             return Path(self._roster_path)
         import paths
         return paths.roster()
+
+    def roster_service(self):
+        if self._roster_service is None:
+            from ..sms import roster_api
+            notifier = self._roster_notifier if self._roster_notifier is not None else roster_api.send_sh_notifier
+            roster = self.roster_path()
+            accounts_file = self.accounts_file
+            if accounts_file is None:
+                from .. import accounts as accounts_mod
+                accounts_file = accounts_mod.accounts_path()
+            self._roster_service = roster_api.RosterService(
+                roster, self.state_dir(), accounts_file=accounts_file, agent_email=self.agent_email(),
+                notifier=notifier, log=lambda line: sys.stderr.write(f"paynani-web: {line}\n"),
+                rules_root=roster.parent)
+        return self._roster_service
 
     def phone_names(self) -> dict:
         import roster as roster_mod
@@ -484,8 +503,8 @@ def make_handler(ctx: Context):
             if self.route in ("/messages", "/messages/ver"):
                 self._messages()
                 return
-            if self.route == "/roster":
-                self._page(200, title=t("web.nav.roster"), body=soon_body(), active="roster", icon_name="roster")
+            if self.route in ("/roster", "/roster/editar", "/roster/quitar", "/roster/reglas"):
+                self._roster_get()
                 return
             if self.route == "/profile":
                 self._page(200, title=t("web.nav.profile"), body=soon_body(), icon_name="profile", back="/")
@@ -565,6 +584,156 @@ def make_handler(ctx: Context):
                        body=messages_pages.thread_body(number, who, mine, self._offset(),
                                                        sms_cli.human_pause(store, number)), **kw)
 
+        # ---- Roster (FR-20) -----------------------------------------------------
+        def _rq(self, kind: str, **fields) -> dict:
+            """Un pedido de §11 al servicio del roster, como lo haría PaynaniApp."""
+            import secrets as _secrets
+            msg = {"type": kind, "id": "q_" + _secrets.token_hex(16), **fields}
+            return self.CTX.roster_service().handle(msg, f"web:{self.ip}")
+
+        @staticmethod
+        def _account(value: str):
+            return None if value in ("", "main") else value
+
+        def _roster_page(self, code: int, body: str):
+            self._page(code, title=i18n.t("web.nav.roster"), body=body, active="roster", icon_name="roster",
+                       back="/roster" if self.route != "/roster" else "")
+
+        def _roster_get(self):
+            th = i18n.th
+            account = self._account(self.query.get("cuenta", [""])[0])
+            accounts = self._rq("roster.accounts")
+            acc_list = (accounts.get("data") or {}).get("accounts", []) if accounts["type"] == "result" else []
+            if self.route == "/roster/reglas" and self.query.get("general", [""])[0] == "1":
+                res = self._rq("rules.get_default")
+                if res["type"] != "result":
+                    self._roster_page(502, roster_pages.error_box(res))
+                    return
+                data = res["data"]
+                self._roster_page(200, roster_pages.rules_body(
+                    account, general=True, member=None, data=data, csrf=self.session["csrf"],
+                    text=data["text"] or roster_pages.NEW_RULES, effective=data["effective"],
+                    ok=self.query.get("ok", [""])[0]))
+                return
+            listing = self._rq("roster.list", account=account)
+            if listing["type"] != "result":
+                code = 404 if listing.get("code") == "not_found" else 502
+                self._roster_page(code, roster_pages.account_picker(acc_list, account) + roster_pages.error_box(listing))
+                return
+            data = listing["data"]
+            if self.route == "/roster":
+                self._roster_page(200, roster_pages.list_body(acc_list, data, self.session["csrf"],
+                                                              ok=self.query.get("ok", [""])[0]))
+                return
+            row_raw = self.query.get("fila", [""])[0]
+            member = None
+            if row_raw:
+                member = next((m for m in data["members"] if str(m["row"]) == row_raw), None)
+                if member is None:
+                    self._roster_page(404, roster_pages.error_box({"code": "not_found", "field": "row"}))
+                    return
+            if self.route == "/roster/editar":
+                self._roster_page(200, roster_pages.edit_body(account, data, member, self.session["csrf"]))
+                return
+            if member is None:
+                self._roster_page(404, roster_pages.error_box({"code": "not_found", "field": "row"}))
+                return
+            if self.route == "/roster/quitar":
+                if member.get("owner"):
+                    self._roster_page(403, roster_pages.error_box({"code": "owner_row"}))
+                    return
+                self._roster_page(200, roster_pages.remove_body(account, data, member, self.session["csrf"]))
+                return
+            res = self._rq("rules.get", account=account, row=member["row"], roster_etag=data["etag"])
+            if res["type"] != "result":
+                self._roster_page(502, roster_pages.error_box(res))
+                return
+            rd = res["data"]
+            self._roster_page(200, roster_pages.rules_body(
+                account, general=False, member=member, data=rd, csrf=self.session["csrf"],
+                text=rd["text"] or roster_pages.NEW_RULES, effective=rd["effective"], roster_etag=data["etag"],
+                ok=self.query.get("ok", [""])[0]))
+
+        def _roster_post(self, post: dict):
+            from urllib.parse import urlencode
+            acc_value = post.get("cuenta", "")
+            account = self._account(acc_value)
+            back = "/roster?" + urlencode({"cuenta": acc_value or "main"})
+            try:
+                row = int(post["fila"]) if post.get("fila") else None
+            except ValueError:
+                row = None
+            if self.route == "/roster/guardar":
+                # Como PaynaniApp: el número se normaliza a E.164 antes de mandarlo, con la
+                # región de la instalación (PAYNANI_SMS_DEFAULT_REGION, MX si no). Uno que no
+                # se puede normalizar va tal cual y el servicio lo rechaza con su campo.
+                import phone as phone_mod
+                region = phone_mod.default_region()
+                phones = [phone_mod.to_e164(p.strip(), region) or p.strip()
+                          for p in post.get("phones", "").split(",") if p.strip()]
+                member = {"name": post.get("name", "").strip(), "email": post.get("email", "").strip(),
+                          "type": post.get("type", "").strip(), "github": post.get("github", "").strip(),
+                          "phones": phones}
+                res = self._rq("roster.save", account=account, row=row, member=member, etag=post.get("etag", ""))
+                if res["type"] == "result":
+                    self._redirect(back + "&ok=saved")
+                    return
+                listing = self._rq("roster.list", account=account)
+                data = listing.get("data") or {"etag": post.get("etag", ""), "members": []}
+                current = next((m for m in data.get("members", []) if m["row"] == row), None) if row else None
+                self._roster_page(409 if res.get("code") == "conflict" else 400, roster_pages.edit_body(
+                    account, data, current, self.session["csrf"], error=res, values=member))
+                return
+            if self.route == "/roster/quitar":
+                res = self._rq("roster.delete", account=account, row=row, etag=post.get("etag", ""))
+                if res["type"] == "result":
+                    self._redirect(back + "&ok=removed")
+                    return
+                self._roster_page(409 if res.get("code") == "conflict" else 400,
+                                  roster_pages.error_box(res) + f'<p><a href="{back}">{i18n.th("web.roster.back")}</a></p>')
+                return
+            # /roster/reglas: vista previa o guardar.
+            general = post.get("general") == "1"
+            text = post.get("text", "").replace("\r\n", "\n")
+            action = post.get("accion", "vista")
+            member = None
+            if not general:
+                listing = self._rq("roster.list", account=account)
+                members = (listing.get("data") or {}).get("members", [])
+                member = next((m for m in members if m["row"] == row), None)
+                if member is None:
+                    self._roster_page(404, roster_pages.error_box({"code": "not_found", "field": "row"}))
+                    return
+            if action == "guardar":
+                if general:
+                    res = self._rq("rules.save_default", text=text, etag=post.get("etag", ""))
+                else:
+                    res = self._rq("rules.save", account=account, row=row, text=text, etag=post.get("etag", ""),
+                                   roster_etag=post.get("roster_etag", ""))
+                if res["type"] == "result":
+                    params = {"general": 1} if general else {"cuenta": acc_value or "main", "fila": row}
+                    self._redirect("/roster/reglas?" + urlencode({**params, "ok": "rules_saved"}))
+                    return
+                error, effective = res, ""
+            else:
+                if general:
+                    from .. import rules as rules_mod
+                    from ..roster_edit import EditError
+                    try:
+                        rules_mod.parse(text)
+                        error, effective = None, rules_mod.effective(text, None)
+                    except EditError as exc:
+                        error, effective = {"type": "error", **exc.as_error()}, ""
+                else:
+                    res = self._rq("rules.preview", account=account, row=row, text=text,
+                                   roster_etag=post.get("roster_etag", ""))
+                    error = None if res["type"] == "result" else res
+                    effective = (res.get("data") or {}).get("effective", "") if error is None else ""
+            data = {"exists": True, "etag": post.get("etag", "")}
+            self._roster_page(200 if error is None else 400, roster_pages.rules_body(
+                account, general=general, member=member, data=data, csrf=self.session["csrf"], text=text,
+                effective=effective, roster_etag=post.get("roster_etag", ""), error=error))
+
         def do_HEAD(self):  # noqa: N802
             self.do_GET()
 
@@ -601,6 +770,9 @@ def make_handler(ctx: Context):
             self.dispatch_post(post)
 
         def dispatch_post(self, post: dict):
+            if self.route in ("/roster/guardar", "/roster/quitar", "/roster/reglas"):
+                self._roster_post(post)
+                return
             self._html(405, message_page(self.lang, "web.title", "web.method.h1"))
 
         def _login(self, post: dict):
