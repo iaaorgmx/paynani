@@ -280,6 +280,21 @@ failed_account["dependencies"]["himalaya"]["account_check_ok"] = False
 him_check = next(c for c in doctor_with(failed_account)["checks"] if c["name"] == "himalaya")
 check("himalaya v2 with a failed account check is blocked and mentions the schema", him_check["status"] == "blocked" and "section 4.3 schema" in him_check.get("next_command", ""))
 
+slow_account = base_facts()
+slow_account["dependencies"]["himalaya"]["account_check_ok"] = False
+slow_account["dependencies"]["himalaya"]["account_check_timed_out"] = True
+him_check = next(c for c in doctor_with(slow_account)["checks"] if c["name"] == "himalaya")
+check("#478: an account check that runs out of time is unknown, not blocked", him_check["status"] == "unknown")
+check("#478: and says the server may be slow", "may be slow" in him_check["summary"] and "30 s" in him_check["summary"])
+
+with mock.patch.object(d.subprocess, "run", side_effect=d.subprocess.TimeoutExpired(["himalaya"], 30)):
+    timed = d._safe_run(["himalaya", "account", "check", "-a", "paynani"], timeout=30)
+check("#478: _safe_run marks a timeout as timed_out", timed.get("timed_out") is True and timed["returncode"] is None)
+with mock.patch.object(d.subprocess, "run", side_effect=OSError("no such file")):
+    missing = d._safe_run(["himalaya"])
+check("#478: any other failure is not a timeout", not missing.get("timed_out"))
+check("#478: the account check waits 30 s", d.HIMALAYA_CHECK_TIMEOUT == 30)
+
 no_opencode_check = doctor_with(base_facts())
 check("opencode check is absent when opencode is not the selected runtime", not any(c["name"] == "opencode" for c in no_opencode_check["checks"]))
 

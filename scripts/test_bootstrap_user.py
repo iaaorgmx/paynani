@@ -575,6 +575,48 @@ def doctor_only_the_session_watch_pending(w):
 with_world(doctor_only_the_session_watch_pending)
 
 
+SLOW_HIMALAYA = {"name": "himalaya", "status": "unknown", "summary": "the account check got no answer within 30 s",
+                 "facts": {"account_check_timed_out": True}}
+
+
+def doctor_slow_himalaya(w):
+    rows = [{"name": "listener", "status": "ok", "summary": "active"}, SLOW_HIMALAYA]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", rows))
+    code = w.run(*w.full())
+    check("#478: doctor's account check timing out after the himalaya step passed does not stop the run",
+          code == 0 and "Ready. paynani is installed" in w.text, w.text)
+    check("#478: it is not waited for", w.sleeps == [], str(w.sleeps))
+    check("#478: the end says the mail server is slow and how to check it",
+          "the mail server is slow" in w.text and "himalaya account check -a paynani" in w.text, w.text)
+    check("#478: and does not tell the owner to open a session for it", "One step is left" not in w.text, w.text)
+
+
+with_world(doctor_slow_himalaya)
+
+
+def doctor_slow_himalaya_without_own_check(w):
+    w.runner.add(has("himalaya", "account", "check"), 1, err="login failed")
+    rows = [SLOW_HIMALAYA]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", rows))
+    code = w.run(*w.full())
+    check("#478: if the himalaya step itself failed, the run stops there and never reaches doctor",
+          code == 1 and not w.runner.ran("doctor"), w.text)
+
+
+with_world(doctor_slow_himalaya_without_own_check)
+
+
+def doctor_himalaya_unknown_not_timeout(w):
+    rows = [{"name": "himalaya", "status": "unknown", "summary": "himalaya binary could not be run", "facts": {}}]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", rows))
+    code = w.run(*w.full())
+    check("#478: a himalaya row unknown for any other reason still blocks the ready",
+          code == 1 and "Ready." not in w.text, w.text)
+
+
+with_world(doctor_himalaya_unknown_not_timeout)
+
+
 def doctor_pending_in_spanish(w):
     w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", [WATCH_ROW]))
     w.run(*w.full(), lang="es_MX.UTF-8")

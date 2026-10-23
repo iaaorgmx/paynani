@@ -42,6 +42,8 @@ LONG_SECRET = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z0-9_./+-]{24,}(?![A-Za-z0-9_]
 def _safe_run(args: list[str], timeout: int = 10) -> dict:
     try:
         run = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        return {"command": args, "returncode": None, "stdout": "", "stderr": str(exc), "timed_out": True}
     except (OSError, subprocess.SubprocessError) as exc:
         return {"command": args, "returncode": None, "stdout": "", "stderr": str(exc)}
     return {"command": args, "returncode": run.returncode,
@@ -326,6 +328,9 @@ def _python_version() -> tuple[int, int, int]:
     return tuple(sys.version_info[:3])
 
 
+HIMALAYA_CHECK_TIMEOUT = 30
+
+
 def _dependency_facts(selected_runtime, python=None) -> dict:
     """
     What is actually installed, gathered once per doctor run so the checks
@@ -347,10 +352,14 @@ def _dependency_facts(selected_runtime, python=None) -> dict:
         match = HIMALAYA_VERSION_RE.search(version["stdout"])
         himalaya["major"] = int(match.group(1)) if match else None
         if himalaya["major"] == MIN_HIMALAYA_MAJOR:
-            account = _safe_run(["himalaya", "account", "check", "-a", "paynani"])
+            # A slow server is not a broken account (#478): the same check took
+            # 2 to 45 s in a row against Gmail. Past the limit it is unknown.
+            account = _safe_run(["himalaya", "account", "check", "-a", "paynani"],
+                                timeout=HIMALAYA_CHECK_TIMEOUT)
             himalaya["account_check_output"] = (account["stdout"].strip()
                                                 or account["stderr"].strip())
             himalaya["account_check_ok"] = account["returncode"] == 0
+            himalaya["account_check_timed_out"] = bool(account.get("timed_out"))
         else:
             himalaya["account_check_ok"] = None
     else:
@@ -456,6 +465,10 @@ def _himalaya_version_check(deps: dict) -> dict:
                        him, schema_command)
     if him.get("account_check_ok"):
         return _check("himalaya", "ok", "v2.x, account check passed", him)
+    if him.get("account_check_timed_out"):
+        return _check("himalaya", "unknown",
+                      f"v2.x, but the account check got no answer within {HIMALAYA_CHECK_TIMEOUT} s; "
+                      "the mail server may be slow", him, "himalaya account check -a paynani")
     return _check("himalaya", "blocked", "v2.x account check failed", him,
                    "himalaya account check -a paynani after rewriting config with the INSTALL.md section 4.3 schema")
 

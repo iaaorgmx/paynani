@@ -115,6 +115,7 @@ class Ctx:
     password_key: str = "AGENT_EMAIL_PASSWORD"
     owner: str = ""
     pending: list = field(default_factory=list)   # doctor rows left unknown on purpose
+    himalaya_verified: bool = False               # step_himalaya's own account check passed
 
     def say(self, text: str) -> None:
         self.out(text)
@@ -335,6 +336,7 @@ def step_himalaya(ctx: Ctx):
         done = run_quiet(ctx, argv, env=env)
         if done.returncode != 0:
             return False, f"{' '.join(argv)} failed:\n{first_lines(done.stderr or done.stdout)}"
+    ctx.himalaya_verified = True
     return True, note
 
 
@@ -463,13 +465,23 @@ def step_harness_step(ctx: Ctx):
 
 # --- 13. verification -----------------------------------------------------------------
 
-def split_doctor_rows(report: dict):
+def _slow_himalaya(row: dict, himalaya_verified: bool) -> bool:
+    """
+    doctor's account check ran out of time (#478) after this run's own himalaya step,
+    which has no limit, already proved the account answers. A slow server, not a fault.
+    """
+    return (himalaya_verified and row.get("name") == "himalaya" and row.get("status") == "unknown"
+            and bool((row.get("facts") or {}).get("account_check_timed_out")))
+
+
+def split_doctor_rows(report: dict, himalaya_verified: bool = False):
     """(rows that are not ok and block, rows that are unknown on purpose in a fresh install)."""
     blocking, pending = [], []
     for row in report.get("checks", []):
         if not isinstance(row, dict) or row.get("status") == "ok":
             continue
-        if row.get("name") in PENDING_AT_INSTALL and row.get("status") == "unknown":
+        if ((row.get("name") in PENDING_AT_INSTALL and row.get("status") == "unknown")
+                or _slow_himalaya(row, himalaya_verified)):
             pending.append(row)
         else:
             blocking.append(row)
@@ -498,7 +510,7 @@ def step_verify(ctx: Ctx):
             status = report["status"]
         except (ValueError, KeyError, TypeError):
             return False, f"paynani doctor gave no status:\n{first_lines(doctor.stderr or doctor.stdout)}"
-        blocking, pending = split_doctor_rows(report)
+        blocking, pending = split_doctor_rows(report, ctx.himalaya_verified)
         if status == "ok" or (not blocking and report.get("checks")):
             ctx.pending = [row.get("name") for row in pending]
             break
@@ -594,8 +606,10 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
 
     if args.dry_run:
         return EX_OK
-    ctx.say(ctx.L("b.ready_pending", app=APP_NAMES.get(ctx.runtime, ctx.runtime)) if ctx.pending
-            else ctx.L("b.ready"))
+    ctx.say(ctx.L("b.ready_pending", app=APP_NAMES.get(ctx.runtime, ctx.runtime))
+            if "session_watch_state" in ctx.pending else ctx.L("b.ready"))
+    if "himalaya" in ctx.pending:
+        ctx.say(ctx.L("b.slow_mailbox"))
     ctx.say(ctx.L("b.sum_runtime", value=ctx.runtime))
     ctx.say(ctx.L("b.sum_creds", value=ctx.env_path))
     ctx.say(ctx.L("b.sum_clone", value=ROOT))

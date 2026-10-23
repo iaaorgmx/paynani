@@ -2,6 +2,15 @@
 
 ## Sin publicar
 
+- **`paynani doctor` ya no marca Himalaya como `blocked` cuando el servidor tarda**
+  (#478, lo encontró Metis). La prueba de la cuenta (`himalaya account check`) tenía
+  un límite de 10 s, y con Gmail la misma prueba tardó 44.8, 12.6 y 2.4 s seguidos;
+  pasado el límite salía `blocked` aunque la cuenta funcionara, y `bootstrap.sh` no
+  decía Ready. Ahora el límite es de 30 s y, si se acaba, la fila queda `unknown`
+  («the mail server may be slow»); `blocked` es solo cuando Himalaya contesta con
+  error. `bootstrap.sh` ya probó la cuenta sin límite en su paso de Himalaya, así que
+  ese `unknown` no le quita el Ready: lo dice al final.
+
 - **`bootstrap.sh` registra el paso de cada harness y no dice Ready sin él** (#474,
   Q76 de Julian). El script existe para instalar lo que el agente no puede por el
   modo automático o el sandbox, pero dejaba al agente los hooks de Claude Code y de
