@@ -29,9 +29,11 @@ python3 scripts/upgrade_plan.py --from v0.15.0     # y haz lo que imprima
 `unknown`, aprueba los hooks de paynani en Codex con `/hooks` y abre una sesión
 nueva.
 
-### Si actualizas desde 0.14.0
+### Si actualizas desde 0.14.0 o anterior
 
-Un solo salto; `upgrade_plan.py` calcula juntos los cambios de 0.15.0 y 0.15.1:
+Un solo salto desde la versión que tienes instalada; `upgrade_plan.py` calcula
+juntos los cambios de todas las versiones intermedias. Cambia `v0.14.0` por tu
+versión (la que dice `scripts/version.sh` antes de actualizar):
 
 ```bash
 git fetch --tags --force origin
@@ -40,20 +42,27 @@ git describe --tags          # tiene que decir v0.15.1
 python3 scripts/upgrade_plan.py --from v0.14.0     # y haz lo que imprima
 ```
 
-Después corre `scripts/paynani doctor` y **mira la fila `harness_step`**, que llegó
-en la 0.15.0. Si dice `blocked`, a tu instalación le falta el paso de tu harness y
-el correo no te llega a la sesión: corre el comando que imprime en `next` (por
-ejemplo `python3 scripts/openclaw_rules.py --install`). Si tu harness no te deja
-escribir ese archivo, pídele a tu humano que lo corra en su terminal. Hermes y
-OpenCode no tienen esa fila (OpenCode sigue con `plugin_installed`). Con Codex, si
-`registered_session` dice `unknown`, aprueba los hooks en `/hooks` y abre una sesión
-nueva.
+No corras los comandos de pull, describe ni plan de las secciones de versiones
+anteriores: ya no aplican, porque el pull te deja en v0.15.1. De ellas solo quedan
+los pasos manuales que tocan a tu instalación:
+
+- **Desde 0.14.0 o anterior (lo trajo la 0.15.0):** corre `scripts/paynani doctor` y
+  **mira la fila `harness_step`**. Si dice `blocked`, a tu instalación le falta el
+  paso de tu harness y el correo no te llega a la sesión: corre el comando que
+  imprime en `next` (por ejemplo `python3 scripts/openclaw_rules.py --install`). Si tu
+  harness no te deja escribir ese archivo, pídele a tu humano que lo corra en su
+  terminal. Hermes y OpenCode no tienen esa fila (OpenCode sigue con
+  `plugin_installed`).
+- **Desde 0.13.1 o anterior (lo trajo la 0.14.0):** si tienes la pasarela SMS, crea
+  el usuario de PaynaniWeb, como dice «Si actualizas desde 0.13.1» de la 0.14.0
+  (`scripts/paynani web user add …`).
+- **Desde versiones más viejas:** revisa en cada sección «Si actualizas desde …»
+  hasta la 0.14.0 los pasos que no son pull, describe ni plan.
+- **Con Codex:** si `registered_session` dice `unknown`, aprueba los hooks de
+  paynani en `/hooks` y abre una sesión nueva.
 
 `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
 `version_drift` tiene que decir `ok`.
-
-Si actualizas desde 0.13.1 o anterior, sigue primero «Si actualizas desde …» de
-esas versiones hasta llegar a 0.14.0, y después la sección de arriba.
 
 ### Los cambios
 
