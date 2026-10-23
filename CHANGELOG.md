@@ -2,6 +2,70 @@
 
 ## Sin publicar
 
+## 0.15.1 (2026-10-23)
+
+**Con Codex, `bootstrap.sh` ya dice Ready; y el workflow `release-assets` adjunta
+`bootstrap.sh` y `bootstrap.sh.sha256` a cada release.** Es lo que encontró la prueba de campo de Codex (BOOT-11, #476, con
+Ocelotl) más el workflow de #475. Con Codex, una instalación nueva no decía Ready
+porque contaba como bloqueo las filas de `doctor` que esperan la primera sesión y
+el primer correo (#481). Ahora el bootstrap y la documentación piden aprobar los
+hooks en `/hooks` y abrir una sesión nueva de Codex, y el paso 0 de `AGENTS.md`
+pide ofrecer el script aunque el humano haya pedido el formulario.
+
+Lo hizo Metis, con la revisión de Ximena. Sin requisitos nuevos: solo biblioteca
+estándar de Python 3.10 o mayor. Con PaynaniApp 0.8.1.
+
+### Si actualizas desde 0.15.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.15.1
+python3 scripts/upgrade_plan.py --from v0.15.0     # y haz lo que imprima
+```
+
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`. Con Codex, si `registered_session` dice
+`unknown`, aprueba los hooks de paynani en Codex con `/hooks` y abre una sesión
+nueva.
+
+### Si actualizas desde 0.14.0 o anterior
+
+Un solo salto desde la versión que tienes instalada; `upgrade_plan.py` calcula
+juntos los cambios de todas las versiones intermedias. Cambia `v0.14.0` por tu
+versión (la que dice `scripts/version.sh` antes de actualizar):
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.15.1
+python3 scripts/upgrade_plan.py --from v0.14.0     # y haz lo que imprima
+```
+
+No corras los comandos de pull, describe ni plan de las secciones de versiones
+anteriores: ya no aplican, porque el pull te deja en v0.15.1. De ellas solo quedan
+los pasos manuales que tocan a tu instalación:
+
+- **Desde 0.14.0 o anterior (lo trajo la 0.15.0):** corre `scripts/paynani doctor` y
+  **mira la fila `harness_step`**. Si dice `blocked`, a tu instalación le falta el
+  paso de tu harness y el correo no te llega a la sesión: corre el comando que
+  imprime en `next` (por ejemplo `python3 scripts/openclaw_rules.py --install`). Si tu
+  harness no te deja escribir ese archivo, pídele a tu humano que lo corra en su
+  terminal. Hermes y OpenCode no tienen esa fila (OpenCode sigue con
+  `plugin_installed`).
+- **Desde 0.13.1 o anterior (lo trajo la 0.14.0):** si tienes la pasarela SMS, crea
+  el usuario de PaynaniWeb, como dice «Si actualizas desde 0.13.1» de la 0.14.0
+  (`scripts/paynani web user add …`).
+- **Desde versiones más viejas:** revisa en cada sección «Si actualizas desde …»
+  hasta la 0.14.0 los pasos que no son pull, describe ni plan.
+- **Con Codex:** si `registered_session` dice `unknown`, aprueba los hooks de
+  paynani en `/hooks` y abre una sesión nueva.
+
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`.
+
+### Los cambios
+
 - **Lo que encontró BOOT-11 en Codex** (#481, prueba de campo de Ocelotl, #476).
   - **`bootstrap.sh` ya dice Ready con Codex.** En una instalación nueva,
     `registered_session` sale `unknown` hasta que una sesión corre el hook
