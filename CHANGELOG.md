@@ -2,6 +2,13 @@
 
 ## Sin publicar
 
+- **Quitar una cuenta ya no falla cuando su listener tarda en detenerse** (#471, lo
+  encontró Metis en T11 de #435). En Linux, `account_service` corría
+  `systemctl --user disable --now` con un límite de 20 s. Un listener en medio de IDLE
+  tardó unos 25 s en detenerse, PaynaniWeb respondió 400 y la cuenta quedó a medias en
+  `accounts.json`. Ahora `disable` va solo (es inmediato), el `stop` se pide con
+  `--no-block` y se espera hasta 120 s a que la unidad termine de detenerse.
+
 - **`version.sh --plan`/`--apply` ya no termina en «tmp: unbound variable» ni deja
   basura en `$TMPDIR`** (#465, lo encontró Ares). La limpieza del árbol del planner
   que se saca de la etiqueta destino era `trap 'rm -rf "$tmp"' EXIT`, con `tmp`

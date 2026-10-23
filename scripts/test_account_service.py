@@ -74,5 +74,50 @@ check("launchd plist keeps the shared journal explicit",
       str(state / "events.jsonl") in plist["ProgramArguments"],
       str(plist["ProgramArguments"]))
 
+# #471: removing an account must survive a listener that takes longer than _run's 20 s
+# to stop. disable is separate and immediate; the stop is queued and waited for.
+import types  # noqa: E402
+
+calls = []
+states = iter(["deactivating", "deactivating", "deactivating", "inactive", "inactive"])
+
+
+def fake_run(argv, check=False):
+    calls.append(argv)
+    if argv[2] == "is-active":
+        value = next(states)
+        return types.SimpleNamespace(returncode=0 if value == "active" else 3, stdout=value + "\n", stderr="")
+    return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+
+old_run = account_service._run
+naps = []
+try:
+    account_service._run = fake_run
+    final = account_service._disable_linux("iris", sleeper=naps.append, clock=lambda: 0.0)
+finally:
+    account_service._run = old_run
+verbs = [c[2] for c in calls]
+check("disable runs on its own, without --now (#471)",
+      ["systemctl", "--user", "disable", "paynani-idle@iris.service"] in calls
+      and not any("--now" in c for c in calls), str(calls))
+check("the stop is queued with --no-block, after disable (#471)",
+      verbs[:2] == ["disable", "stop"] and "--no-block" in calls[1], str(calls))
+check("it waits while the unit is still deactivating, then reports it stopped (#471)",
+      (len(naps), final) == (3, "inactive"), f"naps={naps} final={final}")
+
+calls.clear()
+states = iter(["deactivating"] * 1000)
+ticks = iter(range(0, 1000, 30))
+try:
+    account_service._run = fake_run
+    account_service._disable_linux("iris", sleeper=lambda s: None, clock=lambda: float(next(ticks)))
+    gave_up = True
+except StopIteration:
+    gave_up = False
+finally:
+    account_service._run = old_run
+check("it stops waiting after STOP_WAIT_S even if the unit never stops (#471)", gave_up)
+
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
