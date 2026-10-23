@@ -1,0 +1,67 @@
+name: release-assets
+
+# Attaches bootstrap.sh and bootstrap.sh.sha256 to every release (#475).
+# v0.14.0 went out without them and releases/latest/download/bootstrap.sh gave
+# 404 for a day: the first command of INSTALL.md ("Install with one command")
+# and step 0 of AGENTS.md both start there. RELEASING.md §5 did it by hand.
+#
+# The file comes from the release's tag, never from main, so what people
+# download is exactly that version's script. A run that cannot download back
+# what it uploaded and check it with sha256sum fails, and the release page then
+# shows the gap instead of hiding it.
+#
+# workflow_dispatch takes a tag, for a release that predates this workflow or a
+# run that failed.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach bootstrap.sh to (for example v0.15.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: bootstrap.sh and its SHA-256, from the tag
+        run: |
+          set -euo pipefail
+          case "$TAG" in v*) ;; *) echo "not a release tag: $TAG" >&2; exit 1 ;; esac
+          git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null || { echo "no such tag: $TAG" >&2; exit 1; }
+          out=$RUNNER_TEMP/assets
+          mkdir -p "$out" && cd "$out"
+          git -C "$GITHUB_WORKSPACE" show "$TAG:bootstrap.sh" > bootstrap.sh
+          sha256sum bootstrap.sh > bootstrap.sh.sha256
+          cat bootstrap.sh.sha256
+
+      - name: Attach them to the release
+        run: gh release upload "$TAG" "$RUNNER_TEMP/assets/bootstrap.sh" "$RUNNER_TEMP/assets/bootstrap.sh.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Download them back from the public URL and check them
+        run: |
+          set -euo pipefail
+          check=$RUNNER_TEMP/check
+          mkdir -p "$check" && cd "$check"
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          for attempt in 1 2 3 4 5; do
+              if curl -fsSLO "$base/bootstrap.sh" && curl -fsSLO "$base/bootstrap.sh.sha256"; then
+                  break
+              fi
+              [ "$attempt" -eq 5 ] && { echo "could not download the assets of $TAG" >&2; exit 1; }
+              sleep 10
+          done
+          sha256sum -c bootstrap.sh.sha256
+          cmp bootstrap.sh "$RUNNER_TEMP/assets/bootstrap.sh"
