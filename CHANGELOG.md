@@ -2,6 +2,38 @@
 
 ## Sin publicar
 
+## 0.15.1 (2026-10-23)
+
+**Con Codex, `bootstrap.sh` ya dice Ready; y cada release lleva `bootstrap.sh`
+sola.** Es lo que encontró la prueba de campo de Codex (BOOT-11, #476, con
+Ocelotl) más el workflow de #475. Con Codex, una instalación nueva no decía Ready
+porque contaba como bloqueo las filas de `doctor` que esperan la primera sesión y
+el primer correo (#481). Ahora el bootstrap y la documentación piden aprobar los
+hooks en `/hooks` y abrir una sesión nueva de Codex, y el paso 0 de `AGENTS.md`
+pide ofrecer el script aunque el humano haya pedido el formulario.
+
+Lo hizo Metis, con la revisión de Ximena. Sin requisitos nuevos: solo biblioteca
+estándar de Python 3.10 o mayor. Con PaynaniApp 0.8.1.
+
+### Si actualizas desde 0.15.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.15.1
+python3 scripts/upgrade_plan.py --from v0.15.0     # y haz lo que imprima
+```
+
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`. Con Codex, si `registered_session` dice
+`unknown`, aprueba los hooks de paynani en Codex con `/hooks` y abre una sesión
+nueva.
+
+Si actualizas desde 0.14.0 o anterior, sigue primero «Si actualizas desde 0.14.0»
+de la 0.15.0 y después esto, con `--from v0.15.0`.
+
+### Los cambios
+
 - **Lo que encontró BOOT-11 en Codex** (#481, prueba de campo de Ocelotl, #476).
   - **`bootstrap.sh` ya dice Ready con Codex.** En una instalación nueva,
     `registered_session` sale `unknown` hasta que una sesión corre el hook
