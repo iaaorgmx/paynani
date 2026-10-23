@@ -139,6 +139,11 @@ check_b1() {
     grep -qiF "$OWNER_EMAIL" "$CLONE/roster.md" || fail "the owner's row is not in roster.md"
     pass "owner in roster.md"
 
+    # #474: the hooks are what lets mail reach a Claude Code session, and the
+    # agent cannot write them under auto mode, so bootstrap.sh must have.
+    as_user python3 "$CLONE/scripts/claude_hook.py" --check || fail "the Claude Code hooks are not registered"
+    pass "Claude Code hooks registered"
+
     grep -qE '^\[accounts\.paynani(\.[^]]*)?\]' "$HOME_DIR/.config/himalaya/config.toml" || fail "no [accounts.paynani] in the himalaya config"
     pass "[accounts.paynani] in the himalaya config"
 

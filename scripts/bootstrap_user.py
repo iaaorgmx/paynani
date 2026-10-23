@@ -46,7 +46,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import paths as harness_paths  # noqa: E402
-from paynani_lib import accounts_cli, envfile, himalaya_config, i18n, probe, roster_cli, validate  # noqa: E402
+from paynani_lib import accounts_cli, envfile, harness_step, himalaya_config, i18n, probe, roster_cli, validate  # noqa: E402
 
 EX_OK, EX_STEP, EX_USAGE = 0, 1, 2
 RUNTIMES = ("openclaw", "hermes", "claudecode", "codex", "opencode")
@@ -420,6 +420,47 @@ def step_rules(ctx: Ctx):
     return ok, detail
 
 
+# --- 12b. the harness's own step (#474) ------------------------------------------------
+# The hooks, plugin or standing rule without which mail never reaches the agent's
+# session. They live in the harness's configuration, outside the agent's workspace,
+# which is what auto mode and sandboxes stop the agent from writing. So this run
+# registers them, the same way it adds the permission rules: show, ask, then let the
+# runtime's own script merge and back up. Declining is not a ready install.
+
+def step_harness_step(ctx: Ctx):
+    runtime = ctx.runtime
+    if not harness_step.has_step(runtime):
+        return True, f"{runtime}: nothing to register in the harness"
+    what = harness_step.describe(runtime)
+    path = harness_step.target(runtime, ctx.home)
+    again = harness_step.command(runtime)
+    found = harness_step.state(runtime, ctx.home)
+    if found == "present":
+        return True, f"{what}: already in {path}"
+    if found == "unknown":
+        return False, (f"{what}: {path} exists but could not be read as expected; "
+                       f"nothing was changed. Fix the file by hand, then run: {again}")
+    if ctx.args.dry_run:
+        ctx.would(f"register {what} in {path} ({again})")
+        return True, "dry run"
+    ctx.say(f"paynani needs {what} in {path}; without it no mail reaches the session. It adds:")
+    for line in harness_step.show(runtime, ctx.home, runner=ctx.run).splitlines():
+        ctx.say(f"  {line}")
+    if not ctx.args.yes:
+        try:
+            answer = ctx.ask("Register it? [y/N] ").strip().lower()
+        except EOFError:
+            return False, f"{what}: no terminal to confirm; run again with --yes, or run: {again}"
+        if answer not in ("y", "yes", "s", "si", "sí"):
+            return False, f"{what}: not registered (the owner said no). Mail will not reach the session until: {again}"
+    ok, output = harness_step.install(runtime, ctx.home, runner=ctx.run)
+    if not ok:
+        return False, f"{what}: {again} failed:\n{first_lines(output)}"
+    if harness_step.state(runtime, ctx.home) != "present":
+        return False, f"{what}: still not in {path} after {again}:\n{first_lines(output)}"
+    return True, f"{what}: registered in {path}" + (f" ({first_lines(output, 1)})" if output else "")
+
+
 # --- 13. verification -----------------------------------------------------------------
 
 def split_doctor_rows(report: dict):
@@ -500,6 +541,7 @@ def steps_for(args):
         ("install" if not args.upgrade else "upgrade", step_install,
          "scripts/version.sh --apply REF" if args.upgrade else "scripts/install.sh --runtime <runtime>"),
         ("harness rules", step_rules, "scripts/bootstrap_user.py --yes (adds the permission rules)"),
+        ("harness step", step_harness_step, "python3 scripts/<claude_hook|codex_hook|opencode_plugin|openclaw_rules>.py --install"),
         ("verification", step_verify, "scripts/paynani doctor && scripts/healthcheck.py"),
     ]
 

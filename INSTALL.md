@@ -35,8 +35,12 @@ Run it with `sudo` from the agent's user: paynani is installed for
 services and the harness rules all belong to that user. It confirms the
 runtime it detects (or asks which one, if there are several), asks for the
 mailbox (password hidden) and the owner's name and address, and it says **Ready** only when `paynani doctor` and
-`healthcheck.py` both pass. With Claude Code or Codex the last step is yours:
-open a session, which arms the mail watch.
+`healthcheck.py` both pass. Before that it registers the step each harness
+needs for mail to reach a session (the Claude Code or Codex hooks, the OpenCode
+plugin, the OpenClaw standing rule), shown first and backed up, because that
+file is outside the agent's workspace and auto mode or a sandbox usually stops
+the agent from writing it (#474). With Claude Code or Codex the last step is
+yours: open a session, which arms the mail watch.
 
 | Option | What it does |
 |---|---|

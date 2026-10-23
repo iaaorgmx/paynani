@@ -2,6 +2,20 @@
 
 ## Sin publicar
 
+- **`bootstrap.sh` registra el paso de cada harness y no dice Ready sin él** (#474,
+  Q76 de Julian). El script existe para instalar lo que el agente no puede por el
+  modo automático o el sandbox, pero dejaba al agente los hooks de Claude Code y de
+  Codex, el plugin de OpenCode y la regla permanente de OpenClaw, que viven fuera de
+  su espacio de trabajo. Ahora un paso nuevo, después de las reglas de permiso, los
+  muestra, pide confirmación (o los aplica con `--yes`) y los registra con el script
+  de cada harness, que mezcla y respalda. Si el dueño dice que no, si no hay terminal
+  para confirmar o si el archivo no se puede leer, el run termina sin Ready y con el
+  comando a correr. `paynani doctor` tiene una fila nueva, `harness_step`, que queda
+  en `blocked` si faltan los hooks de Claude Code o Codex o la regla de OpenClaw
+  (OpenCode ya tenía `plugin_installed`). Hermes no tiene paso. `AGENTS.md` también
+  corrige la nota de Codex: con una sesión registrada, el correo la despierta con
+  `codex queue`.
+
 - **Quitar una cuenta ya no falla cuando su listener tarda en detenerse** (#471, lo
   encontró Metis en T11 de #435). En Linux, `account_service` corría
   `systemctl --user disable --now` con un límite de 20 s. Un listener en medio de IDLE

@@ -97,10 +97,12 @@ one command"* has that variant and every option.
 
 Ask them to paste back the last lines it prints. Then:
 
-- **It printed Ready.** What is still yours: the runtime step at the end of
-  step 4 (the OpenClaw standing rule, or the Claude Code, Codex or OpenCode
-  hooks), then steps 7, 8 and 9. Step 9 is short here: the script already
-  listed what it changed, so report that list.
+- **It printed Ready.** The runtime step at the end of step 4 is already done:
+  the script registered the Claude Code or Codex hooks, the OpenCode plugin or
+  the OpenClaw standing rule after showing it to your human, and it does not
+  print Ready without it (#474). Confirm with the `--check` of that script, then
+  do steps 7, 8 and 9. Step 9 is short here: the script already listed what it
+  changed, so report that list.
 - **It stopped at a step.** It names the step and the command to repeat it.
   Read that, tell your human what failed, and carry on from the matching step
   below instead of guessing.
@@ -224,31 +226,39 @@ so the binary your shell finds is invisible to the service. `INSTALL.md` §6
 error itself now names it. Read that section rather than searching an
 800-line document from the top.
 
+**Each runtime but Hermes has one more step, in the harness's own
+configuration.** `bootstrap.sh` does it for you. On the path below it is yours,
+and it is the step most often blocked: the file is outside your workspace, so
+Claude Code's auto mode or Codex's sandbox may refuse the write. If it is
+refused, give your human the exact command and ask them to run it in their
+terminal; do not work around the refusal. `scripts/paynani doctor` reports the
+step as `harness_step` (for OpenCode, `plugin_installed`) and stays `blocked`
+until it is in place.
+
 For an OpenClaw runtime, put the standing rule into OpenClaw's own instructions
 after installing, `scripts/openclaw_rules.py --install`, and read `INSTALL.md`
 §6 *"OpenClaw"* first. Mail reaches you as one `System:` line on a heartbeat,
 and what makes you act on it is a rule in `~/.openclaw/workspace/AGENTS.md`
-saying what `, roster]` means. The installer names this step and does not
-perform it, because that file is yours. Without it every check passes and no
-roster mail is answered (#186); `scripts/healthcheck.py` reports the state as
-`instructions`.
+saying what `, roster]` means. `install.sh` names this step and does not
+perform it, because that file is yours; `bootstrap.sh` performs it after
+asking. Without it no roster mail is answered (#186).
 
 For a Claude Code runtime, register the two hooks after installing,
 `scripts/claude_hook.py --install`, and read `INSTALL.md` §6 *"Claude Code"*
 first. The `SessionStart` hook is what makes a session aware of mail at all and
 writes the session's watch registry; the `UserPromptSubmit` hook speaks up on
-the next prompt when mail arrived after a watch expired. They are the one
-piece the installer deliberately does not converge, because Claude Code's
-settings file is the operator's and holds configuration this project knows
-nothing about. Arm the watch with `session_watch.sh <state> --from-hook`,
+the next prompt when mail arrived after a watch expired. `install.sh` does not
+converge them, because Claude Code's settings file is the operator's and holds
+configuration this project knows nothing about; `bootstrap.sh` merges them in
+after showing them to the operator, with a backup. Arm the watch with `session_watch.sh <state> --from-hook`,
 exactly as the hook prints it: the offset lives in the registry, not in the
 command, so there is nothing to copy.
 
-For an OpenAI Codex runtime, register the session-start hook after installing,
-`scripts/codex_hook.py --install`, and read `INSTALL.md` §6 *"OpenAI Codex"*
-first. Codex support is session-start replay in this version: mail that lands
-mid-session waits in `state/codex.spool` until startup, resume, clear, or compact
-runs the hook.
+For an OpenAI Codex runtime, register the `SessionStart` and `SessionEnd` hooks
+after installing, `scripts/codex_hook.py --install`, and read `INSTALL.md` §6
+*"OpenAI Codex"* first. With a registered live session, mail wakes it through
+`codex queue`; otherwise it waits in `state/codex.spool` until startup, resume,
+clear or compact runs the hook.
 
 For an OpenCode runtime, register the plugin after installing,
 `scripts/opencode_plugin.py --install`, and read `INSTALL.md` §6 *"OpenCode"*
