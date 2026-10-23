@@ -2,6 +2,25 @@
 
 ## Sin publicar
 
+- **Lo que encontró BOOT-11 en Codex** (#481, prueba de campo de Ocelotl, #476).
+  - **`bootstrap.sh` ya dice Ready con Codex.** En una instalación nueva,
+    `registered_session` sale `unknown` hasta que una sesión corre el hook
+    `SessionStart`, y `last_queue_attempt` y `last_queue_result` hasta que llega el
+    primer correo. El bootstrap las contaba como bloqueo: con Codex nunca decía Ready.
+    Ahora las tres pasan como pendientes, solo en `unknown` y solo con Codex. El
+    mensaje final pide abrir una sesión solo si `registered_session` falta, como
+    `session_watch_state` en Claude Code (Ximena, revisión de #483).
+  - **Aprobar los hooks en `/hooks` y abrir una sesión nueva.** Codex se salta los
+    hooks nuevos de `~/.codex/hooks.json` hasta que alguien los aprueba, y una sesión
+    que ya estaba abierta no corre el `SessionStart` que se perdió. Lo dicen el mensaje
+    final del bootstrap (cuando esa corrida escribió los hooks o no hay sesión
+    registrada), `AGENTS.md`, `INSTALL.md` §6 y la fila `registered_session` de
+    `doctor`.
+  - **El paso 0 de `AGENTS.md` pide ofrecer el script aunque el humano haya pedido el
+    formulario.** El prompt del README pide el enlace del formulario, y Ocelotl lo leyó
+    como una preferencia por el camino manual. Ahora el agente presenta las dos
+    opciones y el humano elige.
+
 ## 0.15.0 (2026-10-23)
 
 **`bootstrap.sh` deja instalado lo que el agente no puede instalar** (#474). Ahora

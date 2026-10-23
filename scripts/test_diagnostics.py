@@ -144,7 +144,10 @@ with mock.patch.object(d, "_codex_observation_facts", return_value={
     "last_spool": {"event_id": "imap:INBOX:42:8", "at": "2026-01-01T00:00:01Z", "detail": "spooled"},
 }):
     codex_unknown_data = doctor_with(codex_unknown)
-check("doctor gives Codex registered_session an explicit unknown reason", any(c["name"] == "registered_session" and c["status"] == "unknown" and "no Codex live session" in c["summary"] for c in codex_unknown_data["checks"]))
+check("doctor gives Codex registered_session an explicit unknown reason", any(c["name"] == "registered_session" and c["status"] == "unknown" and "has run the paynani SessionStart hook" in c["summary"] for c in codex_unknown_data["checks"]))
+check("#481: and says to approve the hooks in /hooks and open a new session",
+      any(c["name"] == "registered_session" and "/hooks" in (c.get("next_command") or "") and "new Codex session" in (c.get("next_command") or "")
+          for c in codex_unknown_data["checks"]))
 check("doctor gives Codex last_queue_attempt an explicit unknown reason", any(c["name"] == "last_queue_attempt" and c["status"] == "unknown" and "spooled without a queue attempt" in c["summary"] for c in codex_unknown_data["checks"]))
 
 hermes_facts = base_facts()

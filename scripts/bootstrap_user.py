@@ -92,6 +92,17 @@ DOCTOR_POLL_SECONDS = 2
 # report the generic `unknown`. Only `unknown` counts: `warning` and `blocked` fail, and any
 # other row that is not ok fails, as before.
 PENDING_AT_INSTALL = ("session_watch_state",)
+# Codex rows that are `unknown` in a fresh install and that no waiting fixes (#481,
+# finding 5): registered_session until a session runs the SessionStart hook, and the
+# two queue rows until the first mail is delivered, which may be long after that.
+# Only `unknown` and only for Codex; `blocked` or `warning` still fail.
+PENDING_AT_INSTALL_BY_RUNTIME = {
+    "codex": ("registered_session", "last_queue_attempt", "last_queue_result"),
+}
+# Of those, the rows that mean "no session has run the hook yet", which is what the
+# closing message asks the owner to fix. The queue rows are not: an owner who already
+# opened a session would be told to do it again (Ximena, review of #483).
+SESSION_NOT_OPENED = ("session_watch_state", "registered_session")
 APP_NAMES = {"claudecode": "Claude Code", "codex": "Codex"}
 
 
@@ -116,6 +127,7 @@ class Ctx:
     owner: str = ""
     pending: list = field(default_factory=list)   # doctor rows left unknown on purpose
     himalaya_verified: bool = False               # step_himalaya's own account check passed
+    harness_step_changed: bool = False            # step_harness_step wrote the hooks/plugin/rule this run
 
     def say(self, text: str) -> None:
         self.out(text)
@@ -460,6 +472,7 @@ def step_harness_step(ctx: Ctx):
         return False, f"{what}: {again} failed:\n{first_lines(output)}"
     if harness_step.state(runtime, ctx.home) != "present":
         return False, f"{what}: still not in {path} after {again}:\n{first_lines(output)}"
+    ctx.harness_step_changed = True
     return True, f"{what}: registered in {path}" + (f" ({first_lines(output, 1)})" if output else "")
 
 
@@ -474,13 +487,17 @@ def _slow_himalaya(row: dict, himalaya_verified: bool) -> bool:
             and bool((row.get("facts") or {}).get("account_check_timed_out")))
 
 
-def split_doctor_rows(report: dict, himalaya_verified: bool = False):
+def _pending_names(runtime: str) -> tuple:
+    return PENDING_AT_INSTALL + PENDING_AT_INSTALL_BY_RUNTIME.get(runtime, ())
+
+
+def split_doctor_rows(report: dict, himalaya_verified: bool = False, runtime: str = ""):
     """(rows that are not ok and block, rows that are unknown on purpose in a fresh install)."""
     blocking, pending = [], []
     for row in report.get("checks", []):
         if not isinstance(row, dict) or row.get("status") == "ok":
             continue
-        if ((row.get("name") in PENDING_AT_INSTALL and row.get("status") == "unknown")
+        if ((row.get("name") in _pending_names(runtime) and row.get("status") == "unknown")
                 or _slow_himalaya(row, himalaya_verified)):
             pending.append(row)
         else:
@@ -510,7 +527,7 @@ def step_verify(ctx: Ctx):
             status = report["status"]
         except (ValueError, KeyError, TypeError):
             return False, f"paynani doctor gave no status:\n{first_lines(doctor.stderr or doctor.stdout)}"
-        blocking, pending = split_doctor_rows(report, ctx.himalaya_verified)
+        blocking, pending = split_doctor_rows(report, ctx.himalaya_verified, ctx.runtime)
         if status == "ok" or (not blocking and report.get("checks")):
             ctx.pending = [row.get("name") for row in pending]
             break
@@ -607,7 +624,13 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
     if args.dry_run:
         return EX_OK
     ctx.say(ctx.L("b.ready_pending", app=APP_NAMES.get(ctx.runtime, ctx.runtime))
-            if "session_watch_state" in ctx.pending else ctx.L("b.ready"))
+            if set(SESSION_NOT_OPENED) & set(ctx.pending) else ctx.L("b.ready"))
+    if ctx.runtime == "codex" and (ctx.harness_step_changed or "registered_session" in ctx.pending):
+        # Codex skips new or changed hooks in ~/.codex/hooks.json until someone trusts
+        # them in /hooks, and a session open before the install never runs the
+        # SessionStart it missed (#481, findings 2 and 3). Said when this run wrote the
+        # hooks, or when no session has run them; not on a rerun with both already done.
+        ctx.say(ctx.L("b.codex_hooks"))
     if "himalaya" in ctx.pending:
         ctx.say(ctx.L("b.slow_mailbox"))
     ctx.say(ctx.L("b.sum_runtime", value=ctx.runtime))

@@ -1502,6 +1502,14 @@ scripts/codex_hook.py --install   # merge it into ~/.codex/hooks.json, backing u
 scripts/codex_hook.py --check     # exits 0 when both hooks are registered
 ```
 
+**Then approve them in Codex, and open a new session.** Codex skips new or
+changed hooks in `~/.codex/hooks.json` until someone trusts them: run `/hooks`
+in Codex and trust the two paynani hooks (Codex may also ask at startup). A
+session that was already open when the hooks were installed never runs the
+`SessionStart` it missed, so open a new one. Until a session has run the hook,
+`paynani doctor` shows `registered_session` as `unknown`. Registering the hooks
+again after an upgrade that changes them asks for the approval again (#481).
+
 `SessionStart` records Codex's documented hook `session_id` input in
 `state/codex.session`, and `SessionEnd` removes that file so a dead thread is
 not used forever. The live delivery command is:

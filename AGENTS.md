@@ -83,6 +83,14 @@ curl -fsSLO https://raw.githubusercontent.com/iaaorgmx/paynani/main/bootstrap.sh
 sudo bash bootstrap.sh --ref main --runtime <runtime>
 ```
 
+**Offer it even if your human asked for the form link.** The README's install
+prompt asks you to show the form when you need the mailbox; that is how the
+manual path below collects it, not a choice against the script. Offering only
+the form is a decision your human never made (BOOT-11, #481). Present both, in
+one message: the script, which asks for the password in their terminal with the
+input hidden, and the form, which is the manual path. Let them choose, and
+follow the path they pick.
+
 **Your human runs it in their own terminal**, not through your harness's
 shell-escape (Claude Code's `!`, for one): `sudo` has to ask for their
 password there, and a command run on your behalf has no way to type it.
@@ -258,7 +266,13 @@ For an OpenAI Codex runtime, register the `SessionStart` and `SessionEnd` hooks
 after installing, `scripts/codex_hook.py --install`, and read `INSTALL.md` §6
 *"OpenAI Codex"* first. With a registered live session, mail wakes it through
 `codex queue`; otherwise it waits in `state/codex.spool` until startup, resume,
-clear or compact runs the hook.
+clear or compact runs the hook. Two things are your human's, and you must ask
+for both (#481): **approve the hooks in Codex with `/hooks`**, because Codex
+skips new or changed hooks in `~/.codex/hooks.json` until someone trusts them;
+and **open a new Codex session**, because the session you installed from was
+already open and never runs the `SessionStart` it missed. Until then
+`paynani doctor` shows `registered_session` as `unknown`, and mail waits in the
+spool.
 
 For an OpenCode runtime, register the plugin after installing,
 `scripts/opencode_plugin.py --install`, and read `INSTALL.md` §6 *"OpenCode"*

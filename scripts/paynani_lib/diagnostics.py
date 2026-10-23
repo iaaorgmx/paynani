@@ -624,7 +624,9 @@ def _observation_check(name: str, facts: dict) -> dict:
         if name == "registered_session":
             if codex.get("session_id_present"):
                 return _check(name, "ok", "Codex has a registered live session id", codex)
-            return _check(name, "unknown", "no Codex live session is registered", codex)
+            return _check(name, "unknown",
+                          "no Codex session has run the paynani SessionStart hook yet", codex,
+                          "approve the paynani hooks in Codex with /hooks, then open a new Codex session")
         if name == "last_queue_attempt":
             if codex.get("last_queue"):
                 return _check(name, "ok", "Codex queue was attempted for the last registered-session delivery", codex)
