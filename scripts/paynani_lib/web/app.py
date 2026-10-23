@@ -542,7 +542,7 @@ def make_handler(ctx: Context):
                 self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
                 return
             received = mail.mail_events(self.CTX.ledger_path(), account_id, self.CTX.known_ids())
-            sent = thread.sent_rows(thread.parse_sent_log(self.CTX.state_dir() / "sent.log"), account_id)
+            sent = thread.sent_rows(thread.parse_sent_logs(self.CTX.state_dir() / "sent.log"), account_id)
             rows = thread.mailbox(received, sent)
             kw = dict(active="email", active_account=account_id)
             if view == "":
