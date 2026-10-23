@@ -218,4 +218,5 @@ STRINGS = {
     'b.not_ready': 'No quedó listo: falló el paso «{step}».',
     'b.repeat': 'Para repetirlo: {command}',
     'b.ready_pending': 'Listo. Falta un paso tuyo: abre {app} en esta máquina; la primera sesión arma la vigilancia del correo.',
+    'b.slow_mailbox': 'Nota: la prueba del buzón de doctor no contestó en 30 s, pero el paso de himalaya de esta corrida probó la misma cuenta y funciona; el servidor de correo está lento. Si se repite, corre: himalaya account check -a paynani',
 }
