@@ -219,4 +219,5 @@ STRINGS = {
     'b.repeat': 'Pour la relancer : {command}',
     'b.ready_pending': 'Prêt. Il reste une étape pour vous : ouvrez {app} sur cette machine ; la première session arme la surveillance du courrier.',
     'b.slow_mailbox': "Remarque : le test de la boîte de doctor n'a pas répondu en 30 s, mais l'étape himalaya de cette exécution a testé le même compte et il fonctionne ; le serveur de courrier est lent. Si cela se répète, lancez : himalaya account check -a paynani",
+    'b.codex_hooks': 'Dans Codex : approuvez les hooks de paynani dans /hooks (Codex ignore les nouveaux hooks tant que vous ne les avez pas approuvés), puis ouvrez une NOUVELLE session Codex ; une session déjà ouverte ne les prend pas en compte.',
 }
