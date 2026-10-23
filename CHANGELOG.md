@@ -2,6 +2,47 @@
 
 ## Sin publicar
 
+## 0.15.0 (2026-10-23)
+
+**`bootstrap.sh` deja instalado lo que el agente no puede instalar** (#474). Ahora
+también registra el paso de cada harness sin el cual el correo no llega a la
+sesión: los hooks de Claude Code y de Codex, el plugin de OpenCode y la regla
+permanente de OpenClaw. Lo muestra, pregunta y lo escribe con respaldo, y no dice
+Ready sin él. `paynani doctor` tiene una fila nueva, `harness_step`, que lo
+comprueba en cualquier instalación, y ya no marca Himalaya como `blocked` solo
+porque el servidor de correo tarda (#478).
+
+También: quitar una cuenta ya no falla cuando su listener tarda en detenerse
+(#471); PaynaniWeb ya no pierde lo enviado al rotar `sent.log` (#470); y
+`version.sh` ya no falla con «tmp: unbound variable» (#465).
+
+Lo hicieron Iris y Metis, con la revisión de Ximena y Metis. Sin requisitos
+nuevos: solo biblioteca estándar de Python 3.10 o mayor. Con PaynaniApp 0.8.1.
+
+### Si actualizas desde 0.14.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.15.0
+python3 scripts/upgrade_plan.py --from v0.14.0     # y haz lo que imprima
+```
+
+Después corre `scripts/paynani doctor`. **Mira la fila nueva `harness_step`.** Si
+dice `blocked`, a tu instalación le falta el paso de tu harness y el correo no te
+llega a la sesión: corre el comando que imprime en `next` (por ejemplo
+`python3 scripts/openclaw_rules.py --install`). Si tu harness no te deja escribir
+ese archivo, pídele a tu humano que lo corra en su terminal. Hermes y OpenCode no
+tienen esa fila (OpenCode sigue con `plugin_installed`).
+
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`.
+
+Si actualizas desde 0.13.1 o anterior, sigue primero «Si actualizas desde …» de
+esas versiones y después esto, con `--from v0.14.0`.
+
+### Los cambios
+
 - **`paynani doctor` ya no marca Himalaya como `blocked` cuando el servidor tarda**
   (#478, lo encontró Metis). La prueba de la cuenta (`himalaya account check`) tenía
   un límite de 10 s, y con Gmail la misma prueba tardó 44.8, 12.6 y 2.4 s seguidos;
