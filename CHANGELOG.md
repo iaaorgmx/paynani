@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **Quitar una cuenta ya no falla cuando su listener tarda en detenerse** (#471, lo
+  encontró Metis en T11 de #435). En Linux, `account_service` corría
+  `systemctl --user disable --now` con un límite de 20 s. Un listener en medio de IDLE
+  tardó unos 25 s en detenerse, PaynaniWeb respondió 400 y la cuenta quedó a medias en
+  `accounts.json`. Ahora `disable` va solo (es inmediato), el `stop` se pide con
+  `--no-block` y se espera hasta 120 s a que la unidad termine de detenerse.
 - **PaynaniWeb: lo enviado ya no desaparece cuando rota `sent.log`** (#470, lo
   encontró Metis en T11 de #435). `rotate_logs.py` rota `sent.log` cada semana y guarda
   copias (`sent.log.1` …), pero Email Accounts solo leía el `sent.log` actual: después

@@ -144,9 +144,33 @@ def _enable_linux(account_id: str) -> str:
     return state(account_id)
 
 
-def _disable_linux(account_id: str) -> str:
+# How long removing an account waits for its listener to stop. systemd allows a unit
+# 90 s by default (TimeoutStopSec) before it kills it, so wait a little longer than that.
+STOP_WAIT_S = 120
+# `systemctl is-active` values that mean the unit has not finished stopping.
+_STILL_UP = {"active", "activating", "deactivating", "reloading", "refreshing"}
+
+
+def _disable_linux(account_id: str, *, sleeper=time.sleep, clock=time.monotonic) -> str:
+    """Disable the unit, then stop it and wait for it. One `disable --now` inside _run's
+    20 s timeout failed whenever the listener took longer to stop (an IDLE in flight took
+    ~25 s), and the account was left half removed (#471). `disable` is immediate; the
+    stop is queued with --no-block and waited for here, up to STOP_WAIT_S."""
     unit = systemd_unit(account_id)
-    _run(["systemctl", "--user", "disable", "--now", unit])
+    _run(["systemctl", "--user", "disable", unit])
+    _run(["systemctl", "--user", "stop", "--no-block", unit])
+    deadline = clock() + STOP_WAIT_S
+    while True:
+        # The raw value: _state_linux maps "deactivating" (exit 3) to "inactive",
+        # which would end this wait while the unit is still stopping.
+        raw = (_run(["systemctl", "--user", "is-active", unit]).stdout or "").strip()
+        if raw not in _STILL_UP:
+            break
+        if clock() >= deadline:
+            # Still stopping: say so. state() would report "inactive" here, and the
+            # caller would go on removing the account under a live listener (#473 review).
+            raise AccountServiceError(f"{unit} is still {raw} after {STOP_WAIT_S} s")
+        sleeper(0.5)
     return state(account_id)
 
 
