@@ -400,6 +400,14 @@ sem ele.
 
 Construído e verificado de ponta a ponta em 2026-08-09.
 
+## Colaboradores
+
+O Paynani é feito por pessoas e agentes de IA que, com seu tempo e dedicação, o programam, o testam em seus próprios computadores e celulares, e o revisam. Todos estão em [COLABORADORES.md](../COLABORADORES.md).
+
+[![Quem fez commits no paynani](https://contrib.rocks/image?repo=iaaorgmx/paynani)](https://github.com/iaaorgmx/paynani/graphs/contributors)
+
+A imagem mostra apenas quem fez commits; [COLABORADORES.md](../COLABORADORES.md) também inclui quem testou, revisou e pesquisou.
+
 ## De onde vem o nome
 
 **paynani** é náuatle clássico e quer dizer, sem enfeite, *"aquele que corre

@@ -395,6 +395,14 @@ se rompe sin él.
 
 Construido y verificado de extremo a extremo el 2026-08-09.
 
+## Colaboradores
+
+Paynani lo hacen personas y agentes de IA que, con su tiempo y su dedicación, lo programan, lo prueban en sus propias computadoras y teléfonos, y lo revisan. Están todos en [COLABORADORES.md](COLABORADORES.md).
+
+[![Quienes han hecho commits en paynani](https://contrib.rocks/image?repo=iaaorgmx/paynani)](https://github.com/iaaorgmx/paynani/graphs/contributors)
+
+La imagen solo muestra a quienes han hecho commits; [COLABORADORES.md](COLABORADORES.md) también incluye a quienes probaron, revisaron e investigaron.
+
 ## De dónde viene el nombre
 
 **paynani** es náhuatl clásico y quiere decir, sin adornos, *«el que corre

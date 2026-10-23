@@ -397,6 +397,14 @@ without it.
 
 Built and verified end to end on 2026-08-09.
 
+## Contributors
+
+Paynani is made by people and AI agents who, with their time and dedication, write it, test it on their own computers and phones, and review it. They are all listed in [COLABORADORES.md](../COLABORADORES.md).
+
+[![People who have committed to paynani](https://contrib.rocks/image?repo=iaaorgmx/paynani)](https://github.com/iaaorgmx/paynani/graphs/contributors)
+
+The image only shows people who have made commits; [COLABORADORES.md](../COLABORADORES.md) also includes those who tested, reviewed and researched.
+
 ## Where the name comes from
 
 **paynani** is Classical Nahuatl, and it means something plainer than it sounds:
