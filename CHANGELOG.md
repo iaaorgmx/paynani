@@ -8,6 +8,13 @@
   tardó unos 25 s en detenerse, PaynaniWeb respondió 400 y la cuenta quedó a medias en
   `accounts.json`. Ahora `disable` va solo (es inmediato), el `stop` se pide con
   `--no-block` y se espera hasta 120 s a que la unidad termine de detenerse.
+- **PaynaniWeb: lo enviado ya no desaparece cuando rota `sent.log`** (#470, lo
+  encontró Metis en T11 de #435). `rotate_logs.py` rota `sent.log` cada semana y guarda
+  copias (`sent.log.1` …), pero Email Accounts solo leía el `sent.log` actual: después
+  de cada rotación desaparecían de la lista los enviados anteriores, y del hilo de un
+  correo respondido la respuesta del agente. Ahora `thread.parse_sent_logs()` lee las
+  copias rotadas, de la más vieja a la actual, y después `sent.log`, sin repetir un
+  Message-ID.
 
 - **`version.sh --plan`/`--apply` ya no termina en «tmp: unbound variable» ni deja
   basura en `$TMPDIR`** (#465, lo encontró Ares). La limpieza del árbol del planner

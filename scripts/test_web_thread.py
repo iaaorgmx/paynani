@@ -62,6 +62,23 @@ check("parse_sent_log: las 8 líneas con message-id, sin la rota", 8, len(recs))
 check("con sus campos (sent-copy no estorba)", ("<r1@agente.example>", "archivo@example.com", "ventas"),
       (recs[0]["message-id"], recs[1]["bcc"], recs[4]["account"]))
 check("sin sent.log no hay envíos", [], thread.parse_sent_log(tmp / "no-existe.log"))
+
+# --- #470: sent.log rotado ------------------------------------------------------------------
+rot = tmp / "rotado"
+rot.mkdir()
+line = lambda at, mid: f"{at}\tto=ana@example.com\tsubject=Hola\tmessage-id={mid}\n"
+(rot / "sent.log.2").write_text(line("2026-10-01T10:00:00Z", "<viejo@a.example>"), encoding="utf-8")
+(rot / "sent.log.1").write_text(line("2026-10-08T10:00:00Z", "<medio@a.example>")
+                                + line("2026-10-08T11:00:00Z", "<repetido@a.example>"), encoding="utf-8")
+(rot / "sent.log").write_text(line("2026-10-15T10:00:00Z", "<nuevo@a.example>")
+                              + line("2026-10-15T11:00:00Z", "<repetido@a.example>"), encoding="utf-8")
+(rot / "sent.log.bak").write_text(line("2026-09-01T10:00:00Z", "<respaldo@a.example>"), encoding="utf-8")
+check("sent_log_paths: de la copia más vieja a la actual, solo las numeradas",
+      ["sent.log.2", "sent.log.1", "sent.log"], [p.name for p in thread.sent_log_paths(rot / "sent.log")])
+check("parse_sent_logs: lo de las copias rotadas también, en orden y sin repetir un Message-ID (#470)",
+      ["<viejo@a.example>", "<medio@a.example>", "<repetido@a.example>", "<nuevo@a.example>"],
+      [r["message-id"] for r in thread.parse_sent_logs(rot / "sent.log")])
+check("sin ningún sent.log no hay envíos", [], thread.parse_sent_logs(tmp / "otra" / "sent.log"))
 main_sent = thread.sent_rows(recs, "main")
 check("sent_rows de main: sin el de ventas y sin repetir un Message-ID", 6, len(main_sent))
 check("sent_rows de ventas: solo el suyo", ["<de-ventas@ventas.example>"],
@@ -343,6 +360,16 @@ loaded[long_convo[3]["event_id"]] = {"error": mail.MailError("gone")}
 html = mail_pages.thread_page("main", long_convo[0], long_convo[:5], loaded, own="agente@example.com")
 check("uno que no se pudo leer dice por qué y el resto sale (4.3)", (True, 5, True),
       ("aviso-caja" in html, html.count('<li id="m-'), "cuerpo 4<" in html))
+
+# #470: después de rotar sent.log, lo enviado antes sigue en la lista
+sent_log.rename(state / "sent.log.1")
+sent_log.write_text("2026-10-22T09:00:00Z\tto=ana@example.com\tsubject=Después de rotar\tmessage-id=<despues@agente.example>\n",
+                    encoding="utf-8")
+status, _, page = req("GET", "/email/main", cookie=cookie)
+kinds = re.findall(r'<li class="correo-(in|out)">', page)
+check("después de rotar sent.log, la lista sigue con los 6 enviados de antes y el nuevo (#470)",
+      (200, 7, True, True), (status, kinds.count("out"), "Después de rotar" in page,
+                             'href="/email/main/ver?s=' + quote("<r1@agente.example>", safe="") in page))
 
 httpd.shutdown()
 httpd.server_close()
