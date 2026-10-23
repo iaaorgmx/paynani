@@ -73,6 +73,10 @@ class Runner:
     def add(self, matcher, rc=0, out="", err="", effect=None):
         self.rules.insert(0, (matcher, rc, out, err, effect))
 
+    # The harness-step scripts (#474) write only under HOME, which is the sandbox's, so
+    # they run for real: the step reads the file back to decide it worked.
+    REAL = ("claude_hook.py", "codex_hook.py", "opencode_plugin.py", "openclaw_rules.py")
+
     def __call__(self, argv, **kwargs):
         argv = [str(a) for a in argv]
         self.calls.append((argv, kwargs))
@@ -83,6 +87,8 @@ class Runner:
                 if callable(out):
                     out = out()   # a rule can answer differently each time it is asked
                 return subprocess.CompletedProcess(argv, rc, out, err)
+        if len(argv) > 1 and argv[1].endswith(self.REAL):
+            return subprocess.run(argv, **kwargs)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     def ran(self, *needles):
@@ -322,7 +328,7 @@ def runtime_chosen(w):
     (w.home / ".openclaw").mkdir()
     (w.home / ".codex").mkdir()
     code = w.run("--ref", "v0.12.0", "--env-file", str(w.env_file), "--owner-name", "Ada", "--owner-email", "ada@example.org",
-                 interactive=True, ask=lambda _p: "codex")
+                 interactive=True, ask=lambda _p, answers=iter(["codex", "y"]): next(answers))
     check("two runtimes and a terminal: the owner chooses", code == 0 and w.runner.ran("install.sh", "codex"), w.text)
 
 
@@ -346,8 +352,9 @@ with_world(bad_runtime)
 # --- credentials: prompts, validation, probes ------------------------------------------
 
 def prompted(w):
-    # account, IMAP host, IMAP port (default), SMTP host, SMTP port (default), then "Add them?" for the harness rules
-    answers = iter(["agent@example.com", "mail.example.com", "", "mail.example.com", "", "y"])
+    # account, IMAP host, IMAP port (default), SMTP host, SMTP port (default), then "Add them?" for the
+    # harness rules and "Register it?" for the session hooks
+    answers = iter(["agent@example.com", "mail.example.com", "", "mail.example.com", "", "y", "y"])
     code = w.run("--runtime", "claudecode", "--ref", "v0.12.0", "--owner-name", "Ada", "--owner-email", "ada@example.org",
                  interactive=True, ask=lambda _p: next(answers), secret=lambda _p: SECRET)
     check("with a terminal the mailbox is asked for and the ports default to 993 and 465",
@@ -739,6 +746,132 @@ def rules_other_runtime(w):
 
 
 with_world(rules_other_runtime)
+
+
+# --- the harness's own step: hooks, plugin, standing rule (#474) -----------------------------------------
+
+from paynani_lib import harness_step  # noqa: E402
+
+
+def run_for(w, runtime, *extra, **kw):
+    return w.run("--runtime", runtime, "--ref", "v0.12.0", "--env-file", str(w.env_file), "--owner-name", "Ada",
+                 "--owner-email", "ada@example.org", *extra, **kw)
+
+
+def hooks_registered(w):
+    code = w.run(*w.full())
+    settings = json.loads((w.home / ".claude" / "settings.json").read_text())
+    check("#474: with --yes the Claude Code session hooks are registered next to the rules",
+          code == 0 and "Ready." in w.text and harness_step.state("claudecode", w.home) == "present"
+          and len(settings["permissions"]["allow"]) == 3, w.text)
+    check("#474: the run says where it registered them", "harness step" in w.text and "registered in" in w.text, w.text)
+
+
+with_world(hooks_registered)
+
+
+def every_runtime(w):
+    results = {}
+    for runtime in ("codex", "opencode", "openclaw"):
+        code = run_for(w, runtime, "--yes")
+        results[runtime] = (code, harness_step.state(runtime, w.home))
+    check("#474: Codex hooks, the OpenCode plugin and the OpenClaw rule are each registered",
+          all(r == (0, "present") for r in results.values()), str(results))
+    check("#474: the Codex hooks land in ~/.codex/hooks.json", (w.home / ".codex" / "hooks.json").is_file())
+    check("#474: the OpenClaw rule lands in the workspace AGENTS.md",
+          "paynani:start" in (w.home / ".openclaw" / "workspace" / "AGENTS.md").read_text())
+
+
+with_world(every_runtime)
+
+
+def hermes_has_no_step(w):
+    code = run_for(w, "hermes", "--yes")
+    check("#474: Hermes has no step to register and is still ready",
+          code == 0 and "nothing to register" in w.text and "Ready." in w.text, w.text)
+
+
+with_world(hermes_has_no_step)
+
+
+def hooks_twice(w):
+    run_for(w, "codex", "--yes")
+    path = w.home / ".codex" / "hooks.json"
+    first = path.read_bytes()
+    code = run_for(w, "codex", "--yes")
+    check("#474 B2: a second run leaves hooks.json byte-identical and says it is already there",
+          code == 0 and path.read_bytes() == first and "already in" in w.text, w.text)
+
+
+with_world(hooks_twice)
+
+
+def hooks_keep_other_config(w):
+    path = w.home / ".codex" / "hooks.json"
+    path.parent.mkdir(parents=True)
+    mine = {"hooks": {"Stop": [{"matcher": ".*", "hooks": [{"type": "command", "command": "my-own-thing"}]}]}}
+    path.write_text(json.dumps(mine), encoding="utf-8")
+    code = run_for(w, "codex", "--yes")
+    data = json.loads(path.read_text())
+    check("#474 B3: an existing hooks.json keeps its own hooks", code == 0 and data["hooks"].get("Stop") == mine["hooks"]["Stop"], str(data))
+    check("#474 B3: and is backed up before the change", (w.home / ".codex" / "hooks.json.paynani.bak").is_file())
+
+
+with_world(hooks_keep_other_config)
+
+
+def hooks_declined(w):
+    answers = iter(["y", "n"])   # yes to the permission rules, no to the hooks
+    code = run_for(w, "claudecode", ask=lambda _p: next(answers))
+    check("#474: if the owner says no to the hooks the run is not ready (exit 1)",
+          code == 1 and "Ready." not in w.text and "claude_hook.py --install" in w.text, w.text)
+
+
+with_world(hooks_declined)
+
+
+def hooks_no_terminal(w):
+    def eof(_prompt):
+        raise EOFError
+
+    code = run_for(w, "codex", ask=eof)
+    check("#474: without a terminal to confirm the step fails and says to use --yes",
+          code == 1 and "--yes" in w.text and "Ready." not in w.text
+          and harness_step.state("codex", w.home) == "absent", w.text)
+
+
+with_world(hooks_no_terminal)
+
+
+def hooks_file_broken(w):
+    path = w.home / ".codex" / "hooks.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{ not json", encoding="utf-8")
+    code = run_for(w, "codex", "--yes")
+    check("#474: a hooks.json that is not JSON is left alone and the run is not ready",
+          code == 1 and path.read_text() == "{ not json" and "Ready." not in w.text, w.text)
+
+
+with_world(hooks_file_broken)
+
+
+def hooks_script_fails(w):
+    w.runner.add(has("codex_hook.py", "--install"), 1, err="boom")
+    code = run_for(w, "codex", "--yes")
+    check("#474: if the runtime's script fails the run says so and is not ready",
+          code == 1 and "boom" in w.text and "Ready." not in w.text, w.text)
+
+
+with_world(hooks_script_fails)
+
+
+def hooks_dry_run(w):
+    code = run_for(w, "codex", "--yes", "--dry-run")
+    check("#474: --dry-run names the hooks it would register and writes nothing",
+          code == 0 and "would: register the Codex session hooks" in w.text and not (w.home / ".codex").exists(), w.text)
+
+
+with_world(hooks_dry_run)
 
 
 # --- --upgrade ------------------------------------------------------------------------------------------

@@ -229,6 +229,7 @@ def _facts() -> dict:
     facts["python"] = healthcheck.python_facts(facts["listener"], facts["dispatcher"])
     facts["account_checks"] = _account_checks()
     facts["sent_copy_checks"] = _sent_copy_checks()
+    facts["harness_step_checks"] = _harness_step_checks(facts["runtime"].get("selected"))
     facts["spool"] = healthcheck.spool_facts(facts["runtime"].get("selected"))
     facts["reply"] = healthcheck.reply_facts(facts["queue"]["cursor"])
     facts["dependencies"] = _dependency_facts(facts["runtime"].get("selected"), facts["python"])
@@ -655,6 +656,31 @@ def _observation_check(name: str, facts: dict) -> dict:
     return _check(name, "unknown", OBSERVATION_LABELS.get(name, name), {"runtime": selected})
 
 
+def _harness_step_checks(selected) -> list[dict]:
+    """
+    The runtime's own registration (#474): Claude Code and Codex hooks, the
+    OpenClaw standing rule. Without it mail never reaches a session, so its
+    absence is `blocked`, and `bootstrap.sh` does not say Ready over it.
+    OpenCode is left to its existing `plugin_installed` row; Hermes has no step.
+    """
+    from . import harness_step
+
+    if not selected or selected == "opencode" or not harness_step.has_step(selected):
+        return []
+    found = harness_step.state(selected)
+    path = str(harness_step.target(selected))
+    facts = {"runtime": selected, "path": path, "state": found}
+    what = harness_step.describe(selected)
+    if found == "present":
+        return [_check("harness_step", "ok", f"{what} registered in {path}", facts)]
+    if found == "unknown":
+        return [_check("harness_step", "unknown", f"could not read {path} to check {what}", facts,
+                       harness_step.command(selected, "--check"))]
+    verb = "out of date" if found == "stale" else "missing"
+    return [_check("harness_step", "blocked", f"{what} {verb} in {path}; no mail reaches the session",
+                   facts, harness_step.command(selected))]
+
+
 def _capability_checks(facts: dict) -> list[dict]:
     selected = (facts.get("runtime") or {}).get("selected")
     if not selected or capabilities is None:
@@ -860,6 +886,7 @@ def doctor_data() -> dict:
         checks.append(_check("roster", "blocked", "roster.md is missing", ros, "scripts/paynani roster add NAME ADDRESS"))
 
     checks.extend(_capability_checks(facts))
+    checks.extend(facts.get("harness_step_checks") or [])
     # Computed in _facts() like everything else doctor reads from the host, so
     # a caller that supplies its own facts is not handed this host's accounts.
     checks.extend(facts.get("account_checks") or [])

@@ -431,5 +431,30 @@ sw_none = watch_state(watch_spool())
 check("no registry at all is unknown, the honest never-armed answer", sw_none["status"] == "unknown")
 check("with the usual label", sw_none["summary"] == d.OBSERVATION_LABELS["session_watch_state"])
 
+# --- the harness's own step (#474) --------------------------------------------------
+
+import subprocess as _sp  # noqa: E402
+
+_hs_home = pathlib.Path(tempfile.mkdtemp(prefix="doctor-harness-step-"))
+with mock.patch.dict(os.environ, {"HOME": str(_hs_home), "CODEX_HOME": ""}):
+    for runtime in ("hermes", "opencode", None):
+        check(f"#474: no harness_step row for {runtime}", d._harness_step_checks(runtime) == [])
+    absent = d._harness_step_checks("claudecode")
+    check("#474: Claude Code hooks missing is blocked", absent and absent[0]["status"] == "blocked")
+    check("#474: and the fix is claude_hook.py --install",
+          absent and absent[0].get("next_command", "").endswith("claude_hook.py --install"))
+    _sp.run([sys.executable, str(ROOT / "scripts" / "codex_hook.py"), "--install",
+             "--settings", str(_hs_home / ".codex" / "hooks.json")], capture_output=True, check=True)
+    present = d._harness_step_checks("codex")
+    check("#474: Codex hooks registered is ok", present and present[0]["status"] == "ok")
+    (_hs_home / ".claude").mkdir(exist_ok=True)
+    (_hs_home / ".claude" / "settings.json").write_text("{ broken", encoding="utf-8")
+    broken = d._harness_step_checks("claudecode")
+    check("#474: a settings.json that cannot be parsed is unknown, never ok",
+          broken and broken[0]["status"] == "unknown")
+    rule = d._harness_step_checks("openclaw")
+    check("#474: the OpenClaw standing rule missing is blocked", rule and rule[0]["status"] == "blocked")
+shutil.rmtree(_hs_home, ignore_errors=True)
+
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
