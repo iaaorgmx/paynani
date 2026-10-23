@@ -164,8 +164,12 @@ def _disable_linux(account_id: str, *, sleeper=time.sleep, clock=time.monotonic)
         # The raw value: _state_linux maps "deactivating" (exit 3) to "inactive",
         # which would end this wait while the unit is still stopping.
         raw = (_run(["systemctl", "--user", "is-active", unit]).stdout or "").strip()
-        if raw not in _STILL_UP or clock() >= deadline:
+        if raw not in _STILL_UP:
             break
+        if clock() >= deadline:
+            # Still stopping: say so. state() would report "inactive" here, and the
+            # caller would go on removing the account under a live listener (#473 review).
+            raise AccountServiceError(f"{unit} is still {raw} after {STOP_WAIT_S} s")
         sleeper(0.5)
     return state(account_id)
 

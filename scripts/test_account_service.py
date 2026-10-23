@@ -112,12 +112,35 @@ ticks = iter(range(0, 1000, 30))
 try:
     account_service._run = fake_run
     account_service._disable_linux("iris", sleeper=lambda s: None, clock=lambda: float(next(ticks)))
-    gave_up = True
+    outcome = "returned"
+except account_service.AccountServiceError as exc:
+    outcome = str(exc)
 except StopIteration:
-    gave_up = False
+    outcome = "kept waiting"
 finally:
     account_service._run = old_run
-check("it stops waiting after STOP_WAIT_S even if the unit never stops (#471)", gave_up)
+check("after STOP_WAIT_S with the unit still deactivating it fails, never reports success (#471, #473 review)",
+      outcome == f"paynani-idle@iris.service is still deactivating after {account_service.STOP_WAIT_S} s", outcome)
+
+# ...and accounts_cli then refuses to remove anything.
+from paynani_lib import accounts_cli  # noqa: E402
+states = iter(["deactivating"] * 1000)
+ticks = iter(range(0, 1000, 30))
+real_disable = account_service._disable_linux
+try:
+    account_service._run = fake_run
+    account_service._disable_linux = lambda aid: real_disable(aid, sleeper=lambda s: None,
+                                                              clock=lambda: float(next(ticks)))
+    account_service._platform = lambda: "linux"
+    import io, contextlib
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        ok = accounts_cli._service("disable", "iris")
+finally:
+    account_service._run = old_run
+    account_service._disable_linux = real_disable
+check("accounts_cli._service('disable') reports failure, so remove_account changes nothing (#471)",
+      ok is False and "still deactivating" in err.getvalue(), err.getvalue())
 
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
