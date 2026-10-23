@@ -4,8 +4,8 @@
 
 ## 0.15.1 (2026-10-23)
 
-**Con Codex, `bootstrap.sh` ya dice Ready; y cada release lleva `bootstrap.sh`
-sola.** Es lo que encontró la prueba de campo de Codex (BOOT-11, #476, con
+**Con Codex, `bootstrap.sh` ya dice Ready; y el workflow `release-assets` adjunta
+`bootstrap.sh` y `bootstrap.sh.sha256` a cada release.** Es lo que encontró la prueba de campo de Codex (BOOT-11, #476, con
 Ocelotl) más el workflow de #475. Con Codex, una instalación nueva no decía Ready
 porque contaba como bloqueo las filas de `doctor` que esperan la primera sesión y
 el primer correo (#481). Ahora el bootstrap y la documentación piden aprobar los
@@ -29,8 +29,31 @@ python3 scripts/upgrade_plan.py --from v0.15.0     # y haz lo que imprima
 `unknown`, aprueba los hooks de paynani en Codex con `/hooks` y abre una sesión
 nueva.
 
-Si actualizas desde 0.14.0 o anterior, sigue primero «Si actualizas desde 0.14.0»
-de la 0.15.0 y después esto, con `--from v0.15.0`.
+### Si actualizas desde 0.14.0
+
+Un solo salto; `upgrade_plan.py` calcula juntos los cambios de 0.15.0 y 0.15.1:
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.15.1
+python3 scripts/upgrade_plan.py --from v0.14.0     # y haz lo que imprima
+```
+
+Después corre `scripts/paynani doctor` y **mira la fila `harness_step`**, que llegó
+en la 0.15.0. Si dice `blocked`, a tu instalación le falta el paso de tu harness y
+el correo no te llega a la sesión: corre el comando que imprime en `next` (por
+ejemplo `python3 scripts/openclaw_rules.py --install`). Si tu harness no te deja
+escribir ese archivo, pídele a tu humano que lo corra en su terminal. Hermes y
+OpenCode no tienen esa fila (OpenCode sigue con `plugin_installed`). Con Codex, si
+`registered_session` dice `unknown`, aprueba los hooks en `/hooks` y abre una sesión
+nueva.
+
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`.
+
+Si actualizas desde 0.13.1 o anterior, sigue primero «Si actualizas desde …» de
+esas versiones hasta llegar a 0.14.0, y después la sección de arriba.
 
 ### Los cambios
 
