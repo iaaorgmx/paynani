@@ -92,12 +92,17 @@ DOCTOR_POLL_SECONDS = 2
 # report the generic `unknown`. Only `unknown` counts: `warning` and `blocked` fail, and any
 # other row that is not ok fails, as before.
 PENDING_AT_INSTALL = ("session_watch_state",)
-# Codex has no watch row; what says a session has run the SessionStart hook is these
-# three, and they are `unknown` until one has (#481, finding 5). Same reason, same rule:
-# only `unknown`, only for Codex, and the closing message asks the owner to open one.
+# Codex rows that are `unknown` in a fresh install and that no waiting fixes (#481,
+# finding 5): registered_session until a session runs the SessionStart hook, and the
+# two queue rows until the first mail is delivered, which may be long after that.
+# Only `unknown` and only for Codex; `blocked` or `warning` still fail.
 PENDING_AT_INSTALL_BY_RUNTIME = {
     "codex": ("registered_session", "last_queue_attempt", "last_queue_result"),
 }
+# Of those, the rows that mean "no session has run the hook yet", which is what the
+# closing message asks the owner to fix. The queue rows are not: an owner who already
+# opened a session would be told to do it again (Ximena, review of #483).
+SESSION_NOT_OPENED = ("session_watch_state", "registered_session")
 APP_NAMES = {"claudecode": "Claude Code", "codex": "Codex"}
 
 
@@ -122,6 +127,7 @@ class Ctx:
     owner: str = ""
     pending: list = field(default_factory=list)   # doctor rows left unknown on purpose
     himalaya_verified: bool = False               # step_himalaya's own account check passed
+    harness_step_changed: bool = False            # step_harness_step wrote the hooks/plugin/rule this run
 
     def say(self, text: str) -> None:
         self.out(text)
@@ -466,6 +472,7 @@ def step_harness_step(ctx: Ctx):
         return False, f"{what}: {again} failed:\n{first_lines(output)}"
     if harness_step.state(runtime, ctx.home) != "present":
         return False, f"{what}: still not in {path} after {again}:\n{first_lines(output)}"
+    ctx.harness_step_changed = True
     return True, f"{what}: registered in {path}" + (f" ({first_lines(output, 1)})" if output else "")
 
 
@@ -617,11 +624,12 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
     if args.dry_run:
         return EX_OK
     ctx.say(ctx.L("b.ready_pending", app=APP_NAMES.get(ctx.runtime, ctx.runtime))
-            if set(_pending_names(ctx.runtime)) & set(ctx.pending) else ctx.L("b.ready"))
-    if ctx.runtime == "codex":
+            if set(SESSION_NOT_OPENED) & set(ctx.pending) else ctx.L("b.ready"))
+    if ctx.runtime == "codex" and (ctx.harness_step_changed or "registered_session" in ctx.pending):
         # Codex skips new or changed hooks in ~/.codex/hooks.json until someone trusts
         # them in /hooks, and a session open before the install never runs the
-        # SessionStart it missed (#481, findings 2 and 3).
+        # SessionStart it missed (#481, findings 2 and 3). Said when this run wrote the
+        # hooks, or when no session has run them; not on a rerun with both already done.
         ctx.say(ctx.L("b.codex_hooks"))
     if "himalaya" in ctx.pending:
         ctx.say(ctx.L("b.slow_mailbox"))
