@@ -92,6 +92,12 @@ DOCTOR_POLL_SECONDS = 2
 # report the generic `unknown`. Only `unknown` counts: `warning` and `blocked` fail, and any
 # other row that is not ok fails, as before.
 PENDING_AT_INSTALL = ("session_watch_state",)
+# Codex has no watch row; what says a session has run the SessionStart hook is these
+# three, and they are `unknown` until one has (#481, finding 5). Same reason, same rule:
+# only `unknown`, only for Codex, and the closing message asks the owner to open one.
+PENDING_AT_INSTALL_BY_RUNTIME = {
+    "codex": ("registered_session", "last_queue_attempt", "last_queue_result"),
+}
 APP_NAMES = {"claudecode": "Claude Code", "codex": "Codex"}
 
 
@@ -474,13 +480,17 @@ def _slow_himalaya(row: dict, himalaya_verified: bool) -> bool:
             and bool((row.get("facts") or {}).get("account_check_timed_out")))
 
 
-def split_doctor_rows(report: dict, himalaya_verified: bool = False):
+def _pending_names(runtime: str) -> tuple:
+    return PENDING_AT_INSTALL + PENDING_AT_INSTALL_BY_RUNTIME.get(runtime, ())
+
+
+def split_doctor_rows(report: dict, himalaya_verified: bool = False, runtime: str = ""):
     """(rows that are not ok and block, rows that are unknown on purpose in a fresh install)."""
     blocking, pending = [], []
     for row in report.get("checks", []):
         if not isinstance(row, dict) or row.get("status") == "ok":
             continue
-        if ((row.get("name") in PENDING_AT_INSTALL and row.get("status") == "unknown")
+        if ((row.get("name") in _pending_names(runtime) and row.get("status") == "unknown")
                 or _slow_himalaya(row, himalaya_verified)):
             pending.append(row)
         else:
@@ -510,7 +520,7 @@ def step_verify(ctx: Ctx):
             status = report["status"]
         except (ValueError, KeyError, TypeError):
             return False, f"paynani doctor gave no status:\n{first_lines(doctor.stderr or doctor.stdout)}"
-        blocking, pending = split_doctor_rows(report, ctx.himalaya_verified)
+        blocking, pending = split_doctor_rows(report, ctx.himalaya_verified, ctx.runtime)
         if status == "ok" or (not blocking and report.get("checks")):
             ctx.pending = [row.get("name") for row in pending]
             break
@@ -607,7 +617,12 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
     if args.dry_run:
         return EX_OK
     ctx.say(ctx.L("b.ready_pending", app=APP_NAMES.get(ctx.runtime, ctx.runtime))
-            if "session_watch_state" in ctx.pending else ctx.L("b.ready"))
+            if set(_pending_names(ctx.runtime)) & set(ctx.pending) else ctx.L("b.ready"))
+    if ctx.runtime == "codex":
+        # Codex skips new or changed hooks in ~/.codex/hooks.json until someone trusts
+        # them in /hooks, and a session open before the install never runs the
+        # SessionStart it missed (#481, findings 2 and 3).
+        ctx.say(ctx.L("b.codex_hooks"))
     if "himalaya" in ctx.pending:
         ctx.say(ctx.L("b.slow_mailbox"))
     ctx.say(ctx.L("b.sum_runtime", value=ctx.runtime))

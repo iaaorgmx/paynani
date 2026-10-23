@@ -638,6 +638,56 @@ def doctor_pending_codex(w):
 with_world(doctor_pending_codex)
 
 
+CODEX_FRESH_ROWS = [
+    {"name": "spool_writable", "status": "ok", "summary": "runtime spool is writable"},
+    {"name": "registered_session", "status": "unknown", "summary": "no Codex session has run the paynani SessionStart hook yet"},
+    {"name": "last_queue_attempt", "status": "unknown", "summary": "no Codex queue attempt has been recorded"},
+    {"name": "last_queue_result", "status": "unknown", "summary": "no Codex queue result has been recorded"},
+]
+
+
+def doctor_codex_fresh_install(w):
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", CODEX_FRESH_ROWS))
+    code = w.run("--runtime", "codex", "--ref", "v0.12.0", "--env-file", str(w.env_file), "--owner-name", "Ada", "--owner-email", "ada@example.org", "--yes")
+    check("#481: a fresh Codex install (three session rows unknown) says ready",
+          code == 0 and "open Codex on this machine" in w.text, w.text)
+    check("#481: it does not wait for them", w.sleeps == [], str(w.sleeps))
+    check("#481: and tells the owner to approve the hooks in /hooks and open a new session",
+          "/hooks" in w.text and "NEW Codex session" in w.text, w.text)
+
+
+with_world(doctor_codex_fresh_install)
+
+
+def doctor_codex_rows_other_runtime(w):
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", CODEX_FRESH_ROWS[1:2]))
+    code = w.run(*w.full())
+    check("#481: the Codex rows are only pending for Codex (claudecode still blocks on them)",
+          code == 1 and "Ready." not in w.text, w.text)
+
+
+with_world(doctor_codex_rows_other_runtime)
+
+
+def doctor_codex_row_blocked(w):
+    rows = [dict(CODEX_FRESH_ROWS[1], status="blocked")]
+    w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("blocked", rows))
+    code = w.run("--runtime", "codex", "--ref", "v0.12.0", "--env-file", str(w.env_file), "--owner-name", "Ada", "--owner-email", "ada@example.org", "--yes")
+    check("#481: a Codex session row that is blocked (not unknown) still stops the run",
+          code == 1 and "Ready." not in w.text, w.text)
+
+
+with_world(doctor_codex_row_blocked)
+
+
+def claudecode_has_no_codex_line(w):
+    w.run(*w.full())
+    check("#481: the /hooks line is only for Codex", "/hooks" not in w.text, w.text)
+
+
+with_world(claudecode_has_no_codex_line)
+
+
 def doctor_pending_other_runtime(w):
     w.runner.add(has("scripts/paynani", "doctor"), 0, doctor_json("unknown", [WATCH_ROW]))
     code = w.run("--runtime", "hermes", "--ref", "v0.12.0", "--env-file", str(w.env_file), "--owner-name", "Ada",
