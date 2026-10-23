@@ -2,6 +2,13 @@
 
 ## Sin publicar
 
+- **Cada release lleva `bootstrap.sh` y su `.sha256` sin depender de nadie** (#475).
+  La v0.14.0 salió sin ellos y `releases/latest/download/bootstrap.sh` dio 404 hasta
+  que se subieron a mano. Ahora el workflow `release-assets` los adjunta al publicar
+  una release: los saca de la etiqueta, los sube, los baja de la URL pública y corre
+  `sha256sum -c`. Con `workflow_dispatch` se puede correr para una etiqueta anterior.
+  `RELEASING.md` §5 dice cómo comprobarlo.
+
 ## 0.15.0 (2026-10-23)
 
 **`bootstrap.sh` deja instalado lo que el agente no puede instalar** (#474). Ahora
