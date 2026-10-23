@@ -54,6 +54,34 @@ def parse_sent_log(path: Path) -> list[dict]:
     return out
 
 
+def sent_log_paths(path: Path) -> list[Path]:
+    """`sent.log` y sus copias rotadas, de la más vieja a la actual: `sent.log.N` …
+    `sent.log.1` y después `sent.log`. `harness/rotate_logs.py` rota cada semana y
+    guarda varias copias; sin ellas, lo enviado antes de la rotación desaparecía de
+    Email Accounts (#470). Las copias se buscan por nombre, no por un número fijo."""
+    path = Path(path)
+    rotated = []
+    for p in path.parent.glob(path.name + ".*"):
+        suffix = p.name[len(path.name) + 1:]
+        if suffix.isdigit():
+            rotated.append((int(suffix), p))
+    return [p for _, p in sorted(rotated, reverse=True)] + [path]
+
+
+def parse_sent_logs(path: Path) -> list[dict]:
+    """Todos los envíos de `sent.log` y de sus copias rotadas, en orden, sin repetir un
+    Message-ID (#470)."""
+    out, seen = [], set()
+    for p in sent_log_paths(path):
+        for rec in parse_sent_log(p):
+            mid = rec["message-id"]
+            if mid in seen:
+                continue
+            seen.add(mid)
+            out.append(rec)
+    return out
+
+
 def norm_subject(subject: str) -> str:
     s = (subject or "").strip().lower()
     while True:
