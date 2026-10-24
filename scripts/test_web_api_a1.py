@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "harness"))
-from paynani_lib.web import api_auth, api_tokens, app, users  # noqa: E402
+from paynani_lib.web import api_auth, api_tokens, app, notify, users  # noqa: E402
 
 
 def check(condition, label):
@@ -42,7 +42,7 @@ records[0]["revoked_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
 store.write_text(json.dumps(records))
 check(api_tokens.lookup(secret, path=store)[0] == "token_revoked", "revoked token")
 secret, record = api_tokens.create("valid", path=store)
-ctx = app.Context(user_file=user_file)
+ctx = app.Context(user_file=user_file, notifier=notify.Notifier(send=lambda *args: None, log=lambda line: None))
 server = app.serve(port=0, ctx=ctx)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 
@@ -57,7 +57,7 @@ def request(token=None, *, path="/api/agent", ip="198.51.100.1", form=None, json
         payload = json.dumps(json_body)
         headers["Content-Type"] = "application/json"
     else:
-        data = {"action": "GetUsage"}
+        data = {"action": "UnknownAction"}
         data.update(form or {})
         if token and not header:
             data["api_token"] = token
@@ -76,9 +76,9 @@ status, body = request(secret)
 check((status, body["code"]) == (400, "invalid_action"), "valid token reaches action boundary")
 check(json.loads(store.read_text())[-1]["last_used_at"] is not None, "last use recorded")
 check(request(secret, header=False)[1]["code"] == "invalid_action", "form token accepted")
-check(request(secret, json_body={"action": "GetUsage", "api_token": secret}, header=False)[1]["code"] ==
+check(request(secret, json_body={"action": "UnknownAction", "api_token": secret}, header=False)[1]["code"] ==
       "invalid_action", "JSON token accepted")
-check(request(secret, json_body={"action": "GetUsage"})[1]["code"] == "invalid_action",
+check(request(secret, json_body={"action": "UnknownAction"})[1]["code"] == "invalid_action",
       "Bearer token accepted with JSON")
 check(request(secret, path="/api/agent?api_token=" + secret)[1]["code"] == "invalid_token",
       "URL token rejected")

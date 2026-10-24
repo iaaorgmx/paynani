@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings, token_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (accounts_pages, api_actions, api_auth, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (accounts_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -248,6 +248,14 @@ class Context:
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
         self.api_limits = api_auth.Limits(clock)
+        if state_dir is not None:
+            audit_dir = Path(state_dir)
+        elif user_file is not None:
+            audit_dir = Path(user_file).parent.parent / "state"
+        else:
+            import paths
+            audit_dir = paths.state_dir()
+        self.api_security = api_security.Journal(audit_dir, clock)
         self.notifier = notifier or notify.Notifier()
         # La cuenta del agente y las de accounts.json, para el menú (FR-10). Las
         # pruebas pasan las suyas; sin ellas, las de la instalación. Del .env sólo
@@ -434,17 +442,34 @@ def make_handler(ctx: Context):
             self._send(status, "application/json; charset=UTF-8", json.dumps(result).encode("utf-8"),
                        [("X-Request-Id", request_id), ("Cache-Control", "no-store")])
 
+        def _api_audit(self, kind: str, request_id: str, prefix: str, address: str) -> None:
+            try:
+                self.CTX.api_security.record(kind, request_id, prefix, address)
+            except (OSError, ValueError):
+                sys.stderr.write(f"paynani-web: API audit unavailable for {request_id}\n")
+
+        def _api_auth_failure(self, request_id: str, prefix: str, address: str,
+                              kind: str = "invalid_token") -> None:
+            self._api_audit(kind, request_id, prefix, address)
+            if self.CTX.api_limits.fail(address):
+                self._api_audit("too_many_attempts", request_id, prefix, address)
+                self.CTX.notifier.owner(self.CTX.user(), "Paynani API: 10 fallos de autenticación",
+                                        f"Se bloquearon los intentos de autenticación de API desde {address} "
+                                        "durante 15 minutos tras 10 fallos consecutivos. "
+                                        "Revisa state/api_security.jsonl para los request_id.")
+
         def _api_post(self, raw: bytes):
             request_id = secrets.token_hex(8)
             address = auth.client_ip(self.headers, self.client_address[0])
             remaining = self.CTX.api_limits.blocked_for(address)
             if remaining:
+                self._api_audit("too_many_attempts", request_id, "", address)
                 self._api_reply(429, request_id, code="too_many_attempts",
                                 message="Too many failed authentication attempts.", retry_after=remaining)
                 return
             query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
             if "api_token" in query or "token" in query:
-                self.CTX.api_limits.fail(address)
+                self._api_auth_failure(request_id, "", address)
                 self._api_reply(401, request_id, code="invalid_token", message="API token cannot be in the URL.")
                 return
             kind = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
@@ -471,34 +496,43 @@ def make_handler(ctx: Context):
             try:
                 outcome, record = api_tokens.lookup(token, path=api_tokens.path_for(self.CTX.user_path()))
             except (OSError, ValueError):
+                self._api_audit("internal_error", request_id, api_security.safe_prefix(token), address)
                 self._api_reply(500, request_id, code="internal_error", message="Token store unavailable.")
                 return
             if outcome != "ok":
-                self.CTX.api_limits.fail(address)
+                prefix = record.get("prefix", "") if record else api_security.safe_prefix(token)
+                self._api_auth_failure(request_id, prefix, address, kind=outcome)
                 messages = {"invalid_token": "API token invalid.",
                             "token_revoked": "API token was revoked.",
                             "token_expired": "API token expired."}
                 self._api_reply(401, request_id, code=outcome, message=messages[outcome])
                 return
+            self.CTX.api_limits.success(address)
             remaining = self.CTX.api_limits.admit_call(record["sha256"])
             if remaining:
+                self._api_audit("rate_limited", request_id, record.get("prefix", ""), address)
                 self._api_reply(429, request_id, code="rate_limited",
                                 message="Too many requests for this token.", retry_after=remaining)
                 return
+            self._api_audit("call", request_id, record.get("prefix", ""), address)
             try:
                 api_tokens.touch(record["sha256"], path=api_tokens.path_for(self.CTX.user_path()))
             except (OSError, ValueError):
+                self._api_audit("internal_error", request_id, record.get("prefix", ""), address)
                 self._api_reply(500, request_id, code="internal_error", message="Token store unavailable.")
                 return
             # A3 #495: la acción, con su permiso (FR-5). Las demás tareas suman las suyas
             # en api_actions.ACTIONS sin tocar la autenticación de arriba.
             try:
-                result = api_actions.run(self.CTX, record, address, data)
+                result = api_actions.run(self.CTX, record, address, data, request_id=request_id)
             except api_actions.ApiError as exc:
+                if exc.code in ("quota_exceeded", "opted_out", "forbidden", "internal_error", "rate_limited"):
+                    self._api_audit(exc.code, request_id, record.get("prefix", ""), address)
                 self._api_error(exc, request_id)
                 return
             except Exception as exc:  # noqa: BLE001 -- un error interno no deja la conexión sin respuesta
                 sys.stderr.write(f"paynani-web: api {data.get('action')!r} {request_id}: {type(exc).__name__}\n")
+                self._api_audit("internal_error", request_id, record.get("prefix", ""), address)
                 self._api_reply(500, request_id, code="internal_error", message="Internal error.")
                 return
             body = {"result": "success", **result, "request_id": request_id}
@@ -836,10 +870,12 @@ def make_handler(ctx: Context):
                 self._sms_optout(error=i18n.t("web.sms.err.invalid_number"), value=raw, code=400)
                 return
             try:
-                api_replies.set_opt_out(store, number, action == "agregar", by=f"web:{self.ip}")
+                changed = api_replies.set_opt_out(store, number, action == "agregar", by=f"web:{self.ip}")
             except (OSError, ValueError):
                 self._sms_optout(error=i18n.t("web.sms.optout.err.unreadable"), value=raw, code=500)
                 return
+            if changed:
+                self._api_audit("opt_out" if action == "agregar" else "opt_in", secrets.token_hex(8), "", self.ip)
             self._redirect("/messages/bajas?ok=" + ("added" if action == "agregar" else "removed"))
 
         def _sms_statuses(self):

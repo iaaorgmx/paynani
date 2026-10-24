@@ -49,11 +49,12 @@ class ApiError(Exception):
 class Call:
     """Lo que una acción necesita: el contexto de la web, el token, la dirección y los parámetros."""
 
-    def __init__(self, ctx, record: dict, ip: str, params: dict):
+    def __init__(self, ctx, record: dict, ip: str, params: dict, request_id: str = ""):
         self.ctx = ctx
         self.record = record
         self.ip = ip
         self.params = params
+        self.request_id = request_id
 
     def text(self, key: str, default: str = "", limit: int = MAX_FIELD) -> str:
         value = self.params.get(key, default)
@@ -450,6 +451,8 @@ def send_sms(call: Call) -> dict:
                                source=call.ip, region=_sms_region(store))
     except outgoing.Refused as exc:
         if exc.code in ("rate_limited", "quota_exceeded"):
+            if exc.code == "quota_exceeded":
+                _daily_limit_alert(call, store, per_day)
             raise ApiError(429, "quota_exceeded", exc.message, retry_at=exc.retry_at) from None
         if exc.code == "idempotency_conflict":
             raise ApiError(409, "idempotency_conflict",
@@ -459,12 +462,52 @@ def send_sms(call: Call) -> dict:
             raise ApiError(400, exc.code, exc.message, field="text") from None
         raise ApiError(400, exc.code, exc.message) from None
     duplicate = bool(order.pop("duplicate", False))
+    if not duplicate:
+        _daily_limit_alert(call, store, per_day)
     online = _phone_online(call)
     out = {"order": _order_view(store, order), "duplicate": duplicate, "phone_online": online}
     if not online:
         out["notice"] = (f"The phone is disconnected. The order stays queued and expires after "
                          f"{outgoing.DEFAULT_TTL_MIN} minutes if the phone does not reconnect.")
     return out
+
+
+def _daily_limit_alert(call: Call, store, per_day: int) -> None:
+    """One owner alert when this token reaches its rolling 24-hour SMS limit."""
+    from ..sms import outgoing
+    prefix = call.record.get("prefix", "")
+    if len(outgoing.recent_queued(store, "api", token_id=prefix, window_s=outgoing.DAY_S)) < per_day:
+        return
+    try:
+        first = call.ctx.api_security.record_once("daily_quota_alert", call.request_id, prefix, call.ip)
+    except (OSError, ValueError):
+        sys.stderr.write(f"paynani-web: API daily quota audit unavailable for {call.request_id}\n")
+        return
+    if first:
+        call.ctx.notifier.owner(call.ctx.user(), "Paynani API: tope diario de SMS",
+                                f"El token {call.record.get('name', '')} ({prefix}) alcanzó su tope "
+                                f"de {per_day} SMS en 24 horas. Revisa state/api_security.jsonl.")
+
+
+def get_token_info(call: Call) -> dict:
+    """Metadata for the calling token; never its digest or cleartext value."""
+    from . import api_tokens
+    record = api_tokens.get_record(call.record["sha256"], path=api_tokens.path_for(call.ctx.user_path())) or call.record
+    return {key: record.get(key) for key in ("name", "prefix", "permissions", "limits", "created_at",
+                                              "expires_at", "last_used_at")}
+
+
+def get_usage(call: Call) -> dict:
+    """Accepted API calls and queued SMS for this token in rolling windows."""
+    from ..sms import outgoing
+    store = _sms_store(call)
+    prefix = call.record.get("prefix", "")
+    hour = len(outgoing.recent_queued(store, "api", token_id=prefix, window_s=outgoing.HOUR_S))
+    day = len(outgoing.recent_queued(store, "api", token_id=prefix, window_s=outgoing.DAY_S))
+    limits = call.record.get("limits") or {}
+    return {"calls": {**call.ctx.api_security.calls(prefix), "per_minute": 60},
+            "sms": {"hour": hour, "day": day,
+                    "per_hour": limits.get("sms_per_hour", 30), "per_day": limits.get("sms_per_day", 200)}}
 
 
 def get_sms_status(call: Call) -> dict:
@@ -530,8 +573,10 @@ def list_sms_replies(call: Call) -> dict:
     return {"since": since_raw, "replies": out, "truncated": truncated}
 
 
-# Acción → (permiso, función). GetTokenInfo y GetUsage (A7) se suman aquí en su tarea.
+# Acción → (permiso, función). None means any valid API token may call it.
 ACTIONS = {
+    "GetTokenInfo": (None, get_token_info),
+    "GetUsage": (None, get_usage),
     "ListAccounts": (READ, list_accounts),
     "ListMail": (READ, list_mail),
     "GetMailThread": (READ, get_mail_thread),
@@ -552,13 +597,13 @@ ACTIONS = {
 }
 
 
-def run(ctx, record: dict, ip: str, params: dict) -> dict:
+def run(ctx, record: dict, ip: str, params: dict, request_id: str = "") -> dict:
     """La respuesta de una acción (sin `result` ni `request_id`), o ApiError."""
     action = params.get("action")
     if not isinstance(action, str) or action not in ACTIONS:
         raise ApiError(400, "invalid_action", "Unknown API action.")
     permission, handler = ACTIONS[action]
     granted = record.get("permissions") or []
-    if permission not in granted:
+    if permission is not None and permission not in granted:
         raise ApiError(403, "forbidden", f"This token lacks the {permission} permission.", permission=permission)
-    return handler(Call(ctx, record, ip, params))
+    return handler(Call(ctx, record, ip, params, request_id))

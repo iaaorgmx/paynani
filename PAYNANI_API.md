@@ -56,7 +56,7 @@ API.
 | Acción | Qué hace |
 |---|---|
 | `GetTokenInfo` | Nombre, prefijo, permisos, topes, vencimiento y último uso del token |
-| `GetUsage` | Llamadas y SMS usados en el minuto, la hora y el día |
+| `GetUsage` | Llamadas aceptadas y SMS encolados de este token en ventanas móviles de 60 segundos, 1 hora y 24 horas; incluye la llamada actual |
 | `ListAccounts` | Las cuentas de correo de la instalación |
 | `ListMail` | Recibidos y enviados de una cuenta, de 50 en 50, como la web |
 | `GetMailThread` | El hilo de un correo, leído de IMAP en ese momento |
@@ -160,8 +160,8 @@ encabezado `X-Request-Id`. Si un agente te reporta un problema, pídele el
 
 - **El token nunca se guarda en claro** ni se escribe en logs, y la API no lo
   acepta en la URL.
-- **`state/api_security.jsonl`** guarda 90 días de fallos de autenticación, tokens
-  revocados o vencidos que se usaron, topes, bajas, permisos negados y errores
+- **`state/api_security.jsonl`** guarda 90 días de llamadas aceptadas (para
+  `GetUsage`), fallos de autenticación, tokens revocados o vencidos que se usaron, topes, bajas, permisos negados y errores
   internos, con `request_id`, prefijo del token y dirección. Nunca guarda el token
   ni el texto de un SMS.
 - **Te llega un correo** con 10 fallos de autenticación seguidos desde una

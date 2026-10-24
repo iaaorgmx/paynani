@@ -126,6 +126,14 @@ def lookup(secret: str, *, path: Path | None = None,
     return "ok", record
 
 
+def get_record(sha256: str, *, path: Path | None = None) -> dict | None:
+    """Read current metadata by digest without exposing the cleartext token."""
+    target = Path(path) if path else path_for()
+    with _locked(target):
+        return next((item for item in _read(target)
+                     if hmac.compare_digest(item["sha256"], sha256)), None)
+
+
 def touch(sha256: str, *, path: Path | None = None, now: dt.datetime | None = None) -> None:
     target = Path(path) if path else path_for()
     with _locked(target):

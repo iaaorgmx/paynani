@@ -187,6 +187,10 @@ async def gateway_part():
     before = {p.name for p in (st.root / "outbox").glob("a_*.json")}
     ack, ev = await sms_in(CLIENT, "STOP", "s1")
     check("FR-13: STOP da de baja el número", True, st.opted_out(CLIENT) is not None)
+    audit = [json.loads(line) for line in (state / "api_security.jsonl").read_text().splitlines()]
+    check("A7: la baja de SMS entra en la bitácora sin el texto", True,
+          any(r["kind"] == "opt_out" and r["address"] == CLIENT and r["prefix"] == citas_rec["prefix"]
+              for r in audit) and "STOP" not in (state / "api_security.jsonl").read_text())
     check("FR-13: el evento lo marca y la línea lo dice", ("stop", True), (ev.get("api_optout"), "baja de la API" in ev["notification_text"]))
     new = [json.loads((st.root / "outbox" / n).read_text()) for n in
            {p.name for p in (st.root / "outbox").glob("a_*.json")} - before]
@@ -205,6 +209,9 @@ async def gateway_part():
     after2 = {p.name for p in (st.root / "outbox").glob("a_*.json")} - before
     check("FR-13: ALTA lo da de alta y confirma en español", (None, 2),
           (st.opted_out(CLIENT), len(after2)))
+    audit = [json.loads(line) for line in (state / "api_security.jsonl").read_text().splitlines()]
+    check("A7: el alta también entra en la bitácora", True,
+          any(r["kind"] == "opt_in" and r["address"] == CLIENT for r in audit))
     # STOP de un número sin conversación de la API: baja sin confirmación.
     before3 = {p.name for p in (st.root / "outbox").glob("a_*.json")}
     ack, ev = await sms_in(OTHER, "STOP", "s4")
@@ -293,6 +300,9 @@ status, hdrs, _ = req("POST", "/messages/bajas", form={"csrf": csrf, "accion": "
 check("agregar un número (formato local): 303 y queda en la lista en E.164", (303, True),
       (status, st.opted_out("+525599990000") is not None))
 check("…y dice que fue desde la web", "web:203.0.113.5", st.opted_out("+525599990000").get("by"))
+audit = [json.loads(line) for line in (state / "api_security.jsonl").read_text().splitlines()]
+check("A7: la baja de la web queda en la bitácora", True,
+      any(r["kind"] == "opt_out" and r["address"] == "203.0.113.5" for r in audit))
 status, hdrs, _ = req("POST", "/messages/bajas", form={"csrf": csrf, "accion": "quitar", "n": OTHER}, cookie=cookie)
 check("quitar de la lista", (303, None), (status, st.opted_out(OTHER)))
 status, _, page = req("GET", "/messages/bajas?ok=removed", cookie=cookie)

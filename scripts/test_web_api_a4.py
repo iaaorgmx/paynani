@@ -47,7 +47,8 @@ roster.write_text("# roster\n\n# 1. Approved contacts\n\n| Name | Email | Type |
                   "|---|---|---|---|---|\n| Ana | ana@example.com | Human |  | +525511112222 |\n", encoding="utf-8")
 user_file = tmp / "web" / "user.json"
 users.create("dueno@example.com", "Dueño", "una-contraseña-larga", user_file)
-ctx = app.Context(user_file, notifier=notify.Notifier(send=lambda *a: None, log=lambda line: None),
+owner_mail = []
+ctx = app.Context(user_file, notifier=notify.Notifier(send=lambda *a: owner_mail.append(a), log=lambda line: None),
                   agent_email="agente@example.com", accounts_file=tmp / "no-accounts.json",
                   state_dir=state, roster_path=roster)
 st = sms_store.Store(state)
@@ -177,6 +178,17 @@ codes = [api(tiny, "SendSms", to=CLIENTE, text=f"t{i}", idempotency_key=f"t-{i}"
 check("FR-9: tope de 2 por hora: el tercero quota_exceeded", ["ok", "ok", "quota_exceeded"], codes)
 status, body = api(tiny, "SendSms", to=CLIENTE, text="t9", idempotency_key="t-9")
 check("quota_exceeded: 429 con retry_at", (429, True), (status, bool(body.get("retry_at"))))
+daily, daily_rec = token("daycap", limits={"sms_per_hour": 2, "sms_per_day": 1})
+check("A7: el primer SMS alcanza el tope diario", 200,
+      api(daily, "SendSms", to=CLIENTE, text="one", idempotency_key="day-1")[0])
+check("A7: reintentar la llave no envía otro SMS", 200,
+      api(daily, "SendSms", to=CLIENTE, text="one", idempotency_key="day-1")[0])
+check("A7: el siguiente SMS rebasa el tope diario", "quota_exceeded",
+      api(daily, "SendSms", to=CLIENTE, text="two", idempotency_key="day-2")[1]["code"])
+ctx.notifier.wait()
+daily_mail = [m for m in owner_mail if "tope diario" in m[1]]
+check("A7: un solo correo al dueño por el tope diario", (1, True),
+      (len(daily_mail), "one" not in daily_mail[0][2] if daily_mail else False))
 # Por día: tres órdenes de hace 2 horas cuentan para el día y no para la hora.
 day = sms_store.Store(Path(tempfile.mkdtemp()) / "s")
 for i in range(3):

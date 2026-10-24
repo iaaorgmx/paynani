@@ -101,12 +101,15 @@ for name, text in (("api_agents.md", guide), ("PAYNANI_API.md", owner)):
 # Cada fila de la tabla de permisos lista exactamente las acciones de ese permiso
 # (revisión de #525: «read» decía «todo List… y Get…», y GetSmsStatus pide sms.send).
 for name, text in (("api_agents.md", guide), ("PAYNANI_API.md", owner)):
-    for perm in sorted({p for p, _ in api_actions.ACTIONS.values()}):
+    for perm in sorted({p for p, _ in api_actions.ACTIONS.values() if p is not None}):
         row = re.search(rf"^\| `{re.escape(perm)}` \| (.+) \|$", text, re.M)
         listed = set(re.findall(r"`([A-Z][A-Za-z]+)`", row.group(1))) if row else None
         expected = {a for a, (p, _) in api_actions.ACTIONS.items() if p == perm}
         check(f"{name}: la fila de {perm} lista exactamente sus acciones", sorted(expected),
               sorted(listed) if listed is not None else None)
+    unrestricted = {a for a, (p, _) in api_actions.ACTIONS.items() if p is None}
+    check(f"{name}: nombra las acciones sin permiso adicional", True,
+          all(f"`{action}`" in text for action in unrestricted))
 
 # Los números que la guía promete son los del código.
 from paynani_lib.sms import outgoing  # noqa: E402
