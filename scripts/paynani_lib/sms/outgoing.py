@@ -65,6 +65,21 @@ def normalize(number: str, region: str | None = None) -> str:
     return e164
 
 
+def _pause(value) -> int:
+    """`agent_pause_min` del dueño: None es 0 (sin pausa); cualquier otra cosa, un entero de 0 a 1,440."""
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        value = "bool"
+    try:
+        pause = int(str(value).strip())
+    except ValueError:
+        raise Refused("invalid_pause", f"invalid_pause: {value!r} is not a whole number of minutes.") from None
+    if not 0 <= pause <= MAX_PAUSE_MIN:
+        raise Refused("invalid_pause", f"invalid_pause: {pause} is outside 0 to {MAX_PAUSE_MIN} minutes.")
+    return pause
+
+
 def _iso(epoch: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
 
@@ -109,18 +124,30 @@ def queue(store: Store, *, to: str, text: str, origin: str = "agent", ttl_min: i
     Crea la orden y la deja en outbox/. Devuelve la orden. Lanza `Refused` sin
     escribir nada si el número o el texto no sirven, o si el origen llegó a su tope.
 
-    - `per_hour`: el tope del origen (y del token, si se da) en la última hora.
-      None = sin tope aquí; el del agente lo aplica el teléfono (`max_out_per_hour`).
+    - `per_hour`: el tope del origen (y del token, si se da) en la última hora: un
+      entero de 1 o más. None = sin tope aquí; el del agente lo aplica el teléfono
+      (`max_out_per_hour`). 0, negativo o no entero: `invalid_limit`.
     - `source`: de dónde vino (la dirección de la web), para orders.jsonl (FR-16).
-    - `token`: el nombre del token de la API (PRD #491).
-    - `agent_pause_min`: sólo para el dueño (PRD #489 FR-14): 0 no pausa.
+      Obligatorio para el dueño.
+    - `token`: el nombre del token de la API (PRD #491). Obligatorio para la API.
+    - `agent_pause_min`: sólo para el dueño (PRD #489 FR-14): None o 0 no pausa.
     """
     if origin not in ORDER_PREFIX:
         raise ValueError(f"origen desconocido: {origin!r}")
+    # Todo rechazo pasa aquí arriba, antes de escribir nada en outbox/ u orders.jsonl.
     check_text(text)
     if ttl_min < 1:
         raise Refused("invalid_ttl", "--ttl must be at least 1 minute.")
     number = normalize(to, region)
+    if origin == "api" and not str(token or "").strip():
+        raise Refused("missing_token", "missing_token: an API order needs the token name (PRD #491 FR-6).")
+    if origin == "owner" and not str(source or "").strip():
+        raise Refused("missing_source", "missing_source: an owner order needs the web address (PRD #489 FR-16).")
+    pause = None
+    if origin == "owner":
+        pause = _pause(agent_pause_min)
+    if per_hour is not None and (isinstance(per_hour, bool) or not isinstance(per_hour, int) or per_hour < 1):
+        raise Refused("invalid_limit", f"invalid_limit: per_hour must be a whole number of 1 or more, not {per_hour!r}.")
     now = time.time() if now is None else now
     if per_hour is not None:
         recent = recent_queued(store, origin, token=token, now=now)
@@ -137,9 +164,6 @@ def queue(store: Store, *, to: str, text: str, origin: str = "agent", ttl_min: i
     if origin != "agent":
         order["origin"] = origin
     if origin == "owner":
-        pause = int(agent_pause_min or 0)
-        if not 0 <= pause <= MAX_PAUSE_MIN:
-            raise Refused("invalid_pause", f"invalid_pause: {pause} is outside 0 to {MAX_PAUSE_MIN} minutes.")
         order["agent_pause_min"] = pause
     if origin == "api" and token:
         order["token"] = token
