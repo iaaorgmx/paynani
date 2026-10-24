@@ -107,7 +107,9 @@ haces en la web, con el nombre y el prefijo del token.
   (`sent` o `delivered`); una que falló o venció no.
 - **Tu agente también la ve,** marcada «respuesta a la API: <token>». Por omisión
   no contesta. Si quieres que conteste ese token con sus reglas generales, activa
-  «El agente local contesta las respuestas» en el detalle del token.
+  «El agente local contesta las respuestas» en el detalle del token. Si revocas el
+  token o vence, sus conversaciones dejan de contar: las respuestas que lleguen
+  después le llegan a tu agente sin marca, como cualquier SMS.
 - **Bajas.** Un SMS que dice sólo STOP, BAJA, ALTO o CANCELAR (sin importar
   mayúsculas ni acentos) da de baja ese número para la API, y START o ALTA lo da
   de alta. La pasarela le confirma una sola vez, en el idioma de la palabra, si la

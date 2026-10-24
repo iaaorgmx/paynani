@@ -65,6 +65,7 @@ ANA = "+525511112222"
 CLIENT = "+525588887777"
 OTHER = "+525533334444"
 LATE = "+525566665555"
+REV = "+525544443333"
 
 tmp = Path(tempfile.mkdtemp())
 state = tmp / "state"
@@ -159,6 +160,39 @@ async def gateway_part():
     # Sin conversación de la API.
     ack, ev = await sms_in(OTHER, "Hola", "r3")
     check("sin conversación de la API: sin marca", (False, False), ("api_reply" in ev, "API" in ev["notification_text"]))
+    # Un token revocado ya no lee sus respuestas: su conversación deja de contar.
+    vieja, vieja_rec = api_tokens.create("vieja", permissions=["read", "sms.send"], path=tokens_path)
+    rv = outgoing.queue(st, to=REV, text="Hola", origin="api", token="vieja", token_id=vieja_rec["prefix"],
+                        idempotency_key="rv1", source="t")
+    mark(st, rv["id"], "sent")
+    ack, ev = await sms_in(REV, "Gracias", "rv-a")
+    check("token vigente: la respuesta se marca para vieja", "vieja", (ev.get("api_reply") or {}).get("token"))
+    api_tokens.update(vieja_rec["sha256"], path=tokens_path, revoke=True)
+    ack, ev = await sms_in(REV, "Otra cosa", "rv-b")
+    check("token revocado: sin marca y la línea no habla de la API", (False, False),
+          ("api_reply" in ev, "API" in ev["notification_text"]))
+    before_rv = {p.name for p in (st.root / "outbox").glob("a_*.json")}
+    ack, ev = await sms_in(REV, "STOP", "rv-c")
+    after_rv = {p.name for p in (st.root / "outbox").glob("a_*.json")} - before_rv
+    check("token revocado: STOP igual da de baja, pero sin confirmación de ese token", (True, 0),
+          (st.opted_out(REV) is not None, len(after_rv)))
+    # Vencido: lo mismo, con la hora del token.
+    recs = json.loads(tokens_path.read_text())
+    for r in recs:
+        if r["prefix"] == vieja_rec["prefix"]:
+            r["revoked_at"] = None
+            r["expires_at"] = "2026-01-01T00:00:00+00:00"
+    tokens_path.write_text(json.dumps(recs))
+    check("token_active: vencido no está vigente", False, api_replies.token_active(tokens_path, vieja_rec["prefix"]))
+    check("token_active: sin vencimiento sí", True, api_replies.token_active(tokens_path, citas_rec["prefix"]))
+    check("token_active: un prefijo desconocido o sin archivo cuenta como vigente", (True, True),
+          (api_replies.token_active(tokens_path, "pn_xxxxxxxx"), api_replies.token_active(tmp / "no.json", "pn_x")))
+    for shape in ("null", "42", '{"tokens": null}', '{"tokens": 42}'):
+        odd = tmp / "forma.json"
+        odd.write_text(shape, encoding="utf-8")
+        check(f"token_active: un almacén con forma {shape} cuenta como vigente, sin error", True,
+              api_replies.token_active(odd, "pn_x"))
+
     # Hace más de 7 días no cuenta.
     old = outgoing.queue(st, to=OTHER, text="viejo", origin="api", token="citas", token_id=citas_rec["prefix"],
                          idempotency_key="old", source="t", now=time.time() - 8 * 86400)

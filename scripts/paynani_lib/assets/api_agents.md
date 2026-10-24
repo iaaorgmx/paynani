@@ -188,7 +188,9 @@ There are no webhooks: ask `ListSmsReplies` from time to time, and keep the last
 `received_at` you saw as your next `since`.
 
 The local paynani agent sees these replies too, marked as API replies. By default
-it does not answer them; the owner can let it, per token.
+it does not answer them; the owner can let it, per token. Once this token is revoked
+or expires, its conversations stop counting and later replies go to the local agent
+unmarked.
 
 **STOP:** an SMS that says only STOP, BAJA, ALTO or CANCELAR (any case, with or
 without accents) opts the number out of the API. paynani confirms once to the

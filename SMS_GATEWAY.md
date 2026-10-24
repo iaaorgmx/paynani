@@ -586,7 +586,7 @@ camino aparte. Ejemplo de `sms.received`:
 
 | `event_type` | Sale de | Qué agrega al sobre |
 |---|---|---|
-| `sms.received` | `sms.in` | El texto completo se guarda aparte, como el cuerpo de un correo, y se ve con `paynani event show`. Del roster y con reglas que leer: `rules` (abajo). De un número al que la API le envió un SMS en los últimos 7 días (una orden `a_` con `sent` o `delivered`, contando desde el envío): `api_reply` `{token, token_id, order_id, agent_replies}`, y la línea dice `respuesta a la API: <token>` (y `el agente no contesta` si el token no lo permite). Si el texto es sólo STOP, BAJA, ALTO o CANCELAR, o START o ALTA: `api_optout` `stop` o `start` (PRD #491 FR-11 a FR-13) |
+| `sms.received` | `sms.in` | El texto completo se guarda aparte, como el cuerpo de un correo, y se ve con `paynani event show`. Del roster y con reglas que leer: `rules` (abajo). De un número al que la API le envió un SMS en los últimos 7 días (una orden `a_` con `sent` o `delivered`, contando desde el envío) de un token vigente (ni revocado ni vencido): `api_reply` `{token, token_id, order_id, agent_replies}`, y la línea dice `respuesta a la API: <token>` (y `el agente no contesta` si el token no lo permite). Si el texto es sólo STOP, BAJA, ALTO o CANCELAR, o START o ALTA: `api_optout` `stop` o `start` (PRD #491 FR-11 a FR-13) |
 | `call.missed` | `call.missed` | `started_at` |
 | `call.answered` | `call.answered` | `started_at`, `duration_s` |
 | `sms.gateway.offline` | Sin latido en 3 × `heartbeat_s` | `device_id`, `last_seen` |

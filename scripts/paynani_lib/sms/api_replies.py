@@ -136,6 +136,33 @@ def agent_replies(tokens_path: Path | None, token_id: str) -> bool:
     return False
 
 
+def token_active(tokens_path: Path | None, token_id: str, now: datetime | None = None) -> bool:
+    """
+    ¿El token sigue vigente (ni revocado ni vencido)? Un token revocado o vencido ya no
+    puede leer sus respuestas, así que su conversación deja de contar: el siguiente SMS
+    de ese número llega sin marca y el agente lo atiende con sus reglas. Si no se puede
+    leer `api_tokens.json`, cuenta como vigente, que es lo que pasaba antes.
+    """
+    if not tokens_path or not token_id:
+        return True
+    try:
+        records = json.loads(Path(tokens_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    if isinstance(records, dict):
+        records = records.get("tokens", [])
+    if not isinstance(records, list):
+        return True  # Una forma que no entendemos cuenta como vigente, igual que un archivo ilegible.
+    record = next((r for r in records if isinstance(r, dict) and r.get("prefix") == token_id), None)
+    if record is None:
+        return True
+    if record.get("revoked_at"):
+        return False
+    expires = _epoch(record.get("expires_at")) if record.get("expires_at") else None
+    moment = (now or datetime.now(timezone.utc)).timestamp()
+    return expires is None or expires > moment
+
+
 # --- La lista de bajas ----------------------------------------------------------------
 
 def _path(store) -> Path:
