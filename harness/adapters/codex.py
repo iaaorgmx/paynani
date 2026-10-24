@@ -13,6 +13,7 @@ rotation renumbers bytes. The session-side replay reads by byte offset, so a
 rotated spool would either repeat mail or step over mail nobody saw.
 """
 
+import fcntl
 import os
 import json
 import shutil
@@ -65,21 +66,29 @@ def status_path():
     return _state_dir() / STATUS_RELATIVE
 
 
-def _note_status(kind, event_id, detail=""):
+def _note_status(kind, event_id, detail="", session_id=""):
     """Keep independent last-known Codex delivery facts for `paynani status`."""
     path = status_path()
     try:
-        current = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        current = {}
-    current[kind] = {
-        "event_id": str(event_id or ""),
-        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "detail": detail,
-    }
-    try:
-        _write_text_atomic(path, json.dumps(current, indent=2, sort_keys=True))
-        os.chmod(path, 0o600)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(session_path().with_suffix(".session.lock"), "a") as lock:
+            os.fchmod(lock.fileno(), 0o600)
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                current = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(current, dict):
+                    current = {}
+            except (OSError, ValueError):
+                current = {}
+            current[kind] = {
+                "event_id": str(event_id or ""),
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "detail": detail,
+            }
+            if session_id:
+                current[kind]["session_id"] = session_id
+            _write_text_atomic(path, json.dumps(current, indent=2, sort_keys=True))
+            os.chmod(path, 0o600)
     except OSError:
         pass
 
@@ -208,15 +217,6 @@ def _registered_session_id():
         return None
 
 
-def _forget_registered_session():
-    try:
-        session_path().unlink()
-    except FileNotFoundError:
-        pass
-    except OSError:
-        pass
-
-
 def _event_prompt(envelope):
     return ev.codex_event_prompt(_event_id(envelope))
 
@@ -226,7 +226,7 @@ def _event_id(envelope):
     return event_id.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
 
 
-def _classify_queue_result(run):
+def _classify_queue_result(run, session_id, event_id):
     stderr = run.stderr or ""
     if run.returncode == 0:
         # A successful queue call proves that Codex accepted the prompt for a
@@ -237,7 +237,8 @@ def _classify_queue_result(run):
     if run.returncode == 2:
         return config("codex queue usage failed")
     if run.returncode == 1 and "No active session found" in stderr:
-        _forget_registered_session()
+        _note_status("last_queue_error", event_id,
+                     "No active session found; kept registration for retry", session_id)
         return None
     if run.returncode == 1 and "attempt to write a readonly database" in stderr:
         return config("codex queue was run inside the Codex sandbox")
@@ -260,7 +261,7 @@ def _queue_live_session(envelope):
         return config(f"{binary} queue did not return within {TIMEOUT}s")
     except OSError as exc:
         return config(f"{binary} queue could not be run: {exc}")
-    return _classify_queue_result(run)
+    return _classify_queue_result(run, session_id, _event_id(envelope))
 
 
 def _start_agent_run(envelope):
