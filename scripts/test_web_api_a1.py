@@ -112,6 +112,15 @@ for _ in range(60):
 check(boundary.admit_call("another-token") == 60, "minute limit")
 clock.now += 60
 check(boundary.admit_call("another-token") == 0, "minute window expires")
+for n in range(api_auth.PRUNE_ABOVE + 1):
+    boundary.fail(str(n))
+boundary.blocked["expired-block"] = clock.now + 900
+clock.now += 901
+boundary.fail("new-address")
+check(len(boundary.failures) == 1 and not boundary.blocked, "old addresses and blocks are pruned")
+boundary.blocked["one-expired-block"] = clock.now - 1
+check(boundary.blocked_for("one-expired-block") == 0 and "one-expired-block" not in boundary.blocked,
+      "single expired block removed on lookup")
 
 limits = api_auth.Limits()
 results = []
