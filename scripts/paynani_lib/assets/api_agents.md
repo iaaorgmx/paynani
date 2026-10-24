@@ -65,7 +65,7 @@ profile and password are not in the API.
 | Action | Parameters | Returns |
 |---|---|---|
 | `GetTokenInfo` | | The token's name, prefix (`pn_` + 8), permissions, limits, expiry and last use |
-| `GetUsage` | | Calls and SMS used in the current minute, hour and day |
+| `GetUsage` | | Accepted calls and queued SMS for this token in rolling 60-second, 1-hour and 24-hour windows; includes this call |
 
 ### Mail
 

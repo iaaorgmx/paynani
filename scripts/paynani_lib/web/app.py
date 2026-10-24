@@ -496,6 +496,7 @@ def make_handler(ctx: Context):
             try:
                 outcome, record = api_tokens.lookup(token, path=api_tokens.path_for(self.CTX.user_path()))
             except (OSError, ValueError):
+                self._api_audit("internal_error", request_id, api_security.safe_prefix(token), address)
                 self._api_reply(500, request_id, code="internal_error", message="Token store unavailable.")
                 return
             if outcome != "ok":
@@ -517,6 +518,7 @@ def make_handler(ctx: Context):
             try:
                 api_tokens.touch(record["sha256"], path=api_tokens.path_for(self.CTX.user_path()))
             except (OSError, ValueError):
+                self._api_audit("internal_error", request_id, record.get("prefix", ""), address)
                 self._api_reply(500, request_id, code="internal_error", message="Token store unavailable.")
                 return
             # A3 #495: la acción, con su permiso (FR-5). Las demás tareas suman las suyas
