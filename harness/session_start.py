@@ -17,7 +17,7 @@ Never fails the session: any unexpected error degrades to a quiet no-op, because
 broken hook must not be able to block startup.
 """
 
-import calendar, json, os, pathlib, platform, re, secrets, select, shutil, subprocess, sys, time
+import calendar, fcntl, json, os, pathlib, platform, re, secrets, select, shutil, subprocess, sys, time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import event as ev
@@ -702,16 +702,60 @@ def remember_codex_session(payload):
     if not session_id:
         return
     try:
-        write_text_atomic(CODEX_SESSION, session_id + "\n")
+        CODEX_SESSION.parent.mkdir(parents=True, exist_ok=True)
+        with open(CODEX_SESSION.with_suffix(".session.lock"), "a") as lock:
+            os.fchmod(lock.fileno(), 0o600)
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            write_text_atomic(CODEX_SESSION, session_id + "\n")
+            note_codex_session("last_register", session_id, "SessionStart registered session")
     except OSError:
         pass
 
 
-def forget_codex_session():
+def forget_codex_session(payload):
+    """An older thread ending must not unregister a newer live thread."""
+    session_id = str(payload.get("session_id") or "").strip()
     try:
-        CODEX_SESSION.unlink()
-    except FileNotFoundError:
+        CODEX_SESSION.parent.mkdir(parents=True, exist_ok=True)
+        with open(CODEX_SESSION.with_suffix(".session.lock"), "a") as lock:
+            os.fchmod(lock.fileno(), 0o600)
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                registered = CODEX_SESSION.read_text(encoding="utf-8").strip()
+            except FileNotFoundError:
+                registered = ""
+            if session_id and registered == session_id:
+                CODEX_SESSION.unlink()
+                note_codex_session("last_forget", session_id, "SessionEnd matched registered session")
+            else:
+                reason = ("SessionEnd missing session_id" if not session_id
+                          else "SessionEnd did not match registered session")
+                note_codex_session("last_session_end_ignored", session_id, reason)
+    except OSError:
         pass
+
+
+def note_codex_session(kind, session_id, reason):
+    """Record a registration decision while the session lock is held."""
+    _write_codex_status_unlocked(kind, {
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "actor": "SessionStart" if kind == "last_register" else "SessionEnd",
+        "session_id": session_id,
+        "reason": reason,
+    })
+
+
+def _write_codex_status_unlocked(kind, entry):
+    try:
+        current = json.loads(CODEX_STATUS.read_text(encoding="utf-8"))
+        if not isinstance(current, dict):
+            current = {}
+    except (OSError, ValueError):
+        current = {}
+    current[kind] = entry
+    try:
+        write_text_atomic(CODEX_STATUS, json.dumps(current, indent=2, sort_keys=True))
+        os.chmod(CODEX_STATUS, 0o600)
     except OSError:
         pass
 
@@ -811,18 +855,17 @@ def codex_replayed(spool_lines):
                               detail="session-start replay")
         except (OSError, ValueError):
             pass
-    try:
-        current = json.loads(CODEX_STATUS.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        current = {}
-    current["last_replay"] = {
+    entry = {
         "event_id": event_ids[-1] if event_ids else "",
         "count": len(spool_lines),
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     try:
-        write_text_atomic(CODEX_STATUS, json.dumps(current, indent=2, sort_keys=True))
-        os.chmod(CODEX_STATUS, 0o600)
+        CODEX_SESSION.parent.mkdir(parents=True, exist_ok=True)
+        with open(CODEX_SESSION.with_suffix(".session.lock"), "a") as lock:
+            os.fchmod(lock.fileno(), 0o600)
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            _write_codex_status_unlocked("last_replay", entry)
     except OSError:
         pass
 
@@ -1077,7 +1120,7 @@ def main():
         return 0
     runtime = selected_runtime()
     if "--session-end" in sys.argv[1:]:
-        forget_codex_session()
+        forget_codex_session(read_hook_input())
         return 0
     payload = read_hook_input() if runtime in ("codex", "claudecode") else {}
     if runtime == "codex":

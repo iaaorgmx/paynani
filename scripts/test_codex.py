@@ -161,7 +161,33 @@ class SpoolDelivery(unittest.TestCase):
         self.assertTrue(result.ok, result.detail)
         self.assertEqual(self.last_spool_record()["notification_text"], "queued")
         self.assertFalse(codex.offset_path().exists())
-        self.assertFalse(codex.session_path().exists())
+        self.assertEqual(codex.session_path().read_text(encoding="utf-8"), "thread-1\n")
+        status = json.loads(codex.status_path().read_text(encoding="utf-8"))
+        self.assertEqual(status["last_queue_error"]["event_id"], "evt-1")
+        self.assertEqual(status["last_queue_error"]["session_id"], "thread-1")
+
+    def test_queue_retries_the_same_registered_session_after_no_active_error(self):
+        self.register_session()
+        calls = []
+
+        def run(command, **_kwargs):
+            calls.append(command)
+            if len(calls) == 1:
+                return self.queue_result(1, stderr="No active session found")
+            return self.queue_result(0)
+
+        with mock.patch.object(codex, "find_binary", lambda: "/usr/bin/codex"):
+            with mock.patch.object(codex.subprocess, "run", run):
+                first = codex.deliver(envelope("first", event_id="evt-first"))
+                second = codex.deliver(envelope("second", event_id="evt-second"))
+        self.assertTrue(first.ok)
+        self.assertTrue(second.ok)
+        self.assertEqual(second.lifecycle, "dispatched")
+        self.assertEqual([command[command.index("--thread") + 1] for command in calls],
+                         ["thread-1", "thread-1"])
+        self.assertEqual([record["event_id"] for record in self.spool_records()],
+                         ["evt-first", "evt-second"])
+        self.assertFalse(codex.offset_path().exists())
 
     def test_queue_readonly_database_is_config(self):
         self.register_session()
@@ -303,6 +329,9 @@ class SpoolReplay(unittest.TestCase):
     def test_session_start_registers_session_id_from_stdin(self):
         self._emit(stdin_text='{"session_id":"thread-123","hook_event_name":"SessionStart"}')
         self.assertEqual(self.session.read_text(encoding="utf-8"), "thread-123\n")
+        status = json.loads((self.state / "codex.delivery.json").read_text(encoding="utf-8"))
+        self.assertEqual(status["last_register"]["session_id"], "thread-123")
+        self.assertEqual(status["last_register"]["actor"], "SessionStart")
 
     def test_empty_stdin_does_not_break_or_register_a_session(self):
         raw, payload = self._emit(stdin_text="")
@@ -319,9 +348,30 @@ class SpoolReplay(unittest.TestCase):
     def test_session_end_removes_the_registered_session(self):
         self.session.parent.mkdir(parents=True, exist_ok=True)
         self.session.write_text("thread-123\n", encoding="utf-8")
-        raw, _ = self._emit(argv=["session_start.py", "--session-end"])
+        raw, _ = self._emit(stdin_text='{"session_id":"thread-123","hook_event_name":"SessionEnd"}',
+                            argv=["session_start.py", "--session-end"])
         self.assertEqual(raw, "")
         self.assertFalse(self.session.exists())
+        status = json.loads((self.state / "codex.delivery.json").read_text(encoding="utf-8"))
+        self.assertEqual(status["last_forget"]["session_id"], "thread-123")
+        self.assertEqual(status["last_forget"]["actor"], "SessionEnd")
+
+    def test_older_session_end_does_not_erase_a_live_session(self):
+        self.session.parent.mkdir(parents=True, exist_ok=True)
+        self.session.write_text("thread-current\n", encoding="utf-8")
+        self._emit(stdin_text='{"session_id":"thread-older","hook_event_name":"SessionEnd"}',
+                   argv=["session_start.py", "--session-end"])
+        self.assertEqual(self.session.read_text(encoding="utf-8"), "thread-current\n")
+        status = json.loads((self.state / "codex.delivery.json").read_text(encoding="utf-8"))
+        self.assertEqual(status["last_session_end_ignored"]["session_id"], "thread-older")
+
+    def test_session_end_without_identity_does_not_erase_a_live_session(self):
+        self.session.parent.mkdir(parents=True, exist_ok=True)
+        self.session.write_text("thread-current\n", encoding="utf-8")
+        self._emit(argv=["session_start.py", "--session-end"])
+        self.assertEqual(self.session.read_text(encoding="utf-8"), "thread-current\n")
+        status = json.loads((self.state / "codex.delivery.json").read_text(encoding="utf-8"))
+        self.assertEqual(status["last_session_end_ignored"]["session_id"], "")
 
     def test_everything_is_replayed_from_a_cold_start(self):
         self.spool.write_text("one\ntwo\n", encoding="utf-8")
