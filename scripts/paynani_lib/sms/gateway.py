@@ -828,6 +828,9 @@ class Gateway:
         except OSError as exc:
             log(f"no se pudo leer orders.jsonl para las respuestas de la API ({exc})")
             conv = None
+        # Un token revocado o vencido ya no lee sus respuestas: su conversación no cuenta.
+        if conv and not api_replies.token_active(self.api_tokens_path, conv["token_id"]):
+            conv = None
         if conv:
             conv["agent_replies"] = api_replies.agent_replies(self.api_tokens_path, conv["token_id"])
         optout = api_replies.keyword(text) if e164 else None

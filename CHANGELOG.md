@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- **Un token revocado o vencido ya no silencia al agente** (hallazgo después de A9 #501, PRD #491 FR-11). Las respuestas de un número al que le escribió un token revocado o vencido seguían llegando marcadas «respuesta a la API: <token>, el agente no contesta» durante 7 días, aunque ese token ya no podía leerlas. Ahora su conversación deja de contar: el SMS llega sin marca y el agente lo atiende con sus reglas. Un STOP sigue dando de baja el número, pero sin la confirmación de ese token.
 ## 0.16.0 (2026-10-24)
 
 **El dueño envía SMS desde PaynaniWeb, y otros agentes o programas usan paynani por
