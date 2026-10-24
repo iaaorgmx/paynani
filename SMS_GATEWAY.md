@@ -179,6 +179,16 @@ Lo primero que manda la app:
 mismos campos que `device.status` (sección 3) pero sin `id`, para que la pasarela la
 tenga en cuanto el teléfono se reconecta. Una app anterior no lo manda.
 
+`accepts_owner_out` y `accepts_api_out` son opcionales (PaynaniApp 0.9.0, PRD #489
+FR-17 y PRD #491 FR-19). Con `true` la app dice que acepta órdenes `sms.out` del dueño
+desde PaynaniWeb y de la API (sección 4). Sólo cuenta el booleano `true`: `"true"`, `1`
+o la ausencia del campo valen como `false`. La pasarela lo guarda en `device.json`, y
+la web y la API lo leen para pedir «Actualiza PaynaniApp» cuando falta.
+
+```json
+{"type": "hello", …, "accepts_owner_out": true, "accepts_api_out": true}
+```
+
 La pasarela contesta:
 
 ```json
@@ -423,8 +433,31 @@ antes, la app reenvía y la idempotencia evita el duplicado.
  "expires_at": "2026-10-02T03:40:00Z"}
 ```
 
-- `id` lo genera la pasarela (`o_` + 16 bytes al azar en hex, `^o_[0-9a-f]{32}$`). Es la
-  llave de la orden de principio a fin, y cualquier otra forma se rechaza.
+- `id` lo genera la pasarela: un prefijo y 16 bytes al azar en hex,
+  `^[owa]_[0-9a-f]{32}$`. Es la llave de la orden de principio a fin, y cualquier otra
+  forma se rechaza. El prefijo dice quién pidió el envío:
+
+  | Prefijo | `origin` | Quién | Desde |
+  |---|---|---|---|
+  | `o_` | (no va) | El agente, con `paynani sms send` | siempre |
+  | `w_` | `owner` | El dueño, desde PaynaniWeb (PRD #489) | PaynaniApp 0.9.0 |
+  | `a_` | `api` | Un programa con un token de la API (PRD #491); va `token` con el nombre del token | PaynaniApp 0.9.0 |
+
+  ```json
+  {"type": "sms.out", "id": "w_9c2d…", "to": "+525588887777", "text": "Ya está su pedido.",
+   "expires_at": "2026-10-24T13:15:00Z", "origin": "owner"}
+  ```
+
+- **El `origin` tiene que coincidir con el prefijo.** Una `w_` que dice `origin: api`, o
+  una `w_` sin `origin`, es inválida: la pasarela no la manda y la app la rechaza con
+  `bad_origin`. Así una orden no se salta la capacidad que anunció el teléfono.
+- La pasarela sólo manda una `w_` a una app que anunció `accepts_owner_out: true`, y una
+  `a_` a una que anunció `accepts_api_out: true`. Con una app anterior esas órdenes
+  esperan en `outbox/` y vencen a su hora (`expired`), sin salir.
+- Las `w_` y las `a_` **no** pasan por `allowed` ni por `max_out_per_hour`, ni cuentan
+  para ese tope, que es del agente. Sus topes los pone la pasarela antes de crearlas
+  (por hora para el dueño, por token para la API). Sí pasan por `expires_at` y por la
+  validación del texto.
 - **La app deduplica por `id`.** Al reconectar, la pasarela vuelve a mandar las órdenes
   que todavía no tienen ningún `sms.status`; la app no envía dos veces un `id` que ya
   recibió, y contesta con el estado que ya conoce.
@@ -457,11 +490,30 @@ orden no se confunden ni uno descarta al otro como `duplicate`.
 | `sent` | El `sentIntent` de Android confirmó el envío a la red |
 | `delivered` | El `deliveryIntent` confirmó la entrega. No todas las redes lo reportan |
 | `failed` | Android reportó error. Va `error` con el código (`RESULT_ERROR_GENERIC_FAILURE`, `RESULT_ERROR_NO_SERVICE`, etc.) |
-| `rejected` | La app no lo envió: número fuera de `allowed`, tope por hora excedido o texto vacío. Va `error` con la razón |
+| `rejected` | La app no lo envió: número fuera de `allowed`, tope por hora excedido, texto vacío o `origin` que no coincide con el prefijo (`bad_origin`). Va `error` con la razón |
 | `expired` | Llegó después de `expires_at` |
 
 Los `sms.status` van por la misma cola con `ack` que los mensajes de la sección 3: un
 estado no se pierde si se cae la conexión.
+
+### Las órdenes del dueño desde PaynaniWeb (PRD #489 FR-14, FR-15)
+
+La app no manda `sms.human` por una `w_`: la pasarela ya la registra con sus
+`sms.status` (FR-20), así no hay duplicados.
+
+- Cada `sms.status` de una `w_` va a `human.jsonl` como un SMS del dueño, con
+  `origin: web` y el id de la orden como `local_id`.
+- El primer `sent` o `failed` escribe un evento `sms.human_sent` con `origin: web`, y la
+  línea dice «Tú (PaynaniWeb) → …».
+- El `sent` pausa al agente con ese número durante `agent_pause_min` minutos, si el
+  dueño marcó la casilla al enviar. La pausa empieza con la hora del `sms.status` sólo
+  si cae dentro del mismo rango que acepta `sms.human`; si no, con la hora de la
+  pasarela. Nunca empieza después de la hora de la pasarela.
+- `paynani sms thread` y la web la muestran como del dueño, «vía web», con su último
+  estado (en cola, vencido, enviado, entregado o fallido).
+
+En «Mensajes» de PaynaniApp, la burbuja lleva la marca «desde PaynaniWeb», o
+«API: <token>» para una `a_`.
 
 ### Del lado del agente
 
@@ -769,6 +821,9 @@ anuncia en `accepts` nunca los recibe, y una app que no los manda sólo deja la 
 como desconocida. `sms.human` entró igual: con una pasarela que no lo anuncia, el SMS
 del humano sale y la app sólo avisa que paynani no lo recibe. Los mensajes del Roster
 (sección 11) también: con una pasarela que no los anuncia, la app no muestra «Roster».
+Las órdenes `w_` y `a_` (sección 4) entraron al revés: es la app la que anuncia
+`accepts_owner_out` y `accepts_api_out` en el `hello`, y una app que no lo anuncia nunca
+las recibe.
 Un cambio que rompe a la otra parte sube `protocol` y se documenta aquí antes de
 escribir el código.
 
