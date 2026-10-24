@@ -27,6 +27,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import api_replies
 from . import config as sms_config
 from . import roster_api
 from . import store as store_mod
@@ -161,7 +162,7 @@ class Gateway:
                  offline_after_s: int = OFFLINE_AFTER_S, health_every_s: float = HEALTH_EVERY_S,
                  battery_warn_pct: int = 25, battery_critical_pct: int = 10,
                  battery_stale_s: int = BATTERY_STALE_S, roster_service=None,
-                 web_port: int = WEB_PORT, web_host: str = "127.0.0.1"):
+                 web_port: int = WEB_PORT, web_host: str = "127.0.0.1", api_tokens_path: Path | None = None):
         self.store = store_mod.Store(state_dir)
         self.journal = Path(journal)
         self.ledger_path = ledger.path_for(self.journal)
@@ -194,6 +195,8 @@ class Gateway:
         self.web_port = web_port
         self.web_host = web_host
         self.web_down = False   # para decir en el log cuándo cae y cuándo vuelve, no en cada petición
+        # Los tokens de la API (PRD #491), para saber si el agente contesta sus respuestas (FR-12).
+        self.api_tokens_path = Path(api_tokens_path) if api_tokens_path else None
 
     # --- HTTP -------------------------------------------------------------
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -800,9 +803,11 @@ class Gateway:
             return
         raw, e164, name, in_roster = self._who(msg["from"])
         rules_note = self._rules_note(e164) if in_roster else None
+        conv, optout = self._api_reply(e164, text)
         envelope = ev.sms_event(device_id=device_id, message_id=mid, e164=e164, raw_sender=raw, rules=rules_note,
                                 sender_name=name, text=text, sent_at=str(msg.get("sent_at", "")),
-                                roster_match=in_roster, local_time=time.strftime("%H:%M:%S"))
+                                roster_match=in_roster, local_time=time.strftime("%H:%M:%S"),
+                                api_reply=conv, api_optout=optout[0] if optout else None)
         try:
             result = self._journal(mid, envelope, {
                 "type": "sms.in", "from_raw": raw, "from_e164": e164, "text": text,
@@ -811,8 +816,46 @@ class Gateway:
         except (OSError, ValueError) as exc:
             log(f"no se pudo escribir el evento ({exc}); no se manda ack, el teléfono reintentará")
             return
+        if optout and result != "duplicate":
+            self._api_optout(e164, optout, conv)
         await self._send(ws, {"type": "ack", "id": mid, "result": result,
                               "event_id": envelope["event_id"]})
+
+    def _api_reply(self, e164, text):
+        """(la conversación de la API a la que responde, (stop|start, palabra) o None) (PRD #491 FR-11, FR-13)."""
+        try:
+            conv = api_replies.conversation(self.store, e164)
+        except OSError as exc:
+            log(f"no se pudo leer orders.jsonl para las respuestas de la API ({exc})")
+            conv = None
+        if conv:
+            conv["agent_replies"] = api_replies.agent_replies(self.api_tokens_path, conv["token_id"])
+        optout = api_replies.keyword(text) if e164 else None
+        return conv, optout
+
+    def _api_optout(self, e164: str, optout: tuple, conv: dict | None) -> None:
+        """
+        STOP o START (FR-13): cambia la lista y, si cambió y el número tenía una
+        conversación de la API en los últimos 7 días, le confirma una vez por la API
+        (una orden `a_` del mismo token), no por el agente.
+        """
+        kind, word = optout
+        try:
+            changed = api_replies.set_opt_out(self.store, e164, kind == "stop", by="sms", word=word)
+        except (OSError, ValueError) as exc:
+            log(f"no se pudo cambiar la lista de bajas de la API ({exc})")
+            return
+        if not changed:
+            return
+        log(f"{'baja' if kind == 'stop' else 'alta'} de la API para un número ({word})")
+        if not conv or not self.store.accepts("api"):
+            return
+        from . import outgoing  # aquí: outgoing importa status_id de este módulo
+        try:
+            outgoing.queue(self.store, to=e164, text=api_replies.confirmation(kind, word), origin="api",
+                           token=conv.get("token", ""), token_id=conv["token_id"], source="pasarela")
+        except outgoing.Refused as exc:
+            log(f"no se pudo encolar la confirmación de la {'baja' if kind == 'stop' else 'alta'} ({exc.code})")
 
     async def _call(self, ws, device_id, msg) -> None:
         cid = str(msg.get("id", ""))

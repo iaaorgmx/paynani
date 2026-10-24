@@ -69,10 +69,49 @@ def _preview(item: dict) -> str:
 
 def _new_button(phone_state: str) -> str:
     th = i18n.th
+    optout = f' <a class="secundario" href="/messages/bajas">{th("web.sms.optout.link")}</a>'
     if phone_state == PHONE_OK:
-        return f'<p class="acciones"><a class="boton primario" href="/messages/nuevo">{th("web.sms.new")}</a></p>'
+        return f'<p class="acciones"><a class="boton primario" href="/messages/nuevo">{th("web.sms.new")}</a>{optout}</p>'
     return (f'<p class="acciones"><span class="boton primario deshabilitado" aria-disabled="true">{th("web.sms.new")}</span>'
-            f' <span class="quiet">{th("web.sms." + phone_state)}</span></p>')
+            f' <span class="quiet">{th("web.sms." + phone_state)}</span>{optout}</p>')
+
+
+def optout_body(rows: list[dict], csrf: str, notice: str = "", error: str = "", value: str = "") -> str:
+    """
+    La lista de bajas de la API (PRD #491 FR-13): los números que mandaron STOP (o que
+    el dueño dio de baja aquí), con «Quitar de la lista», y un formulario para agregar.
+    """
+    th = i18n.th
+    out = [f'<p class="volver"><a href="/messages">← {th("web.sms.back")}</a></p>',
+           f'<p class="lead">{th("web.sms.optout.lead")}</p>']
+    if notice:
+        out.append(f'<p class="aviso-ok" role="status">{e(notice)}</p>')
+    out.append(_error_box(error))
+    out.append(f"""<form method="post" action="/messages/bajas" class="formulario en-linea">
+  <input type="hidden" name="csrf" value="{e(csrf)}">
+  <input type="hidden" name="accion" value="agregar">
+  <label for="optout-n">{th("web.sms.optout.add_label")}</label>
+  <input id="optout-n" name="n" required maxlength="40" inputmode="tel" value="{e(value)}">
+  <button type="submit" class="secundario">{th("web.sms.optout.add")}</button>
+</form>""")
+    if not rows:
+        out.append(f'<p class="quiet">{th("web.sms.optout.empty")}</p>')
+        return "\n".join(out) + "\n"
+    out.append('<ul class="contactos bajas">')
+    for row in rows:
+        how = (th("web.sms.optout.by_sms", word=str(row.get("keyword", "")).upper())
+               if row.get("by") == "sms" else th("web.sms.optout.by_web"))
+        out.append(f"""<li>
+  <div class="contacto"><b>{e(row["number"])}</b> <span class="quiet">{e(how)} · {e(_local(str(row.get("at", ""))))}</span></div>
+  <form method="post" action="/messages/bajas" class="acciones-fila">
+    <input type="hidden" name="csrf" value="{e(csrf)}">
+    <input type="hidden" name="accion" value="quitar">
+    <input type="hidden" name="n" value="{e(row["number"])}">
+    <button type="submit" class="secundario">{th("web.sms.optout.remove")}</button>
+  </form>
+</li>""")
+    out.append("</ul>")
+    return "\n".join(out) + "\n"
 
 
 def list_body(convs: list[dict], names: dict, offset: int, next_offset: int | None, total: int,
