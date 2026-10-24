@@ -187,8 +187,13 @@ class Store:
                     order = json.loads(path.read_text(encoding="utf-8"))
                 except (OSError, ValueError):
                     continue
-                if valid_order_id(order.get("id")) and path.stem == order["id"]:
-                    orders.append(order)
+                if not (valid_order_id(order.get("id")) and path.stem == order["id"]):
+                    continue
+                # El origin del JSON debe coincidir con el prefijo del id: una w_ que dice
+                # origin "api" se saltaría la capacidad que anunció el teléfono. Inválida, no sale.
+                if (order.get("origin") or "agent") != origin:
+                    continue
+                orders.append(order)
         return orders
 
     def pending_orders(self, origins=("agent",)) -> list[dict]:
@@ -241,7 +246,8 @@ class Store:
         if origin == "agent":
             return True
         device = self.device() or {}
-        return bool(device.get({"owner": "accepts_owner_out", "api": "accepts_api_out"}.get(origin, ""), False))
+        # Sólo un true booleano cuenta: "false", 1 o un estado viejo no habilitan nada.
+        return device.get({"owner": "accepts_owner_out", "api": "accepts_api_out"}.get(origin, "")) is True
 
     def append_status(self, record: dict) -> bool:
         """

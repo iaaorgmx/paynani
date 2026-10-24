@@ -1040,8 +1040,14 @@ class Gateway:
         phones = roster_phones(self.roster_path)
         pause = order.get("agent_pause_min", 0)
         pause = pause if isinstance(pause, int) and not isinstance(pause, bool) and 0 <= pause <= PAUSE_MAX_MIN else 0
-        at_s = _iso_epoch(at) or self.clock()
-        pause_until = iso_utc(at_s + pause * 60) if status == "sent" and pause > 0 and e164 else None
+        # La hora viene de la app: se usa sólo dentro del mismo rango que sms.human, y la
+        # pausa nunca empieza después de la hora de la pasarela (una trama con at=2099 no
+        # deja al agente pausado décadas).
+        now = self.clock()
+        at_s = _iso_epoch(at)
+        if at_s is None or not (-BATTERY_PAST_S <= at_s - now <= BATTERY_FUTURE_S):
+            at_s = now
+        pause_until = iso_utc(min(at_s, now) + pause * 60) if status == "sent" and pause > 0 and e164 else None
         hid = human_status_id(oid, status)
         human = {"id": hid, "local_id": oid, "to": e164 or to, "status": status, "at": iso_utc(at_s),
                  "agent_pause_min": pause, "origin": "web"}

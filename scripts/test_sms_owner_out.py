@@ -212,6 +212,38 @@ async def main():
           [(i["kind"], i["via"], i["status"]) for i in held] or [(None, None, None)])
     del pending
 
+    # Una trama con hora del futuro lejano no deja al agente pausado décadas (revisión #514).
+    future = outgoing.queue(st, to=ANA, text="Del futuro", origin="owner", source=WEB, agent_pause_min=30)
+    await recv_until(ws, "sms.out")
+    far = status(future["id"], "sent")
+    far["at"] = "2099-01-01T00:00:00Z"
+    await ws.send_text(json.dumps(far))
+    await recv_until(ws, "ack")
+    e = events("sms.human_sent")[-1]
+    until = gw._iso_epoch(e.get("pause_until"))
+    check("at=2099: la pausa empieza con la hora de la pasarela", True,
+          until is not None and until <= time.time() + 30 * 60 + 5)
+    check("at=2099: el evento no lleva el año 2099", False, "2099" in json.dumps(e))
+    await ws.close()
+    await asyncio.sleep(0.3)
+
+    # --- 3. Capacidades: sólo true booleano; el origin debe coincidir con el prefijo ---
+    for bogus in ("false", 1, "true", None):
+        st.touch(accepts_owner_out=bogus, accepts_api_out=bogus)
+        check(f"device.json con {bogus!r}: no acepta", (False, False), (st.accepts("owner"), st.accepts("api")))
+
+    disguised = outgoing.queue(st, to=CLIENT, text="Disfrazada", origin="owner", source=WEB)
+    order = st.order(disguised["id"])
+    order["origin"] = "api"
+    st.queue_order(order)
+    check("w_ con origin api: pending_orders no la da como del dueño", False,
+          disguised["id"] in [o["id"] for o in st.pending_orders(origins=("owner", "api"))])
+    ws = await connect(port, token, device_id, accepts_owner_out=True)
+    outs = await collect(ws, "sms.out", 2.5)
+    check("w_ con origin api: la app que sólo acepta las del dueño no la recibe", False,
+          disguised["id"] in [m["id"] for m in outs])
+    check("w_ con origin api: nada sale con origin api", False, any(m.get("origin") == "api" for m in outs))
+
     await ws.close()
     server.close()
     await g.shutdown()
