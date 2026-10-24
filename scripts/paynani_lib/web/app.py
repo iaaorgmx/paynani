@@ -29,7 +29,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (accounts_pages, api_auth, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell,
+from . import (accounts_pages, api_actions, api_auth, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell,
                thread, users)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -485,9 +485,27 @@ def make_handler(ctx: Context):
             except (OSError, ValueError):
                 self._api_reply(500, request_id, code="internal_error", message="Token store unavailable.")
                 return
-            # A1 provides the common authentication boundary. Later tasks add
-            # actions without changing how credentials and limits are enforced.
-            self._api_reply(400, request_id, code="invalid_action", message="Unknown API action.")
+            # A3 #495: la acción, con su permiso (FR-5). Las demás tareas suman las suyas
+            # en api_actions.ACTIONS sin tocar la autenticación de arriba.
+            try:
+                result = api_actions.run(self.CTX, record, address, data)
+            except api_actions.ApiError as exc:
+                self._api_error(exc, request_id)
+                return
+            except Exception as exc:  # noqa: BLE001 -- un error interno no deja la conexión sin respuesta
+                sys.stderr.write(f"paynani-web: api {data.get('action')!r} {request_id}: {type(exc).__name__}\n")
+                self._api_reply(500, request_id, code="internal_error", message="Internal error.")
+                return
+            body = {"result": "success", **result, "request_id": request_id}
+            self._send(200, "application/json; charset=UTF-8", json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                       [("X-Request-Id", request_id), ("Cache-Control", "no-store")])
+
+        def _api_error(self, exc, request_id: str):
+            result = {"result": "error", "code": exc.code, "message": exc.message, **exc.extra,
+                      "request_id": request_id}
+            self._send(exc.status, "application/json; charset=UTF-8",
+                       json.dumps(result, ensure_ascii=False).encode("utf-8"),
+                       [("X-Request-Id", request_id), ("Cache-Control", "no-store")])
 
         # ---- contexto de la petición -----------------------------------------
         def _begin(self):
