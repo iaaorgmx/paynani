@@ -94,7 +94,11 @@ class FakeOps:
             entry["smtp"] = {"host": smtp_host, "port": int(smtp_port)}
         return {"entry": entry}
 
+    fail_commit = ""
+
     def commit_add(self, prep, password):
+        if self.fail_commit:
+            raise accounts_cli.AccountOpError(self.fail_commit)
         self.calls.append(("add", prep["entry"]["id"], password))
 
     def _service(self, action, account_id):
@@ -221,6 +225,18 @@ check("SaveDefaultRules sin roster.write: forbidden", 403, status)
 
 status, body = api(reader, "ListRoster")
 etag, beto = body["etag"], next(m for m in body["members"] if m["name"] == "Beto")
+# Revisión de #518: un decimal no se trunca a otra fila.
+for action, extra in (("DeleteRosterContact", {"etag": "x"}), ("SaveRosterContact", {"name": "X", "etag": "x"})):
+    for bad in (1.5, "1.5", "1e0", True):
+        status, body = api(writer, action, row=bad, **extra)
+        check(f"{action} row={bad!r}: 400 invalid_parameter", (400, "invalid_parameter", "row"),
+              (status, body.get("code"), body.get("field")))
+for bad in (1.5, "2.0"):
+    status, body = api(reader, "ListMail", offset=bad)
+    check(f"ListMail offset={bad!r}: 400 invalid_parameter", (400, "invalid_parameter", "offset"),
+          (status, body.get("code"), body.get("field")))
+status, body = api(reader, "ListMail", offset="0")
+check("ListMail offset=\"0\" (texto de dígitos): sigue valiendo", 200, status)
 status, body = api(writer, "DeleteRosterContact")
 check("DeleteRosterContact sin fila: missing_parameter", (400, "row"), (status, body.get("field")))
 status, body = api(writer, "DeleteRosterContact", row=beto["row"], etag=etag)
@@ -247,6 +263,24 @@ check("AddAccount: success, probó IMAP y SMTP y prendió el listener", (200, ["
 check("AddAccount: guardó y activó", [("add", "soporte", "secreta"), ("enable", "soporte")], ops.calls[:2])
 check("AddAccount: aviso al dueño que dice que fue por la API", True,
       any("API token cuentas" in b for _, _, b in owner_mail))
+# Revisión de #518: si commit_add falla, la respuesta no trae la ruta ni el error del sistema.
+ops.fail_commit = "could not write (/private/secret/path/accounts.json: disk full). Everything written so far was put back."
+before = list(ops.calls)
+status, body = api(admin, "AddAccount", id="otra", email="otra@example.com", imap_host="mail.example.com",
+                   smtp_host="mail.example.com", password="secreta")
+ops.fail_commit = ""
+check("AddAccount con commit_add fallido: 500 internal_error", (500, "internal_error"), (status, body.get("code")))
+check("…y el mensaje es genérico, sin la ruta ni el detalle", (False, False),
+      ("/private/secret" in json.dumps(body), "disk full" in json.dumps(body)))
+check("…y no activó el listener", before, ops.calls)
+_orig_prepare = ops.prepare_add
+ops.prepare_add = lambda *a: (_ for _ in ()).throw(accounts_cli.AccountOpError(
+    "accounts.json is not usable: [Errno 13] Permission denied: '/srv/secret/state/accounts.json'"))
+status, body = api(admin, "AddAccount", id="otra", email="otra@example.com", imap_host="mail.example.com",
+                   smtp_host="mail.example.com", password="secreta")
+ops.prepare_add = _orig_prepare
+check("AddAccount con un error de accounts.json: 400 sin la ruta", (400, "invalid_account", False),
+      (status, body.get("code"), "/srv/secret" in json.dumps(body)))
 status, body = api(admin, "RemoveAccount", account="main")
 check("RemoveAccount de la cuenta del agente: 403 agent_account", (403, "agent_account"), (status, body["code"]))
 status, body = api(admin, "RemoveAccount", account="ventas")

@@ -10,7 +10,9 @@ de la web no están en la API (FR-4).
 """
 from __future__ import annotations
 
+import re
 import secrets
+import sys
 import time
 
 from .. import i18n
@@ -22,6 +24,14 @@ ACCOUNTS_WRITE = "accounts.write"
 
 PAGE = 50
 MAX_FIELD = 320
+
+
+_PATH = re.compile(r"(?:[A-Za-z]:)?[\\/][^\s'\"():,]+")
+
+
+def _public(exc: Exception) -> str:
+    """El mensaje de un error para la respuesta, sin rutas del servidor."""
+    return _PATH.sub("<path>", str(exc))
 
 
 class ApiError(Exception):
@@ -58,10 +68,14 @@ class Call:
             return default
         if isinstance(value, bool):
             raise ApiError(400, "invalid_parameter", f"{key} must be a whole number.", field=key)
-        try:
+        # Sólo un entero de JSON o un texto de dígitos: 1.5 o "1.5" no se truncan a 1, porque en
+        # SaveRosterContact o DeleteRosterContact eso tocaría otra fila.
+        if isinstance(value, int):
+            out = value
+        elif isinstance(value, str) and re.fullmatch(r"\s*[+-]?[0-9]+\s*", value):
             out = int(value)
-        except (TypeError, ValueError):
-            raise ApiError(400, "invalid_parameter", f"{key} must be a whole number.", field=key) from None
+        else:
+            raise ApiError(400, "invalid_parameter", f"{key} must be a whole number.", field=key)
         if out < 0:
             raise ApiError(400, "invalid_parameter", f"{key} cannot be negative.", field=key)
         return out
@@ -300,7 +314,7 @@ def add_account(call: Call) -> dict:
                                values["smtp_host"], values["smtp_port"] or 465, values["from_name"],
                                [values["mailbox"]] if values["mailbox"] else None)
     except accounts_cli.AccountOpError as exc:
-        raise ApiError(400, "invalid_account", str(exc)) from None
+        raise ApiError(400, "invalid_account", _public(exc)) from None
     entry = prep["entry"]
     checks = []
     imap = call.ctx.probe_imap(entry["imap"]["host"], entry["imap"]["port"], entry["email"], password)
@@ -315,7 +329,10 @@ def add_account(call: Call) -> dict:
     try:
         ops.commit_add(prep, password)
     except accounts_cli.AccountOpError as exc:
-        raise ApiError(500, "internal_error", str(exc), checks=checks) from None
+        # El detalle (rutas, el error del sistema) va al log; la respuesta es genérica.
+        sys.stderr.write(f"paynani-web: api AddAccount commit failed: {exc}\n")
+        raise ApiError(500, "internal_error", "The account could not be saved. Nothing was changed.",
+                       checks=checks) from None
     started = ops._service("enable", entry["id"])
     _notify(call, "added", entry["id"], entry["email"])
     return {"account": {"id": entry["id"], "email": entry["email"]}, "listener_started": bool(started),
@@ -334,7 +351,7 @@ def remove_account(call: Call) -> dict:
     try:
         call.ctx.account_ops.remove_account(account_id)
     except accounts_cli.AccountOpError as exc:
-        raise ApiError(400, "invalid_account", str(exc)) from None
+        raise ApiError(400, "invalid_account", _public(exc)) from None
     _notify(call, "removed", account_id, account["email"])
     return {"removed": account_id}
 
