@@ -20,15 +20,16 @@ git describe --tags          # tiene que decir v0.16.1
 python3 scripts/upgrade_plan.py --from v0.16.0     # y haz lo que imprima
 ```
 
-El plan reinicia la pasarela SMS. `scripts/healthcheck.py` y `scripts/paynani doctor`
-tienen que salir bien, y `version_drift` tiene que decir `ok`.
+El plan reinicia todos los servicios de paynani, porque cambia `VERSION`: el
+listener, los listeners por cuenta, el dispatcher, la pasarela SMS y PaynaniWeb.
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`.
 
 ### Si actualizas desde 0.15.1 o anterior
 
 Un solo salto desde la versión que tienes instalada; `upgrade_plan.py` calcula
 juntos los cambios de todas las versiones intermedias. Cambia `v0.15.1` por tu
-versión (la que dice `scripts/version.sh` antes de actualizar), y después sigue
-los pasos de «Si actualizas desde 0.15.1» de 0.16.0 (PaynaniApp 0.9.0):
+versión (la que dice `scripts/version.sh` antes de actualizar):
 
 ```bash
 git fetch --tags --force origin
@@ -36,6 +37,17 @@ git pull --ff-only origin main
 git describe --tags          # tiene que decir v0.16.1
 python3 scripts/upgrade_plan.py --from v0.15.1     # y haz lo que imprima
 ```
+
+Después:
+
+1. Actualiza PaynaniApp en el teléfono a la **0.9.0** (`INSTALL.md` §5.2). Abre
+   la app una vez para que se vuelva a conectar.
+2. Corre `scripts/paynani sms devices`: `app_version` tiene que decir `0.9.0`.
+3. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+   `version_drift` tiene que decir `ok`.
+
+Los comandos de actualización de la sección 0.16.0 no hacen falta: los de arriba ya
+cubren los dos saltos. Lo que 0.16.0 cuenta de la API y de la web sigue valiendo.
 
 ## 0.16.0 (2026-10-24)
 
