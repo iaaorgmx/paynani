@@ -4,8 +4,11 @@ Lo que la pasarela SMS guarda en disco, bajo `state/sms/` (modo 700):
     device.json         el teléfono emparejado (DEC-3: uno), con el SHA-256 del token
     pairing.json        el código de emparejamiento vigente, como hash, y los fallos
     inbox/<id>.json     el texto de cada SMS recibido (600); el sobre del evento no lo lleva
-    outbox/<id>.json    órdenes de envío que escribe `paynani sms send` (SRV-3)
+    outbox/<id>.json    órdenes de envío que escribe `outgoing.queue` (SRV-3, PRD #489 FR-13)
     sent/<id>.json      la misma orden, cuando el teléfono ya la tomó (para `paynani sms thread`)
+
+Una orden la crea el agente (`o_`), el dueño desde PaynaniWeb (`w_`, PRD #489) o
+la API (`a_`, PRD #491). El prefijo del id dice cuál, y nunca cambia.
     orders.jsonl        cada estado de cada orden, una línea por estado
     human.jsonl         cada estado de cada SMS que mandó el dueño desde PaynaniApp (PaynaniApp#111)
 
@@ -32,13 +35,22 @@ FAIL_LIMIT = 10
 # Los ids que terminan en nombres de archivo. Validados aquí también, aunque la
 # pasarela ya los valide: el almacén no confía en quien lo llame (un order_id
 # "../device" borraba device.json; lo encontró Iris en #316).
-ORDER_ID = re.compile(r"^o_[0-9a-f]{32}$")
+ORDER_PREFIX = {"agent": "o", "owner": "w", "api": "a"}
+ORDER_ID = re.compile(r"^[owa]_[0-9a-f]{32}$")
 HUMAN_ID = re.compile(r"^h_[0-9a-f]{32}$")
 MESSAGE_ID = re.compile(r"^[0-9a-f]{64}$")
 
 
 def valid_order_id(order_id) -> bool:
     return bool(ORDER_ID.match(str(order_id or "")))
+
+
+def order_origin(order_id) -> str | None:
+    """'agent', 'owner' o 'api' según el prefijo del id; None si el id no es válido."""
+    if not valid_order_id(order_id):
+        return None
+    prefix = str(order_id)[0]
+    return next(origin for origin, p in ORDER_PREFIX.items() if p == prefix)
 
 
 def valid_human_id(local_id) -> bool:
@@ -165,19 +177,28 @@ class Store:
         self._write(self.inbox_path(message_id), data)
 
     # --- órdenes de envío ---------------------------------------------------
-    def pending_orders(self) -> list[dict]:
+    def _orders_in(self, folder: str, origins) -> list[dict]:
         orders = []
-        for path in sorted((self.root / "outbox").glob("o_*.json")):
-            try:
-                order = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if valid_order_id(order.get("id")) and path.stem == order["id"]:
-                orders.append(order)
+        for origin in origins:
+            for path in sorted((self.root / folder).glob(f"{ORDER_PREFIX[origin]}_*.json")):
+                try:
+                    order = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if valid_order_id(order.get("id")) and path.stem == order["id"]:
+                    orders.append(order)
         return orders
 
+    def pending_orders(self, origins=("agent",)) -> list[dict]:
+        """
+        Las órdenes que esperan en outbox/. Por omisión sólo las del agente: la
+        pasarela todavía no manda las del dueño ni las de la API (eso es T2 de #490,
+        que antes pregunta si el teléfono las acepta).
+        """
+        return self._orders_in("outbox", origins)
+
     def queue_order(self, order: dict) -> None:
-        """Deja la orden en outbox/ (atómico, 600). Lo usa `paynani sms send`."""
+        """Deja la orden en outbox/ (atómico, 600). Lo usa `outgoing.queue`."""
         if not valid_order_id(order.get("id")):
             raise ValueError("order_id inválido")
         self._write(self.root / "outbox" / f"{order['id']}.json", order)
@@ -194,16 +215,8 @@ class Store:
         except FileNotFoundError:
             pass
 
-    def sent_orders(self) -> list[dict]:
-        orders = []
-        for path in sorted((self.root / "sent").glob("o_*.json")):
-            try:
-                order = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if valid_order_id(order.get("id")) and path.stem == order["id"]:
-                orders.append(order)
-        return orders
+    def sent_orders(self, origins=("agent",)) -> list[dict]:
+        return self._orders_in("sent", origins)
 
     def append_status(self, record: dict) -> bool:
         """

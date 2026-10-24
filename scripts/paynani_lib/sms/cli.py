@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 import sys
 import time
 from pathlib import Path
@@ -21,13 +20,13 @@ import paths  # noqa: E402
 import phone  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
+from . import outgoing  # noqa: E402
 from . import pairing  # noqa: E402
 from . import thread as thread_mod  # noqa: E402
-from .gateway import status_id  # noqa: E402
 from .store import CODE_TTL_S, Store, now_utc, valid_order_id  # noqa: E402
 
-MAX_TEXT = 1000
-DEFAULT_TTL_MIN = 15
+MAX_TEXT = outgoing.MAX_TEXT
+DEFAULT_TTL_MIN = outgoing.DEFAULT_TTL_MIN
 FINAL = {"sent": 0, "delivered": 0, "failed": 1, "rejected": 1, "expired": 1}
 PAUSED = 4  # el humano contestó ese número hace poco (PaynaniApp#111, SMS_GATEWAY.md §4)
 
@@ -39,10 +38,6 @@ def _store() -> Store:
 def _refuse(message: str) -> int:
     print(f"Refused: {message}", file=sys.stderr)
     return 2
-
-
-def _expires(ttl_min: int) -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + ttl_min * 60))
 
 
 def _describe(record: dict) -> str:
@@ -75,15 +70,13 @@ def run_send(args) -> int:
     código 2 sin crear nada. Después encola la orden y espera el primer estado.
     """
     text = " ".join(args.text)
-    if not text.strip():
-        return _refuse("empty_text: there is nothing to send.")
-    if len(text) > MAX_TEXT:
-        return _refuse(f"text_too_long: {len(text)} characters, the limit is {MAX_TEXT}.")
-    if args.ttl < 1:
-        return _refuse("--ttl must be at least 1 minute.")
-    number = phone.to_e164(args.number)
-    if number is None:
-        return _refuse(f"{args.number!r} is not a phone number. Write it in E.164, for example +525511112222.")
+    try:
+        outgoing.check_text(text)
+        if args.ttl < 1:
+            return _refuse("--ttl must be at least 1 minute.")
+        number = outgoing.normalize(args.number)
+    except outgoing.Refused as refused:
+        return _refuse(refused.message)
     roster = paths.roster()
     entries = roster_mod.roster_phone_entries(roster)
     phones = {e["phone"] for e in entries}
@@ -123,13 +116,11 @@ def run_send(args) -> int:
                   f"(by {override_by}: {override})", file=sys.stderr)
         reply_policy.log_override(paths.state_dir(), tool="paynani sms send", channel="sms", items=never,
                                   by=override_by, reason=override)
-    order_id = "o_" + secrets.token_hex(16)
-    order = {"id": order_id, "to": number, "text": text, "expires_at": _expires(args.ttl)}
-    if args.sim is not None:
-        order["sim_slot"] = args.sim
-    store.queue_order(order)
-    store.append_status({"id": status_id(order_id, "queued"), "order_id": order_id,
-                         "status": "queued", "at": now_utc()})
+    try:
+        order = outgoing.queue(store, to=number, text=text, origin="agent", ttl_min=args.ttl, sim_slot=args.sim)
+    except outgoing.Refused as refused:
+        return _refuse(refused.message)
+    order_id = order["id"]
     name = next((e["name"] for e in entries if e["phone"] == number), "")
     print(f"Order {order_id} queued for {number}" + (f" ({name})" if name else "") + ".")
     if not device.get("connected"):
