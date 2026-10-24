@@ -349,6 +349,7 @@ seu próprio critério sobre quem entra.
 | Receber e enviar SMS com um celular Android | [`INSTALL.md` §5.1](../INSTALL.md#51-optional-the-sms-gateway-texts-and-calls-through-a-phone) (o gateway) e [§5.2](../INSTALL.md#52-optional-install-paynaniapp-on-the-phone-and-pair-it) (PaynaniApp no celular) |
 | Entender como o celular e o Paynani conversam | [`SMS_GATEWAY.md`](../SMS_GATEWAY.md) (em espanhol) |
 | Administrar o Paynani pelo navegador | [`PAYNANI_WEB.md`](../PAYNANI_WEB.md) (em espanhol) |
+| Dar acesso a outro agente ou programa pela API | [`PAYNANI_API.md`](../PAYNANI_API.md) (em espanhol; `/api/agents.md` da sua instalação, em inglês, para o agente) |
 | Ver o código do app do celular | [iaaorgmx/PaynaniApp](https://github.com/iaaorgmx/PaynaniApp) |
 | Enviar e-mail pela fronteira segura | [`scripts/send.sh`](../scripts/send.sh) |
 | Ver o que cada harness garante | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |

@@ -42,6 +42,8 @@ STATIC = {
     "/assets/time.js": (ASSETS / "time.js", "application/javascript; charset=UTF-8"),
     "/assets/sms.js": (ASSETS / "sms.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
+    # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
+    "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
     # browser asks for on its own; without it that request ended in the login page.
     "/assets/favicon.svg": (FAVICON, "image/svg+xml"),

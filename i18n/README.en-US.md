@@ -345,6 +345,7 @@ and to your own judgement about who gets in.
 | Receive and send texts with an Android phone | [`INSTALL.md` §5.1](../INSTALL.md#51-optional-the-sms-gateway-texts-and-calls-through-a-phone) (the gateway) and [§5.2](../INSTALL.md#52-optional-install-paynaniapp-on-the-phone-and-pair-it) (PaynaniApp on the phone) |
 | Understand how the phone and Paynani talk | [`SMS_GATEWAY.md`](../SMS_GATEWAY.md) (in Spanish) |
 | Manage Paynani from the browser | [`PAYNANI_WEB.md`](../PAYNANI_WEB.md) (in Spanish) |
+| Give another agent or program access through the API | [`PAYNANI_API.md`](../PAYNANI_API.md) (in Spanish; `/api/agents.md` on your install, in English, for the agent) |
 | See the code of the phone app | [iaaorgmx/PaynaniApp](https://github.com/iaaorgmx/PaynaniApp) |
 | Send mail from the safe boundary | [`scripts/send.sh`](../scripts/send.sh) |
 | See what each harness guarantees | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |

@@ -366,6 +366,7 @@ fichier `.env` et à votre propre jugement sur qui entre.
 | Recevoir et envoyer des SMS avec un téléphone Android | [`INSTALL.md` §5.1](../INSTALL.md#51-optional-the-sms-gateway-texts-and-calls-through-a-phone) (la passerelle) et [§5.2](../INSTALL.md#52-optional-install-paynaniapp-on-the-phone-and-pair-it) (PaynaniApp sur le téléphone) |
 | Comprendre comment le téléphone et Paynani se parlent | [`SMS_GATEWAY.md`](../SMS_GATEWAY.md) (en espagnol) |
 | Administrer Paynani depuis le navigateur | [`PAYNANI_WEB.md`](../PAYNANI_WEB.md) (en espagnol) |
+| Donner accès à un autre agent ou programme par l’API | [`PAYNANI_API.md`](../PAYNANI_API.md) (en espagnol ; `/api/agents.md` de votre installation, en anglais, pour l’agent) |
 | Voir le code de l'application du téléphone | [iaaorgmx/PaynaniApp](https://github.com/iaaorgmx/PaynaniApp) |
 | Envoyer du courrier depuis la frontière sûre | [`scripts/send.sh`](../scripts/send.sh) |
 | Voir ce que garantit chaque harness | [`HARNESS_CAPABILITIES.md`](../HARNESS_CAPABILITIES.md) |
