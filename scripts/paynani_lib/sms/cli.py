@@ -55,13 +55,24 @@ def human_pause(store: Store, number: str, now: str | None = None) -> str | None
     `sent` del dueño a ese número: uno nuevo la reinicia y uno con pausa 0 la
     termina (SMS_GATEWAY.md §4).
     """
+    until = (_latest_owner_sent(store, number) or {}).get("pause_until")
+    return until if until and until > (now or now_utc()) else None
+
+
+def _latest_owner_sent(store: Store, number: str) -> dict | None:
+    """El último `sent` del dueño a ese número, de PaynaniApp o de PaynaniWeb."""
     latest = None
     for record in store.human_records():
         if record.get("status") == "sent" and record.get("to") == number:
             if latest is None or str(record.get("at", "")) >= str(latest.get("at", "")):
                 latest = record
-    until = (latest or {}).get("pause_until")
-    return until if until and until > (now or now_utc()) else None
+    return latest
+
+
+def pause_source(store: Store, number: str) -> str:
+    """Desde dónde le escribió el dueño: PaynaniWeb (`origin: web`) o PaynaniApp."""
+    record = _latest_owner_sent(store, number) or {}
+    return "PaynaniWeb" if record.get("origin") == "web" else "PaynaniApp"
 
 
 def run_send(args) -> int:
@@ -100,7 +111,8 @@ def run_send(args) -> int:
     store = _store()
     paused = human_pause(store, number)
     if paused and not getattr(args, "override_pause", False):
-        print(f"Refused: human_replied. The phone's owner replied to {number} from PaynaniApp, so the agent "
+        print(f"Refused: human_replied. The phone's owner replied to {number} from {pause_source(store, number)}, "
+              "so the agent "
               f"does not write to it until {paused}. Nothing was sent. Use --override-pause only if the "
               "owner asked you to.", file=sys.stderr)
         return PAUSED
@@ -192,7 +204,7 @@ def run_thread(args) -> int:
         print(f"{when}  {label:<8} {('[' + status + ']') if status else '':<12} {shown}")
     paused = human_pause(store, number)
     if paused:
-        print(f"Agent pause: the owner replied from PaynaniApp; the agent does not write to {number} "
+        print(f"Agent pause: the owner replied from {pause_source(store, number)}; the agent does not write to {number} "
               f"until {paused} (--override-pause only if the owner asks).")
     return 0
 
