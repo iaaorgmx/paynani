@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import html
 import json
+import secrets
 import sys
 import time
 from http import cookies
@@ -28,7 +29,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (accounts_pages, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell,
+from . import (accounts_pages, api_auth, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell,
                thread, users)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -241,6 +242,7 @@ class Context:
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
+        self.api_limits = api_auth.Limits(clock)
         self.notifier = notifier or notify.Notifier()
         # La cuenta del agente y las de accounts.json, para el menú (FR-10). Las
         # pruebas pasan las suyas; sin ellas, las de la instalación. Del .env sólo
@@ -419,6 +421,74 @@ def make_handler(ctx: Context):
                 extra.append(("Set-Cookie", self._cookie(LANG_COOKIE, self.set_lang, 365 * 86400)))
             self._send(303, "text/plain; charset=UTF-8", b"", extra)
 
+        def _api_reply(self, status: int, request_id: str, *, code: str = "", message: str = "",
+                       retry_after: int = 0):
+            result = {"result": "error", "code": code, "message": message, "request_id": request_id}
+            if retry_after:
+                result["retry_after"] = retry_after
+            self._send(status, "application/json; charset=UTF-8", json.dumps(result).encode("utf-8"),
+                       [("X-Request-Id", request_id), ("Cache-Control", "no-store")])
+
+        def _api_post(self, raw: bytes):
+            request_id = secrets.token_hex(8)
+            address = auth.client_ip(self.headers, self.client_address[0])
+            remaining = self.CTX.api_limits.blocked_for(address)
+            if remaining:
+                self._api_reply(429, request_id, code="too_many_attempts",
+                                message="Too many failed authentication attempts.", retry_after=remaining)
+                return
+            query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+            if "api_token" in query or "token" in query:
+                self.CTX.api_limits.fail(address)
+                self._api_reply(401, request_id, code="invalid_token", message="API token cannot be in the URL.")
+                return
+            kind = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            try:
+                if kind == "application/json":
+                    data = json.loads(raw)
+                    if not isinstance(data, dict):
+                        raise ValueError("expected a JSON object")
+                elif kind == "application/x-www-form-urlencoded":
+                    data = form_fields(raw)
+                else:
+                    self._api_reply(415, request_id, code="invalid_content_type",
+                                    message="Use JSON or form data.")
+                    return
+            except (UnicodeError, ValueError):
+                self._api_reply(400, request_id, code="invalid_body", message="Invalid request body.")
+                return
+            header = self.headers.get("Authorization", "")
+            if header:
+                scheme, _, value = header.partition(" ")
+                token = value.strip() if scheme.lower() == "bearer" else ""
+            else:
+                token = data.get("api_token", "")
+            try:
+                outcome, record = api_tokens.lookup(token, path=api_tokens.path_for(self.CTX.user_path()))
+            except (OSError, ValueError):
+                self._api_reply(500, request_id, code="internal_error", message="Token store unavailable.")
+                return
+            if outcome != "ok":
+                self.CTX.api_limits.fail(address)
+                messages = {"invalid_token": "API token invalid.",
+                            "token_revoked": "API token was revoked.",
+                            "token_expired": "API token expired."}
+                self._api_reply(401, request_id, code=outcome, message=messages[outcome])
+                return
+            remaining = self.CTX.api_limits.admit_call(record["sha256"])
+            if remaining:
+                self._api_reply(429, request_id, code="rate_limited",
+                                message="Too many requests for this token.", retry_after=remaining)
+                return
+            try:
+                api_tokens.touch(record["sha256"], path=api_tokens.path_for(self.CTX.user_path()))
+            except (OSError, ValueError):
+                self._api_reply(500, request_id, code="internal_error", message="Token store unavailable.")
+                return
+            # A1 provides the common authentication boundary. Later tasks add
+            # actions without changing how credentials and limits are enforced.
+            self._api_reply(400, request_id, code="invalid_action", message="Unknown API action.")
+
         # ---- contexto de la petición -----------------------------------------
         def _begin(self):
             parsed = urlparse(self.path)
@@ -477,6 +547,9 @@ def make_handler(ctx: Context):
         # ---- verbos ------------------------------------------------------------
         def do_GET(self):  # noqa: N802
             parsed = urlparse(self.path)
+            if parsed.path == "/api/agent":
+                self._api_reply(405, secrets.token_hex(8), code="method_not_allowed", message="Use POST.")
+                return
             if self._static(parsed.path):
                 return
             if parsed.path == "/_health":
@@ -941,10 +1014,17 @@ def make_handler(ctx: Context):
             except ValueError:
                 length = -1
             if length < 0 or length > MAX_BODY_BYTES:
-                self._send(413, "text/plain; charset=UTF-8", b"")
+                if urlparse(self.path).path == "/api/agent":
+                    self._api_reply(413, secrets.token_hex(8), code="body_too_large",
+                                    message="Request body is too large.")
+                else:
+                    self._send(413, "text/plain; charset=UTF-8", b"")
                 return
             raw = self.rfile.read(length) if length else b""
             self._begin()
+            if self.route == "/api/agent":
+                self._api_post(raw)
+                return
             if self.user is None:
                 self._html(200, setup_page(self.lang))
                 return
