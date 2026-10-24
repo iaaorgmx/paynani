@@ -17,6 +17,7 @@ from __future__ import annotations
 import calendar
 import contextlib
 import fcntl
+import hashlib
 import json
 import secrets
 import sys
@@ -36,16 +37,18 @@ MAX_TEXT = 1000
 DEFAULT_TTL_MIN = 15
 MAX_PAUSE_MIN = 1440
 HOUR_S = 3600
+DAY_S = 86400
 
 
 class Refused(Exception):
     """La orden no se crea. `code` es estable (lo usan la web y la API); `message` es para personas."""
 
-    def __init__(self, code: str, message: str, retry_at: str | None = None):
+    def __init__(self, code: str, message: str, retry_at: str | None = None, order_id: str | None = None):
         super().__init__(message)
         self.code = code
         self.message = message
         self.retry_at = retry_at
+        self.order_id = order_id
 
 
 def new_order_id(origin: str) -> str:
@@ -94,8 +97,9 @@ def _epoch(stamp: str) -> float | None:
 
 
 def recent_queued(store: Store, origin: str, token: str | None = None,
-                  now: float | None = None, window_s: int = HOUR_S) -> list[float]:
-    """Las horas (época) de las órdenes de ese origen, y de ese token si se da, en la última ventana."""
+                  now: float | None = None, window_s: int = HOUR_S, token_id: str | None = None) -> list[float]:
+    """Las horas (época) de las órdenes de ese origen, y de ese token si se da, en la última ventana.
+    `token_id` (el prefijo `pn_…` del token, PRD #491) filtra mejor que el nombre, que se puede repetir."""
     now = time.time() if now is None else now
     path = store.root / "orders.jsonl"
     found = []
@@ -112,6 +116,8 @@ def recent_queued(store: Store, origin: str, token: str | None = None,
                 continue
             if token is not None and rec.get("token") != token:
                 continue
+            if token_id is not None and rec.get("token_id") != token_id:
+                continue
             at = _epoch(str(rec.get("at", "")))
             if at is not None and now - window_s < at <= now:
                 found.append(at)
@@ -121,7 +127,8 @@ def recent_queued(store: Store, origin: str, token: str | None = None,
 def queue(store: Store, *, to: str, text: str, origin: str = "agent", ttl_min: int = DEFAULT_TTL_MIN,
           sim_slot: int | None = None, per_hour: int | None = None, source: str | None = None,
           token: str | None = None, agent_pause_min: int | None = None, region: str | None = None,
-          now: float | None = None) -> dict:
+          now: float | None = None, per_day: int | None = None, token_id: str | None = None,
+          idempotency_key: str | None = None) -> dict:
     """
     Crea la orden y la deja en outbox/. Devuelve la orden. Lanza `Refused` sin
     escribir nada si el número o el texto no sirven, o si el origen llegó a su tope.
@@ -133,6 +140,13 @@ def queue(store: Store, *, to: str, text: str, origin: str = "agent", ttl_min: i
       Obligatorio para el dueño.
     - `token`: el nombre del token de la API (PRD #491). Obligatorio para la API.
     - `agent_pause_min`: sólo para el dueño (PRD #489 FR-14): None o 0 no pausa.
+    - `per_day`: como `per_hour`, en las últimas 24 horas (PRD #491 FR-9). Pasarlo
+      lanza `quota_exceeded`.
+    - `token_id`: el prefijo del token de la API. Con él cuentan los topes y la llave.
+    - `idempotency_key`: sólo para la API (PRD #491 FR-7). Si ese token ya creó una
+      orden con esa llave y el mismo número y texto, devuelve esa orden con
+      `"duplicate": True` (en la copia que devuelve, no en el archivo) y no escribe
+      nada; con otro número o texto lanza `idempotency_conflict`.
     """
     if origin not in ORDER_PREFIX:
         raise ValueError(f"origen desconocido: {origin!r}")
@@ -148,12 +162,50 @@ def queue(store: Store, *, to: str, text: str, origin: str = "agent", ttl_min: i
     pause = None
     if origin == "owner":
         pause = _pause(agent_pause_min)
-    if per_hour is not None and (isinstance(per_hour, bool) or not isinstance(per_hour, int) or per_hour < 1):
-        raise Refused("invalid_limit", f"invalid_limit: per_hour must be a whole number of 1 or more, not {per_hour!r}.")
+    for name, limit in (("per_hour", per_hour), ("per_day", per_day)):
+        if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit < 1):
+            raise Refused("invalid_limit", f"invalid_limit: {name} must be a whole number of 1 or more, not {limit!r}.")
+    if idempotency_key is not None and origin != "api":
+        raise ValueError("idempotency_key es sólo para la API")
     with _queue_lock(store):
+        now = time.time() if now is None else now
+        if idempotency_key is not None:
+            earlier = find_idempotent(store, token_id, idempotency_key)
+            if earlier is not None:
+                if earlier.get("content_sha256") != content_sha256(number, text):
+                    raise Refused("idempotency_conflict",
+                                  "idempotency_conflict: this idempotency_key was already used with another number or text.",
+                                  order_id=earlier["order_id"])
+                order = dict(store.order(earlier["order_id"]) or {"id": earlier["order_id"], "to": number,
+                                                                  "text": text, "origin": "api"})
+                order["duplicate"] = True
+                return order
         return _count_and_write(store, origin=origin, number=number, text=text, ttl_min=ttl_min,
                                 sim_slot=sim_slot, per_hour=per_hour, source=source, token=token,
-                                pause=pause, now=time.time() if now is None else now)
+                                pause=pause, now=now, per_day=per_day, token_id=token_id,
+                                idempotency_key=idempotency_key)
+
+
+def content_sha256(number: str, text: str) -> str:
+    """Lo que la llave de idempotencia compara: el número ya normalizado y el texto."""
+    return hashlib.sha256(f"{number}\n{text}".encode("utf-8")).hexdigest()
+
+
+def find_idempotent(store: Store, token_id: str | None, key: str) -> dict | None:
+    """El registro `queued` de orders.jsonl con esa llave de ese token, o None."""
+    path = store.root / "orders.jsonl"
+    if not path.exists() or not token_id:
+        return None
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if (rec.get("status") == "queued" and rec.get("token_id") == token_id
+                    and rec.get("idempotency_key") == key):
+                return rec
+    return None
 
 
 @contextlib.contextmanager
@@ -175,9 +227,17 @@ def _queue_lock(store: Store):
 
 
 def _count_and_write(store: Store, *, origin, number, text, ttl_min, sim_slot, per_hour, source, token,
-                     pause, now) -> dict:
+                     pause, now, per_day=None, token_id=None, idempotency_key=None) -> dict:
+    scope = {"token_id": token_id} if token_id else {"token": token}
+    if per_day is not None:
+        today = recent_queued(store, origin, now=now, window_s=DAY_S, **scope)
+        if len(today) >= per_day:
+            retry_at = _iso(today[0] + DAY_S)
+            raise Refused("quota_exceeded",
+                          f"quota_exceeded: {len(today)} SMS in the last 24 hours, the limit is {per_day}. "
+                          f"Try again after {retry_at}.", retry_at=retry_at)
     if per_hour is not None:
-        recent = recent_queued(store, origin, token=token, now=now)
+        recent = recent_queued(store, origin, now=now, **scope)
         if len(recent) >= per_hour:
             retry_at = _iso(recent[0] + HOUR_S)
             raise Refused("rate_limited",
@@ -204,5 +264,10 @@ def _count_and_write(store: Store, *, origin, number, text, ttl_min, sim_slot, p
         record["source"] = source
     if token:
         record["token"] = token
+    if token_id:
+        record["token_id"] = token_id
+    if idempotency_key is not None:
+        record["idempotency_key"] = idempotency_key
+        record["content_sha256"] = content_sha256(number, text)
     store.append_status(record)
     return order

@@ -21,6 +21,7 @@ from . import mail, thread
 READ = "read"
 ROSTER_WRITE = "roster.write"
 ACCOUNTS_WRITE = "accounts.write"
+SMS_SEND = "sms.send"
 
 PAGE = 50
 MAX_FIELD = 320
@@ -356,8 +357,130 @@ def remove_account(call: Call) -> dict:
     return {"removed": account_id}
 
 
-# Acción → (permiso, función). GetTokenInfo y GetUsage (A7), SendSms y GetSmsStatus
-# (A4) y ListSmsReplies (A5) se suman aquí en sus tareas.
+# --- SMS por la API (A4 #496, PRD #491 FR-6 a FR-10) ---------------------------------
+
+IDEMPOTENCY_KEY = re.compile(r"[\x21-\x7e]{1,128}")
+API_ORDER = re.compile(r"a_[0-9a-f]{32}")
+
+
+def _sms_store(call: Call):
+    from ..sms import store as sms_store
+    return sms_store.Store(call.ctx.state_dir())
+
+
+def _sms_region(store) -> str | None:
+    """La región de la SIM del teléfono emparejado, o la de la instalación (como la web)."""
+    import phone as phone_mod
+    for sim in (store.device() or {}).get("sims") or []:
+        country = str((sim or {}).get("country") or "").strip().upper()
+        if re.fullmatch(r"[A-Z]{2}", country):
+            return country
+    return phone_mod.default_region()
+
+
+def _phone_online(call: Call) -> bool:
+    from ..sms import health
+    facts = health.phone_facts(call.ctx.state_dir())
+    return bool(facts and facts["online"])
+
+
+def _order_view(store, order: dict) -> dict:
+    """Una orden de la API como la ve quien la creó: su último estado y la historia."""
+    from ..sms import thread as sms_thread
+    oid = order["id"]
+    history = []
+    for rec in store.order_statuses(oid):
+        item = {"status": rec.get("status", ""), "at": rec.get("at", "")}
+        if rec.get("error") not in (None, ""):
+            item["error"] = str(rec["error"])
+        history.append(item)
+    queued_at = next((h["at"] for h in history if h["status"] == "queued"), "")
+    current = next((h for h in reversed(history) if h["status"] != "queued"), None)
+    status = current["status"] if current else "queued"
+    # Como en la web (PRD #489 FR-7): en cola después de su hora es vencida, aunque la
+    # pasarela sólo la marque cuando el teléfono vuelva.
+    if status == "queued" and sms_thread._past(order.get("expires_at")):
+        status = "expired"
+    view = {"id": oid, "to": order.get("to", ""), "status": status, "queued_at": queued_at,
+            "expires_at": order.get("expires_at", ""), "history": history}
+    if current and current.get("error"):
+        view["error"] = current["error"]
+    return view
+
+
+def send_sms(call: Call) -> dict:
+    from ..sms import cli as sms_cli
+    from ..sms import outgoing
+    key = call.required("idempotency_key", limit=129)
+    if not IDEMPOTENCY_KEY.fullmatch(key):
+        raise ApiError(400, "invalid_parameter",
+                       "idempotency_key must be 1 to 128 printable ASCII characters without spaces.",
+                       field="idempotency_key")
+    to = call.required("to", limit=41)
+    text = call.text("text", limit=outgoing.MAX_TEXT + 1)
+    store = _sms_store(call)
+    if not store.device():
+        raise ApiError(409, "no_phone", "There is no paired phone to send from.")
+    if not store.accepts("api"):
+        raise ApiError(409, "app_outdated", "The paired phone runs a PaynaniApp that does not accept API orders. "
+                                            "Update it to 0.9.0 or later.")
+    try:
+        number = outgoing.normalize(to, _sms_region(store))
+    except outgoing.Refused as exc:
+        raise ApiError(400, exc.code, "to is not a phone number that can be read.", field="to") from None
+    token_id = call.record.get("prefix", "")
+    # Una llave repetida devuelve la misma orden antes de cualquier otra revisión: el
+    # reintento de un SendSms que sí salió no debe responder opted_out ni quota_exceeded.
+    earlier = outgoing.find_idempotent(store, token_id, key)
+    if earlier is None:
+        if store.opted_out(number):
+            raise ApiError(403, "opted_out", "This number opted out of API messages (STOP).", to=number)
+        until = sms_cli.human_pause(store, number)
+        if until:
+            raise ApiError(409, "human_replied",
+                           "The owner just texted this number; the API cannot write to it until then.",
+                           to=number, until=until)
+    limits = call.record.get("limits") or {}
+    per_hour = limits.get("sms_per_hour", 30)
+    per_day = limits.get("sms_per_day", 200)
+    try:
+        order = outgoing.queue(store, to=number, text=text, origin="api", token=call.record.get("name", ""),
+                               token_id=token_id, idempotency_key=key, per_hour=per_hour, per_day=per_day,
+                               source=call.ip, region=_sms_region(store))
+    except outgoing.Refused as exc:
+        if exc.code in ("rate_limited", "quota_exceeded"):
+            raise ApiError(429, "quota_exceeded", exc.message, retry_at=exc.retry_at) from None
+        if exc.code == "idempotency_conflict":
+            raise ApiError(409, "idempotency_conflict",
+                           "This idempotency_key was already used with another number or text.",
+                           order_id=exc.order_id) from None
+        if exc.code in ("empty_text", "text_too_long"):
+            raise ApiError(400, exc.code, exc.message, field="text") from None
+        raise ApiError(400, exc.code, exc.message) from None
+    duplicate = bool(order.pop("duplicate", False))
+    online = _phone_online(call)
+    out = {"order": _order_view(store, order), "duplicate": duplicate, "phone_online": online}
+    if not online:
+        out["notice"] = (f"The phone is disconnected. The order stays queued and expires after "
+                         f"{outgoing.DEFAULT_TTL_MIN} minutes if the phone does not reconnect.")
+    return out
+
+
+def get_sms_status(call: Call) -> dict:
+    order_id = call.required("order_id", limit=40)
+    if not API_ORDER.fullmatch(order_id):
+        raise ApiError(400, "invalid_parameter", "order_id must be an API order id (a_…).", field="order_id")
+    store = _sms_store(call)
+    order = store.order(order_id)
+    queued = next((r for r in store.order_statuses(order_id) if r.get("status") == "queued"), None)
+    # Sólo el token que la creó la ve: otro token recibe lo mismo que una orden inexistente.
+    if order is None or not queued or queued.get("token_id") != call.record.get("prefix"):
+        raise ApiError(404, "not_found", "No such order for this token.", field="order_id")
+    return {"order": _order_view(store, order)}
+
+
+# Acción → (permiso, función). GetTokenInfo y GetUsage (A7) y ListSmsReplies (A5) se
+# suman aquí en sus tareas.
 ACTIONS = {
     "ListAccounts": (READ, list_accounts),
     "ListMail": (READ, list_mail),
@@ -373,6 +496,8 @@ ACTIONS = {
     "SaveDefaultRules": (ROSTER_WRITE, save_default_rules),
     "AddAccount": (ACCOUNTS_WRITE, add_account),
     "RemoveAccount": (ACCOUNTS_WRITE, remove_account),
+    "SendSms": (SMS_SEND, send_sms),
+    "GetSmsStatus": (SMS_SEND, get_sms_status),
 }
 
 
