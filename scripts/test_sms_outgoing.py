@@ -157,5 +157,61 @@ check("revisión: ningún rechazo escribió nada",
 check("revisión: pausa como texto válido", 45,
       outgoing.queue(st, to="+5215511112222", text="x", origin="owner", source=WEB, agent_pause_min="45", now=NOW)["agent_pause_min"])
 
+# --- Revisión de #519: el tope por hora con envíos al mismo tiempo ----------------------
+# El conteo se hace lento a propósito: sin el candado, todos ven 0 y todos escriben.
+import multiprocessing  # noqa: E402
+import threading  # noqa: E402
+import time as _time  # noqa: E402
+
+_real_recent = outgoing.recent_queued
+
+
+def _slow_recent(*a, **kw):
+    out = _real_recent(*a, **kw)
+    _time.sleep(0.3)
+    return out
+
+
+def _send_one(root, results, index):
+    try:
+        outgoing.queue(store_mod.Store(root), to="+5215511112222", text=f"carrera {index}", origin="owner",
+                       source=WEB, per_hour=1)
+        results[index] = "queued"
+    except outgoing.Refused as exc:
+        results[index] = exc.code
+
+
+outgoing.recent_queued = _slow_recent
+try:
+    race = fresh()
+    results = {}
+    barrier = threading.Barrier(4)
+    threads = [threading.Thread(target=lambda i=i: (barrier.wait(), _send_one(race.root.parent, results, i)))
+               for i in range(4)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    check("carrera con hilos y per_hour=1: sale uno, los otros rate_limited",
+          ["queued", "rate_limited", "rate_limited", "rate_limited"], sorted(results.values()))
+    check("carrera con hilos: una sola orden w_ y un solo queued",
+          (1, 1), (len(list((race.root / "outbox").glob("w_*.json"))), len(statuses(race))))
+
+    # Procesos: con fork heredan el conteo lento; el candado es del sistema, no de Python.
+    race = fresh()
+    ctx = multiprocessing.get_context("fork")
+    manager_results = ctx.Manager().dict()
+    procs = [ctx.Process(target=_send_one, args=(race.root.parent, manager_results, i)) for i in range(3)]
+    for pr in procs:
+        pr.start()
+    for pr in procs:
+        pr.join()
+    check("carrera con procesos y per_hour=1: sale uno",
+          ["queued", "rate_limited", "rate_limited"], sorted(manager_results.values()))
+    check("carrera con procesos: una sola orden en outbox",
+          1, len(list((race.root / "outbox").glob("w_*.json"))))
+finally:
+    outgoing.recent_queued = _real_recent
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

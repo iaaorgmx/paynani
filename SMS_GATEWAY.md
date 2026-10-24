@@ -778,6 +778,7 @@ Todo bajo `state/sms/` (700, archivos 600):
 |---|---|---|
 | `outbox/<id>.json` | `paynani sms send` | `{"id": "o_…", "to": "+52…", "text": "…", "expires_at": "…", "sim_slot": 0}`. Se escribe atómico (temporal y `rename`) |
 | `orders.jsonl` | La pasarela | Una línea por estado: `{"id": sha256(order_id + "\n" + status), "order_id", "status", "at", "error"?, "parts"?}` |
+| `queue.lock` | `outgoing.queue()` | Vacío. El candado (`flock`) que hace una sola operación de contar las órdenes de la última hora y escribir la nueva, para que dos envíos simultáneos de la web, la API o `paynani sms send` no rebasen el tope por hora |
 | `inbox/<id>.json` | La pasarela | El texto de cada SMS recibido, y de cada `sms.human` (PaynaniApp#111); lo lee `paynani event show --body` |
 | `sent/<id>.json` | La pasarela | La orden de `outbox/` cuando el teléfono ya la tomó: el estado no dice a quién ni qué, y `paynani sms thread` lo necesita |
 | `human.jsonl` | La pasarela | Una línea por cada `sms.human` guardado: `{"id", "local_id", "to", "status", "at", "agent_pause_min", "parts"?, "error"?, "in_reply_to"?, "pause_until"?, "event_id"?}`. `to` es el E.164, o el número tal cual si no tiene; `event_id` sólo en el estado que escribió el evento. De aquí salen la pausa del agente y `paynani sms thread` |
