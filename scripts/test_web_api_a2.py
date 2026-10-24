@@ -2,6 +2,7 @@
 """A2: owner token screen, password/CSRF gates, usage, and one-time secret."""
 from __future__ import annotations
 
+import ast
 import datetime as dt
 import http.client
 import json
@@ -16,6 +17,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "harness"))
 from paynani_lib.web import api_tokens, app, auth, notify, token_pages, users  # noqa: E402
+
+# Python 3.10 rejects escaped quotes in a nested f-string expression, while the
+# Python 3.12 used by some CI jobs accepts them. Keep template fragments separate.
+template_path = ROOT / "scripts" / "paynani_lib" / "web" / "token_pages.py"
+template_tree = ast.parse(template_path.read_text(encoding="utf-8"), feature_version=(3, 10))
+assert not any(isinstance(child, ast.JoinedStr)
+               for node in ast.walk(template_tree) if isinstance(node, ast.FormattedValue)
+               for child in ast.walk(node.value)), "nested f-string in Python 3.10 template"
 
 tmp = Path(tempfile.mkdtemp())
 user_file = tmp / "web" / "user.json"

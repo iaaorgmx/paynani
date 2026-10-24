@@ -83,6 +83,7 @@ def list_body(records: list[dict], query: str, selected: str) -> str:
                       for value, label in (("", t("web.tokens.all")), ("active", t("web.tokens.status.active")),
                                            ("expired", t("web.tokens.status.expired")),
                                            ("revoked", t("web.tokens.status.revoked"))))
+    empty_row = f'<tr><td colspan="6">{t("web.tokens.empty")}</td></tr>'
     return (f'<div class="acciones"><a class="primario" href="/api-tokens/new">{t("web.tokens.create")}</a></div>'
             f'<form method="get" action="/api-tokens" class="token-filter">'
             f'<label>{t("web.tokens.search")} <input name="q" value="{e(query)}"></label>'
@@ -92,7 +93,7 @@ def list_body(records: list[dict], query: str, selected: str) -> str:
             f'<th>{t("web.tokens.name")}</th><th>{t("web.tokens.permissions")}</th>'
             f'<th>{t("web.tokens.created")}</th><th>{t("web.tokens.expires")}</th>'
             f'<th>{t("web.tokens.last_used")}</th><th>{t("web.tokens.status")}</th>'
-            f'</tr></thead><tbody>{rows or f"<tr><td colspan=\"6\">{t('web.tokens.empty')}</td></tr>"}</tbody></table></div>')
+            f'</tr></thead><tbody>{rows or empty_row}</tbody></table></div>')
 
 
 def new_body(csrf: str, *, error: str = "", values: dict | None = None) -> str:
@@ -105,7 +106,8 @@ def new_body(csrf: str, *, error: str = "", values: dict | None = None) -> str:
     checks = "".join(f'<label class="casilla"><input type="checkbox" name="permission_{p}" value="1"'
                      f'{" checked" if p in values.get("permissions", ["read"]) else ""}> {e(p)}</label>'
                      for p in PERMISSIONS)
-    return (f'{f"<p class=\"error\" role=\"alert\">{e(error)}</p>" if error else ""}'
+    error_notice = f'<p class="error" role="alert">{e(error)}</p>' if error else ""
+    return (error_notice +
             f'<form method="post" action="/api-tokens/new" class="formulario">'
             f'<input type="hidden" name="csrf" value="{e(csrf)}">'
             f'<label for="token-name">{t("web.tokens.name")}</label><input id="token-name" name="name" maxlength="100" required value="{e(values.get("name", ""))}">'
@@ -155,7 +157,8 @@ def detail_body(record: dict, csrf: str, state_dir: Path, *, error: str = "", ok
                  f'<input type="hidden" name="csrf" value="{e(csrf)}"><input type="hidden" name="id" value="{digest}">'
                  f'<label>{t("web.tokens.password")}<input type="password" name="password" autocomplete="current-password" required></label>'
                  f'<button class="peligro" type="submit">{t("web.tokens.revoke")}</button></form>')
-    return (f'{f"<p class=\"error\" role=\"alert\">{e(error)}</p>" if error else ""}'
-            f'{f"<p class=\"aviso-ok\">{t('web.tokens.saved')}</p>" if ok else ""}'
+    error_notice = f'<p class="error" role="alert">{e(error)}</p>' if error else ""
+    saved_notice = f'<p class="aviso-ok">{t("web.tokens.saved")}</p>' if ok else ""
+    return (error_notice + saved_notice +
             f'<dl class="token-detail">{details}</dl><p>{t("web.tokens.agent_replies")}: '
             f'{t("web.tokens.yes") if record.get("agent_replies", False) else t("web.tokens.no")}</p>{forms}')
