@@ -490,7 +490,7 @@ orden no se confunden ni uno descarta al otro como `duplicate`.
 | `sent` | El `sentIntent` de Android confirmó el envío a la red |
 | `delivered` | El `deliveryIntent` confirmó la entrega. No todas las redes lo reportan |
 | `failed` | Android reportó error. Va `error` con el código (`RESULT_ERROR_GENERIC_FAILURE`, `RESULT_ERROR_NO_SERVICE`, etc.) |
-| `rejected` | La app no lo envió: número fuera de `allowed`, tope por hora excedido, texto vacío o `origin` que no coincide con el prefijo (`bad_origin`). Va `error` con la razón |
+| `rejected` | La app no lo envió: número fuera de `allowed` (`not_allowed`), número que no se puede leer (`invalid_number`), tope por hora excedido, texto vacío o `origin` que no coincide con el prefijo (`bad_origin`). Va `error` con la razón |
 | `expired` | Llegó después de `expires_at` |
 
 Los `sms.status` van por la misma cola con `ack` que los mensajes de la sección 3: un

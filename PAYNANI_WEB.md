@@ -66,12 +66,48 @@ con PaynaniWeb y todavía no hay usuario.
 |---|---|
 | **Cuentas de correo** | Una entrada por cuenta: la del agente y las de `accounts.json`. Lista sus últimos correos, de 50 en 50, con el estado del aviso y la marca del roster. Abrir uno lo pide a IMAP en ese momento, como texto, y no lo guarda. |
 | **Agregar y quitar cuentas** | «+ Agregar cuenta» prueba el acceso IMAP y SMTP antes de guardar y escribe como `paynani account add`. «Quitar esta cuenta» deja de vigilarla como `paynani account remove`, sin borrar su buzón ni su roster. Las dos piden la contraseña de la web. |
-| **Mensajes** | Las conversaciones SMS de la pasarela, de 50 en 50: lo que llegó, lo que mandó el agente con su estado, lo que contestó el dueño desde PaynaniApp, y las llamadas perdidas y contestadas. |
+| **Mensajes** | Las conversaciones SMS de la pasarela, de 50 en 50: lo que llegó, lo que mandó el agente con su estado, lo que contestó el dueño desde PaynaniApp o desde la web, y las llamadas perdidas y contestadas. «Nuevo SMS» y el cuadro de responder envían por el teléfono emparejado (ver abajo). |
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. |
 
-Cuentas de correo y Mensajes solo muestran: cerrar o responder un aviso sigue
-siendo trabajo del agente.
+Cuentas de correo solo muestra: cerrar o responder un aviso sigue siendo trabajo
+del agente. Mensajes además envía SMS del dueño (PRD #489).
+
+### Enviar SMS desde «Mensajes»
+
+El dueño escribe como si lo hiciera desde PaynaniApp, y el SMS sale por el teléfono
+emparejado (PRD #489).
+
+- **Dónde:** «Nuevo SMS» (`/messages/nuevo`), con el número escrito o elegido del
+  roster, y el cuadro de responder al pie de cada conversación.
+- **El número** se normaliza con la región de la SIM del teléfono emparejado. Un
+  número que no se puede leer no sale (`invalid_number`).
+- **Fuera del roster** pide la contraseña de la web, con el mismo bloqueo de
+  intentos que la entrada. A un número del roster se envía sin contraseña.
+- **El texto** admite hasta 1,000 caracteres. `assets/sms.js` cuenta caracteres y
+  partes (GSM-7 o UCS-2); sin script, el límite lo pone el navegador y el servidor.
+- **«Pausar al agente por X minutos»** viene sin marcar. Marcada, cuando el SMS
+  sale el agente no le escribe a ese número durante X minutos, igual que después
+  de una respuesta desde PaynaniApp. X es `PAYNANI_WEB_AGENT_PAUSE_MIN` en
+  `sms.env` (1 a 1,440; 30 si no está).
+- **Tope:** 30 envíos por hora desde la web, o `PAYNANI_WEB_SMS_PER_HOUR` en
+  `sms.env`. Al llegar al tope la web dice a qué hora se libera. El conteo y la
+  escritura de la orden van bajo un candado (`state/sms/queue.lock`), así que dos
+  envíos simultáneos no lo rebasan.
+- **Estados:** cada SMS de la web dice «desde PaynaniWeb» y En cola, Aceptado,
+  Enviado, Entregado, Falló (con el código), Rechazado (con la razón) o Vencido.
+  `sms.js` pregunta a `/messages/estados?n=<número>` cada 5 segundos y recarga si
+  llegó algo nuevo, salvo que haya texto a medio escribir.
+- **Teléfono desconectado:** la orden se acepta y queda en cola; la conversación lo
+  dice. Si a los 15 minutos no salió, se ve Vencida.
+- **Sin teléfono emparejado** («No hay teléfono emparejado»), **o con una PaynaniApp
+  anterior a la 0.9.0** («Actualiza PaynaniApp para enviar desde aquí»), los botones
+  se ven deshabilitados y la web no envía.
+
+Por dentro es una orden `w_` con `origin: owner` en `state/sms/outbox/`, con la
+dirección de la web en `orders.jsonl`; la pasarela la manda sólo a una app que
+anunció `accepts_owner_out` (SMS_GATEWAY.md §2 y §4). El agente se entera por una
+línea `sms-human` con «Tú (PaynaniWeb)».
 
 ### Recibido y enviado, como un webmail
 

@@ -912,8 +912,11 @@ The gateway, `scripts/paynani sms pair` and `scripts/paynani sms send` all read 
 themselves, on Linux and on macOS. A variable already set in the environment of
 the process wins over the file, and only `PAYNANI_SMS_PORT`,
 `PAYNANI_SMS_PUBLIC_URL`, `PAYNANI_SMS_DEFAULT_REGION`,
-`PAYNANI_SMS_BATTERY_WARN_PCT`, `PAYNANI_SMS_BATTERY_CRITICAL_PCT` and
-`PAYNANI_WEB_PORT` are read.
+`PAYNANI_SMS_BATTERY_WARN_PCT`, `PAYNANI_SMS_BATTERY_CRITICAL_PCT`,
+`PAYNANI_WEB_PORT`, `PAYNANI_WEB_AGENT_PAUSE_MIN` and `PAYNANI_WEB_SMS_PER_HOUR`
+are read. The last two are for texts sent from PaynaniWeb (PAYNANI_WEB.md): the
+minutes in its «Pausar al agente» box (1 to 1440, 30 if unset) and its limit per
+hour (30 if unset).
 The battery pair are the phone's alerts (25 % and 10 % if unset; a critical
 value at or above the warning falls back to both defaults). `PAYNANI_WEB_PORT`
 (8771 if unset) is where the gateway forwards every request outside `/sms/`, for
