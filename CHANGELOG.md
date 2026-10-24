@@ -2,7 +2,53 @@
 
 ## Sin publicar
 
-- **Un token revocado o vencido ya no silencia al agente** (hallazgo después de A9 #501, PRD #491 FR-11). Las respuestas de un número al que le escribió un token revocado o vencido seguían llegando marcadas «respuesta a la API: <token>, el agente no contesta» durante 7 días, aunque ese token ya no podía leerlas. Ahora su conversación deja de contar: el SMS llega sin marca y el agente lo atiende con sus reglas. Un STOP sigue dando de baja el número, pero sin la confirmación de ese token.
+## 0.16.1 (2026-10-24)
+
+**Un token de la API revocado o vencido ya no deja al agente sin contestar.** Es
+lo que encontró la prueba de la API (A9, #501) después de 0.16.0, en el PR #529.
+
+- (PRD #491 FR-11.) Las respuestas de un número al que le escribió un token revocado o vencido seguían llegando marcadas «respuesta a la API: <token>, el agente no contesta» durante 7 días, aunque ese token ya no podía leerlas. Ahora su conversación deja de contar: el SMS llega sin marca y el agente lo atiende con sus reglas. Un STOP sigue dando de baja el número, pero sin la confirmación de ese token.
+
+Lo hizo Metis, con la revisión de Ximena. Sin requisitos nuevos. Con PaynaniApp 0.9.0.
+
+### Si actualizas desde 0.16.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.16.1
+python3 scripts/upgrade_plan.py --from v0.16.0     # y haz lo que imprima
+```
+
+El plan reinicia todos los servicios de paynani, porque cambia `VERSION`: el
+listener, los listeners por cuenta, el dispatcher, la pasarela SMS y PaynaniWeb.
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`.
+
+### Si actualizas desde 0.15.1 o anterior
+
+Un solo salto desde la versión que tienes instalada; `upgrade_plan.py` calcula
+juntos los cambios de todas las versiones intermedias. Cambia `v0.15.1` por tu
+versión (la que dice `scripts/version.sh` antes de actualizar):
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.16.1
+python3 scripts/upgrade_plan.py --from v0.15.1     # y haz lo que imprima
+```
+
+Después:
+
+1. Actualiza PaynaniApp en el teléfono a la **0.9.0** (`INSTALL.md` §5.2). Abre
+   la app una vez para que se vuelva a conectar.
+2. Corre `scripts/paynani sms devices`: `app_version` tiene que decir `0.9.0`.
+3. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+   `version_drift` tiene que decir `ok`.
+
+Los comandos de actualización de la sección 0.16.0 no hacen falta: los de arriba ya
+cubren los dos saltos. Lo que 0.16.0 cuenta de la API y de la web sigue valiendo.
+
 ## 0.16.0 (2026-10-24)
 
 **El dueño envía SMS desde PaynaniWeb, y otros agentes o programas usan paynani por
