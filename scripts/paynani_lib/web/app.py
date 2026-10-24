@@ -39,6 +39,7 @@ STATIC = {
     "/assets/web.css": (ASSETS / "web.css", "text/css; charset=UTF-8"),
     "/assets/lang.js": (ASSETS / "lang.js", "application/javascript; charset=UTF-8"),
     "/assets/time.js": (ASSETS / "time.js", "application/javascript; charset=UTF-8"),
+    "/assets/sms.js": (ASSETS / "sms.js", "application/javascript; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
     # browser asks for on its own; without it that request ended in the login page.
     "/assets/favicon.svg": (FAVICON, "image/svg+xml"),
@@ -610,7 +611,7 @@ def make_handler(ctx: Context):
             if self.route == "/cuentas/nueva" or (self.route.startswith("/cuentas/") and self.route.endswith("/quitar")):
                 self._accounts_get()
                 return
-            if self.route in ("/messages", "/messages/ver"):
+            if self.route in ("/messages", "/messages/ver", "/messages/nuevo"):
                 self._messages()
                 return
             if self.route in ("/roster", "/roster/editar", "/roster/quitar", "/roster/reglas"):
@@ -681,34 +682,105 @@ def make_handler(ctx: Context):
             except ValueError:
                 return 0
 
-        def _messages(self):
-            """FR-17 y FR-18: /messages, las conversaciones; /messages/ver?n=<número>, una."""
+        def _sms_state(self, store) -> str:
+            """FR-6: ¿el teléfono emparejado acepta órdenes del dueño?"""
+            if not store.device():
+                return messages_pages.PHONE_NONE
+            return messages_pages.PHONE_OK if store.accepts("owner") else messages_pages.PHONE_OLD
+
+        def _sms_region(self, store) -> str | None:
+            """La región del teléfono emparejado (FR-2), o la de la instalación."""
+            import re as _re
+            import phone as phone_mod
+            for sim in (store.device() or {}).get("sims") or []:
+                country = str((sim or {}).get("country") or "").strip().upper()
+                if _re.fullmatch(r"[A-Z]{2}", country):
+                    return country
+            return phone_mod.default_region()
+
+        def _messages(self, values: dict | None = None, error: str = "", code: int = 200):
+            """FR-17 y FR-18: /messages, las conversaciones; /messages/ver?n=<número>, una;
+            /messages/nuevo, «Nuevo SMS» (PRD #489 FR-2). `values` y `error` vuelven a
+            pintar un envío que no salió."""
             from ..sms import cli as sms_cli
+            from ..sms import config as sms_config
             from ..sms import store as sms_store
             from ..sms import thread as sms_thread
             t = i18n.t
             store = sms_store.Store(self.CTX.state_dir())
-            items = sms_thread.items(store, self.CTX.state_dir() / "events.jsonl", calls=True)
             names = self.CTX.phone_names()
+            state = self._sms_state(store)
+            pause_min = sms_config.web_agent_pause_min()
+            csrf = self.session["csrf"]
             kw = dict(active="messages", icon_name="inbox")
+            if self.route == "/messages/nuevo" or (values is not None and not values.get("desde_hilo")):
+                self._page(code, title=t("web.sms.new"), back="/messages",
+                           body=messages_pages.new_body(csrf, state, pause_min, names, values, error), **kw)
+                return
+            items = sms_thread.items(store, self.CTX.state_dir() / "events.jsonl", calls=True)
             if self.route == "/messages":
                 convs = sms_thread.conversations(items)
                 offset = self._offset()
                 chunk = convs[offset:offset + messages_pages.PAGE]
                 nxt = offset + messages_pages.PAGE if offset + messages_pages.PAGE < len(convs) else None
                 self._page(200, title=t("web.nav.messages"),
-                           body=messages_pages.list_body(chunk, names, offset, nxt, len(convs)), wide=True, **kw)
+                           body=messages_pages.list_body(chunk, names, offset, nxt, len(convs), state), wide=True, **kw)
                 return
-            number = self.query.get("n", [""])[0]
+            number = (values or {}).get("n") or self.query.get("n", [""])[0]
             mine = [i for i in items if i["number"] == number]
-            if not number or not mine:
+            if not number or (not mine and values is None):
                 self._page(404, title=t("web.nav.messages"), back="/messages",
                            body=f'<p class="lead">{i18n.th("web.sms.thread_empty")}</p>', **kw)
                 return
             who = names.get(number) or next((i["name"] for i in mine if i["name"]), "") or number
-            self._page(200, title=t("web.nav.messages"), back="/messages",
+            reply = messages_pages.reply_box(number, csrf, state, pause_min, number in names, values, error)
+            notice = t("web.sms.queued_ok") if self.query.get("ok", [""])[0] == "queued" and values is None else ""
+            self._page(code, title=t("web.nav.messages"), back="/messages",
                        body=messages_pages.thread_body(number, who, mine, self._offset(),
-                                                       sms_cli.human_pause(store, number)), **kw)
+                                                       sms_cli.human_pause(store, number), reply, notice), **kw)
+
+        def _sms_send(self, post: dict):
+            """POST /messages/enviar (PRD #489 FR-1 a FR-4b, FR-8, FR-9): la orden del dueño.
+            El CSRF y el Origin ya los revisó do_POST, como en todo PaynaniWeb."""
+            from urllib.parse import quote as _quote
+            from ..sms import config as sms_config
+            from ..sms import outgoing
+            from ..sms import store as sms_store
+            th = i18n.th
+            store = sms_store.Store(self.CTX.state_dir())
+            values = {"n": post.get("n", "").strip()[:40], "text": post.get("text", "")[:outgoing.MAX_TEXT + 1],
+                      "pause": post.get("pause") == "1", "desde_hilo": post.get("desde_hilo") == "1"}
+            if self._sms_state(store) != messages_pages.PHONE_OK:
+                self._messages(values, "", 409)
+                return
+            try:
+                number = outgoing.normalize(values["n"], self._sms_region(store))
+            except outgoing.Refused:
+                self._messages(values, th("web.sms.err.invalid_number"), 400)
+                return
+            if values["desde_hilo"]:
+                values["n"] = number
+            # FR-3: fuera del roster pide la contraseña de la web, con el bloqueo de la entrada.
+            if number not in self.CTX.phone_names():
+                error = self._check_current(post.get("current", "")[:users.MAX_PASSWORD])
+                if error:
+                    self._messages(values, error, 403)
+                    return
+            pause = sms_config.web_agent_pause_min() if values["pause"] else 0
+            try:
+                outgoing.queue(store, to=number, text=values["text"].replace("\r\n", "\n"), origin="owner",
+                               source=self.ip, agent_pause_min=pause, per_hour=sms_config.web_sms_per_hour())
+            except outgoing.Refused as exc:
+                if exc.code == "rate_limited":
+                    message = th("web.sms.err.rate_limited", n=sms_config.web_sms_per_hour(),
+                                 when=messages_pages.local_time(exc.retry_at or ""))
+                elif exc.code in ("empty_text", "text_too_long", "invalid_number"):
+                    message = th(f"web.sms.err.{exc.code}", n=outgoing.MAX_TEXT)
+                else:
+                    message = str(exc)
+                self._messages(values, message, 429 if exc.code == "rate_limited" else 400)
+                return
+            self._redirect(f"/messages/ver?n={_quote(number, safe='')}&ok=queued#responder")
 
         # ---- Agregar y quitar cuentas (FR-16, Q23) --------------------------------
         def _accounts_page(self, code: int, body: str, active_account: str = ""):
@@ -1066,6 +1138,9 @@ def make_handler(ctx: Context):
             self.dispatch_post(post)
 
         def dispatch_post(self, post: dict):
+            if self.route == "/messages/enviar":
+                self._sms_send(post)
+                return
             if self.route in ("/roster/guardar", "/roster/quitar", "/roster/reglas"):
                 self._roster_post(post)
                 return

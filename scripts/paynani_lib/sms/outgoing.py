@@ -15,6 +15,8 @@ teléfono las acepta.
 from __future__ import annotations
 
 import calendar
+import contextlib
+import fcntl
 import json
 import secrets
 import sys
@@ -148,7 +150,32 @@ def queue(store: Store, *, to: str, text: str, origin: str = "agent", ttl_min: i
         pause = _pause(agent_pause_min)
     if per_hour is not None and (isinstance(per_hour, bool) or not isinstance(per_hour, int) or per_hour < 1):
         raise Refused("invalid_limit", f"invalid_limit: per_hour must be a whole number of 1 or more, not {per_hour!r}.")
-    now = time.time() if now is None else now
+    with _queue_lock(store):
+        return _count_and_write(store, origin=origin, number=number, text=text, ttl_min=ttl_min,
+                                sim_slot=sim_slot, per_hour=per_hour, source=source, token=token,
+                                pause=pause, now=time.time() if now is None else now)
+
+
+@contextlib.contextmanager
+def _queue_lock(store: Store):
+    """
+    Contar las órdenes de la última hora y escribir la nueva es una sola operación:
+    sin este candado, dos envíos al mismo tiempo (PaynaniWeb atiende cada pedido en
+    su hilo; la API y `paynani sms send` corren en otros procesos) ven el mismo
+    conteo y los dos rebasan el tope (revisión de #519). `flock` sobre un archivo del
+    store excluye a hilos y procesos, porque cada llamada abre su propio descriptor.
+    """
+    store.root.mkdir(parents=True, exist_ok=True)
+    with open(store.root / "queue.lock", "a+b") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+def _count_and_write(store: Store, *, origin, number, text, ttl_min, sim_slot, per_hour, source, token,
+                     pause, now) -> dict:
     if per_hour is not None:
         recent = recent_queued(store, origin, token=token, now=now)
         if len(recent) >= per_hour:

@@ -28,7 +28,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "harness"))
 import paths  # noqa: E402
 
 KEYS = ("PAYNANI_SMS_PORT", "PAYNANI_SMS_PUBLIC_URL", "PAYNANI_SMS_DEFAULT_REGION",
-        "PAYNANI_SMS_BATTERY_WARN_PCT", "PAYNANI_SMS_BATTERY_CRITICAL_PCT", "PAYNANI_WEB_PORT")
+        "PAYNANI_SMS_BATTERY_WARN_PCT", "PAYNANI_SMS_BATTERY_CRITICAL_PCT", "PAYNANI_WEB_PORT",
+        "PAYNANI_WEB_AGENT_PAUSE_MIN", "PAYNANI_WEB_SMS_PER_HOUR")
+# Envío desde PaynaniWeb (PRD #489 FR-4b y FR-8): la pausa que ofrece la casilla y el
+# tope por hora. Un valor que no sirve vuelve al de omisión.
+WEB_AGENT_PAUSE_MIN = 30
+WEB_SMS_PER_HOUR = 30
 # Los avisos de batería del teléfono (PaynaniApp#109, Q88): aviso y crítico.
 BATTERY_WARN_PCT = 25
 BATTERY_CRITICAL_PCT = 10
@@ -127,3 +132,24 @@ def web_port(arg=None, gateway_port=None, environ=None) -> tuple[int, str]:
         return 0, (f"PaynaniWeb y la pasarela tienen el mismo puerto ({port}); se apaga el reenvío "
                    "para no reenviarse a sí misma")
     return port, problem
+
+
+def _whole(environ, name: str, default: int, low: int, high: int) -> int:
+    raw = environ.get(name)
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if low <= value <= high else default
+
+
+def web_agent_pause_min(environ=None) -> int:
+    """Los minutos de «Pausar al agente» en PaynaniWeb: 1 a 1,440, 30 si falta o no sirve (FR-4b)."""
+    return _whole(os.environ if environ is None else environ, "PAYNANI_WEB_AGENT_PAUSE_MIN",
+                  WEB_AGENT_PAUSE_MIN, 1, 1440)
+
+
+def web_sms_per_hour(environ=None) -> int:
+    """El tope de SMS por hora desde PaynaniWeb: un entero de 1 o más, 30 si falta o no sirve (FR-8)."""
+    return _whole(os.environ if environ is None else environ, "PAYNANI_WEB_SMS_PER_HOUR",
+                  WEB_SMS_PER_HOUR, 1, 100000)

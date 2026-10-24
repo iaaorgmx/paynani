@@ -400,3 +400,15 @@ body.web-shell {
   .web-shell .mensaje .texto, .web-shell .mensaje .cita, .web-shell .mensaje .nota,
   .web-shell .mensaje .aviso-caja { margin-left: 0; }
 }
+
+/* Envío de SMS desde la web (PRD #489, T3 #506) */
+.web-shell .formulario textarea[data-sms-counter] { font-family: inherit; font-size: 1rem; min-height: 6rem; }
+.web-shell .formulario .contador { margin: .2rem 0 0; font-size: .85rem; }
+.web-shell .formulario .casilla { display: flex; gap: .5rem; align-items: center; margin-top: .8rem; }
+.web-shell .formulario .casilla input { width: auto; }
+.web-shell .responder { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.web-shell .responder h3 { margin: 0 0 .5rem; font-size: 1rem; }
+.web-shell span.primario.deshabilitado {
+  display: inline-block; font-weight: 600; padding: .55rem 1rem; border-radius: 8px;
+  background: var(--line); color: var(--quiet); cursor: not-allowed;
+}
