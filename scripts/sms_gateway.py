@@ -56,6 +56,16 @@ def roster_service(state: Path, roster: Path) -> roster_api.RosterService:
                                     log=gw.log, rules_root=roster.parent)
 
 
+def api_tokens_path() -> Path | None:
+    """web/api_tokens.json de PaynaniWeb (PRD #491), para la opción «el agente contesta» (FR-12)."""
+    try:
+        from paynani_lib.web import api_tokens
+        return api_tokens.path_for()
+    except Exception as exc:  # noqa: BLE001 -- sin la web, el agente simplemente no contesta
+        gw.log(f"no se encontró api_tokens.json ({type(exc).__name__}); las respuestas a la API no las contesta el agente")
+        return None
+
+
 def main(argv=None) -> int:
     sms_config.load_sms_env()  # antes de leer los valores por omisión de argparse
     parser = argparse.ArgumentParser(description="Pasarela SMS de paynani")
@@ -86,7 +96,8 @@ def main(argv=None) -> int:
     gw.log(f"avisos de batería: warn bajo {warn} %, critical bajo {critical} %")
     gateway = gw.Gateway(state, state / "events.jsonl", Path(args.roster), public_url=args.public_url,
                          battery_warn_pct=warn, battery_critical_pct=critical,
-                         roster_service=roster_service(state, Path(args.roster)), web_port=web_port)
+                         roster_service=roster_service(state, Path(args.roster)), web_port=web_port,
+                         api_tokens_path=api_tokens_path())
 
     async def run():
         server = await gw.serve(gateway, args.host, args.port)
