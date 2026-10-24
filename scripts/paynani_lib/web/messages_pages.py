@@ -107,11 +107,20 @@ def list_body(convs: list[dict], names: dict, offset: int, next_offset: int | No
     return "\n".join(out) + "\n"
 
 
-def _status(status: str) -> str:
+def status_label(status: str, error: str = "") -> str:
+    """El estado como se lee en la conversación: «falló (código)», «rechazado (razón)» (FR-5)."""
+    label = i18n.t(f"web.sms.status.{status}")
+    label = status if label.startswith("web.") else label
+    return f"{label} ({error})" if error and status in ("failed", "rejected") else label
+
+
+def _status(status: str, error: str = "", order_id: str = "") -> str:
     if not status:
         return ""
-    label = i18n.t(f"web.sms.status.{status}")
-    return f' <span class="estado estado-sms-{e(status)}">{e(label if not label.startswith("web.") else status)}</span>'
+    # Los de la web llevan su orden: sms.js los actualiza sin recargar (FR-5).
+    data = f' data-sms-id="{e(order_id)}"' if order_id.startswith("w_") else ""
+    return (f' <span class="estado estado-sms-{e(status)}"{data} aria-live="polite">'
+            f'{e(status_label(status, error))}</span>')
 
 
 def _error_box(error: str) -> str:
@@ -182,9 +191,11 @@ def new_body(csrf: str, phone_state: str, pause_min: int, roster: dict, values: 
 
 
 def thread_body(number: str, who: str, items: list[dict], offset: int, pause_until: str | None,
-                reply: str = "", notice: str = "") -> str:
+                reply: str = "", notice: str = "", offline_ttl: int = 0) -> str:
     """`items` en orden de hora; se muestran los `PAGE` más recientes desde `offset`
-    contado desde el final. `reply` es el cuadro de reply_box(); `notice`, un aviso arriba."""
+    contado desde el final. `reply` es el cuadro de reply_box(); `notice`, un aviso arriba.
+    `offline_ttl` > 0: el teléfono está desconectado y lo que se mande vence a esos
+    minutos (FR-7)."""
     th = i18n.th
     back = f'<p class="volver"><a href="/messages">← {th("web.sms.back")}</a></p>'
     head = [back, f'<h2 class="asunto-correo">{e(who)}</h2>',
@@ -193,6 +204,8 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
         head.append(f'<p class="aviso-ok" role="status">{e(notice)}</p>')
     if pause_until:
         head.append(f'<p class="aviso-caja" role="status">{th("web.sms.paused", until=_local(pause_until))}</p>')
+    if offline_ttl:
+        head.append(f'<p class="aviso-caja" role="status" id="sms-offline">{th("web.sms.offline", min=offline_ttl)}</p>')
     if not items:
         head.append(f'<p class="lead">{th("web.sms.thread_empty")}</p>')
         return "\n".join(head + [reply]) + "\n"
@@ -217,8 +230,11 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
         owner = th("web.sms.by_owner_web") if item.get("via") == "web" else th("web.sms.by_owner")
         label = {"received": e(who), "agent": th("web.sms.by_agent"), "human": owner}[kind]
         body = e(item.get("text") or "") or f'<span class="quiet">{th("web.sms.no_text")}</span>'
-        bubbles.append(f'<li class="sms sms-{kind}"><div class="globo"><div class="de">{label}{_status(item["status"])}</div>'
+        bubbles.append(f'<li class="sms sms-{kind}"><div class="globo"><div class="de">{label}{_status(item["status"], item.get("error", ""), item.get("id", ""))}</div>'
                        f'<div class="texto">{body}</div><time>{when}</time></div></li>')
     bubbles.append("</ol>")
-    script = '<script src="/assets/sms.js" defer></script>' if reply else ""
-    return "\n".join(head + bubbles + [reply, script]) + "\n"
+    # sms.js pregunta los estados a /messages/estados y recarga si llegó algo nuevo (FR-5).
+    watch = (f'<div hidden id="sms-watch" data-url="/messages/estados?n={e(quote(number, safe=""))}"'
+             f' data-count="{len(items)}"></div>')
+    script = '<script src="/assets/sms.js" defer></script>'
+    return "\n".join(head + bubbles + [reply, watch, script]) + "\n"

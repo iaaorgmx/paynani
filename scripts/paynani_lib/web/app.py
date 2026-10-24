@@ -614,6 +614,9 @@ def make_handler(ctx: Context):
             if self.route in ("/messages", "/messages/ver", "/messages/nuevo"):
                 self._messages()
                 return
+            if self.route == "/messages/estados":
+                self._sms_statuses()
+                return
             if self.route in ("/roster", "/roster/editar", "/roster/quitar", "/roster/reglas"):
                 self._roster_get()
                 return
@@ -698,6 +701,32 @@ def make_handler(ctx: Context):
                     return country
             return phone_mod.default_region()
 
+        def _sms_offline_ttl(self, state: str) -> int:
+            """FR-7: con el teléfono emparejado pero desconectado, los minutos en que vence
+            una orden; 0 si está conectado (o no hay a quién mandar)."""
+            from ..sms import health, outgoing
+            if state != messages_pages.PHONE_OK:
+                return 0
+            facts = health.phone_facts(self.CTX.state_dir())
+            return 0 if facts and facts["online"] else outgoing.DEFAULT_TTL_MIN
+
+        def _sms_statuses(self):
+            """GET /messages/estados?n=<número> (PRD #489 FR-5): el estado de cada mensaje
+            de la web en la conversación, para que sms.js los actualice sin recargar."""
+            from ..sms import store as sms_store
+            from ..sms import thread as sms_thread
+            store = sms_store.Store(self.CTX.state_dir())
+            number = self.query.get("n", [""])[0]
+            items = [i for i in sms_thread.items(store, self.CTX.state_dir() / "events.jsonl", calls=True)
+                     if number and i["number"] == number]
+            body = {"count": len(items),
+                    "offline": bool(self._sms_offline_ttl(self._sms_state(store))),
+                    "items": [{"id": i["id"], "status": i["status"],
+                               "label": messages_pages.status_label(i["status"], i.get("error", ""))}
+                              for i in items if i.get("id", "").startswith("w_")]}
+            self._send(200, "application/json; charset=UTF-8", json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                       [("Cache-Control", "no-store")])
+
         def _messages(self, values: dict | None = None, error: str = "", code: int = 200):
             """FR-17 y FR-18: /messages, las conversaciones; /messages/ver?n=<número>, una;
             /messages/nuevo, «Nuevo SMS» (PRD #489 FR-2). `values` y `error` vuelven a
@@ -737,7 +766,8 @@ def make_handler(ctx: Context):
             notice = t("web.sms.queued_ok") if self.query.get("ok", [""])[0] == "queued" and values is None else ""
             self._page(code, title=t("web.nav.messages"), back="/messages",
                        body=messages_pages.thread_body(number, who, mine, self._offset(),
-                                                       sms_cli.human_pause(store, number), reply, notice), **kw)
+                                                       sms_cli.human_pause(store, number), reply, notice,
+                                                       self._sms_offline_ttl(state)), **kw)
 
         def _sms_send(self, post: dict):
             """POST /messages/enviar (PRD #489 FR-1 a FR-4b, FR-8, FR-9): la orden del dueño.

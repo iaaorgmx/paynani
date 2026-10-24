@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 _HARNESS = Path(__file__).resolve().parents[3] / "harness"
@@ -49,13 +50,31 @@ def when(stamp: str) -> tuple[float, str]:
     return moment.timestamp(), moment.astimezone().isoformat(timespec="seconds")
 
 
+def _past(stamp) -> bool:
+    """¿Ya pasó esta hora ISO 8601? Una hora vacía o ilegible no vence nada."""
+    try:
+        moment = datetime.fromisoformat(str(stamp or "").strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.timestamp() < time.time()
+
+
 def items(store, journal: Path, *, number: str | None = None, calls: bool = False) -> list[dict]:
     """
     Cada mensaje (y, con `calls`, cada llamada) como
-    `{"number", "epoch", "local", "kind", "status", "text", "name", "duration_s"}`,
-    en orden de hora. Con `number`, sólo los de ese número.
+    `{"number", "epoch", "local", "kind", "status", "text", "name", "duration_s", "via", "id", "error"}`,
+    en orden de hora. Con `number`, sólo los de ese número. `id` es la orden (`o_`, `w_`)
+    o el `local_id` del envío del dueño; `error`, el código de un `failed` o la razón de
+    un `rejected` (PRD #489 FR-5).
+
+    Una orden de la web que sigue en cola después de su `expires_at` sale como `expired`
+    aunque la pasarela todavía no la haya marcado: la pasarela sólo vence órdenes con
+    el teléfono conectado, y la web debe decir «Vencido» a los 15 minutos (FR-7).
     """
     raw = []
+    ids: dict[int, str] = {}
     for record, _ in ev.read_from(journal, 0) or ():
         if not isinstance(record, dict):
             continue
@@ -78,6 +97,7 @@ def items(store, journal: Path, *, number: str | None = None, calls: bool = Fals
             raw.append((who, stamp, "call_missed" if kind == ev.CALL_MISSED else "call_answered", "", "",
                         sender.get("name", ""), record.get("duration_s")))
     statuses: dict[str, str] = {}
+    errors: dict[str, str] = {}
     path = store.root / "orders.jsonl"
     if path.exists():
         with open(path, encoding="utf-8") as fh:
@@ -88,12 +108,15 @@ def items(store, journal: Path, *, number: str | None = None, calls: bool = Fals
                     continue
                 if rec.get("status") != "queued":
                     statuses[rec.get("order_id", "")] = rec.get("status", "")
+                if rec.get("status") in ("failed", "rejected") and rec.get("error") not in (None, ""):
+                    errors[rec.get("order_id", "")] = str(rec["error"])
     for order in store.sent_orders() + store.pending_orders():
         to = order.get("to")
         if not to or (number is not None and to != number):
             continue
         queued = next((r.get("at", "") for r in store.order_statuses(order["id"]) if r.get("status") == "queued"), "")
         raw.append((to, queued, "agent", statuses.get(order["id"], "queued"), str(order.get("text", "")), "", None))
+        ids[len(raw) - 1] = order["id"]
     by_send: dict[str, dict] = {}
     last: dict[str, str] = {}
     for rec in store.human_records():
@@ -103,10 +126,13 @@ def items(store, journal: Path, *, number: str | None = None, calls: bool = Fals
         if rec.get("event_id"):
             by_send[rec["local_id"]] = rec
         last[rec["local_id"]] = rec.get("status", "")
+        if rec.get("status") in ("failed", "rejected") and rec.get("error") not in (None, ""):
+            errors[rec["local_id"]] = str(rec["error"])
     via: dict[int, str] = {}
     for local_id, rec in by_send.items():
         saved = store.inbox(rec["id"]) or {}
         via[len(raw)] = "web" if local_id.startswith("w_") else "app"
+        ids[len(raw)] = local_id
         raw.append((rec["to"], rec.get("at", ""), "human", last.get(local_id, ""), str(saved.get("text", "")), "", None))
     # Lo que el dueño mandó desde la web y todavía no tiene evento: sigue en su orden.
     for order in store.sent_orders(origins=("owner",)) + store.pending_orders(origins=("owner",)):
@@ -115,13 +141,18 @@ def items(store, journal: Path, *, number: str | None = None, calls: bool = Fals
             continue
         queued = next((r.get("at", "") for r in store.order_statuses(order["id"]) if r.get("status") == "queued"), "")
         status = last.get(order["id"]) or statuses.get(order["id"], "queued")
+        if status == "queued" and _past(order.get("expires_at")):
+            status = "expired"
         via[len(raw)] = "web"
+        ids[len(raw)] = order["id"]
         raw.append((to, queued, "human", status, str(order.get("text", "")), "", None))
     out = []
     for index, (who, stamp, kind, status, text, name, duration) in enumerate(raw):
         epoch, local = when(stamp)
+        oid = ids.get(index, "")
         out.append({"number": who, "epoch": epoch, "local": local, "kind": kind, "status": status,
-                    "text": text, "name": name or "", "duration_s": duration, "via": via.get(index, "")})
+                    "text": text, "name": name or "", "duration_s": duration, "via": via.get(index, ""),
+                    "id": oid, "error": errors.get(oid, "") if status in ("failed", "rejected") else ""})
     out.sort(key=lambda item: item["epoch"])
     return out
 
