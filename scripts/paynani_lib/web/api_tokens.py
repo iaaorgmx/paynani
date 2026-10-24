@@ -57,6 +57,7 @@ def _write(path: Path, data: list[dict]) -> None:
 
 
 def create(name: str, *, expires_at: str | None = None, permissions=(), limits=None,
+           agent_replies: bool = False,
            path: Path | None = None, now: dt.datetime | None = None) -> tuple[str, dict]:
     """Called by the future owner-only token screen; return the secret once."""
     if not isinstance(name, str) or not name.strip():
@@ -70,7 +71,7 @@ def create(name: str, *, expires_at: str | None = None, permissions=(), limits=N
     record = {"sha256": hashlib.sha256(secret.encode("ascii")).hexdigest(),
               "prefix": secret[:11], "name": name.strip(), "permissions": list(permissions),
               "limits": limits or {"sms_per_hour": 30, "sms_per_day": 200},
-              "created_at": now.isoformat(), "expires_at": expires_at,
+              "agent_replies": bool(agent_replies), "created_at": now.isoformat(), "expires_at": expires_at,
               "revoked_at": None, "last_used_at": None}
     target = Path(path) if path else path_for()
     with _locked(target):
@@ -78,6 +79,31 @@ def create(name: str, *, expires_at: str | None = None, permissions=(), limits=N
         data.append(record)
         _write(target, data)
     return secret, record
+
+
+def list_records(*, path: Path | None = None) -> list[dict]:
+    target = Path(path) if path else path_for()
+    with _locked(target):
+        return _read(target)
+
+
+def update(sha256: str, *, path: Path | None = None, agent_replies: bool | None = None,
+           revoke: bool = False, now: dt.datetime | None = None) -> dict | None:
+    """Update a token by digest. Never returns or recreates its cleartext secret."""
+    target = Path(path) if path else path_for()
+    with _locked(target):
+        records = _read(target)
+        for record in records:
+            if hmac.compare_digest(record["sha256"], sha256):
+                if record.get("revoked_at"):
+                    return None
+                if agent_replies is not None:
+                    record["agent_replies"] = bool(agent_replies)
+                if revoke:
+                    record["revoked_at"] = (now or dt.datetime.now(dt.timezone.utc)).isoformat()
+                _write(target, records)
+                return record
+    return None
 
 
 def lookup(secret: str, *, path: Path | None = None,

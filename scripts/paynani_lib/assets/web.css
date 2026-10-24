@@ -309,6 +309,19 @@ body.web-shell {
 .web-shell .formulario textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; line-height: 1.5; min-height: 18rem; }
 .web-shell .formulario > button { margin-top: 1rem; align-self: flex-start; }
 .web-shell .formulario .botones { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.web-shell .token-filter { display: flex; flex-wrap: wrap; gap: .8rem; align-items: end; margin: 1rem 0; }
+.web-shell .token-filter label { display: flex; flex-direction: column; gap: .25rem; }
+.web-shell .token-filter input, .web-shell .token-filter select { font: inherit; padding: .45rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+.web-shell .token-table-wrap { overflow-x: auto; }
+.web-shell .token-table { width: 100%; border-collapse: collapse; text-align: left; font-size: .9rem; }
+.web-shell .token-table th, .web-shell .token-table td { padding: .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.web-shell .token-table code, .web-shell .token-secret code { overflow-wrap: anywhere; }
+.web-shell .token-detail { display: grid; grid-template-columns: minmax(9rem, 35%) 1fr; gap: .6rem; overflow-wrap: anywhere; }
+.web-shell .token-detail dt { color: var(--quiet); }
+.web-shell .token-detail dd { margin: 0; }
+.web-shell .token-secret { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; padding: .8rem; border: 1px solid var(--line); border-radius: 8px; }
+.web-shell .token-agent-message { display: block; width: 100%; min-height: 8rem; margin: .5rem 0; font: inherit; }
+.web-shell .formulario fieldset { border: 1px solid var(--line); border-radius: 8px; margin-top: .7rem; }
 
 /* Profile (T9), como el Profile del /dash: el avatar, el nombre, el puesto y las
    opciones como filas con flecha. */

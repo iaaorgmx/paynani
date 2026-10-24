@@ -40,6 +40,7 @@ ICONS = {
     "back": '<path d="M19 12H5M12 19l-7-7 7-7"/>',
     "menu": '<path d="M3 6h18M3 12h18M3 18h18"/>',
     "lock": '<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+    "key": '<circle cx="7" cy="15" r="4"/><path d="m10 12 10-10 2 2-3 3 2 2-3 3-2-2-3 3"/>',
     "warn": '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
 }
 
@@ -114,6 +115,7 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
     </details>
     {entry('messages', '/messages', 'inbox', 'web.nav.messages')}
     {entry('roster', '/roster', 'roster', 'web.nav.roster')}
+    {entry('api_tokens', '/api-tokens', 'key', 'web.tokens.title')}
   </nav>
   <div class="grupo separa">{th('web.nav.tools')}</div>
   <nav aria-label="{th('web.nav.tools')}">

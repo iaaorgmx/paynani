@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import secrets
 import sys
 import time
@@ -28,8 +29,8 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from .. import guard, i18n
 from ..brand import brand_svg
-from . import strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (accounts_pages, api_actions, api_auth, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell,
+from . import strings, token_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import (accounts_pages, api_actions, api_auth, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -40,6 +41,7 @@ STATIC = {
     "/assets/lang.js": (ASSETS / "lang.js", "application/javascript; charset=UTF-8"),
     "/assets/time.js": (ASSETS / "time.js", "application/javascript; charset=UTF-8"),
     "/assets/sms.js": (ASSETS / "sms.js", "application/javascript; charset=UTF-8"),
+    "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
@@ -628,7 +630,94 @@ def make_handler(ctx: Context):
             if self.route in ("/profile", "/profile/info", "/profile/password"):
                 self._profile_get()
                 return
+            if self.route in ("/api-tokens", "/api-tokens/new", "/api-tokens/detail"):
+                self._tokens_get()
+                return
             self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
+
+        def _tokens_get(self):
+            t = i18n.t
+            path = api_tokens.path_for(self.CTX.user_path())
+            try:
+                records = api_tokens.list_records(path=path)
+            except (OSError, ValueError):
+                self._page(500, title=t("web.tokens.title"), body=f'<p class="error">{i18n.th("web.tokens.invalid")}</p>', active="api_tokens")
+                return
+            if self.route == "/api-tokens/new":
+                self._page(200, title=t("web.tokens.create"), body=token_pages.new_body(self.session["csrf"]),
+                           active="api_tokens", back="/api-tokens")
+            elif self.route == "/api-tokens/detail":
+                digest = self.query.get("id", [""])[0]
+                record = next((r for r in records if r["sha256"] == digest), None)
+                if record is None:
+                    self._page(404, title=t("web.tokens.title"), body=f'<p>{i18n.th("web.tokens.missing")}</p>',
+                               active="api_tokens", back="/api-tokens")
+                else:
+                    self._page(200, title=record.get("name", ""), body=token_pages.detail_body(
+                        record, self.session["csrf"], self.CTX.state_dir(), ok=self.query.get("ok", [""])[0]),
+                        active="api_tokens", back="/api-tokens")
+            else:
+                query = self.query.get("q", [""])[0][:100].strip()
+                selected = self.query.get("status", [""])[0]
+                if selected not in ("", "active", "expired", "revoked"):
+                    selected = ""
+                self._page(200, title=t("web.tokens.title"), body=token_pages.list_body(records, query, selected),
+                           active="api_tokens", wide=True)
+
+        def _tokens_post(self, post: dict):
+            t = i18n.t
+            path = api_tokens.path_for(self.CTX.user_path())
+            csrf = self.session["csrf"]
+            if self.route == "/api-tokens/new":
+                values = {key: post.get(key, "") for key in ("name", "expiry", "custom", "sms_per_hour", "sms_per_day")}
+                values["permissions"] = [p for p in token_pages.PERMISSIONS if post.get("permission_" + p) == "1"]
+                values["agent_replies"] = post.get("agent_replies") == "1"
+                error = self._check_current(post.get("password", "")[:users.MAX_PASSWORD])
+                if not error:
+                    try:
+                        name = values["name"].strip()
+                        if not name or len(name) > 100 or not values["permissions"]:
+                            raise ValueError("invalid name or permissions")
+                        hour, day = int(values["sms_per_hour"]), int(values["sms_per_day"])
+                        if not (1 <= hour <= 100000 and 1 <= day <= 100000):
+                            raise ValueError("invalid limits")
+                        expiry = token_pages.expiry_from_form(values["expiry"], values["custom"])
+                        secret, record = api_tokens.create(name, expires_at=expiry,
+                            permissions=values["permissions"], limits={"sms_per_hour": hour, "sms_per_day": day},
+                            agent_replies=values["agent_replies"], path=path)
+                    except (ValueError, OSError):
+                        error = i18n.th("web.tokens.invalid")
+                if error:
+                    self._page(400, title=t("web.tokens.create"), body=token_pages.new_body(csrf, error=error, values=values),
+                               active="api_tokens", back="/api-tokens")
+                    return
+                host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "")
+                host = host if re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]{1,5})?", host) else "localhost"
+                scheme = "http" if host.startswith(("localhost", "127.0.0.1")) else "https"
+                url = f"{scheme}://{host}/api/agents.md"
+                self._page(200, title=t("web.tokens.created_ok"), body=token_pages.created_body(secret, record, url),
+                           active="api_tokens", back="/api-tokens")
+                return
+            digest = post.get("id", "")
+            if not re.fullmatch(r"[a-f0-9]{64}", digest):
+                self._page(404, title=t("web.tokens.title"), body=f'<p>{i18n.th("web.tokens.missing")}</p>', active="api_tokens")
+                return
+            error = self._check_current(post.get("password", "")[:users.MAX_PASSWORD])
+            if not error:
+                try:
+                    changed = api_tokens.update(digest, path=path, revoke=self.route == "/api-tokens/revoke",
+                        agent_replies=post.get("agent_replies") == "1" if self.route == "/api-tokens/agent-replies" else None)
+                    if changed is None:
+                        error = i18n.th("web.tokens.missing")
+                except (OSError, ValueError):
+                    error = i18n.th("web.tokens.invalid")
+            if error:
+                records = api_tokens.list_records(path=path)
+                record = next((r for r in records if r["sha256"] == digest), None)
+                body = token_pages.detail_body(record, csrf, self.CTX.state_dir(), error=error) if record else f'<p class="error">{token_pages.e(error)}</p>'
+                self._page(400, title=t("web.tokens.title"), body=body, active="api_tokens", back="/api-tokens")
+                return
+            self._redirect("/api-tokens/detail?id=" + digest + "&ok=1")
 
         def _email(self):
             """FR-13 y FR-14: /email/<cuenta> es la lista de recibidos y enviados; /email/<cuenta>/ver?e=<evento>
@@ -1211,6 +1300,9 @@ def make_handler(ctx: Context):
             self.dispatch_post(post)
 
         def dispatch_post(self, post: dict):
+            if self.route in ("/api-tokens/new", "/api-tokens/revoke", "/api-tokens/agent-replies"):
+                self._tokens_post(post)
+                return
             if self.route == "/messages/enviar":
                 self._sms_send(post)
                 return
