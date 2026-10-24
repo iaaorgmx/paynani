@@ -24,7 +24,8 @@ class Limits:
                 self.blocked.pop(address, None)
             return max(0, int(remaining + 0.999))
 
-    def fail(self, address: str) -> None:
+    def fail(self, address: str) -> bool:
+        """Record a failed credential. True when ten consecutive failures block it."""
         now = self.clock()
         with self.lock:
             if len(self.failures) > PRUNE_ABOVE or len(self.blocked) > PRUNE_ABOVE:
@@ -36,6 +37,13 @@ class Limits:
             if len(failures) >= 10:
                 self.blocked[address] = now + 900
                 failures.clear()
+                return True
+            return False
+
+    def success(self, address: str) -> None:
+        """A valid credential ends the sequence of failed authentications."""
+        with self.lock:
+            self.failures.pop(address, None)
 
     def _prune(self, now: float) -> None:
         """Remove expired addresses under the same lock used by fail/admit."""

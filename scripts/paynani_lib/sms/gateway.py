@@ -848,6 +848,13 @@ class Gateway:
         if not changed:
             return
         log(f"{'baja' if kind == 'stop' else 'alta'} de la API para un número ({word})")
+        try:
+            from ..web import api_security
+            api_security.Journal(self.store.root.parent).record(
+                "opt_out" if kind == "stop" else "opt_in", secrets.token_hex(8),
+                (conv or {}).get("token_id", ""), e164)
+        except (OSError, ValueError):
+            log("no se pudo escribir la baja o alta en la bitácora de seguridad de la API")
         if not conv or not self.store.accepts("api"):
             return
         from . import outgoing  # aquí: outgoing importa status_id de este módulo
