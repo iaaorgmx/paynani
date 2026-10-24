@@ -614,6 +614,9 @@ def make_handler(ctx: Context):
             if self.route in ("/messages", "/messages/ver", "/messages/nuevo"):
                 self._messages()
                 return
+            if self.route == "/messages/bajas":
+                self._sms_optout()
+                return
             if self.route == "/messages/estados":
                 self._sms_statuses()
                 return
@@ -709,6 +712,44 @@ def make_handler(ctx: Context):
                 return 0
             facts = health.phone_facts(self.CTX.state_dir())
             return 0 if facts and facts["online"] else outgoing.DEFAULT_TTL_MIN
+
+        def _sms_optout(self, notice: str = "", error: str = "", value: str = "", code: int = 200):
+            """GET /messages/bajas (PRD #491 FR-13): la lista de bajas de la API."""
+            from ..sms import api_replies
+            from ..sms import store as sms_store
+            store = sms_store.Store(self.CTX.state_dir())
+            try:
+                rows = api_replies.listing(store)
+            except (OSError, ValueError):
+                rows, error, code = [], error or i18n.t("web.sms.optout.err.unreadable"), 500
+            if not notice:
+                done = self.query.get("ok", [""])[0]
+                notice = i18n.t(f"web.sms.optout.ok_{done}") if done in ("added", "removed") else ""
+            self._page(code, title=i18n.t("web.sms.optout.title"), back="/messages",
+                       body=messages_pages.optout_body(rows, self.session["csrf"], notice, error, value),
+                       active="messages", icon_name="inbox")
+
+        def _sms_optout_post(self, post: dict):
+            """POST /messages/bajas: `accion=agregar|quitar` y `n`. CSRF y Origin, como todo POST."""
+            from ..sms import api_replies, outgoing
+            from ..sms import store as sms_store
+            store = sms_store.Store(self.CTX.state_dir())
+            raw = post.get("n", "").strip()[:40]
+            action = post.get("accion", "")
+            if action not in ("agregar", "quitar"):
+                self._sms_optout(error=i18n.t("web.sms.optout.err.action"), value=raw, code=400)
+                return
+            try:
+                number = outgoing.normalize(raw, self._sms_region(store))
+            except outgoing.Refused:
+                self._sms_optout(error=i18n.t("web.sms.err.invalid_number"), value=raw, code=400)
+                return
+            try:
+                api_replies.set_opt_out(store, number, action == "agregar", by=f"web:{self.ip}")
+            except (OSError, ValueError):
+                self._sms_optout(error=i18n.t("web.sms.optout.err.unreadable"), value=raw, code=500)
+                return
+            self._redirect("/messages/bajas?ok=" + ("added" if action == "agregar" else "removed"))
 
         def _sms_statuses(self):
             """GET /messages/estados?n=<número> (PRD #489 FR-5): el estado de cada mensaje
@@ -1170,6 +1211,9 @@ def make_handler(ctx: Context):
         def dispatch_post(self, post: dict):
             if self.route == "/messages/enviar":
                 self._sms_send(post)
+                return
+            if self.route == "/messages/bajas":
+                self._sms_optout_post(post)
                 return
             if self.route in ("/roster/guardar", "/roster/quitar", "/roster/reglas"):
                 self._roster_post(post)

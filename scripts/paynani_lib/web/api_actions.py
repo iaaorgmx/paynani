@@ -480,8 +480,57 @@ def get_sms_status(call: Call) -> dict:
     return {"order": _order_view(store, order)}
 
 
-# Acción → (permiso, función). GetTokenInfo y GetUsage (A7) y ListSmsReplies (A5) se
-# suman aquí en sus tareas.
+# --- Respuestas a la API (A5 #497, PRD #491 FR-11) ----------------------------------------
+
+REPLIES_MAX = 200
+REPLIES_WINDOW_S = 7 * 86400
+
+
+def list_sms_replies(call: Call) -> dict:
+    """
+    Los SMS que llegaron desde `since` y que responden a una conversación de ESTE token
+    (la pasarela los marca con `api_reply`), del más viejo al más nuevo, hasta 200.
+    `since` es una hora ISO 8601 con zona, de hace 7 días como mucho.
+    """
+    import event as ev
+    from ..sms import api_replies
+    from ..sms import thread as sms_thread
+    since_raw = call.required("since", limit=40)
+    since = api_replies._epoch(since_raw) if re.search(r"(Z|[+-]\d\d:?\d\d)$", since_raw) else None
+    now = time.time()
+    if since is None or since > now + 60:
+        raise ApiError(400, "invalid_parameter", "since must be an ISO 8601 time with a time zone, not in the future.",
+                       field="since")
+    if since < now - REPLIES_WINDOW_S:
+        raise ApiError(400, "invalid_parameter", "since can be at most 7 days ago.", field="since")
+    store = _sms_store(call)
+    token_id = call.record.get("prefix", "")
+    out = []
+    truncated = False
+    for record, _ in ev.read_from(call.ctx.state_dir() / "events.jsonl", 0) or ():
+        if not isinstance(record, dict) or record.get("event_type") != ev.SMS_RECEIVED:
+            continue
+        reply = record.get("api_reply") or {}
+        if reply.get("token_id") != token_id:
+            continue
+        stamp = str(record.get("sent_at") or record.get("observed_at") or "")
+        epoch, _local = sms_thread.when(stamp)
+        if epoch < since:
+            continue
+        if len(out) >= REPLIES_MAX:
+            truncated = True
+            break
+        message_id = str(record.get("provider_id", "")).split(":", 1)[-1]
+        saved = store.inbox(message_id) or {}
+        item = {"event_id": record.get("event_id", ""), "from": (record.get("sender") or {}).get("address", ""),
+                "text": str(saved.get("text", "")), "received_at": stamp, "in_reply_to": reply.get("order_id", "")}
+        if record.get("api_optout"):
+            item["opt_out"] = record["api_optout"]
+        out.append(item)
+    return {"since": since_raw, "replies": out, "truncated": truncated}
+
+
+# Acción → (permiso, función). GetTokenInfo y GetUsage (A7) se suman aquí en su tarea.
 ACTIONS = {
     "ListAccounts": (READ, list_accounts),
     "ListMail": (READ, list_mail),
@@ -499,6 +548,7 @@ ACTIONS = {
     "RemoveAccount": (ACCOUNTS_WRITE, remove_account),
     "SendSms": (SMS_SEND, send_sms),
     "GetSmsStatus": (SMS_SEND, get_sms_status),
+    "ListSmsReplies": (READ, list_sms_replies),
 }
 
 

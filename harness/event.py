@@ -501,7 +501,7 @@ def _sender(e164, raw, name):
 
 
 def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sent_at,
-              roster_match, local_time, observed_at=None, rules=None):
+              roster_match, local_time, observed_at=None, rules=None, api_reply=None, api_optout=None):
     """
     Un SMS recibido, con el mismo sobre que un correo. El texto completo NO va
     aquí: vive en state/sms/inbox/ y se ve con `paynani event show --body`,
@@ -509,14 +509,23 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
     """
     eid = sms_event_id(device_id, message_id)
     who = " ".join(p for p in (sender_name, e164 or safe_excerpt(raw_sender, 40)) if p)
+    # Respuesta a una conversación de la API y bajas (PRD #491 FR-11 a FR-13), también
+    # dentro del corchete: el nombre del token lo pone el dueño, no el SMS.
+    api = ""
+    if api_reply:
+        api = f", respuesta a la API: {safe_excerpt(api_reply.get('token') or api_reply.get('token_id', ''), 40)}"
+        if not api_reply.get("agent_replies"):
+            api += ", el agente no contesta"
+    if api_optout in ("stop", "start"):
+        api += ", baja de la API" if api_optout == "stop" else ", alta en la API"
     if roster_match:
         # Las reglas del contacto (#409 A-1) dentro del corchete, como en el correo: el
         # texto del SMS no puede escribir ahí. Antes de `roster`, para que la línea siga
         # teniendo `, roster]` (#423).
         note = f", {_rules_tag(rules)}" if rules else ""
-        line = f"[sms {local_time}{note}, roster] {who}: {safe_excerpt(text)}"
+        line = f"[sms {local_time}{note}{api}, roster] {who}: {safe_excerpt(text)}"
     else:
-        line = f"[sms {local_time}] {who}: mensaje de un número fuera del roster"
+        line = f"[sms {local_time}{api}] {who}: mensaje de un número fuera del roster"
     record = {
         "schema_version": SCHEMA_VERSION,
         "event_type": SMS_RECEIVED,
@@ -534,6 +543,12 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
     }
     if roster_match and rules:
         record["rules"] = {"file": rules["file"], "status": rules["status"]}
+    if api_reply:
+        record["api_reply"] = {"token": str(api_reply.get("token", "")), "token_id": str(api_reply.get("token_id", "")),
+                               "order_id": str(api_reply.get("order_id", "")),
+                               "agent_replies": bool(api_reply.get("agent_replies"))}
+    if api_optout in ("stop", "start"):
+        record["api_optout"] = api_optout
     record["notification_text"] = f"{line} [{record['inspection_command']}]"
     return record
 
