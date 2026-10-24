@@ -921,9 +921,15 @@ The battery pair are the phone's alerts (25 % and 10 % if unset; a critical
 value at or above the warning falls back to both defaults). `PAYNANI_WEB_PORT`
 (8771 if unset) is where the gateway forwards every request outside `/sms/`, for
 PaynaniWeb on the same tunnel domain (PRD #434); with nothing listening there
-the gateway answers `503` and texts keep flowing. `0` turns the forward off. After editing
-it, restart the gateway: `systemctl --user restart paynani-sms.service`, or on
-macOS `launchctl kickstart -k gui/$(id -u)/com.paynani.sms`.
+the gateway answers `503` and texts keep flowing. `0` turns the forward off.
+
+Each process reads `sms.env` only when it starts, so restart what uses the keys you
+changed. The gateway reads the `PAYNANI_SMS_*` keys and `PAYNANI_WEB_PORT`;
+PaynaniWeb reads `PAYNANI_WEB_PORT`, `PAYNANI_WEB_AGENT_PAUSE_MIN` and
+`PAYNANI_WEB_SMS_PER_HOUR`. When in doubt, restart both:
+`systemctl --user restart paynani-sms.service paynani-web.service`, or on macOS
+`launchctl kickstart -k gui/$(id -u)/com.paynani.sms` and
+`launchctl kickstart -k gui/$(id -u)/com.paynani.web`.
 
 **The phone reaches the gateway through a tunnel you run yourself.** paynani does
 not start or supervise it: that takes a third-party binary and its credentials,

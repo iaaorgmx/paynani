@@ -185,6 +185,11 @@ enableable = {
     and "@." not in unit
 }
 
+# Revisión de #521: PaynaniWeb lee sus claves de sms.env sólo al arrancar.
+install_text = (ROOT / "INSTALL.md").read_text()
+check("INSTALL.md says to restart PaynaniWeb after editing sms.env (Linux and macOS)", (True, True),
+      ("restart paynani-sms.service paynani-web.service" in install_text,
+       "kickstart -k gui/$(id -u)/com.paynani.web" in install_text))
 check("INSTALL.md installs every shipped unit", shipped, installed)
 check("INSTALL.md enables every installed enableable unit", enableable, enabled_units("INSTALL.md"))
 check("UPGRADE.md enables every installed enableable unit", enableable, enabled_units("UPGRADE.md"))
