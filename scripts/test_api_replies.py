@@ -187,6 +187,11 @@ async def gateway_part():
     check("token_active: sin vencimiento sí", True, api_replies.token_active(tokens_path, citas_rec["prefix"]))
     check("token_active: un prefijo desconocido o sin archivo cuenta como vigente", (True, True),
           (api_replies.token_active(tokens_path, "pn_xxxxxxxx"), api_replies.token_active(tmp / "no.json", "pn_x")))
+    for shape in ("null", "42", '{"tokens": null}', '{"tokens": 42}'):
+        odd = tmp / "forma.json"
+        odd.write_text(shape, encoding="utf-8")
+        check(f"token_active: un almacén con forma {shape} cuenta como vigente, sin error", True,
+              api_replies.token_active(odd, "pn_x"))
 
     # Hace más de 7 días no cuenta.
     old = outgoing.queue(st, to=OTHER, text="viejo", origin="api", token="citas", token_id=citas_rec["prefix"],

@@ -151,6 +151,8 @@ def token_active(tokens_path: Path | None, token_id: str, now: datetime | None =
         return True
     if isinstance(records, dict):
         records = records.get("tokens", [])
+    if not isinstance(records, list):
+        return True  # Una forma que no entendemos cuenta como vigente, igual que un archivo ilegible.
     record = next((r for r in records if isinstance(r, dict) and r.get("prefix") == token_id), None)
     if record is None:
         return True
