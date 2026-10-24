@@ -150,6 +150,20 @@ check("FR-7 antes que FR-8: la llave repetida devuelve su orden aunque el númer
       (200, first_id, True), (status, body["order"]["id"], body["duplicate"]))
 (st.root / "optout.json").unlink()
 
+# Revisión de #522: el reintento con la misma llave no depende del estado del teléfono.
+device_saved = st.device()
+st.touch(accepts_api_out=False)
+status, body = api(sender, "SendSms", to=CLIENTE, text="Su cita es mañana", idempotency_key="cita-1")
+check("FR-7: la app dejó de anunciar accepts_api_out: el reintento devuelve su orden, no app_outdated",
+      (200, first_id, True), (status, body.get("order", {}).get("id"), body.get("duplicate")))
+st.revoke()
+status, body = api(sender, "SendSms", to=CLIENTE, text="Su cita es mañana", idempotency_key="cita-1")
+check("FR-7: sin teléfono emparejado: el reintento devuelve su orden, no no_phone",
+      (200, first_id, True), (status, body.get("order", {}).get("id"), body.get("duplicate")))
+status, body = api(sender, "SendSms", to=CLIENTE, text="Una nueva", idempotency_key="nueva-sin-tel")
+check("…pero una llave nueva sin teléfono sigue siendo no_phone", (409, "no_phone"), (status, body["code"]))
+st.save_device(device_saved)
+
 # --- Validaciones del texto y del número ---------------------------------------------------
 status, body = api(sender, "SendSms", to="hola", text="x", idempotency_key="v-1")
 check("número ilegible: 400 invalid_number", (400, "invalid_number", "to"), (status, body["code"], body.get("field")))

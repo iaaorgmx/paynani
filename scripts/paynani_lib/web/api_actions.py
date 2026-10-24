@@ -419,20 +419,21 @@ def send_sms(call: Call) -> dict:
     to = call.required("to", limit=41)
     text = call.text("text", limit=outgoing.MAX_TEXT + 1)
     store = _sms_store(call)
-    if not store.device():
-        raise ApiError(409, "no_phone", "There is no paired phone to send from.")
-    if not store.accepts("api"):
-        raise ApiError(409, "app_outdated", "The paired phone runs a PaynaniApp that does not accept API orders. "
-                                            "Update it to 0.9.0 or later.")
     try:
         number = outgoing.normalize(to, _sms_region(store))
     except outgoing.Refused as exc:
         raise ApiError(400, exc.code, "to is not a phone number that can be read.", field="to") from None
     token_id = call.record.get("prefix", "")
     # Una llave repetida devuelve la misma orden antes de cualquier otra revisión: el
-    # reintento de un SendSms que sí salió no debe responder opted_out ni quota_exceeded.
+    # reintento de un SendSms que sí salió no debe responder no_phone, app_outdated,
+    # opted_out ni quota_exceeded aunque el estado haya cambiado (revisión de #522).
     earlier = outgoing.find_idempotent(store, token_id, key)
     if earlier is None:
+        if not store.device():
+            raise ApiError(409, "no_phone", "There is no paired phone to send from.")
+        if not store.accepts("api"):
+            raise ApiError(409, "app_outdated", "The paired phone runs a PaynaniApp that does not accept API orders. "
+                                                "Update it to 0.9.0 or later.")
         if store.opted_out(number):
             raise ApiError(403, "opted_out", "This number opted out of API messages (STOP).", to=number)
         until = sms_cli.human_pause(store, number)
