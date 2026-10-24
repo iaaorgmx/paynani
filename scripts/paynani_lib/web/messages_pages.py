@@ -8,7 +8,10 @@ del marco de shell.py.
 - `/messages/ver?n=<número>`: la conversación como `paynani sms thread`, con lo
   que llegó, lo que mandó el agente con su estado y lo que contestó el dueño desde
   PaynaniApp, más las llamadas (FR-18). Los 50 más recientes, con «Ver anteriores».
-- Sólo muestra (FR-19). Todo lo que viene de un SMS pasa por `e()`.
+- Desde el PRD #489 (T3 #506) también envía: un cuadro para responder al pie de
+  la conversación y «Nuevo SMS» (`/messages/nuevo`). Los dos mandan a
+  `POST /messages/enviar`, que crea la orden del dueño con `sms.outgoing.queue`.
+- Todo lo que viene de un SMS pasa por `e()`.
 """
 from __future__ import annotations
 
@@ -19,6 +22,12 @@ from . import mail_pages
 from .shell import e
 
 PAGE = 50
+MAX_TEXT = 1000
+
+# Lo que dice el teléfono emparejado sobre las órdenes del dueño (FR-6).
+PHONE_OK = "ok"
+PHONE_NONE = "no_phone"
+PHONE_OLD = "old_app"
 
 
 def _who(conv_or_item: dict, names: dict) -> str:
@@ -33,6 +42,19 @@ def _local(stamp: str) -> str:
     return stamp
 
 
+def local_time(stamp: str) -> str:
+    """Una hora UTC `2026-10-24T14:05:00Z` en la hora del host, `14:05` (o con fecha si es otro día)."""
+    import calendar
+    import time
+    try:
+        epoch = calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError):
+        return stamp
+    local = time.localtime(epoch)
+    same_day = time.strftime("%Y-%m-%d", local) == time.strftime("%Y-%m-%d", time.localtime())
+    return time.strftime("%H:%M" if same_day else "%Y-%m-%d %H:%M", local)
+
+
 def _preview(item: dict) -> str:
     t = i18n.t
     kind = item["kind"]
@@ -45,13 +67,23 @@ def _preview(item: dict) -> str:
     return prefix + (text[:120] + ("…" if len(text) > 120 else ""))
 
 
-def list_body(convs: list[dict], names: dict, offset: int, next_offset: int | None, total: int) -> str:
+def _new_button(phone_state: str) -> str:
+    th = i18n.th
+    if phone_state == PHONE_OK:
+        return f'<p class="acciones"><a class="boton primario" href="/messages/nuevo">{th("web.sms.new")}</a></p>'
+    return (f'<p class="acciones"><span class="boton primario deshabilitado" aria-disabled="true">{th("web.sms.new")}</span>'
+            f' <span class="quiet">{th("web.sms." + phone_state)}</span></p>')
+
+
+def list_body(convs: list[dict], names: dict, offset: int, next_offset: int | None, total: int,
+              phone_state: str = PHONE_OK) -> str:
     th = i18n.th
     if not total:
-        return f'<p class="lead">{th("web.sms.empty")}</p>\n'
+        return _new_button(phone_state) + f'\n<p class="lead">{th("web.sms.empty")}</p>\n'
     # La misma tabla que la lista de correos (pedido de Julian): a todo lo ancho, con la
     # cabecera gris y una flecha por fila.
-    out = [f'<p class="quiet resumen">{th("web.sms.count", n=total)} · {th("web.mail.readonly")}</p>',
+    out = [_new_button(phone_state),
+           f'<p class="quiet resumen">{th("web.sms.count", n=total)}</p>',
            '<ul class="correos conversaciones">',
            f'<li class="correos-cabecera" aria-hidden="true"><span>{th("web.sms.col.who")}</span>'
            f'<span>{th("web.sms.col.last")}</span><span>{th("web.sms.col.when")}</span>'
@@ -82,18 +114,88 @@ def _status(status: str) -> str:
     return f' <span class="estado estado-sms-{e(status)}">{e(label if not label.startswith("web.") else status)}</span>'
 
 
-def thread_body(number: str, who: str, items: list[dict], offset: int, pause_until: str | None) -> str:
+def _error_box(error: str) -> str:
+    return f'<div class="error-caja" role="alert"><b>{i18n.th("web.sms.not_sent")}</b><p>{e(error)}</p></div>' if error else ""
+
+
+def _compose_fields(csrf: str, pause_min: int, need_password: str, values: dict) -> str:
+    """El texto con su contador, la casilla de pausa y, si hace falta, la contraseña (FR-3, FR-4, FR-4b).
+    `need_password`: "yes" (fuera del roster), "maybe" (Nuevo SMS: aún no se sabe) o "no"."""
+    th = i18n.th
+    checked = " checked" if values.get("pause") else ""
+    out = [f'<input type="hidden" name="csrf" value="{e(csrf)}">',
+           f'<label for="sms-text">{th("web.sms.text")}</label>',
+           f'<textarea id="sms-text" name="text" rows="4" maxlength="{MAX_TEXT}" required data-sms-counter="sms-count"'
+           f' data-tpl="{th("web.sms.counter")}">{e(values.get("text", ""))}</textarea>',
+           f'<p id="sms-count" class="quiet contador" aria-live="polite">{th("web.sms.limit", n=MAX_TEXT)}</p>',
+           f'<label class="casilla"><input type="checkbox" name="pause" value="1"{checked}> '
+           f'{th("web.sms.pause", min=pause_min)}</label>']
+    if need_password != "no":
+        hint = th("web.sms.password_hint" if need_password == "maybe" else "web.sms.password_needed")
+        out += [f'<label for="sms-current">{th("web.sms.password")}</label>',
+                f'<input id="sms-current" name="current" type="password" autocomplete="current-password"'
+                f'{" required" if need_password == "yes" else ""}>',
+                f'<p class="quiet">{hint}</p>']
+    out.append(f'<button type="submit" class="primario">{th("web.sms.send")}</button>')
+    return "\n  ".join(out)
+
+
+def _unavailable(phone_state: str) -> str:
+    return f'<p class="aviso-caja" role="status">{i18n.th("web.sms." + phone_state)}</p>'
+
+
+def reply_box(number: str, csrf: str, phone_state: str, pause_min: int, in_roster: bool,
+              values: dict | None = None, error: str = "") -> str:
+    """El cuadro para responder al pie de la conversación (FR-1)."""
+    th = i18n.th
+    head = f'<h3 id="responder">{th("web.sms.reply")}</h3>'
+    if phone_state != PHONE_OK:
+        return f'<section class="responder">{head}{_unavailable(phone_state)}</section>'
+    return f"""<section class="responder">{head}{_error_box(error)}
+<form method="post" action="/messages/enviar" class="formulario">
+  <input type="hidden" name="n" value="{e(number)}">
+  <input type="hidden" name="desde_hilo" value="1">
+  {_compose_fields(csrf, pause_min, "no" if in_roster else "yes", values or {})}
+</form></section>"""
+
+
+def new_body(csrf: str, phone_state: str, pause_min: int, roster: dict, values: dict | None = None,
+             error: str = "") -> str:
+    """«Nuevo SMS» (FR-2): el número, escrito o elegido de los contactos del roster con teléfono."""
+    th = i18n.th
+    values = values or {}
+    back = f'<p class="volver"><a href="/messages">← {th("web.sms.back")}</a></p>'
+    if phone_state != PHONE_OK:
+        return back + _unavailable(phone_state)
+    options = "".join(f'<option value="{e(number)}">{e(name)}</option>' for number, name in sorted(roster.items(),
+                                                                                                key=lambda kv: kv[1].lower()))
+    return f"""{back}{_error_box(error)}
+<form method="post" action="/messages/enviar" class="formulario">
+  <label for="sms-to">{th("web.sms.to")}</label>
+  <input id="sms-to" name="n" required maxlength="40" inputmode="tel" list="sms-roster" value="{e(values.get("n", ""))}">
+  <datalist id="sms-roster">{options}</datalist>
+  <p class="quiet">{th("web.sms.to_hint")}</p>
+  {_compose_fields(csrf, pause_min, "maybe", values)}
+</form>
+<script src="/assets/sms.js" defer></script>
+"""
+
+
+def thread_body(number: str, who: str, items: list[dict], offset: int, pause_until: str | None,
+                reply: str = "", notice: str = "") -> str:
     """`items` en orden de hora; se muestran los `PAGE` más recientes desde `offset`
-    contado desde el final."""
+    contado desde el final. `reply` es el cuadro de reply_box(); `notice`, un aviso arriba."""
     th = i18n.th
     back = f'<p class="volver"><a href="/messages">← {th("web.sms.back")}</a></p>'
     head = [back, f'<h2 class="asunto-correo">{e(who)}</h2>',
             f'<p class="quiet">{e(number)} · {th("web.sms.n_items", n=len(items))}</p>']
+    if notice:
+        head.append(f'<p class="aviso-ok" role="status">{e(notice)}</p>')
     if pause_until:
         head.append(f'<p class="aviso-caja" role="status">{th("web.sms.paused", until=_local(pause_until))}</p>')
     if not items:
         head.append(f'<p class="lead">{th("web.sms.thread_empty")}</p>')
-        return "\n".join(head) + "\n"
+        return "\n".join(head + [reply]) + "\n"
     end = max(0, len(items) - offset)
     start = max(0, end - PAGE)
     if start > 0:
@@ -112,9 +214,11 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
                     " · " + th("web.sms.duration", m=int(secs) // 60, s=int(secs) % 60) if isinstance(secs, int) else "")
             bubbles.append(f'<li class="llamada"><span>{text}</span> <time>{when}</time></li>')
             continue
-        label = {"received": e(who), "agent": th("web.sms.by_agent"), "human": th("web.sms.by_owner")}[kind]
+        owner = th("web.sms.by_owner_web") if item.get("via") == "web" else th("web.sms.by_owner")
+        label = {"received": e(who), "agent": th("web.sms.by_agent"), "human": owner}[kind]
         body = e(item.get("text") or "") or f'<span class="quiet">{th("web.sms.no_text")}</span>'
         bubbles.append(f'<li class="sms sms-{kind}"><div class="globo"><div class="de">{label}{_status(item["status"])}</div>'
                        f'<div class="texto">{body}</div><time>{when}</time></div></li>')
     bubbles.append("</ol>")
-    return "\n".join(head + bubbles + [f'<p class="quiet">{th("web.sms.readonly")}</p>']) + "\n"
+    script = '<script src="/assets/sms.js" defer></script>' if reply else ""
+    return "\n".join(head + bubbles + [reply, script]) + "\n"
