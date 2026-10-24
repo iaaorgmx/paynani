@@ -777,7 +777,8 @@ Todo bajo `state/sms/` (700, archivos 600):
 | Archivo | Quién escribe | Contenido |
 |---|---|---|
 | `outbox/<id>.json` | `paynani sms send` | `{"id": "o_…", "to": "+52…", "text": "…", "expires_at": "…", "sim_slot": 0}`. Se escribe atómico (temporal y `rename`) |
-| `orders.jsonl` | La pasarela | Una línea por estado: `{"id": sha256(order_id + "\n" + status), "order_id", "status", "at", "error"?, "parts"?}` |
+| `orders.jsonl` | La pasarela y `outgoing.queue()` | Una línea por estado: `{"id": sha256(order_id + "\n" + status), "order_id", "status", "at", "error"?, "parts"?}`. El `queued` lo escribe `outgoing.queue()` y además lleva `origin`, `source` (la dirección de la web o de la API) y, para la API, `token` (el nombre), `token_id` (el prefijo `pn_…`: con él cuentan los topes por token y se busca la llave), `idempotency_key` y `content_sha256` (sha256 del número y el texto) |
+| `optout.json` | La pasarela (A5 #497) | `{"numbers": {"<E.164>": {"at", …}}}`: los números que mandaron STOP. `SendSms` de la API responde `opted_out` para ellos |
 | `queue.lock` | `outgoing.queue()` | Vacío. El candado (`flock`) que hace una sola operación de contar las órdenes de la última hora y escribir la nueva, para que dos envíos simultáneos de la web, la API o `paynani sms send` no rebasen el tope por hora |
 | `inbox/<id>.json` | La pasarela | El texto de cada SMS recibido, y de cada `sms.human` (PaynaniApp#111); lo lee `paynani event show --body` |
 | `sent/<id>.json` | La pasarela | La orden de `outbox/` cuando el teléfono ya la tomó: el estado no dice a quién ni qué, y `paynani sms thread` lo necesita |

@@ -238,6 +238,17 @@ class Store:
                 return order
         return None
 
+    def opted_out(self, number: str) -> dict | None:
+        """
+        ¿Ese número se dio de baja de la API (STOP, PRD #491 FR-13)? El registro de la
+        baja, o None. La lista vive en `optout.json` como `{"numbers": {e164: {...}}}`;
+        la escribe la pasarela cuando llega un STOP (A5 #497).
+        """
+        data = self._read("optout.json", None) or {}
+        numbers = data.get("numbers") if isinstance(data, dict) else None
+        entry = numbers.get(number) if isinstance(numbers, dict) else None
+        return entry if isinstance(entry, dict) else None
+
     def accepts(self, origin: str) -> bool:
         """
         ¿El teléfono emparejado acepta órdenes de este origen? Lo anuncia en su
