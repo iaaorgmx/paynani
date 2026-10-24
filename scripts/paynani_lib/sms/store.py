@@ -37,7 +37,9 @@ FAIL_LIMIT = 10
 # "../device" borraba device.json; lo encontró Iris en #316).
 ORDER_PREFIX = {"agent": "o", "owner": "w", "api": "a"}
 ORDER_ID = re.compile(r"^[owa]_[0-9a-f]{32}$")
-HUMAN_ID = re.compile(r"^h_[0-9a-f]{32}$")
+# h_: lo que el dueño mandó desde PaynaniApp; w_: lo que mandó desde PaynaniWeb, con el
+# id de su orden (PRD #489 FR-15).
+HUMAN_ID = re.compile(r"^[hw]_[0-9a-f]{32}$")
 MESSAGE_ID = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -185,8 +187,13 @@ class Store:
                     order = json.loads(path.read_text(encoding="utf-8"))
                 except (OSError, ValueError):
                     continue
-                if valid_order_id(order.get("id")) and path.stem == order["id"]:
-                    orders.append(order)
+                if not (valid_order_id(order.get("id")) and path.stem == order["id"]):
+                    continue
+                # El origin del JSON debe coincidir con el prefijo del id: una w_ que dice
+                # origin "api" se saltaría la capacidad que anunció el teléfono. Inválida, no sale.
+                if (order.get("origin") or "agent") != origin:
+                    continue
+                orders.append(order)
         return orders
 
     def pending_orders(self, origins=("agent",)) -> list[dict]:
@@ -217,6 +224,30 @@ class Store:
 
     def sent_orders(self, origins=("agent",)) -> list[dict]:
         return self._orders_in("sent", origins)
+
+    def order(self, order_id: str) -> dict | None:
+        """La orden, esté en outbox/ o ya en sent/; None si no existe."""
+        if not valid_order_id(order_id):
+            return None
+        for folder in ("outbox", "sent"):
+            try:
+                order = json.loads((self.root / folder / f"{order_id}.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if order.get("id") == order_id:
+                return order
+        return None
+
+    def accepts(self, origin: str) -> bool:
+        """
+        ¿El teléfono emparejado acepta órdenes de este origen? Lo anuncia en su
+        saludo (PRD #489 FR-11, PRD #491 FR-19). Las del agente, siempre.
+        """
+        if origin == "agent":
+            return True
+        device = self.device() or {}
+        # Sólo un true booleano cuenta: "false", 1 o un estado viejo no habilitan nada.
+        return device.get({"owner": "accepts_owner_out", "api": "accepts_api_out"}.get(origin, "")) is True
 
     def append_status(self, record: dict) -> bool:
         """
