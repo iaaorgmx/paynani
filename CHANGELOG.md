@@ -2,6 +2,73 @@
 
 ## Sin publicar
 
+## 0.16.0 (2026-10-24)
+
+**El dueño envía SMS desde PaynaniWeb, y otros agentes o programas usan paynani por
+una API con tokens.** Son los dos features de los PRD #489 y #491.
+
+- **SMS desde «Mensajes».** Hay «Nuevo SMS» y un cuadro para responder en cada
+  conversación, con estados que se actualizan solos y el aviso de teléfono
+  desconectado. Un número fuera del roster pide la contraseña de la web, y una
+  casilla pausa al agente.
+- **La API.** `POST /api/agent` con un API Token que el dueño crea en la nueva
+  pantalla «API Tokens». Lee correo, SMS, roster y reglas, edita el roster,
+  agrega cuentas y envía SMS con idempotencia y topes por token. Las respuestas
+  quedan marcadas para su token, y STOP, BAJA, ALTO o CANCELAR dan de baja el
+  número. La guía para el agente está en `/api/agents.md` y la del dueño en
+  `PAYNANI_API.md`.
+
+Los dos necesitan **PaynaniApp 0.9.0**, que se publica el mismo día. Con una app
+anterior todo lo demás sigue igual, pero la web y la API no envían: la web pide
+actualizar la app y la API responde `app_outdated`.
+
+Lo hicieron Metis y Ocelotl, con la revisión de Ximena; Iris revisó y probó la
+parte de PaynaniApp. La prueba de punta a punta fue con un Galaxy S21+, John y
+Julian (#510, #501). Sin requisitos nuevos: sólo biblioteca estándar de Python
+3.10 o mayor.
+
+### Si actualizas desde 0.15.1
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.16.0
+python3 scripts/upgrade_plan.py --from v0.15.1     # y haz lo que imprima
+```
+
+El plan reinicia la pasarela SMS y PaynaniWeb. Después:
+
+1. Actualiza PaynaniApp en el teléfono a la **0.9.0** (`INSTALL.md` §5.2). Abre
+   la app una vez para que se vuelva a conectar.
+2. Corre `scripts/paynani sms devices`: `app_version` tiene que decir `0.9.0`.
+   Con eso, «Mensajes» muestra «Nuevo SMS».
+3. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+   `version_drift` tiene que decir `ok`.
+
+No hay que configurar nada para que la API exista, y sin tokens no la puede usar
+nadie. Si quieres que otro agente la use, sigue «Dar acceso a un agente» en
+`PAYNANI_API.md`. Para cambiar la pausa o el tope de la web, ve las claves nuevas
+`PAYNANI_WEB_AGENT_PAUSE_MIN` y `PAYNANI_WEB_SMS_PER_HOUR` en `INSTALL.md`; son
+opcionales.
+
+### Si actualizas desde 0.15.0 o anterior
+
+Un solo salto desde la versión que tienes instalada; `upgrade_plan.py` calcula
+juntos los cambios de todas las versiones intermedias. Cambia `v0.15.0` por tu
+versión (la que dice `scripts/version.sh` antes de actualizar), y después sigue
+los pasos 1 a 3 de arriba y lo que pidan las versiones intermedias:
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.16.0
+python3 scripts/upgrade_plan.py --from v0.15.0     # y haz lo que imprima
+```
+
+### Los cambios
+
+- **La pantalla «API Tokens» de PaynaniWeb** (A2 #494 del PRD #491). Lista los tokens con búsqueda y filtros Activos, Vencidos y Revocados. «Crear token» pide nombre, vencimiento (5 minutos, 1 hora, 1 día, 7 días, 30 días, una fecha o «no vence»), permisos, topes de SMS y la contraseña de la web. El token se ve una sola vez, con un botón para copiarlo y un mensaje listo para el agente con la dirección de `/api/agents.md`. El detalle muestra el uso del día, deja activar «El agente local contesta las respuestas» (`agent_replies`) y revocar; las dos cosas piden la contraseña.
+- **Bitácora de seguridad, alertas, `GetTokenInfo` y `GetUsage`** (A7 #499 del PRD #491). `state/api_security.jsonl` (permisos 600, 90 días) registra fallos de autenticación, tokens revocados o vencidos que se usaron, topes, bajas y altas, permisos negados y errores internos, con hora, `request_id`, prefijo del token y dirección; nunca el token ni el texto de un SMS. El dueño recibe un correo después de diez fallos de autenticación seguidos desde una dirección, y una vez por token cuando llega a su tope de SMS en 24 horas. `GetTokenInfo` y `GetUsage` funcionan con cualquier permiso; `GetUsage` cuenta llamadas y SMS en ventanas móviles de un minuto, una hora y un día.
 - **El aviso de la pausa dice desde dónde contestó el dueño** (T7 #510 del PRD #489). `paynani sms send` y `paynani sms thread` decían «the owner replied from PaynaniApp» aunque el SMS hubiera salido de PaynaniWeb. Ahora dicen PaynaniWeb cuando el último SMS del dueño a ese número tiene `origin: web`. Lo encontró la prueba de punta a punta con el Galaxy S21+.
 - **La guía de la API** (A8 #500 del PRD #491, FR-22). PaynaniWeb sirve `/api/agents.md` sin usuario, sesión ni token: la guía en inglés para el agente, con cada acción y sus parámetros, ejemplos de `curl`, permisos, errores, topes, bajas y el límite de Android de unos 30 SMS cada 30 minutos por app. `PAYNANI_API.md` dice lo mismo en español para el dueño: cómo dar y quitar acceso, qué hace cada permiso, los SMS de la API, las respuestas y bajas, y la seguridad. `test_api_docs.py` falla si una acción o un código de error de la API no está en las dos guías.
 - **Documentación del envío de SMS desde PaynaniWeb** (T6 #509 del PRD #489). `PAYNANI_WEB.md` explica «Nuevo SMS», el cuadro de responder, la contraseña fuera del roster, la pausa, el tope, los estados y el teléfono desconectado. `AGENTS.md` dice cómo tomar una línea `Tú (PaynaniWeb) →`. `INSTALL.md` agrega `PAYNANI_WEB_AGENT_PAUSE_MIN` y `PAYNANI_WEB_SMS_PER_HOUR` a las claves de `sms.env`. En `SMS_GATEWAY.md`, `rejected` incluye `invalid_number`.
