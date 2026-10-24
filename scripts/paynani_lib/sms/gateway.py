@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+from datetime import datetime
 import hashlib
 import json
 import math
@@ -567,9 +568,14 @@ class Gateway:
         ws.token_sha256 = device.get("token_sha256", "")
         ws.device_id = device_id
         self._saw_frame()
+        # Órdenes del dueño (PRD #489 FR-11) y de la API (PRD #491 FR-19): sólo si la
+        # app lo anuncia. Una app vieja no las recibe, y la web y la API lo dicen.
+        ws.accepts_owner_out = hello.get("accepts_owner_out") is True
+        ws.accepts_api_out = hello.get("accepts_api_out") is True
         self.store.touch(connected=True, last_seen=store_mod.now_utc(),
                          app_version=str(hello.get("app_version", ""))[:40],
-                         sims=hello.get("sims") if isinstance(hello.get("sims"), list) else device.get("sims", []))
+                         sims=hello.get("sims") if isinstance(hello.get("sims"), list) else device.get("sims", []),
+                         accepts_owner_out=ws.accepts_owner_out, accepts_api_out=ws.accepts_api_out)
         if isinstance(hello.get("device_status"), dict):
             # La última lectura de batería viene en el saludo (PaynaniApp#109). Una
             # lectura mala nunca impide el welcome.
@@ -644,23 +650,46 @@ class Gateway:
                 ws.allowed_sent = current
                 await self._send(ws, {"type": "allowed", "allowed": current})
 
+    def _expire(self, order: dict) -> bool:
+        """Marca la orden vencida y la saca de outbox/ si ya pasó su hora. True si venció."""
+        oid = order.get("id", "")
+        if not (order.get("expires_at", "") and order["expires_at"] < store_mod.now_utc()):
+            return False
+        now = store_mod.now_utc()
+        self.store.append_status({"id": status_id(oid, "expired"), "order_id": oid,
+                                  "status": "expired", "at": now})
+        if store_mod.order_origin(oid) == "owner":
+            self._owner_status(oid, "expired", now, {})
+        self.store.finish_order(oid)
+        log(f"orden {oid} vencida sin enviarse")
+        return True
+
     async def _pump_outbox(self, ws: WebSocket) -> None:
         pushed: set[str] = set()
         while not ws.closed:
-            for order in self.store.pending_orders():
+            origins = ["agent"]
+            if getattr(ws, "accepts_owner_out", False):
+                origins.append("owner")
+            if getattr(ws, "accepts_api_out", False):
+                origins.append("api")
+            # Las de un origen que el teléfono no acepta no se mandan, pero sí vencen a su hora.
+            held = [o for o in ("owner", "api") if o not in origins]
+            for order in self.store.pending_orders(origins=held):
+                self._expire(order)
+            for order in self.store.pending_orders(origins=origins):
                 oid = order.get("id", "")
                 if not oid or oid in pushed:
                     continue
-                if order.get("expires_at", "") and order["expires_at"] < store_mod.now_utc():
-                    self.store.append_status({"id": status_id(oid, "expired"), "order_id": oid,
-                                              "status": "expired", "at": store_mod.now_utc()})
-                    self.store.finish_order(oid)
-                    log(f"orden {oid} vencida sin enviarse")
+                if self._expire(order):
                     continue
                 msg = {"type": "sms.out", "id": oid, "to": order["to"], "text": order["text"],
                        "expires_at": order.get("expires_at", "")}
                 if order.get("sim_slot") is not None:
                     msg["sim_slot"] = order["sim_slot"]
+                if order.get("origin") in ("owner", "api"):
+                    msg["origin"] = order["origin"]
+                if order.get("origin") == "api" and order.get("token"):
+                    msg["token"] = order["token"]
                 await self._send(ws, msg)
                 pushed.add(oid)
             await asyncio.sleep(1)
@@ -983,12 +1012,66 @@ class Gateway:
         except OSError as exc:
             log(f"no se pudo guardar el estado de la orden ({exc}); sin ack")
             return
+        if store_mod.order_origin(oid) == "owner":
+            try:
+                self._owner_status(oid, status, record["at"], record, device_id=ws_device_id(ws))
+            except (OSError, ValueError) as exc:
+                log(f"orden {oid}: no se pudo registrar como SMS del dueño ({exc})")
         # Cualquier estado dice que la orden ya está en manos del teléfono: sale
         # del outbox para no reenviarse. Los siguientes estados llegan igual.
         self.store.finish_order(oid)
         if fresh:
             log(f"orden {oid}: {status}")
         await self._send(ws, {"type": "ack", "id": sid, "result": "stored" if fresh else "duplicate"})
+
+
+    def _owner_status(self, oid: str, status: str, at: str, record: dict, device_id: str = "") -> None:
+        """
+        Un estado de una orden del dueño desde PaynaniWeb (PRD #489 FR-14, FR-15): va a
+        human.jsonl como un SMS del dueño, para que `paynani sms thread` y la pausa del
+        agente lo vean. El primer `sent` o `failed` escribe además el evento
+        sms.human_sent con origin web; el `sent` pausa al agente si la casilla iba marcada.
+        """
+        order = self.store.order(oid)
+        if not order:
+            return
+        to = order.get("to", "")
+        e164 = phone.to_e164(to, self._region()) or None
+        phones = roster_phones(self.roster_path)
+        pause = order.get("agent_pause_min", 0)
+        pause = pause if isinstance(pause, int) and not isinstance(pause, bool) and 0 <= pause <= PAUSE_MAX_MIN else 0
+        at_s = _iso_epoch(at) or self.clock()
+        pause_until = iso_utc(at_s + pause * 60) if status == "sent" and pause > 0 and e164 else None
+        hid = human_status_id(oid, status)
+        human = {"id": hid, "local_id": oid, "to": e164 or to, "status": status, "at": iso_utc(at_s),
+                 "agent_pause_min": pause, "origin": "web"}
+        for key in ("parts", "error"):
+            if key in record:
+                human[key] = record[key]
+        if pause_until:
+            human["pause_until"] = pause_until
+        journaled = any(r.get("local_id") == oid and r.get("event_id") for r in self.store.human_records())
+        if status in ("sent", "failed") and not journaled:
+            envelope = ev.human_sent_event(
+                device_id=device_id or (self.store.device() or {}).get("device_id", ""), message_id=hid,
+                e164=e164, raw_to=to, recipient_name=phones.get(e164, "") if e164 else "",
+                text=order.get("text", ""), status=status, parts=record.get("parts", 1), at=iso_utc(at_s),
+                roster_match=bool(e164 and e164 in phones), local_time=time.strftime("%H:%M:%S"),
+                agent_pause_min=pause, pause_until=pause_until, error=record.get("error"), origin="web")
+            self._journal(hid, envelope, {
+                "type": "sms.human", "local_id": oid, "to_raw": to, "to_e164": e164, "text": order.get("text", ""),
+                "status": status, "at": iso_utc(at_s), "origin": "web"})
+            human["event_id"] = envelope["event_id"]
+        self.store.append_human(human)
+
+
+def _iso_epoch(stamp) -> float | None:
+    """Una hora ISO 8601 con zona («-06:00» o «Z») como segundos de época, o None."""
+    try:
+        moment = datetime.fromisoformat(str(stamp).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment.timestamp() if moment.tzinfo else None
 
 
 async def serve(gateway: Gateway, host: str, port: int):

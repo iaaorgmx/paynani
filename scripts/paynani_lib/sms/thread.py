@@ -12,8 +12,10 @@ De dónde sale cada cosa:
   el `inbox/` del store.
 - **Del agente:** las órdenes de `paynani sms send` (enviadas y pendientes) con su
   último estado de `orders.jsonl`.
-- **Del dueño:** lo que mandó desde PaynaniApp (`human.jsonl`) y su texto en el
-  inbox, con su último estado.
+- **Del dueño:** lo que mandó desde PaynaniApp o desde PaynaniWeb (`human.jsonl`) y
+  su texto en el inbox, con su último estado. Lo de la web que todavía no sale
+  (en cola, aceptado, vencido, rechazado) viene de su orden `w_` (PRD #489 FR-5).
+  `via` dice de dónde: `app` o `web`.
 - **Llamadas** (sólo la web): los eventos `call.missed` y `call.answered` del diario.
 """
 from __future__ import annotations
@@ -101,14 +103,25 @@ def items(store, journal: Path, *, number: str | None = None, calls: bool = Fals
         if rec.get("event_id"):
             by_send[rec["local_id"]] = rec
         last[rec["local_id"]] = rec.get("status", "")
+    via: dict[int, str] = {}
     for local_id, rec in by_send.items():
         saved = store.inbox(rec["id"]) or {}
+        via[len(raw)] = "web" if local_id.startswith("w_") else "app"
         raw.append((rec["to"], rec.get("at", ""), "human", last.get(local_id, ""), str(saved.get("text", "")), "", None))
+    # Lo que el dueño mandó desde la web y todavía no tiene evento: sigue en su orden.
+    for order in store.sent_orders(origins=("owner",)) + store.pending_orders(origins=("owner",)):
+        to = order.get("to")
+        if not to or order["id"] in by_send or (number is not None and to != number):
+            continue
+        queued = next((r.get("at", "") for r in store.order_statuses(order["id"]) if r.get("status") == "queued"), "")
+        status = last.get(order["id"]) or statuses.get(order["id"], "queued")
+        via[len(raw)] = "web"
+        raw.append((to, queued, "human", status, str(order.get("text", "")), "", None))
     out = []
-    for who, stamp, kind, status, text, name, duration in raw:
+    for index, (who, stamp, kind, status, text, name, duration) in enumerate(raw):
         epoch, local = when(stamp)
         out.append({"number": who, "epoch": epoch, "local": local, "kind": kind, "status": status,
-                    "text": text, "name": name or "", "duration_s": duration})
+                    "text": text, "name": name or "", "duration_s": duration, "via": via.get(index, "")})
     out.sort(key=lambda item: item["epoch"])
     return out
 

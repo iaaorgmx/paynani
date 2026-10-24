@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- **La pasarela manda las órdenes del dueño y de la API** cuando la app las acepta (T2 #505 del PRD #489). La app lo anuncia en su saludo con `accepts_owner_out` y `accepts_api_out`, y la pasarela lo guarda en `device.json`. Una orden del dueño enviada se registra como SMS del dueño: va a `human.jsonl`, escribe el evento `sms.human_sent` con `origin: web` y pausa al agente si la casilla iba marcada. `paynani sms thread` muestra las del dueño en cola, vencidas o enviadas, con `via: web`. Una orden de un origen que la app no acepta no se manda y vence a su hora.
 - **Una sola función crea las órdenes de SMS** (`paynani_lib/sms/outgoing.py`, T1 #504 del PRD #489). La usan `paynani sms send` y, después, PaynaniWeb (#490) y la API (#492). El id de la orden dice quién la creó: `o_` el agente, `w_` el dueño desde la web y `a_` la API. La pasarela sigue mandando sólo las del agente hasta T2 #505. `paynani sms send` se comporta igual que antes.
 
 ## 0.15.1 (2026-10-23)

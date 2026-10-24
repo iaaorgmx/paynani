@@ -684,7 +684,7 @@ def human_event_id(device_id, message_id):
 
 def human_sent_event(*, device_id, message_id, e164, raw_to, recipient_name, text, status, parts,
                      at, roster_match, local_time, in_reply_to=None, agent_pause_min=0, pause_until=None,
-                     error=None, observed_at=None):
+                     error=None, observed_at=None, origin=None):
     """
     Un SMS que el dueño del teléfono mandó desde PaynaniApp (PaynaniApp#111,
     SMS_GATEWAY.md §3 y §6). Va una vez por envío, con `sent` o `failed`.
@@ -693,15 +693,18 @@ def human_sent_event(*, device_id, message_id, e164, raw_to, recipient_name, tex
     limpieza que un SMS recibido, y con un destinatario fuera del roster no lleva
     el texto: igual que `sms.received`. El texto completo vive en
     state/sms/inbox/ y sale con `paynani event show --body`.
+
+    `origin="web"`: lo mandó desde PaynaniWeb y no desde PaynaniApp (PRD #489 FR-15).
     """
     eid = human_event_id(device_id, message_id)
+    me = "Tú (PaynaniWeb)" if origin == "web" else "Tú"
     who = " ".join(p for p in (recipient_name, e164 or safe_excerpt(raw_to, 40)) if p)
     failed = status == "failed"
     what = "no se envió: " if failed else ""
     if roster_match:
-        line = f"[sms-human {local_time}, roster] Tú → {who}: {what}{safe_excerpt(text)}"
+        line = f"[sms-human {local_time}, roster] {me} → {who}: {what}{safe_excerpt(text)}"
     else:
-        line = f"[sms-human {local_time}] Tú → {who}: {what}mensaje a un número fuera del roster"
+        line = f"[sms-human {local_time}] {me} → {who}: {what}mensaje a un número fuera del roster"
     if pause_until and not failed:
         line += f" (el agente no le escribe hasta {pause_until})"
     record = {
@@ -724,6 +727,8 @@ def human_sent_event(*, device_id, message_id, e164, raw_to, recipient_name, tex
     }
     if in_reply_to:
         record["in_reply_to"] = in_reply_to
+    if origin == "web":
+        record["origin"] = "web"
     if pause_until and not failed:
         record["pause_until"] = pause_until
     if failed and error:
