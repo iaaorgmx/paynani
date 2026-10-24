@@ -232,6 +232,17 @@ async def main():
     rc, _, err = send()
     check("sms send a un número en pausa -> código 4, sin orden", (4, True, []),
           (rc, "human_replied" in err, st.pending_orders()))
+    check("el aviso dice que el dueño contestó desde PaynaniApp", True, "from PaynaniApp" in err)
+    # T7 #510: si el último SMS del dueño salió de PaynaniWeb, el aviso lo dice.
+    check("pause_source: PaynaniApp para un SMS del teléfono", "PaynaniApp", cli.pause_source(st, ANA))
+    web_n = "+525577776666"
+    roster.write_text(roster.read_text(encoding="utf-8").rstrip("\n") + "\n| Web | web@example.com | Human |  | " + web_n + " |\n",
+                      encoding="utf-8")
+    st.append_human({"id": "9" * 64, "local_id": "w_" + "9" * 32, "to": web_n, "status": "sent", "origin": "web",
+                     "at": "2026-10-24T15:12:42Z", "pause_until": "2999-01-01T00:00:00Z", "agent_pause_min": 30})
+    rc_w, _, err_w = send(number=web_n, text="Hola")
+    check("sms send tras un SMS de PaynaniWeb: código 4 y el aviso dice PaynaniWeb", (4, True, False),
+          (rc_w, "from PaynaniWeb" in err_w, "from PaynaniApp" in err_w))
     rc, out, _ = send("override_pause")
     check("--override-pause la manda igual", (3, 1), (rc, len(st.pending_orders())))
     check("pausa vencida no detiene", None, cli.human_pause(st, ANA, now="2999-01-01T00:00:00Z"))
