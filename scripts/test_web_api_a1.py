@@ -34,6 +34,7 @@ check(stat.S_IMODE(store.stat().st_mode) == 0o600 and stat.S_IMODE(store.parent.
       "private file modes")
 check(api_tokens.lookup(secret, path=store)[0] == "ok", "valid token")
 check(api_tokens.lookup(secret + "x", path=store)[0] == "invalid_token", "bad token")
+check(api_tokens.lookup("pn_\ud800", path=store)[0] == "invalid_token", "malformed Unicode token")
 expired, _ = api_tokens.create("expired", path=store, expires_at="2020-01-01T00:00:00Z")
 check(api_tokens.lookup(expired, path=store)[0] == "token_expired", "expired token")
 records = json.loads(store.read_text())

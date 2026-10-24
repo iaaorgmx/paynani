@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import tempfile
 from pathlib import Path
@@ -81,9 +82,9 @@ def create(name: str, *, expires_at: str | None = None, permissions=(), limits=N
 
 def lookup(secret: str, *, path: Path | None = None,
            now: dt.datetime | None = None) -> tuple[str, dict | None]:
-    if not isinstance(secret, str) or not secret.startswith("pn_") or len(secret) > 256:
+    if not isinstance(secret, str) or not re.fullmatch(r"pn_[A-Za-z0-9_-]{20,128}", secret):
         return "invalid_token", None
-    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(secret.encode("ascii")).hexdigest()
     target = Path(path) if path else path_for()
     with _locked(target):
         records = _read(target)
