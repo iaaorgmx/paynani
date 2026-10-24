@@ -64,6 +64,7 @@ ROSTER = """# roster
 ANA = "+525511112222"
 CLIENT = "+525588887777"
 OTHER = "+525533334444"
+LATE = "+525566665555"
 
 tmp = Path(tempfile.mkdtemp())
 state = tmp / "state"
@@ -89,6 +90,12 @@ tokens_path.write_text(json.dumps(records))
 def events(kind=None):
     lines = journal.read_text(encoding="utf-8").splitlines() if journal.exists() else []
     return [e for e in (json.loads(x) for x in lines) if kind is None or e.get("event_type") == kind]
+
+
+def mark(st, order_id, status, when=None):
+    """El estado que mandaría el teléfono para una orden (sent, failed, …)."""
+    at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() if when is None else when))
+    st.append_status({"id": f"{order_id}:{status}", "order_id": order_id, "status": status, "at": at})
 
 
 def sms_id(seed):
@@ -123,8 +130,13 @@ async def gateway_part():
     # Conversaciones de la API: citas con CLIENT, ventas con ANA (del roster).
     a1 = outgoing.queue(st, to=CLIENT, text="Su cita es mañana", origin="api", token="citas",
                         token_id=citas_rec["prefix"], idempotency_key="c1", source="203.0.113.9")
-    outgoing.queue(st, to=ANA, text="Oferta", origin="api", token="ventas", token_id=ventas_rec["prefix"],
-                   idempotency_key="v1", source="203.0.113.9")
+    a2 = outgoing.queue(st, to=ANA, text="Oferta", origin="api", token="ventas", token_id=ventas_rec["prefix"],
+                        idempotency_key="v1", source="203.0.113.9")
+    # Revisión de #523: sólo una orden que el teléfono envió hace conversación.
+    check("una orden sólo en cola no hace conversación", None, api_replies.conversation(st, CLIENT))
+    mark(st, a1["id"], "sent")
+    mark(st, a2["id"], "sent")
+    mark(st, a2["id"], "delivered")
 
     async def sms_in(number, text, seed):
         await ws.send_text(json.dumps({"type": "sms.in", "id": sms_id(seed), "from": {"e164": number, "raw": number},
@@ -150,7 +162,26 @@ async def gateway_part():
     # Hace más de 7 días no cuenta.
     old = outgoing.queue(st, to=OTHER, text="viejo", origin="api", token="citas", token_id=citas_rec["prefix"],
                          idempotency_key="old", source="t", now=time.time() - 8 * 86400)
-    check("una orden de hace 8 días no hace conversación", None, api_replies.conversation(st, OTHER))
+    mark(st, old["id"], "sent", time.time() - 8 * 86400)
+    check("una orden enviada hace 8 días no hace conversación", None, api_replies.conversation(st, OTHER))
+    # Revisión de #523: fallida, rechazada o vencida no le habló a nadie.
+    for n, status in enumerate(("failed", "rejected", "expired")):
+        bad = outgoing.queue(st, to=OTHER, text="no salió", origin="api", token="citas",
+                             token_id=citas_rec["prefix"], idempotency_key=f"bad{n}", source="t")
+        mark(st, bad["id"], "accepted")
+        mark(st, bad["id"], status)
+        check(f"una orden {status} no hace conversación", None, api_replies.conversation(st, OTHER))
+    ack, ev = await sms_in(OTHER, "Hola otra vez", "r4")
+    check("un SMS después de una orden fallida no se marca para el token", False, "api_reply" in ev)
+    # La ventana corre desde el envío, no desde la cola.
+    late = outgoing.queue(st, to=LATE, text="tarde", origin="api", token="citas", token_id=citas_rec["prefix"],
+                          idempotency_key="late", source="t", now=time.time() - 8 * 86400)
+    mark(st, late["id"], "sent", time.time() - 6 * 86400)
+    check("en cola hace 8 días y enviada hace 6: sí hace conversación", late["id"],
+          (api_replies.conversation(st, LATE) or {}).get("order_id"))
+    mark(st, late["id"], "delivered", time.time() - 6 * 86400 + 30)
+    check("la ventana corre desde el primer envío", time.strftime("%Y-%m-%dT", time.gmtime(time.time() - 6 * 86400)),
+          (api_replies.conversation(st, LATE) or {}).get("at", "")[:11])
 
     # FR-13: STOP de CLIENT: baja, una confirmación por la API (orden a_ de citas).
     before = {p.name for p in (st.root / "outbox").glob("a_*.json")}

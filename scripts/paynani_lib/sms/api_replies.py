@@ -72,8 +72,11 @@ def _epoch(stamp) -> float | None:
 def conversation(store, number: str | None, now: float | None = None) -> dict | None:
     """
     La conversación de la API más reciente con ese número en los últimos 7 días:
-    `{"token", "token_id", "order_id", "at"}`, o None. Sale de los `queued` de
-    orders.jsonl (A4 #496) y del `to` de su orden.
+    `{"token", "token_id", "order_id", "at"}`, o None. El token sale del `queued` de la
+    orden en orders.jsonl (A4 #496), pero sólo cuenta una orden que el teléfono envió
+    (`sent` o `delivered`), y la ventana corre desde ese envío. Una orden en cola,
+    fallida, rechazada o vencida no le habló a nadie, así que no le da a su token los
+    SMS que lleguen después de ese número (revisión de #523).
     """
     if not number:
         return None
@@ -81,26 +84,37 @@ def conversation(store, number: str | None, now: float | None = None) -> dict | 
     path = store.root / "orders.jsonl"
     if not path.exists():
         return None
-    found = None
+    tokens = {}  # order_id → su `queued`, sólo órdenes a_ con token
+    sent = {}    # order_id → la hora del primer sent o delivered
     with open(path, encoding="utf-8") as fh:
         for line in fh:
             try:
                 rec = json.loads(line)
             except ValueError:
                 continue
+            if not isinstance(rec, dict):
+                continue
             oid = str(rec.get("order_id", ""))
-            if rec.get("status") != "queued" or not oid.startswith("a_") or not rec.get("token_id"):
+            if not oid.startswith("a_"):
                 continue
-            at = _epoch(rec.get("at"))
-            if at is None or not (now - WINDOW_S < at <= now + 60):
-                continue
-            if found is not None and at < found["epoch"]:
-                continue
-            order = store.order(oid) or {}
-            if order.get("to") != number:
-                continue
-            found = {"token": rec.get("token", ""), "token_id": rec["token_id"], "order_id": oid,
-                     "at": rec.get("at", ""), "epoch": at}
+            status = rec.get("status")
+            if status == "queued" and rec.get("token_id"):
+                tokens.setdefault(oid, rec)
+            elif status in ("sent", "delivered"):
+                at = _epoch(rec.get("at"))
+                if at is not None and (oid not in sent or at < sent[oid][0]):
+                    sent[oid] = (at, str(rec.get("at", "")))
+    found = None
+    for oid, (at, stamp) in sent.items():
+        rec = tokens.get(oid)
+        if rec is None or not (now - WINDOW_S < at <= now + 60):
+            continue
+        if found is not None and at < found["epoch"]:
+            continue
+        if (store.order(oid) or {}).get("to") != number:
+            continue
+        found = {"token": rec.get("token", ""), "token_id": rec["token_id"], "order_id": oid,
+                 "at": stamp, "epoch": at}
     if found:
         found.pop("epoch")
     return found
