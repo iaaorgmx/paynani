@@ -49,7 +49,7 @@ The owner chose the token's permissions when creating it:
 
 | Permission | Allows |
 |---|---|
-| `read` | Every `List…` and `Get…` action |
+| `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListRoster`, `GetRules`, `GetDefaultRules` |
 | `roster.write` | `SaveRosterContact`, `DeleteRosterContact`, `SaveRules`, `SaveDefaultRules` |
 | `accounts.write` | `AddAccount`, `RemoveAccount` |
 | `sms.send` | `SendSms`, `GetSmsStatus` |
