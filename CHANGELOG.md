@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **Una sola función crea las órdenes de SMS** (`paynani_lib/sms/outgoing.py`, T1 #504 del PRD #489). La usan `paynani sms send` y, después, PaynaniWeb (#490) y la API (#492). El id de la orden dice quién la creó: `o_` el agente, `w_` el dueño desde la web y `a_` la API. La pasarela sigue mandando sólo las del agente hasta T2 #505. `paynani sms send` se comporta igual que antes.
+
 ## 0.15.1 (2026-10-23)
 
 **Con Codex, `bootstrap.sh` ya dice Ready; y el workflow `release-assets` adjunta
