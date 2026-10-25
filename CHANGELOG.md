@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **Catch-All de SMS, primera parte: la pasarela y el agente (PRD #535, FR-12 a FR-20).** Con `rules/catch-all.md` en `enabled: true` y con instrucciones, un SMS de un número fuera del roster llega al agente con el extracto y la etiqueta `catch-all: rules/catch-all.md` dentro del primer corchete, donde el texto del SMS no puede escribir. Nunca dice `roster`. `paynani event show --body` lo muestra precedido de las instrucciones del dueño, pero sólo si llegó con el Catch-All activo y si sigue activo al leerlo: apagarlo corta el acceso a lo que ya llegó. Si el archivo está roto o está encendido sin instrucciones, el aviso dice `catch-all inválido` y no lleva el texto. Sin el archivo, o con `enabled: false`, todo queda como antes. `catch-all` queda reservado como id de reglas. El ledger guarda `{file, status}` (nunca el texto) para que el aviso de un SMS del Catch-All sin cerrar vuelva al iniciar la sesión. La pantalla para editarlo (web, PaynaniApp) y la API vienen en los siguientes PR.
+
 ## 0.16.2 (2026-10-25)
 
 **Dos arreglos que salieron al actualizar a 0.16.1: el `--apply` de `upgrade_plan.py`

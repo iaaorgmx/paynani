@@ -43,6 +43,10 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 from paynani_lib.roster_edit import EditError  # noqa: E402
 
 DEFAULT_ID = "default"
+# El Catch-All (PRD #535): las instrucciones para los SMS de números fuera del roster.
+# Mismo formato que las reglas, pero nunca de un contacto: el nombre queda reservado.
+CATCH_ALL_ID = "catch-all"
+RESERVED_IDS = (DEFAULT_ID, CATCH_ALL_ID)
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 MAX_BYTES = 32 * 1024
 VERSION = 1
@@ -243,14 +247,15 @@ def effective_reply(default_text: str | None, contact_text: str | None) -> dict:
 def new_id(name: str, taken) -> str:
     """
     Un id para el contacto: su nombre en minúsculas sin acentos, con guiones, más 4
-    hex al azar (`ana-ruiz-9b1c`). Nunca `default` ni uno de `taken`.
+    hex al azar (`ana-ruiz-9b1c`). Nunca uno reservado (`default`, `catch-all`) ni uno
+    de `taken`.
     """
     plain = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode("ascii").lower()
     slug = re.sub(r"[^a-z0-9]+", "-", plain).strip("-")[:40].strip("-") or "contacto"
     taken = set(taken)
     while True:
         candidate = f"{slug}-{secrets.token_hex(2)}"
-        if candidate not in taken and candidate != DEFAULT_ID and ID_RE.match(candidate):
+        if candidate not in taken and candidate not in RESERVED_IDS and ID_RE.match(candidate):
             return candidate
 
 
@@ -295,3 +300,47 @@ def tag(note: dict | None) -> str:
         return ""
     label = "reglas" if note["status"] == "active" else "reglas inválidas"
     return f"{label}: {note['file']}"
+
+
+# --- Catch-All (PRD #535) -------------------------------------------------------------
+
+def catch_all_notice(root: Path | None = None) -> dict | None:
+    """
+    El Catch-All para el aviso de un SMS de un número fuera del roster (FR-12 a FR-15):
+    `{"file": "rules/catch-all.md", "status": "active"}` si el archivo existe, es
+    válido y tiene `enabled: true`; `"invalid"` si existe pero no pasa la validación
+    (para que un error a mano se note); None si no existe o está apagado. Sin
+    archivo todo funciona como antes (FR-11).
+    """
+    try:
+        text = path_for(CATCH_ALL_ID, root).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    try:
+        parsed = parse(text)
+    except EditError:
+        return {"file": f"rules/{CATCH_ALL_ID}.md", "status": "invalid"}
+    if not parsed["enabled"]:
+        return None
+    if not parsed["body"].strip():
+        # Activo sin instrucciones no se puede guardar (FR-5); escrito a mano así, el
+        # agente no sabría qué hacer: cuenta como inválido.
+        return {"file": f"rules/{CATCH_ALL_ID}.md", "status": "invalid"}
+    return {"file": f"rules/{CATCH_ALL_ID}.md", "status": "active"}
+
+
+def catch_all_instructions(root: Path | None = None) -> str | None:
+    """Las instrucciones vigentes del Catch-All si está activo y es válido; si no, None (FR-19)."""
+    if (catch_all_notice(root) or {}).get("status") != "active":
+        return None
+    try:
+        return parse(path_for(CATCH_ALL_ID, root).read_text(encoding="utf-8"))["body"]
+    except (OSError, UnicodeDecodeError, EditError):
+        return None
+
+
+def catch_all_tag(note: dict | None) -> str:
+    """La parte del corchete: `catch-all: rules/catch-all.md` o `catch-all inválido`. Nunca dice «roster»."""
+    if not note:
+        return ""
+    return f"catch-all: {note['file']}" if note["status"] == "active" else "catch-all inválido"
