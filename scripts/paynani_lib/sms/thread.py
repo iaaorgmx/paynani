@@ -67,7 +67,8 @@ def items(store, journal: Path, *, number: str | None = None, calls: bool = Fals
     `{"number", "epoch", "local", "kind", "status", "text", "name", "duration_s", "via", "id", "error"}`,
     en orden de hora. Con `number`, sólo los de ese número. `id` es la orden (`o_`, `w_`)
     o el `local_id` del envío del dueño; `error`, el código de un `failed` o la razón de
-    un `rejected` (PRD #489 FR-5).
+    un `rejected` (PRD #489 FR-5). Un SMS que llegó con el Catch-All activo lleva además
+    `"catch_all": True` (PRD #535 FR-P4).
 
     Una orden de la web que sigue en cola después de su `expires_at` sale como `expired`
     aunque la pasarela todavía no la haya marcado: la pasarela sólo vence órdenes con
@@ -75,6 +76,7 @@ def items(store, journal: Path, *, number: str | None = None, calls: bool = Fals
     """
     raw = []
     ids: dict[int, str] = {}
+    caught: set[int] = set()
     for record, _ in ev.read_from(journal, 0) or ():
         if not isinstance(record, dict):
             continue
@@ -91,6 +93,8 @@ def items(store, journal: Path, *, number: str | None = None, calls: bool = Fals
             message_id = str(record.get("provider_id", "")).split(":", 1)[-1]
             saved = store.inbox(message_id) or {}
             stamp = str(record.get("sent_at") or record.get("observed_at") or "")
+            if (record.get("catch_all") or {}).get("status") == "active":
+                caught.add(len(raw))
             raw.append((who, stamp, "received", "", str(saved.get("text", "")), sender.get("name", ""), None))
         else:
             stamp = str(record.get("started_at") or record.get("observed_at") or "")
@@ -153,6 +157,8 @@ def items(store, journal: Path, *, number: str | None = None, calls: bool = Fals
         out.append({"number": who, "epoch": epoch, "local": local, "kind": kind, "status": status,
                     "text": text, "name": name or "", "duration_s": duration, "via": via.get(index, ""),
                     "id": oid, "error": errors.get(oid, "") if status in ("failed", "rejected") else ""})
+        if index in caught:
+            out[-1]["catch_all"] = True
     out.sort(key=lambda item: item["epoch"])
     return out
 

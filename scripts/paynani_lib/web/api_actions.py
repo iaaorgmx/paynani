@@ -21,6 +21,9 @@ from . import mail, thread
 READ = "read"
 ROSTER_WRITE = "roster.write"
 ACCOUNTS_WRITE = "accounts.write"
+# PRD #535 FR-P2: activar el Catch-All deja que el agente lea los SMS de números fuera
+# del roster, así que no va dentro de roster.write.
+CATCHALL_WRITE = "catchall.write"
 SMS_SEND = "sms.send"
 
 PAGE = 50
@@ -286,6 +289,20 @@ def get_default_rules(call: Call) -> dict:
 def save_default_rules(call: Call) -> dict:
     return call.roster("rules.save_default", text=call.text("text", limit=20000).replace("\r\n", "\n"),
                        etag=call.text("etag"))
+
+
+# ---- Catch-All (PRD #535 FR-P1, FR-P2) ----------------------------------------------
+
+def get_catch_all(call: Call) -> dict:
+    return call.roster("catchall.get")
+
+
+def save_catch_all(call: Call) -> dict:
+    enabled = call.params.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ApiError(400, "invalid_parameter", "enabled must be true or false.", field="enabled")
+    return call.roster("catchall.save", enabled=enabled,
+                       text=call.text("text", limit=40000).replace("\r\n", "\n"), etag=call.text("etag"))
 
 
 # ---- cuentas (accounts.write) ------------------------------------------------------
@@ -589,6 +606,8 @@ ACTIONS = {
     "SaveRules": (ROSTER_WRITE, save_rules),
     "GetDefaultRules": (READ, get_default_rules),
     "SaveDefaultRules": (ROSTER_WRITE, save_default_rules),
+    "GetCatchAll": (READ, get_catch_all),
+    "SaveCatchAll": (CATCHALL_WRITE, save_catch_all),
     "AddAccount": (ACCOUNTS_WRITE, add_account),
     "RemoveAccount": (ACCOUNTS_WRITE, remove_account),
     "SendSms": (SMS_SEND, send_sms),

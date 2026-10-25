@@ -34,8 +34,9 @@ from paynani_lib import rules as rules_mod  # noqa: E402
 from paynani_lib.roster_edit import EditError  # noqa: E402
 
 TYPES = ("roster.accounts", "roster.list", "roster.save", "roster.delete",
-         "rules.get", "rules.preview", "rules.save", "rules.get_default", "rules.save_default")
-WRITES = {"roster.save", "roster.delete", "rules.save", "rules.save_default"}
+         "rules.get", "rules.preview", "rules.save", "rules.get_default", "rules.save_default",
+         "catchall.get", "catchall.save")
+WRITES = {"roster.save", "roster.delete", "rules.save", "rules.save_default", "catchall.save"}
 ID_RE = re.compile(r"^q_[0-9a-f]{32}$")
 ACCOUNT_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
 REPLAY_MAX = 64
@@ -51,6 +52,7 @@ NOTIFY_GRACE_S = 300
 NOTIFY_WINDOW_S = 24 * 3600
 
 
+API_PREFIX = "api:"   # device_id de un cambio por la API (PRD #491): «api:<prefijo del token>:<dirección>»
 WEB_PREFIX = "web:"   # device_id de un cambio hecho desde PaynaniWeb (#435 T8): «web:<dirección>»
 
 
@@ -330,8 +332,7 @@ class RosterService:
 
     def _rendered(self, text, device_id: str) -> tuple[str, dict]:
         parsed = rules_mod.parse(text)
-        who = f"PaynaniWeb {device_id[len(WEB_PREFIX):]}" if from_web(device_id) else f"phone {device_id}"
-        return rules_mod.render(parsed, updated_at=_now_iso(), updated_by=who), parsed
+        return rules_mod.render(parsed, updated_at=_now_iso(), updated_by=who_changed(device_id)), parsed
 
     def rules_save(self, msg: dict, device_id: str) -> dict:
         new_text, parsed = self._rendered(msg.get("text"), device_id)
@@ -339,6 +340,11 @@ class RosterService:
         path, shown, data, text, member = self._member_at(msg)
         roster_etag = roster_edit.etag_of(data)
         rules_id = member["rules"]
+        if rules_id in rules_mod.RESERVED_IDS:
+            # PRD #535 FR-10: rules/default.md y rules/catch-all.md no son de un contacto;
+            # escribirlos desde su fila cambiaría las reglas generales o el Catch-All.
+            raise EditError("invalid", field="rules", reason="reserved",
+                            detail=f"rules/{rules_id}.md es un nombre reservado; renombra las reglas de este contacto")
         if not rules_id:
             # La primera vez: un id nuevo en la columna Rules de esa fila (I-1), con el
             # mismo paso único del roster, que vuelve a comprobar roster_etag.
@@ -373,6 +379,51 @@ class RosterService:
         self._changed(device_id, msg["type"], None, "rules/default.md", None, "reglas generales", done,
                       action="rules_default", rules=self._rules_summary(rules_mod.DEFAULT_ID, parsed, new_text))
         return {"rules": rules_mod.DEFAULT_ID, "etag": done["etag"], "effective": rules_mod.effective(new_text, None)}
+
+    # --- Catch-All (PRD #535 FR-0a, FR-0b) ------------------------------------
+    def catchall_get(self, msg: dict, device_id: str) -> dict:
+        """
+        rules/catch-all.md para la pantalla: la casilla (`enabled`), las instrucciones,
+        quién lo cambió y el `etag` para guardar. `status` es `off`, `active` o
+        `invalid`; uno inválido trae el archivo entero en `text`, para corregirlo.
+        """
+        text = self._rules_text(rules_mod.CATCH_ALL_ID)
+        out = {"file": f"rules/{rules_mod.CATCH_ALL_ID}.md", "exists": text is not None,
+               "etag": roster_edit.etag_of(text.encode("utf-8")) if text is not None else "",
+               "enabled": False, "text": "", "updated_at": "", "updated_by": "", "status": "off"}
+        if text is None:
+            return out
+        try:
+            parsed = rules_mod.parse(text)
+        except EditError as exc:
+            return {**out, "text": text, "status": "invalid", "detail": exc.as_error().get("detail", "")}
+        status = "off" if not parsed["enabled"] else ("active" if parsed["body"].strip() else "invalid")
+        return {**out, "enabled": parsed["enabled"], "text": parsed["body"], "status": status,
+                "updated_at": parsed["updated_at"], "updated_by": parsed["updated_by"]}
+
+    def catchall_save(self, msg: dict, device_id: str) -> dict:
+        enabled, body = msg.get("enabled"), msg.get("text")
+        if not isinstance(enabled, bool):
+            raise EditError("invalid", field="enabled", detail="enabled es true o false")
+        if not isinstance(body, str):
+            raise EditError("invalid", field="text", detail="text es texto")
+        if enabled and not body.strip():
+            # FR-5: activo sin instrucciones el agente no sabría qué hacer.
+            raise EditError("invalid", field="text", reason="empty",
+                            detail="para activar el Catch-All hacen falta instrucciones")
+        if rules_mod.CATCH_ALL_ID in self._all_rules_ids():
+            # FR-10: un contacto que ya usa ese nombre leería las instrucciones del Catch-All.
+            raise EditError("invalid", field="rules", reason="reserved_in_use",
+                            detail="un contacto del roster usa rules/catch-all.md; renombra sus reglas primero")
+        header = f"---\nversion: {rules_mod.VERSION}\nenabled: {'true' if enabled else 'false'}\n---\n"
+        parsed = rules_mod.parse(header + body)  # el mismo tope de 32 KB y la misma validación (FR-6, FR-9)
+        new_text = rules_mod.render(parsed, updated_at=_now_iso(), updated_by=who_changed(device_id))
+        target = self._rules_path(rules_mod.CATCH_ALL_ID)
+        done = roster_edit.apply_file(target, msg.get("etag"), new_text, state_dir=self.state_dir,
+                                      label=f"rules__{rules_mod.CATCH_ALL_ID}")
+        self._changed(device_id, msg["type"], None, f"rules/{rules_mod.CATCH_ALL_ID}.md", None, "Catch-All", done,
+                      action="catch_all", rules=self._rules_summary(rules_mod.CATCH_ALL_ID, parsed, new_text))
+        return {**self.catchall_get({}, device_id), "etag": done["etag"]}
 
     @staticmethod
     def _rules_summary(rules_id: str, parsed: dict, text: str) -> dict:
@@ -475,7 +526,8 @@ class RosterService:
                    "roster.save": self.roster_save, "roster.delete": self.roster_delete,
                    "rules.get": self.rules_get, "rules.preview": self.rules_preview,
                    "rules.save": self.rules_save, "rules.get_default": self.rules_get_default,
-                   "rules.save_default": self.rules_save_default}[kind]
+                   "rules.save_default": self.rules_save_default,
+                   "catchall.get": self.catchall_get, "catchall.save": self.catchall_save}[kind]
         try:
             response = {"type": "result", "ref": rid, "ok": True, "data": handler(msg, device_id)}
         except EditError as exc:
@@ -540,16 +592,45 @@ def unnotified(state_dir: Path, *, now: float | None = None, window_s: int = NOT
     return {"count": count, "errors": errors}
 
 
+def who_changed(device_id: str) -> str:
+    """`updated_by` de un archivo de reglas: PaynaniWeb y su dirección, el token de la API o el teléfono."""
+    if from_web(device_id):
+        return f"PaynaniWeb {device_id[len(WEB_PREFIX):]}"
+    if device_id.startswith(API_PREFIX):
+        return f"API token {device_id[len(API_PREFIX):].split(':', 1)[0]}"
+    return f"phone {device_id}"
+
+
 def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
     """El asunto y el cuerpo del correo al humano: qué cambió y desde dónde, el
     teléfono (Q5) o PaynaniWeb y su dirección (#434 FR-9)."""
-    web = from_web(entry["device_id"])
-    origin = (f"Desde PaynaniWeb (dirección {entry['device_id'][len(WEB_PREFIX):]}), a las {entry['at']}:" if web
-              else f"Desde el teléfono {entry['device_id']}, a las {entry['at']}:")
-    app = "PaynaniWeb" if web else "PaynaniApp"
-    revoke = ("Si no fuiste tú, revisa el roster y cambia la contraseña de PaynaniWeb con "
-              "`scripts/paynani web passwd`, que cierra todas las sesiones." if web
-              else "Si no fuiste tú, revisa el roster y revoca el teléfono con `paynani sms revoke`.")
+    device = entry["device_id"]
+    web = from_web(device)
+    api = device.startswith(API_PREFIX)
+    if api:
+        prefix, _, ip = device[len(API_PREFIX):].partition(":")
+        origin = f"Desde la API con el token {prefix} (dirección {ip}), a las {entry['at']}:"
+        app = "la API"
+        revoke = ("Si no fuiste tú, revisa el roster y revoca ese token en la pantalla «API Tokens» de "
+                  "PaynaniWeb.")
+    else:
+        origin = (f"Desde PaynaniWeb (dirección {device[len(WEB_PREFIX):]}), a las {entry['at']}:" if web
+                  else f"Desde el teléfono {device}, a las {entry['at']}:")
+        app = "PaynaniWeb" if web else "PaynaniApp"
+        revoke = ("Si no fuiste tú, revisa el roster y cambia la contraseña de PaynaniWeb con "
+                  "`scripts/paynani web passwd`, que cierra todas las sesiones." if web
+                  else "Si no fuiste tú, revisa el roster y revoca el teléfono con `paynani sms revoke`.")
+    if entry["action"] == "catch_all":
+        info = entry["rules"]
+        lines = [origin, "",
+                 f"Cambió el Catch-All de SMS, en {info['file']}.", "",
+                 f"  Activo: {'sí' if info['enabled'] else 'no'}", f"  Tamaño: {info['bytes']:,} bytes", "",
+                 "Con el Catch-All activo, tu agente lee los SMS de números que no están en el roster "
+                 "y sigue esas instrucciones.", "",
+                 f"Copia anterior: {entry['backup'] or '(el archivo no existía)'}", "",
+                 "Las instrucciones no van en este correo: están en ese archivo de la instalación.",
+                 revoke.replace("revisa el roster", "revisa el archivo")]
+        return f"paynani: cambio del Catch-All de SMS desde {app}", "\n".join(lines) + "\n"
     if entry["action"] in ("rules", "rules_default"):
         info = entry["rules"]
         whose = "las reglas generales" if entry["action"] == "rules_default" else \

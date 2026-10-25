@@ -9,7 +9,8 @@ from pathlib import Path
 from .. import i18n
 from . import api_tokens
 
-PERMISSIONS = ("read", "sms.send", "roster.write", "accounts.write")
+# catchall.write (PRD #535 FR-P3): ningún token existente lo tiene; se marca a mano.
+PERMISSIONS = ("read", "sms.send", "roster.write", "accounts.write", "catchall.write")
 EXPIRIES = {"5m": dt.timedelta(minutes=5), "1h": dt.timedelta(hours=1),
             "1d": dt.timedelta(days=1), "7d": dt.timedelta(days=7),
             "30d": dt.timedelta(days=30)}
@@ -113,7 +114,8 @@ def new_body(csrf: str, *, error: str = "", values: dict | None = None) -> str:
             f'<label for="token-name">{t("web.tokens.name")}</label><input id="token-name" name="name" maxlength="100" required value="{e(values.get("name", ""))}">'
             f'<label for="token-expiry">{t("web.tokens.expires")}</label><select id="token-expiry" name="expiry">{options}</select>'
             f'<label for="token-custom">{t("web.tokens.custom_utc")}</label><input id="token-custom" type="datetime-local" name="custom" value="{e(values.get("custom", ""))}">'
-            f'<fieldset><legend>{t("web.tokens.permissions")}</legend>{checks}</fieldset>'
+            f'<fieldset><legend>{t("web.tokens.permissions")}</legend>{checks}'
+            f'<p class="hint">{t("web.tokens.catchall_hint")}</p></fieldset>'
             f'<label for="token-hour">{t("web.tokens.hour")}</label><input id="token-hour" name="sms_per_hour" type="number" min="1" value="{e(values.get("sms_per_hour", "30"))}">'
             f'<label for="token-day">{t("web.tokens.day")}</label><input id="token-day" name="sms_per_day" type="number" min="1" value="{e(values.get("sms_per_day", "200"))}">'
             f'<label class="casilla"><input type="checkbox" name="agent_replies" value="1"{" checked" if values.get("agent_replies") else ""}> {t("web.tokens.agent_replies")}</label>'
