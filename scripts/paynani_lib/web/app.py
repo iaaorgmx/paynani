@@ -51,6 +51,10 @@ STATIC = {
 }
 LANG_COOKIE = "paynani_web_lang"
 MAX_BODY_BYTES = 64 * 1024
+# Catch-All instructions may be 32 KB once saved (PRD #535 FR-6). The form arrives
+# urlencoded: a byte becomes %XX, and a newline becomes CRLF, %0D%0A, six bytes. This
+# allows the worst case plus room for the password and the other fields.
+CATCHALL_BODY_BYTES = 6 * 32 * 1024 + 16 * 1024
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 SERVER_NAME = "paynani-web"
 
@@ -896,7 +900,7 @@ def make_handler(ctx: Context):
             needs_password = enabled and (not was_on or text != before.get("text", ""))
             if needs_password:
                 # Vacía no cuenta como intento: sólo dice que hace falta.
-                password = post.get("password", "")
+                password = post.get("password", "")[:users.MAX_PASSWORD]
                 problem = self._check_current(password) if password else i18n.t("web.catchall.err.password")
                 if problem:
                     self._catchall(error=problem, values=values, code=403)
@@ -1362,7 +1366,8 @@ def make_handler(ctx: Context):
                 length = int(self.headers.get("Content-Length", "0") or "0")
             except ValueError:
                 length = -1
-            if length < 0 or length > MAX_BODY_BYTES:
+            limit = CATCHALL_BODY_BYTES if urlparse(self.path).path == "/messages/catch-all" else MAX_BODY_BYTES
+            if length < 0 or length > limit:
                 if urlparse(self.path).path == "/api/agent":
                     self._api_reply(413, secrets.token_hex(8), code="body_too_large",
                                     message="Request body is too large.")

@@ -176,6 +176,28 @@ check("FR-10: con un contacto que usa catch-all, dice que hay que renombrarlo", 
       (status, th("web.catchall.err.reserved") in page))
 roster.write_text(ROSTER, encoding="utf-8")
 
+# La contraseña se recorta a users.MAX_PASSWORD antes de scrypt, como en las demás rutas.
+status, _, page = req("GET", "/messages/catch-all", cookie=cookie)
+csrf, etag = form_of(page)
+seen = []
+real_verify = users.verify_password
+users.verify_password = lambda password, stored: seen.append(len(password)) or real_verify(password, stored)
+status, _, _ = req("POST", "/messages/catch-all",
+                   form={"csrf": csrf, "etag": etag, "enabled": "1", "text": "Hola", "password": "x" * 60000},
+                   cookie=cookie)
+users.verify_password = real_verify
+check("una contraseña enorme llega recortada a scrypt", (403, [users.MAX_PASSWORD]), (status, seen))
+
+# FR-6: casi 32 KB de Unicode y saltos de línea caben, aunque urlencoded pesen mucho más.
+line = "é" * 40 + "\r\n"
+near = line * ((rules_mod.MAX_BYTES - 512) // len(line.replace("\r\n", "\n").encode("utf-8")))
+body_bytes = len(urlencode({"text": near}))
+status, hdrs, _ = req("POST", "/messages/catch-all",
+                      form={"csrf": csrf, "etag": etag, "enabled": "1", "text": near, "password": PASSWORD},
+                      cookie=cookie)
+check("FR-6: casi 32 KB de «é» y saltos de línea se guardan por la web", (True, 303, True),
+      (body_bytes > app.MAX_BODY_BYTES, status, near.replace("\r\n", "\n") in catch_file.read_text(encoding="utf-8")))
+
 # FR-7: CSRF y Origin.
 status, _, _ = req("POST", "/messages/catch-all", form={"csrf": "malo", "etag": etag, "text": ""}, cookie=cookie)
 check("FR-7: sin el token CSRF, 403", 403, status)
