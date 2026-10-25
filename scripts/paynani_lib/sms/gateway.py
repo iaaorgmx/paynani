@@ -758,6 +758,16 @@ class Gateway:
         member = next((m for m in members if e164 and e164 in m["phones"]), None)
         return rules_mod.notice(member["rules"] if member else None, self.roster_service.rules_root)
 
+    def _catch_all_note(self) -> dict | None:
+        """`rules/catch-all.md` para un SMS de un número fuera del roster (PRD #535), o None."""
+        from paynani_lib import rules as rules_mod
+
+        try:
+            return rules_mod.catch_all_notice(self.roster_service.rules_root)
+        except Exception as exc:  # noqa: BLE001 - un error aquí no puede perder el SMS
+            log(f"no se pudo leer el Catch-All ({type(exc).__name__}); el SMS sigue sin él")
+            return None
+
     def _region(self) -> str | None:
         """El país de la SIM del teléfono emparejado (SMS_GATEWAY.md), o None."""
         device = self.store.device() or {}
@@ -804,13 +814,16 @@ class Gateway:
         raw, e164, name, in_roster = self._who(msg["from"])
         rules_note = self._rules_note(e164) if in_roster else None
         conv, optout = self._api_reply(e164, text)
+        # Catch-All (PRD #535 FR-12): sólo lo que no tiene dueño, ni roster ni API.
+        catch = self._catch_all_note() if not in_roster and not conv else None
         envelope = ev.sms_event(device_id=device_id, message_id=mid, e164=e164, raw_sender=raw, rules=rules_note,
                                 sender_name=name, text=text, sent_at=str(msg.get("sent_at", "")),
                                 roster_match=in_roster, local_time=time.strftime("%H:%M:%S"),
-                                api_reply=conv, api_optout=optout[0] if optout else None)
+                                api_reply=conv, api_optout=optout[0] if optout else None, catch_all=catch)
         try:
             result = self._journal(mid, envelope, {
                 "type": "sms.in", "from_raw": raw, "from_e164": e164, "text": text,
+                "catch_all": (catch or {}).get("status") == "active",
                 "sent_at": msg.get("sent_at", ""), "received_at": msg.get("received_at", ""),
                 "sim": msg.get("sim"), "parts": msg.get("parts", 1)})
         except (OSError, ValueError) as exc:

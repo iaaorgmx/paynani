@@ -626,7 +626,10 @@ def unattended_roster(ledger_path=None, now=None, days=None, exclude=()):
         envelope = envelopes.get(event_id)
         if state not in OPEN_STATES or event_id in exclude or not envelope:
             continue
-        if envelope.get("roster_match") is not True:
+        # Lo del roster, y un SMS del Catch-All (PRD #535): también es trabajo para el
+        # agente, con las instrucciones del dueño, y no se debe perder si la sesión se acaba.
+        caught = (envelope.get("catch_all") or {}).get("status") == "active"
+        if envelope.get("roster_match") is not True and not caught:
             continue
         seen = _stamp_seconds(envelope.get("observed_at"))
         if seen is None or now - seen > days * 86400:
@@ -649,6 +652,8 @@ def unattended_line(event_id, envelope):
         who = f"{sender['name']} <{sender['address']}>"
     # An SMS or a call has no subject: say what it was instead of leaving a dangling dash.
     what = envelope.get("subject") or _UNATTENDED_KINDS.get(envelope.get("event_type"), "")
+    if (envelope.get("catch_all") or {}).get("status") == "active":
+        what += " (catch-all)"
     return f"{event_id}  {envelope.get('observed_at', '')}  {who} — {what}"
 
 
