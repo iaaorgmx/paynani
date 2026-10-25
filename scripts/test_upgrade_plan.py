@@ -216,6 +216,40 @@ try:
     check("on an OpenCode host the plugin is acted on", any("OpenCode" in c for c in mac_cmds), str(mac_cmds))
     check("on an OpenCode host the watcher is not", not any("watcher" in c for c in mac_cmds), str(mac_cmds))
 
+    # 0.16.1 on Ximena's Mac: --apply passed 'com.paynani.idle.*' to launchctl
+    # kickstart, which takes one exact label, and stopped with exit 113. A pattern
+    # is now matched against `launchctl list`; an exact label is kicked as is.
+    launchd_calls = []
+    launchctl_list = ("PID\tStatus\tLabel\n"
+                      "101\t0\tcom.paynani.idle\n"
+                      "102\t0\tcom.paynani.idle.cuenta2\n"
+                      "103\t0\tcom.paynani.idle.cuenta1\n"
+                      "104\t0\tcom.paynani.dispatch\n"
+                      "105\t0\tcom.paynani.sms\n"
+                      "-\t0\tcom.apple.something\n")
+
+    def launchd_runner(argv, cwd, text, capture_output):
+        argv = [str(value) for value in argv]
+        launchd_calls.append(argv)
+        out = launchctl_list if argv == ["launchctl", "list"] else ""
+        return subprocess.CompletedProcess(argv, 0, out, "")
+
+    labels = [label for _, label in (up.LISTENER, up.LISTENER_INSTANCES, up.DISPATCHER, up.SMS_GATEWAY, up.WEB)]
+    up._launchd_restart_labels(labels, repo, launchd_runner)
+    kicked = [a[3].split("/", 2)[2] for a in launchd_calls if a[:3] == ["launchctl", "kickstart", "-k"]]
+    check("macOS --apply never passes a pattern to launchctl kickstart",
+          not any("*" in name for name in kicked), str(launchd_calls))
+    check("... it restarts each loaded label once, in plan order, and nothing that is not loaded",
+          kicked == ["com.paynani.idle", "com.paynani.idle.cuenta1", "com.paynani.idle.cuenta2",
+                     "com.paynani.dispatch", "com.paynani.sms"], str(kicked))
+    check("... and reads `launchctl list` only once",
+          launchd_calls.count(["launchctl", "list"]) == 1, str(launchd_calls))
+    printed = up.commands(dict(mac, ok=True, reinstall=False, reinstall_commands=[], restart_runtime=[],
+                               next_session=False, restart_units=[up.LISTENER_INSTANCES]))
+    check("the printed macOS step for a pattern is a command, not a comment",
+          len(printed) == 1 and not printed[0].startswith("#") and "launchctl list" in printed[0]
+          and "grep -xE 'com\\.paynani\\.idle\\..*'" in printed[0], str(printed))
+
     # --- the installer's restart is only counted when it is certain (#302) ----
     # install.sh restarts the two services only if it rewrote an artifact it owns,
     # so a release whose installer changed but whose units did not still needs the
