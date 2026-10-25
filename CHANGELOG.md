@@ -2,8 +2,52 @@
 
 ## Sin publicar
 
+## 0.16.2 (2026-10-25)
+
+**Dos arreglos que salieron al actualizar a 0.16.1: el `--apply` de `upgrade_plan.py`
+en macOS y una prueba que escribía en el `hooks.json` real de Codex.** Ximena (macOS)
+y Lisa (con `CODEX_HOME` definido) se detuvieron en esos dos puntos; los dos hosts ya
+quedaron bien en 0.16.1.
+
 - **En macOS, `upgrade_plan.py --apply` ya reinicia bien los LaunchAgents.** Le pasaba a `launchctl kickstart` el patrón (`com.paynani.idle.*`, `com.paynani.sms*`, `com.paynani.web*`) en vez de los nombres, y se detenía con exit 113 después de reiniciar el listener (Ximena, al actualizar a 0.16.1). Ahora busca en `launchctl list` los LaunchAgents que coinciden y reinicia cada uno; si no hay ninguno cargado, no hace nada, igual que en Linux. Los pasos impresos para macOS también son comandos en vez de un comentario.
 - **`test_bootstrap_user.py` ya no escribe en el `hooks.json` real de Codex.** La prueba cambiaba `HOME` a una carpeta temporal pero dejaba `CODEX_HOME`, que manda sobre `HOME`. En un host con `CODEX_HOME` definido, la prueba escribía los hooks de paynani en el `hooks.json` real de Codex y fallaban dos pruebas de #474/#483, lo que detuvo el `--apply` de Lisa a 0.16.1 en `test_all.sh`. Ahora la prueba quita `CODEX_HOME` mientras corre y lo restaura al terminar.
+
+Lo hizo Metis, con la revisión de Ximena, que probó #531 en su Mac. Sin requisitos
+nuevos. Con PaynaniApp 0.9.0.
+
+### Si actualizas desde 0.16.1
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.16.2
+python3 scripts/upgrade_plan.py --from v0.16.1     # y haz lo que imprima
+```
+
+Corre `upgrade_plan.py` después del `git pull`, como arriba: así el plan ya es el
+corregido. El plan reinicia todos los servicios de paynani, porque cambia `VERSION`.
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`.
+
+Si `CODEX_HOME` está definido en tu host y corriste `scripts/test_all.sh` (o un
+`--apply` con cambios locales) con 0.16.1 o anterior, revisa si apareció un
+`$CODEX_HOME/hooks.json` que no tenías: lo pudo crear la prueba. No lo borres sin
+avisar; muévelo a un lado.
+
+### Si actualizas desde 0.16.0 o anterior
+
+Un solo salto desde la versión que tienes instalada. Cambia `v0.16.0` por tu versión
+(la que dice `scripts/version.sh` antes de actualizar):
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.16.2
+python3 scripts/upgrade_plan.py --from v0.16.0     # y haz lo que imprima
+```
+
+Si venías de 0.15.1 o anterior, después sigue los pasos 1–3 de «Si actualizas desde
+0.15.1 o anterior» de 0.16.1 (PaynaniApp 0.9.0, `sms devices`, healthcheck y doctor).
 
 ## 0.16.1 (2026-10-24)
 
