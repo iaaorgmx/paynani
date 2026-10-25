@@ -638,6 +638,19 @@ evento, así que en `notification_text`:
 - si `roster_match` es `false`, **no va el texto**, sólo el remitente y «mensaje de
   un número fuera del roster». `paynani event show --body` se niega a mostrarlo, igual
   que hoy con el correo de un remitente no reconocido.
+- **el Catch-All** (PRD #535) es la excepción, y la decide el dueño: con
+  `rules/catch-all.md` en `enabled: true` y con instrucciones, un SMS de un número
+  fuera del roster que no es respuesta a una conversación de la API llega con el
+  extracto y `catch-all: rules/catch-all.md` dentro del primer corchete:
+  `[sms 03:09, catch-all: rules/catch-all.md] +525599990000: <extracto>`. Nunca dice
+  `roster`. El sobre lleva `catch_all: {file, status}`, nunca las instrucciones.
+  `paynani event show --body` muestra primero las instrucciones del dueño y luego el
+  texto, pero sólo si el SMS llegó con el Catch-All activo **y** sigue activo al
+  leerlo: apagarlo corta el acceso a lo que ya llegó. Si el archivo existe pero está
+  roto, no se puede leer o está encendido sin instrucciones, el aviso dice
+  `catch-all inválido` y no lleva el texto. Sin el archivo, o con `enabled: false`,
+  todo es como arriba. Un número del roster nunca lleva la etiqueta, y STOP/START
+  a la API siguen funcionando igual.
 
 ## 7. Lo que no se permite que falle en silencio
 
