@@ -42,13 +42,16 @@ contraseña, y un token revocado no se puede reactivar.
 
 | Permiso | Deja usar |
 |---|---|
-| `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListRoster`, `GetRules`, `GetDefaultRules` |
+| `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListRoster`, `GetRules`, `GetDefaultRules`, `GetCatchAll` |
 | `roster.write` | `SaveRosterContact`, `DeleteRosterContact`, `SaveRules`, `SaveDefaultRules` |
 | `accounts.write` | `AddAccount`, `RemoveAccount` |
+| `catchall.write` | `SaveCatchAll` |
 | `sms.send` | `SendSms`, `GetSmsStatus` |
 
 `GetTokenInfo` y `GetUsage` funcionan con cualquier permiso. Una acción sin su
-permiso responde `forbidden`. El perfil y la contraseña de la web no están en la
+permiso responde `forbidden`. `catchall.write` va aparte de `roster.write` porque
+encender el Catch-All deja que tu agente lea los SMS de números fuera del roster;
+ningún token creado antes lo tiene. El perfil y la contraseña de la web no están en la
 API.
 
 ## Las acciones
@@ -61,12 +64,13 @@ API.
 | `ListMail` | Recibidos y enviados de una cuenta, de 50 en 50, como la web |
 | `GetMailThread` | El hilo de un correo, leído de IMAP en ese momento |
 | `ListSmsConversations` | Las conversaciones SMS, de 50 en 50 |
-| `GetSmsThread` | Una conversación, con estados y llamadas |
+| `GetSmsThread` | Una conversación, con estados y llamadas; un SMS que llegó con el Catch-All activo lleva `catch_all: true` |
 | `ListSmsReplies` | Las respuestas a los SMS de ese token desde una hora (`since`) |
 | `SendSms` | Envía un SMS |
 | `GetSmsStatus` | El estado de una orden del token |
 | `ListRoster`, `SaveRosterContact`, `DeleteRosterContact` | El roster por cuenta, con el mismo servicio que la web y PaynaniApp |
 | `GetRules`, `SaveRules`, `GetDefaultRules`, `SaveDefaultRules` | Instrucciones por contacto y generales |
+| `GetCatchAll`, `SaveCatchAll` | El Catch-All de SMS (`rules/catch-all.md`): si está activo y sus instrucciones; cada cambio te llega por correo |
 | `AddAccount`, `RemoveAccount` | Como «Agregar cuenta» y «Quitar esta cuenta», con la prueba de IMAP y SMTP |
 
 Cuando la API agrega o quita una cuenta, te llega el mismo correo que cuando lo

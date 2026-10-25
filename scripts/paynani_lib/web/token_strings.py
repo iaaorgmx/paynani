@@ -15,3 +15,11 @@ for language, words in WORDS.items():
     CATALOGUES[language]["web.tokens.prefix"] = "Préfixe" if language == "fr-FR" else ("Prefixo" if language == "pt-BR" else ("Prefix" if language == "en-US" else "Prefijo"))
     CATALOGUES[language]["web.tokens.filter"] = {"es-MX": "Filtrar", "en-US": "Filter", "es-ES": "Filtrar", "fr-FR": "Filtrer", "pt-BR": "Filtrar"}[language]
     CATALOGUES[language]["web.tokens.agent_replies"] = {"es-MX": "El agente local contesta las respuestas", "en-US": "Local agent replies to responses", "es-ES": "El agente local contesta las respuestas", "fr-FR": "L’agent local répond aux réponses", "pt-BR": "O agente local responde às respostas"}[language]
+    # PRD #535 FR-P3: lo que deja hacer catchall.write, junto a su casilla.
+    CATALOGUES[language]["web.tokens.catchall_hint"] = {
+        "es-MX": "catchall.write deja que este token active el Catch-All, y entonces tu agente leerá los SMS de números fuera del roster.",
+        "en-US": "catchall.write lets this token turn on the Catch-All, and then your agent will read SMS from numbers that are not on the roster.",
+        "es-ES": "catchall.write permite que este token active el Catch-All, y entonces tu agente leerá los SMS de números fuera del roster.",
+        "fr-FR": "catchall.write permet à ce jeton d’activer le Catch-All : votre agent lira alors les SMS des numéros absents du roster.",
+        "pt-BR": "catchall.write deixa este token ativar o Catch-All, e então seu agente lerá os SMS de números fora do roster.",
+    }[language]

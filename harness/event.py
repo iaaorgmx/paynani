@@ -501,7 +501,8 @@ def _sender(e164, raw, name):
 
 
 def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sent_at,
-              roster_match, local_time, observed_at=None, rules=None, api_reply=None, api_optout=None):
+              roster_match, local_time, observed_at=None, rules=None, api_reply=None, api_optout=None,
+              catch_all=None):
     """
     Un SMS recibido, con el mismo sobre que un correo. El texto completo NO va
     aquí: vive en state/sms/inbox/ y se ve con `paynani event show --body`,
@@ -524,6 +525,14 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
         # teniendo `, roster]` (#423).
         note = f", {_rules_tag(rules)}" if rules else ""
         line = f"[sms {local_time}{note}{api}, roster] {who}: {safe_excerpt(text)}"
+    elif catch_all and catch_all.get("status") == "active":
+        # Catch-All (PRD #535 FR-13): el extracto, limpio igual que el del roster, y una
+        # marca que nunca dice «roster»: no es un contacto autorizado, es un mensaje
+        # que el dueño pidió que el agente atienda con sus instrucciones.
+        line = f"[sms {local_time}, catch-all: {catch_all['file']}{api}] {who}: {safe_excerpt(text)}"
+    elif catch_all:
+        # Archivo inválido (FR-14): sin texto, y el agente solo avisa del error.
+        line = f"[sms {local_time}, catch-all inválido{api}] {who}: mensaje de un número fuera del roster"
     else:
         line = f"[sms {local_time}{api}] {who}: mensaje de un número fuera del roster"
     record = {
@@ -543,6 +552,8 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
     }
     if roster_match and rules:
         record["rules"] = {"file": rules["file"], "status": rules["status"]}
+    if not roster_match and catch_all:
+        record["catch_all"] = {"file": catch_all["file"], "status": catch_all["status"]}
     if api_reply:
         record["api_reply"] = {"token": str(api_reply.get("token", "")), "token_id": str(api_reply.get("token_id", "")),
                                "order_id": str(api_reply.get("order_id", "")),

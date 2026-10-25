@@ -49,9 +49,10 @@ The owner chose the token's permissions when creating it:
 
 | Permission | Allows |
 |---|---|
-| `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListRoster`, `GetRules`, `GetDefaultRules` |
+| `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListRoster`, `GetRules`, `GetDefaultRules`, `GetCatchAll` |
 | `roster.write` | `SaveRosterContact`, `DeleteRosterContact`, `SaveRules`, `SaveDefaultRules` |
 | `accounts.write` | `AddAccount`, `RemoveAccount` |
+| `catchall.write` | `SaveCatchAll` |
 | `sms.send` | `SendSms`, `GetSmsStatus` |
 
 `GetTokenInfo` and `GetUsage` work with any permission. An action without its
@@ -80,7 +81,7 @@ profile and password are not in the API.
 | Action | Parameters | Returns |
 |---|---|---|
 | `ListSmsConversations` | `offset` | 50 conversations at a time: `number`, `name`, `count`, `missed_calls`, `last` |
-| `GetSmsThread` | `number` (E.164), `offset` | The 50 most recent items from `offset`, oldest first, with their status, and calls; `agent_paused_until` when the owner just texted that number |
+| `GetSmsThread` | `number` (E.164), `offset` | The 50 most recent items from `offset`, oldest first, with their status, and calls; `agent_paused_until` when the owner just texted that number. An SMS that arrived with the Catch-All on carries `catch_all: true` |
 | `SendSms` | `to`, `text`, `idempotency_key` | Sends an SMS (see below) |
 | `GetSmsStatus` | `order_id` (`a_…`) | The order and its history, only for the token that created it |
 | `ListSmsReplies` | `since` (ISO 8601 with a time zone, at most 7 days ago) | `replies` to this token's messages (see below) |
@@ -101,6 +102,19 @@ and retry.
 | `SaveRules` | `account`, `row`, `text` (up to 20,000 characters), `etag`, `roster_etag` | The saved instructions |
 | `GetDefaultRules` | | The general instructions and their `etag` |
 | `SaveDefaultRules` | `text`, `etag` | The saved general instructions |
+
+### Catch-All
+
+With the Catch-All on, an SMS from a number that is not on the roster reaches the
+local agent with its text, and the agent follows only the owner's Catch-All
+instructions. The agent never replies to that number. `catchall.write` is its own
+permission, not part of `roster.write`: turning the Catch-All on lets the agent read
+SMS from anyone. Every change emails the owner, naming this token.
+
+| Action | Parameters | Returns |
+|---|---|---|
+| `GetCatchAll` | | `enabled`, `text` (the instructions), `status` (`off`, `active` or `invalid`), `updated_at`, `updated_by`, `etag` |
+| `SaveCatchAll` | `enabled` (`true`/`false`), `text` (up to 32 KB), `etag` | The same as `GetCatchAll`, with the new `etag`. `enabled: true` with empty `text` answers `invalid` |
 
 ### Mail accounts
 

@@ -65,6 +65,9 @@ def observed(ledger_path, envelope):
         "mailbox", "uidvalidity", "uid", "observed_at", "sent_at", "sender",
         "subject", "roster_match", "authenticated_sender", "message_id",
         "provider_id", "inspection_command", "account_id",
+        # {file, status} del Catch-All (PRD #535): el replay de avisos sin cerrar lo
+        # necesita. Nunca el texto del SMS.
+        "catch_all",
     )
     safe_envelope = {key: envelope[key] for key in safe_keys if key in envelope}
     return transition(
