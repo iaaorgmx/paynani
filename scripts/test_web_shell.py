@@ -117,7 +117,10 @@ check("el menú del avatar con iniciales, correo y Perfil", True,
       '<span class="iniciales">JB</span>' in page and 'href="/profile"' in page and "john@example.com" in page)
 check("ya no hay segunda copia del menú para el celular (PRD #537 FR-14)", False, "menu-movil" in page)
 check("☰ es un enlace al menú, para que sin JavaScript lo abra :target (FR-16)", True,
-      '<a class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="false"' in page)
+      '<a class="mostrar" href="#menu-lateral" aria-label="Mostrar el menú" title="Mostrar el menú">' in page)
+mostrar = re.search(r'<a class="mostrar"[^>]*>', page).group(0)
+check("☰ sin aria-expanded, aria-controls ni role en el HTML: :target no los cambiaría (revisión de #539)",
+      [], [a for a in ("aria-expanded", "aria-controls", "role=") if a in mostrar])
 check("el botón de colapsar, escondido hasta que corra nav.js (FR-5, FR-13)", True,
       re.search(r'<button type="button" class="colapsar" aria-controls="menu-lateral" aria-expanded="true"\s+'
                 r'aria-label="Colapsar el menú" title="Colapsar el menú" hidden>', page) is not None)
@@ -126,8 +129,6 @@ check("sin la cookie, el menú va abierto", True, '<body class="web-shell">' in 
 check("el velo del celular no se alcanza con Tab ni lo lee un lector", True,
       '<a class="velo" href="#menu-cerrado" tabindex="-1" aria-hidden="true"></a>' in page)
 check("el velo no apunta a «#», que llevaría la página arriba sin JavaScript", False, 'class="velo" href="#"' in page)
-check("☰ sólo se ve con el menú cerrado: aria-expanded=false siempre en el HTML", True,
-      'class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="false"' in page)
 check("nav.js con defer, desde /assets/ (la CSP no cambia, FR-12)", True,
       '<script src="/assets/nav.js" defer></script>' in page)
 for absent in ("AI Assistant", "Settings", "Sessions", "Search", "Buscar", "Asistente"):
@@ -201,6 +202,11 @@ check("nav.js: Esc y el velo cierran el menú del celular (FR-15)", True, "'Esca
 check("nav.js: Espacio abre ☰, que es un enlace con role=button (FR-7)", True, "ev.key === ' '" in js)
 check("nav.js: al cambiar de ancho no queda el velo abierto (FR-17)", True, "phone.addEventListener('change'" in js)
 check("nav.js: con el menú encima en el celular, el resto de la página es inert", True, "page.inert = on" in js)
+check("nav.js: mover el foco no desplaza la página (Chromium, revisión de #539)", (2, 0),
+      (js.count(".focus({ preventScroll: true })"), len(re.findall(r"\.focus\(\)", js))))
+check("nav.js: le pone a ☰ role, aria-controls y el estado", True,
+      "expand.setAttribute('role', 'button')" in js and "expand.setAttribute('aria-controls', 'menu-lateral')" in js
+      and "expand.setAttribute('aria-expanded', open)" in js)
 
 css = (ROOT / "scripts" / "paynani_lib" / "assets" / "web.css").read_text(encoding="utf-8")
 check("web.css: el menú, la barra y el encabezado son sticky (FR-1, FR-2)", 3,

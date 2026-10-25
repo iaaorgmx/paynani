@@ -4,7 +4,8 @@
  * Progressive enhancement, like time.js: the server already drew the page open
  * or collapsed from the paynani_web_nav cookie (FR-11), so this file only
  * changes it afterwards. Without it the collapse button stays hidden and ☰ is a
- * plain link to #menu-lateral that :target opens (FR-13, FR-16).
+ * plain link to #menu-lateral that :target opens, with no aria-expanded it
+ * could not keep true (FR-13, FR-16).
  *
  *   desktop  the button next to the logo collapses the menu, ☰ in the top bar
  *            opens it; the state goes to the cookie (FR-5, FR-6, FR-10)
@@ -60,7 +61,9 @@
       remember(false);
     }
     paint();
-    collapse.focus();
+    // preventScroll: Chromium scrolls to the focused element and, with sticky
+    // ones around, lands at the top of the page (Andy, review of #539).
+    collapse.focus({ preventScroll: true });
   }
 
   function close(keepFocus) {
@@ -73,7 +76,7 @@
     }
     paint();
     if (!keepFocus) {
-      expand.focus();
+      expand.focus({ preventScroll: true });
     }
   }
 
@@ -85,6 +88,11 @@
 
   collapse.hidden = false;
   body.classList.add('con-js');
+  // Without this file ☰ is a plain link that :target follows, and :target
+  // cannot change attributes, so the server draws no state on it. With it ☰
+  // is a button with a state (FR-7; review of #539).
+  expand.setAttribute('role', 'button');
+  expand.setAttribute('aria-controls', 'menu-lateral');
 
   collapse.addEventListener('click', function () { close(false); });
   expand.addEventListener('click', function (ev) {

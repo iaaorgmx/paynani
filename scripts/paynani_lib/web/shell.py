@@ -16,7 +16,7 @@ encabezado de PDSL-201 (PRD #434 FR-10, FR-12).
   el servidor lee para dibujar la página ya colapsada, sin parpadeo.
 - **Celular** (FR-12, PRD #537 FR-14 a FR-17): por debajo de 900 px el mismo menú
   empieza escondido y ☰ lo abre encima del contenido. Sin JavaScript, ☰ es un
-  enlace a `#menu-lateral` y `:target` lo abre.
+  enlace normal a `#menu-lateral`, sin `aria-expanded`, y `:target` lo abre.
 - **Marca:** sobre el menú oscuro va el logotipo claro. Se inserta en línea y lo
   repinta `web.css` por sus clases `.voluta` y `.logotipo` (brand/README.md), con
   los colores de `paynani-horizontal-claro.svg`.
@@ -163,7 +163,10 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
     name = user.get("name", "")
     back_link = (f'<a class="atras" href="{e(back)}" aria-label="{th("web.back")}">{icon("back")}</a>'
                  if back else "")
-    # ☰ sólo se ve con el menú cerrado (colapsado o en el celular): siempre "false".
+    # Sólo el botón de colapsar, que sin JavaScript no se muestra. ☰ sale como un
+    # enlace normal a #menu-lateral: sin JavaScript lo abre :target, que no cambia
+    # atributos, así que no afirma ningún estado; nav.js le pone role, aria-controls
+    # y aria-expanded al arrancar (revisión de Ximena y Metis en #539).
     expanded = "false" if collapsed else "true"
     return f"""<!doctype html>
 <html lang="{e(lang)}">
@@ -193,8 +196,7 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
 <a class="velo" href="#menu-cerrado" tabindex="-1" aria-hidden="true"></a>
 <div class="columna">
   <header class="barra">
-    <a class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="false"
-       aria-label="{th('web.nav.expand')}" title="{th('web.nav.expand')}">{icon('menu')}</a>
+    <a class="mostrar" href="#menu-lateral" aria-label="{th('web.nav.expand')}" title="{th('web.nav.expand')}">{icon('menu')}</a>
     <a class="marca-barra" href="/" aria-label="PaynaniWeb">{logo}</a>
     <details class="avatar">
       <summary aria-label="{th('web.nav.account_menu')}"><span class="iniciales">{e(initials(name))}</span></summary>
