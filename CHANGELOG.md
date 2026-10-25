@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **En macOS, `upgrade_plan.py --apply` ya reinicia bien los LaunchAgents.** Le pasaba a `launchctl kickstart` el patrón (`com.paynani.idle.*`, `com.paynani.sms*`, `com.paynani.web*`) en vez de los nombres, y se detenía con exit 113 después de reiniciar el listener (Ximena, al actualizar a 0.16.1). Ahora busca en `launchctl list` los LaunchAgents que coinciden y reinicia cada uno; si no hay ninguno cargado, no hace nada, igual que en Linux. Los pasos impresos para macOS también son comandos en vez de un comentario.
+
 ## 0.16.1 (2026-10-24)
 
 **Un token de la API revocado o vencido ya no deja al agente sin contestar.** Es

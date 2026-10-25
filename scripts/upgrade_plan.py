@@ -43,6 +43,7 @@ read like the presence of good news (#167, Ocelotl).
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import os
@@ -449,7 +450,12 @@ def commands(p):
         if p["system"] == "Darwin":
             for _, label in p["restart_units"]:
                 if "*" in label:
-                    lines.append(f"# restart every matching LaunchAgent: {label}")
+                    # launchctl only takes exact labels: list the loaded ones and match.
+                    regex = re.escape(label).replace(r"\*", ".*")
+                    lines.append(
+                        f"launchctl list | awk 'NR>1 {{print $3}}' | grep -xE '{regex}' | "
+                        'while read -r l; do launchctl kickstart -k "gui/$(id -u)/$l"; done'
+                    )
                 else:
                     lines.append(f'launchctl kickstart -k "gui/$(id -u)/{label}"')
         else:
@@ -525,6 +531,29 @@ def _systemd_restart_units(units, repo, runner):
                 names.append(fields[0])
         if names:
             _run(["systemctl", "--user", "restart", *names], repo, runner=runner)
+
+
+def _launchd_restart_labels(labels, repo, runner):
+    """Restart LaunchAgents in plan order. `launchctl kickstart` takes one exact
+    label, so a pattern (per-account listeners, SMS, web) is matched against the
+    labels `launchctl list` shows; nothing loaded means nothing to restart, as
+    with systemd. Passing the pattern itself failed with exit 113 (Ximena, 0.16.1)."""
+    domain = f"gui/{os.getuid()}"
+    loaded = None
+    for label in labels:
+        if "*" in label:
+            if loaded is None:
+                listed = _run(["launchctl", "list"], repo, runner=runner, capture=True)
+                loaded = []
+                for line in (listed.stdout or "").splitlines():
+                    fields = line.split()
+                    if len(fields) >= 3 and fields[2] != "Label":
+                        loaded.append(fields[2])
+            names = sorted(name for name in loaded if fnmatch.fnmatchcase(name, label))
+        else:
+            names = [label]
+        for name in names:
+            _run(["launchctl", "kickstart", "-k", f"{domain}/{name}"], repo, runner=runner)
 
 
 RELEASE_TAG_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")
@@ -648,9 +677,7 @@ def apply_plan(p, repo=ROOT, runner=subprocess.run, sleeper=time.sleep, wait_sec
             _run(shlex.split(command), repo, runner=runner)
         if p["restart_units"]:
             if p["system"] == "Darwin":
-                for _, label in p["restart_units"]:
-                    _run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{label}"],
-                         repo, runner=runner)
+                _launchd_restart_labels([label for _, label in p["restart_units"]], repo, runner)
             else:
                 _run(["systemctl", "--user", "daemon-reload"], repo, runner=runner)
                 _systemd_restart_units([unit for unit, _ in p["restart_units"]], repo, runner)
