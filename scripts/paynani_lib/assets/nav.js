@@ -19,16 +19,25 @@
   var collapse = document.querySelector('.web-shell .colapsar');
   var expand = document.querySelector('.web-shell .mostrar');
   var backdrop = document.querySelector('.web-shell .velo');
+  var page = document.querySelector('.web-shell .columna');
   if (!menu || !collapse || !expand) {
     return;
   }
-  // Same width as the @media of web.css.
+  // Same query as the @media of web.css, whose desktop rules are its exact
+  // complement (not all and ...), so no fractional width falls between them.
   var phone = window.matchMedia('(max-width: 900px)');
 
   function remember(collapsed) {
     document.cookie = 'paynani_web_nav=' + (collapsed ? 'collapsed' : 'open') +
       '; Path=/; Max-Age=31536000; SameSite=Strict' +
       (location.protocol === 'https:' ? '; Secure' : '');
+  }
+
+  // With the menu over the page on the phone, Tab must not reach what is behind.
+  function trap(on) {
+    if (page) {
+      page.inert = on;
+    }
   }
 
   function isOpen() {
@@ -45,6 +54,7 @@
   function open() {
     if (phone.matches) {
       body.classList.add('menu-abierto');
+      trap(true);
     } else {
       body.classList.remove('menu-colapsado');
       remember(false);
@@ -56,6 +66,7 @@
   function close(keepFocus) {
     if (phone.matches) {
       body.classList.remove('menu-abierto');
+      trap(false);
     } else {
       body.classList.add('menu-colapsado');
       remember(true);
@@ -102,12 +113,14 @@
   menu.addEventListener('click', function (ev) {
     if (phone.matches && ev.target.closest('a')) {
       body.classList.remove('menu-abierto');
+      trap(false);
     }
   });
   // FR-17: an overlay left open on the phone does not become a collapsed
   // desktop, and the desktop state is the cookie's again.
   phone.addEventListener('change', function () {
     body.classList.remove('menu-abierto');
+    trap(false);
     paint();
   });
   paint();

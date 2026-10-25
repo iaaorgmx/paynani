@@ -163,6 +163,7 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
     name = user.get("name", "")
     back_link = (f'<a class="atras" href="{e(back)}" aria-label="{th("web.back")}">{icon("back")}</a>'
                  if back else "")
+    # ☰ sólo se ve con el menú cerrado (colapsado o en el celular): siempre "false".
     expanded = "false" if collapsed else "true"
     return f"""<!doctype html>
 <html lang="{e(lang)}">
@@ -189,10 +190,10 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
   </div>
   {nav}
 </aside>
-<a class="velo" href="#" tabindex="-1" aria-hidden="true"></a>
+<a class="velo" href="#menu-cerrado" tabindex="-1" aria-hidden="true"></a>
 <div class="columna">
   <header class="barra">
-    <a class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="{expanded}"
+    <a class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="false"
        aria-label="{th('web.nav.expand')}" title="{th('web.nav.expand')}">{icon('menu')}</a>
     <a class="marca-barra" href="/" aria-label="PaynaniWeb">{logo}</a>
     <details class="avatar">

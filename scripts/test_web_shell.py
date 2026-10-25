@@ -117,14 +117,17 @@ check("el menú del avatar con iniciales, correo y Perfil", True,
       '<span class="iniciales">JB</span>' in page and 'href="/profile"' in page and "john@example.com" in page)
 check("ya no hay segunda copia del menú para el celular (PRD #537 FR-14)", False, "menu-movil" in page)
 check("☰ es un enlace al menú, para que sin JavaScript lo abra :target (FR-16)", True,
-      '<a class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="true"' in page)
+      '<a class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="false"' in page)
 check("el botón de colapsar, escondido hasta que corra nav.js (FR-5, FR-13)", True,
       re.search(r'<button type="button" class="colapsar" aria-controls="menu-lateral" aria-expanded="true"\s+'
                 r'aria-label="Colapsar el menú" title="Colapsar el menú" hidden>', page) is not None)
 check("el menú tiene el id al que apuntan los dos", 1, page.count('id="menu-lateral"'))
 check("sin la cookie, el menú va abierto", True, '<body class="web-shell">' in page)
 check("el velo del celular no se alcanza con Tab ni lo lee un lector", True,
-      '<a class="velo" href="#" tabindex="-1" aria-hidden="true"></a>' in page)
+      '<a class="velo" href="#menu-cerrado" tabindex="-1" aria-hidden="true"></a>' in page)
+check("el velo no apunta a «#», que llevaría la página arriba sin JavaScript", False, 'class="velo" href="#"' in page)
+check("☰ sólo se ve con el menú cerrado: aria-expanded=false siempre en el HTML", True,
+      'class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="false"' in page)
 check("nav.js con defer, desde /assets/ (la CSP no cambia, FR-12)", True,
       '<script src="/assets/nav.js" defer></script>' in page)
 for absent in ("AI Assistant", "Settings", "Sessions", "Search", "Buscar", "Asistente"):
@@ -176,7 +179,7 @@ for value, collapsed in (("collapsed", True), ("open", False), ("Collapsed", Fal
     _, _, page = req("GET", "/messages?lang=es-MX", cookie=f"{cookie}; {shell.NAV_COOKIE}={value}")
     check(f"cookie {value!r}: {'colapsado' if collapsed else 'abierto'}", collapsed,
           '<body class="web-shell menu-colapsado">' in page)
-    check(f"cookie {value!r}: los aria-expanded lo dicen", 0 if collapsed else 2, page.count('aria-expanded="true"'))
+    check(f"cookie {value!r}: el botón de colapsar lo dice", 0 if collapsed else 1, page.count('aria-expanded="true"'))
     check(f"cookie {value!r}: el valor no llega al HTML", False, "x<script>" in page)
 _, _, page = req("GET", "/messages?lang=es-MX", cookie=f'{cookie}; {shell.NAV_COOKIE}="mal')
 check("una cabecera Cookie rota no tumba la página: abierto", True, '<body class="web-shell">' in page)
@@ -197,6 +200,7 @@ check("nav.js: Secure cuando la página llegó por https", True, "location.proto
 check("nav.js: Esc y el velo cierran el menú del celular (FR-15)", True, "'Escape'" in js and "backdrop.addEventListener" in js)
 check("nav.js: Espacio abre ☰, que es un enlace con role=button (FR-7)", True, "ev.key === ' '" in js)
 check("nav.js: al cambiar de ancho no queda el velo abierto (FR-17)", True, "phone.addEventListener('change'" in js)
+check("nav.js: con el menú encima en el celular, el resto de la página es inert", True, "page.inert = on" in js)
 
 css = (ROOT / "scripts" / "paynani_lib" / "assets" / "web.css").read_text(encoding="utf-8")
 check("web.css: el menú, la barra y el encabezado son sticky (FR-1, FR-2)", 3,
@@ -205,6 +209,8 @@ check("web.css: scroll-padding-top para los #m-<id> del hilo (FR-3)", True,
       "scroll-padding-top: 145px" in css and "scroll-padding-top: 128px" in css)
 check("web.css: sin animación con prefers-reduced-motion (FR-8)", True, "prefers-reduced-motion: reduce" in css)
 check("web.css: el celular usa :target sin JavaScript (FR-16)", True, ".lateral:target + .velo" in css)
+check("web.css: el escritorio es el complemento exacto del celular, sin hueco entre 900 y 901 px", True,
+      "@media not all and (max-width: 900px)" in css and "min-width: 901px" not in css)
 
 httpd.shutdown()
 httpd.server_close()

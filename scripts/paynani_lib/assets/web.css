@@ -225,7 +225,7 @@ body.web-shell {
 /* PRD #537 FR-5, FR-6: colapsado, el menú desaparece y el contenido usa todo el
    ancho; ☰ y el logotipo aparecen en la barra. Sólo en el escritorio. Sin
    JavaScript (con la cookie de antes), ☰ lo abre por :target. */
-@media (min-width: 901px) {
+@media not all and (max-width: 900px) {
   body.web-shell.menu-colapsado { grid-template-columns: 0 1fr; }
   body.web-shell.menu-colapsado .lateral { visibility: hidden; transition: visibility 0s .15s; }
   body.web-shell.menu-colapsado:has(.lateral:target) { grid-template-columns: 245px 1fr; }
