@@ -29,7 +29,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from .. import guard, i18n
 from ..brand import brand_svg
-from . import strings, token_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import catchall_strings, strings, token_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (accounts_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users)
 
@@ -655,6 +655,9 @@ def make_handler(ctx: Context):
             if self.route == "/messages/bajas":
                 self._sms_optout()
                 return
+            if self.route == "/messages/catch-all":
+                self._catchall()
+                return
             if self.route == "/messages/estados":
                 self._sms_statuses()
                 return
@@ -853,6 +856,64 @@ def make_handler(ctx: Context):
             self._page(code, title=i18n.t("web.sms.optout.title"), back="/messages",
                        body=messages_pages.optout_body(rows, self.session["csrf"], notice, error, value),
                        active="messages", icon_name="inbox")
+
+        # ---- Catch-All (PRD #535 FR-1 a FR-8) ------------------------------------
+        def _catchall(self, notice: str = "", error: str = "", values: dict | None = None, code: int = 200):
+            """GET /messages/catch-all: rules/catch-all.md por catchall.get, como PaynaniApp."""
+            res = self._rq("catchall.get")
+            if res.get("type") != "result":
+                state, error, code = {}, error or i18n.t("web.catchall.err.unreadable"), 500
+            else:
+                state = res["data"]
+            if not notice and not error and state.get("status") == "invalid":
+                error = i18n.t("web.catchall.err.invalid_file")
+            if not notice:
+                done = self.query.get("ok", [""])[0]
+                notice = i18n.t(f"web.catchall.ok_{done}") if done in ("on", "off") else ""
+            self._page(code, title=i18n.t("web.catchall.title"), back="/messages",
+                       body=messages_pages.catchall_body(state, self.session["csrf"], notice=notice, error=error,
+                                                         values=values),
+                       active="messages", icon_name="inbox")
+
+        def _catchall_post(self, post: dict):
+            """
+            POST /messages/catch-all: `enabled`, `text`, `etag` y `password`. CSRF y Origin,
+            como todo POST. Activarlo, o cambiar las instrucciones con él activo, pide la
+            contraseña con el mismo bloqueo que la entrada (FR-4); apagarlo no.
+            """
+            enabled = post.get("enabled") == "1"
+            text = post.get("text", "").replace("\r\n", "\n")
+            values = {"enabled": enabled, "text": text}
+            current = self._rq("catchall.get")
+            if current.get("type") != "result":
+                self._catchall(error=i18n.t("web.catchall.err.unreadable"), values=values, code=500)
+                return
+            before = current["data"]
+            if enabled and not text.strip():
+                self._catchall(error=i18n.t("web.catchall.err.empty"), values=values, code=400)
+                return
+            was_on = before.get("status") == "active"
+            needs_password = enabled and (not was_on or text != before.get("text", ""))
+            if needs_password:
+                # Vacía no cuenta como intento: sólo dice que hace falta.
+                password = post.get("password", "")
+                problem = self._check_current(password) if password else i18n.t("web.catchall.err.password")
+                if problem:
+                    self._catchall(error=problem, values=values, code=403)
+                    return
+            res = self._rq("catchall.save", enabled=enabled, text=text, etag=post.get("etag", ""))
+            if res.get("type") == "result":
+                self._redirect("/messages/catch-all?ok=" + ("on" if enabled else "off"))
+                return
+            code = res.get("code")
+            if code == "conflict":
+                self._catchall(error=i18n.t("web.catchall.err.conflict"), code=409)
+                return
+            reason = res.get("reason")
+            key = {"empty": "err.empty", "too_large": "err.too_large", "reserved_in_use": "err.reserved"}.get(reason)
+            message = i18n.t("web.catchall." + key) if key else i18n.t("web.catchall.err.other",
+                                                                        detail=str(res.get("detail") or code))
+            self._catchall(error=message, values=values, code=400)
 
         def _sms_optout_post(self, post: dict):
             """POST /messages/bajas: `accion=agregar|quitar` y `n`. CSRF y Origin, como todo POST."""
@@ -1344,6 +1405,9 @@ def make_handler(ctx: Context):
                 return
             if self.route == "/messages/bajas":
                 self._sms_optout_post(post)
+                return
+            if self.route == "/messages/catch-all":
+                self._catchall_post(post)
                 return
             if self.route in ("/roster/guardar", "/roster/quitar", "/roster/reglas"):
                 self._roster_post(post)
