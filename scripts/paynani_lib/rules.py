@@ -304,39 +304,48 @@ def tag(note: dict | None) -> str:
 
 # --- Catch-All (PRD #535) -------------------------------------------------------------
 
+def _catch_all_snapshot(root: Path | None = None) -> tuple[dict | None, str | None]:
+    """
+    Una sola lectura de rules/catch-all.md: (nota, instrucciones). Las dos salen de
+    la misma lectura, así que un cambio a medias entre dos lecturas no puede dar las
+    instrucciones de un archivo que ya está apagado (FR-19).
+    """
+    note = {"file": f"rules/{CATCH_ALL_ID}.md", "status": "invalid"}
+    try:
+        text = path_for(CATCH_ALL_ID, root).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, None  # sin archivo todo funciona como antes (FR-11)
+    except (OSError, UnicodeDecodeError):
+        # Existe pero no se puede leer (permisos, E/S, UTF-8 roto): no es «apagado»,
+        # es un error que el agente tiene que ver.
+        return note, None
+    try:
+        parsed = parse(text)
+    except EditError:
+        return note, None
+    if not parsed["enabled"]:
+        return None, None
+    if not parsed["body"].strip():
+        # Activo sin instrucciones no se puede guardar (FR-5); escrito a mano así, el
+        # agente no sabría qué hacer: cuenta como inválido.
+        return note, None
+    return {"file": note["file"], "status": "active"}, parsed["body"]
+
+
 def catch_all_notice(root: Path | None = None) -> dict | None:
     """
     El Catch-All para el aviso de un SMS de un número fuera del roster (FR-12 a FR-15):
     `{"file": "rules/catch-all.md", "status": "active"}` si el archivo existe, es
-    válido y tiene `enabled: true`; `"invalid"` si existe pero no pasa la validación
-    (para que un error a mano se note); None si no existe o está apagado. Sin
-    archivo todo funciona como antes (FR-11).
+    válido y tiene `enabled: true`; `"invalid"` si existe pero no se puede leer o no
+    pasa la validación (para que un error se note); None si no existe o está
+    apagado. Sin archivo todo funciona como antes (FR-11).
     """
-    try:
-        text = path_for(CATCH_ALL_ID, root).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-    try:
-        parsed = parse(text)
-    except EditError:
-        return {"file": f"rules/{CATCH_ALL_ID}.md", "status": "invalid"}
-    if not parsed["enabled"]:
-        return None
-    if not parsed["body"].strip():
-        # Activo sin instrucciones no se puede guardar (FR-5); escrito a mano así, el
-        # agente no sabría qué hacer: cuenta como inválido.
-        return {"file": f"rules/{CATCH_ALL_ID}.md", "status": "invalid"}
-    return {"file": f"rules/{CATCH_ALL_ID}.md", "status": "active"}
+    return _catch_all_snapshot(root)[0]
 
 
 def catch_all_instructions(root: Path | None = None) -> str | None:
     """Las instrucciones vigentes del Catch-All si está activo y es válido; si no, None (FR-19)."""
-    if (catch_all_notice(root) or {}).get("status") != "active":
-        return None
-    try:
-        return parse(path_for(CATCH_ALL_ID, root).read_text(encoding="utf-8"))["body"]
-    except (OSError, UnicodeDecodeError, EditError):
-        return None
+    return _catch_all_snapshot(root)[1]
 
 
 def catch_all_tag(note: dict | None) -> str:

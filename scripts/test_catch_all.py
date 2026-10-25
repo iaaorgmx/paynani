@@ -39,9 +39,11 @@ import session_start  # noqa: E402
 from paynani_lib import event_cli  # noqa: E402
 from paynani_lib import rules as rules_mod  # noqa: E402
 from paynani_lib.sms import gateway as gw  # noqa: E402
+from paynani_lib.sms import outgoing  # noqa: E402
 from paynani_lib.sms import roster_api  # noqa: E402
 from paynani_lib.sms import store as store_mod  # noqa: E402
 from paynani_lib.sms import websocket as wsm  # noqa: E402
+from paynani_lib.web import api_tokens, users  # noqa: E402
 
 passed = failed = 0
 
@@ -86,6 +88,53 @@ check("encabezado roto: inválido", "invalid", (rules_mod.catch_all_notice(tmp) 
 check("las etiquetas", ("catch-all: rules/catch-all.md", "catch-all inválido"),
       (rules_mod.catch_all_tag({"file": "rules/catch-all.md", "status": "active"}),
        rules_mod.catch_all_tag({"file": "rules/catch-all.md", "status": "invalid"})))
+# Revisión de Ximena en #538: un archivo que existe pero no se lee no es «apagado».
+real_read = Path.read_text
+
+
+def failing_read(exc):
+    def read(self, *a, **kw):
+        if self.name == "catch-all.md":
+            raise exc
+        return real_read(self, *a, **kw)
+    return read
+
+
+catch_file.write_text(ACTIVE, encoding="utf-8")
+Path.read_text = failing_read(PermissionError(13, "Permission denied"))
+try:
+    check("existe pero sin permiso de lectura: inválido, sin instrucciones", ("invalid", None),
+          ((rules_mod.catch_all_notice(tmp) or {}).get("status"), rules_mod.catch_all_instructions(tmp)))
+finally:
+    Path.read_text = real_read
+catch_file.write_bytes(b"---\nversion: 1\nenabled: true\n---\n\n\xff\xfe roto\n")
+check("UTF-8 roto: inválido, sin instrucciones", ("invalid", None),
+      ((rules_mod.catch_all_notice(tmp) or {}).get("status"), rules_mod.catch_all_instructions(tmp)))
+# Revisión de Ximena en #538 (FR-19): una sola lectura. Si el archivo cambia de activo
+# a apagado entre dos lecturas, nunca salen las instrucciones del ya apagado.
+reads = iter([ACTIVE, OFF.replace("Avisa", "VIEJAS: avisa")])
+
+
+def flipping_read(self, *a, **kw):
+    if self.name == "catch-all.md":
+        return next(reads)
+    return real_read(self, *a, **kw)
+
+
+Path.read_text = flipping_read
+try:
+    got = rules_mod.catch_all_instructions(tmp)
+finally:
+    Path.read_text = real_read
+check("una sola lectura: las instrucciones son las de la lectura activa", (True, False),
+      ("Avisa a Julián" in (got or ""), "VIEJAS" in (got or "")))
+reads = iter([OFF, ACTIVE])
+Path.read_text = flipping_read
+try:
+    got = rules_mod.catch_all_instructions(tmp)
+finally:
+    Path.read_text = real_read
+check("y si la lectura lo encuentra apagado, None aunque luego se encienda", None, got)
 check("new_id nunca da un id reservado", True,
       all(rules_mod.new_id(n, ()) not in rules_mod.RESERVED_IDS for n in ("catch all", "Catch-All", "default", "")))
 
@@ -125,12 +174,17 @@ def show(event_id, body=True):
 
 
 events = {}
+user_file = tmp / "web" / "user.json"
+users.create("dueno@example.com", "Dueño", "una-contraseña-larga", user_file)
+tokens_path = api_tokens.path_for(user_file)
+_, citas_rec = api_tokens.create("citas", permissions=["read", "sms.send"], path=tokens_path)
+CLIENT = "+525588887777"
 
 
 async def sms_main():
     journal = state / "events.jsonl"
     service = roster_api.RosterService(roster, state, rules_root=tmp)
-    g = gw.Gateway(state, journal, roster, roster_service=service)
+    g = gw.Gateway(state, journal, roster, roster_service=service, api_tokens_path=tokens_path)
     server = await gw.serve(g, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
     body = await http(port, "POST", "/sms/pair", {"code": store_mod.Store(state).new_code(), "device": {},
@@ -184,6 +238,17 @@ async def sms_main():
     first = e["notification_text"].split("]", 1)[0]
     check("número del roster con Catch-All activo: sin etiqueta, roster como siempre", (False, True, None),
           ("catch-all" in first, first.endswith(", roster"), e.get("catch_all")))
+
+    # Una respuesta a una conversación de la API (FR-12, Q13): la marca de la API, sin Catch-All.
+    st = store_mod.Store(state)
+    order = outgoing.queue(st, to=CLIENT, text="Su cita es mañana", origin="api", token="citas",
+                           token_id=citas_rec["prefix"], idempotency_key="c1", source="203.0.113.9")
+    st.append_status({"id": f"{order['id']}:sent", "order_id": order["id"], "status": "sent",
+                      "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    e = await sms_in("5588887777", "Sí confirmo")
+    first = e["notification_text"].split("]", 1)[0]
+    check("respuesta a la API con Catch-All activo: marca de la API, sin catch_all", (True, False, None),
+          ((e.get("api_reply") or {}).get("token") == "citas", "catch-all" in first, e.get("catch_all")))
 
     inbox = sorted((state / "sms" / "inbox").glob("*.json"))
     flags = [json.loads(p.read_text(encoding="utf-8")).get("catch_all") for p in inbox]
