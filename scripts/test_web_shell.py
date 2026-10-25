@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-Tests for PaynaniWeb's frame (PRD #434 FR-10, FR-12; T4 of #435).
+Tests for PaynaniWeb's frame (PRD #434 FR-10, FR-12; T4 of #435; PRD #537).
 An assertion script, like the rest of this suite.
 
 El menú lateral de PDSL-201 con el desplegable de cuentas (la del agente y las de
 accounts.json), Messages, Roster y Log out; el menú del avatar; el menú del celular;
 que no aparezca lo que la v1 deja fuera; que nada lleve `style=` (la CSP lo
 bloquea); y que no quede ninguna clave sin traducir en los cinco idiomas.
+
+PRD #537: un solo menú en todos los tamaños, el botón de colapsar y ☰ con sus
+`aria-*`, la cookie `paynani_web_nav` que el servidor lee para dibujarlo colapsado,
+y `nav.js` servido desde /assets/ con defer.
 """
 from __future__ import annotations
 
@@ -103,15 +107,26 @@ check("el menú lateral con la marca en línea", True, 'class="lateral"' in page
 check("el nombre escapado", (True, False), ("John &lt;b&gt;Doe&lt;/b&gt;" in page, "<b>Doe</b>" in page))
 check("Email Accounts es un desplegable abierto", True, '<details class="cuentas" open>' in page)
 links = re.findall(r'href="(/email/[^"]+)"', page)
-check("una entrada por cuenta: la del agente primero, luego accounts.json en orden (dos veces: lateral y celular)",
-      ["/email/main", "/email/ventas", "/email/soporte"] * 2, links)
+check("una entrada por cuenta: la del agente primero, luego accounts.json en orden (un solo menú, PRD #537 FR-14)",
+      ["/email/main", "/email/ventas", "/email/soporte"], links)
 check("la cuenta apagada va marcada", True, 'class="sub apagada"' in page and "apagada</span>" in page)
 check("Mensajes y Roster", True, 'href="/messages"' in page and 'href="/roster"' in page)
 check("cerrar sesión: formularios POST con el token de la sesión", True,
       len(re.findall(r'<form method="post" action="/logout"[^>]*>\s*<input type="hidden" name="csrf" value="[^"]+">', page)) >= 2)
 check("el menú del avatar con iniciales, correo y Perfil", True,
       '<span class="iniciales">JB</span>' in page and 'href="/profile"' in page and "john@example.com" in page)
-check("el menú del celular (FR-12)", True, '<details class="menu-movil">' in page)
+check("ya no hay segunda copia del menú para el celular (PRD #537 FR-14)", False, "menu-movil" in page)
+check("☰ es un enlace al menú, para que sin JavaScript lo abra :target (FR-16)", True,
+      '<a class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="true"' in page)
+check("el botón de colapsar, escondido hasta que corra nav.js (FR-5, FR-13)", True,
+      re.search(r'<button type="button" class="colapsar" aria-controls="menu-lateral" aria-expanded="true"\s+'
+                r'aria-label="Colapsar el menú" title="Colapsar el menú" hidden>', page) is not None)
+check("el menú tiene el id al que apuntan los dos", 1, page.count('id="menu-lateral"'))
+check("sin la cookie, el menú va abierto", True, '<body class="web-shell">' in page)
+check("el velo del celular no se alcanza con Tab ni lo lee un lector", True,
+      '<a class="velo" href="#" tabindex="-1" aria-hidden="true"></a>' in page)
+check("nav.js con defer, desde /assets/ (la CSP no cambia, FR-12)", True,
+      '<script src="/assets/nav.js" defer></script>' in page)
 for absent in ("AI Assistant", "Settings", "Sessions", "Search", "Buscar", "Asistente"):
     check(f"lo que la v1 deja fuera no se dibuja: {absent}", False, absent in page)
 check("sin atributos style (la CSP los bloquea)", [], re.findall(r'\sstyle="', page))
@@ -149,12 +164,47 @@ check("en inglés el menú dice Email Accounts, Messages y Roster", True,
 accounts_file.write_text("{roto", encoding="utf-8")
 status, _, page = get("/")
 check("accounts.json roto: la página sale igual", 200, status)
-check("con la cuenta del agente y el aviso", (["/email/main"] * 2, True),
+check("con la cuenta del agente y el aviso", (["/email/main"], True),
       (re.findall(r'href="(/email/[^"]+)"', page), "No se pudo leer accounts.json" in page))
 accounts_file.unlink()
 agent["email"] = ""
 status, _, page = get("/")
 check("sin cuentas: lo dice en el desplegable", True, "Sin cuentas configuradas" in page)
+
+# PRD #537 FR-10, FR-11: la cookie paynani_web_nav.
+for value, collapsed in (("collapsed", True), ("open", False), ("Collapsed", False), ("x<script>", False)):
+    _, _, page = req("GET", "/messages?lang=es-MX", cookie=f"{cookie}; {shell.NAV_COOKIE}={value}")
+    check(f"cookie {value!r}: {'colapsado' if collapsed else 'abierto'}", collapsed,
+          '<body class="web-shell menu-colapsado">' in page)
+    check(f"cookie {value!r}: los aria-expanded lo dicen", 0 if collapsed else 2, page.count('aria-expanded="true"'))
+    check(f"cookie {value!r}: el valor no llega al HTML", False, "x<script>" in page)
+_, _, page = req("GET", "/messages?lang=es-MX", cookie=f'{cookie}; {shell.NAV_COOKIE}="mal')
+check("una cabecera Cookie rota no tumba la página: abierto", True, '<body class="web-shell">' in page)
+check("nav_collapsed: sólo 'collapsed'", (True, False, False, False),
+      (shell.nav_collapsed("a=1; paynani_web_nav=collapsed"), shell.nav_collapsed("paynani_web_nav=open"),
+       shell.nav_collapsed(""), shell.nav_collapsed('paynani_web_nav="')))
+for lang, label in (("en-US", "Collapse the menu"), ("fr-FR", "Réduire le menu"), ("pt-BR", "Recolher o menu")):
+    _, _, page = get("/", lang)
+    check(f"{lang}: el botón dice {label!r}", True, f'aria-label="{label}"' in page)
+
+status, hdrs, js = req("GET", "/assets/nav.js")
+check("/assets/nav.js se sirve como JavaScript", (200, True),
+      (status, hdrs.get("content-type", "").startswith("application/javascript")))
+check("nav.js escribe la cookie que lee el servidor, con SameSite=Strict y un año", True,
+      "'paynani_web_nav=' + (collapsed ? 'collapsed' : 'open')" in js and "SameSite=Strict" in js
+      and "Max-Age=31536000" in js)
+check("nav.js: Secure cuando la página llegó por https", True, "location.protocol === 'https:' ? '; Secure'" in js)
+check("nav.js: Esc y el velo cierran el menú del celular (FR-15)", True, "'Escape'" in js and "backdrop.addEventListener" in js)
+check("nav.js: Espacio abre ☰, que es un enlace con role=button (FR-7)", True, "ev.key === ' '" in js)
+check("nav.js: al cambiar de ancho no queda el velo abierto (FR-17)", True, "phone.addEventListener('change'" in js)
+
+css = (ROOT / "scripts" / "paynani_lib" / "assets" / "web.css").read_text(encoding="utf-8")
+check("web.css: el menú, la barra y el encabezado son sticky (FR-1, FR-2)", 3,
+      len(re.findall(r"position: sticky; top: (?:0|64px)", css)))
+check("web.css: scroll-padding-top para los #m-<id> del hilo (FR-3)", True,
+      "scroll-padding-top: 145px" in css and "scroll-padding-top: 128px" in css)
+check("web.css: sin animación con prefers-reduced-motion (FR-8)", True, "prefers-reduced-motion: reduce" in css)
+check("web.css: el celular usa :target sin JavaScript (FR-16)", True, ".lateral:target + .velo" in css)
 
 httpd.shutdown()
 httpd.server_close()

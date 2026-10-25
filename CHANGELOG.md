@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el menú se queda fijo y se colapsa, como en ServiceButton** (PRD #537, #536). El menú lateral, la barra de arriba y el encabezado grana se quedan fijos al hacer scroll (`position: sticky` sobre el scroll de la ventana; un `scroll-padding-top` evita que un `#m-<id>` del hilo quede debajo de ellos). El botón nuevo junto al logotipo colapsa el menú y el contenido usa todo el ancho; ☰ y el logotipo aparecen en la barra y lo vuelven a abrir. El estado va en la cookie `paynani_web_nav`, que escribe `assets/nav.js` (servido desde `/assets/` con `defer`, así que la CSP no cambia) y que el servidor lee para dibujar la página ya colapsada, sin parpadeo. En el celular hay un solo menú, que empieza escondido y se abre encima del contenido con un velo; se cierra con el velo, con Esc o al elegir una entrada. Se quita la segunda copia del menú (`menu-movil`). Sin JavaScript, el menú queda abierto en el escritorio y ☰ lo abre en el celular por `:target`. Los textos nuevos van en los cinco idiomas; la animación dura 150 ms y se quita con `prefers-reduced-motion`.
+
 ## 0.16.2 (2026-10-25)
 
 **Dos arreglos que salieron al actualizar a 0.16.1: el `--apply` de `upgrade_plan.py`

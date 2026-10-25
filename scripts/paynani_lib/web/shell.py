@@ -9,8 +9,14 @@ encabezado de PDSL-201 (PRD #434 FR-10, FR-12).
   control que no hace nada es peor que no tenerlo.
 - **Avatar** (FR-8): las iniciales arriba a la derecha abren un menú con el
   nombre, el correo, Profile y Log out. Es un `<details>`: no hace falta script.
-- **Celular** (FR-12): por debajo de 900 px el menú lateral se esconde y queda un
-  menú desplegable arriba, también con `<details>`.
+- **Fijo y colapsable** (PRD #537, como el /dash de ServiceButton): el menú, la
+  barra y el encabezado se quedan fijos al hacer scroll (`position: sticky` en
+  `web.css`). El botón junto al logotipo colapsa el menú y ☰, en la barra, lo
+  vuelve a abrir; `nav.js` guarda el estado en la cookie `paynani_web_nav`, que
+  el servidor lee para dibujar la página ya colapsada, sin parpadeo.
+- **Celular** (FR-12, PRD #537 FR-14 a FR-17): por debajo de 900 px el mismo menú
+  empieza escondido y ☰ lo abre encima del contenido. Sin JavaScript, ☰ es un
+  enlace a `#menu-lateral` y `:target` lo abre.
 - **Marca:** sobre el menú oscuro va el logotipo claro. Se inserta en línea y lo
   repinta `web.css` por sus clases `.voluta` y `.logotipo` (brand/README.md), con
   los colores de `paynani-horizontal-claro.svg`.
@@ -21,6 +27,7 @@ permite): el color sale de `currentColor` y de las clases de `web.css`.
 from __future__ import annotations
 
 import html
+from http import cookies
 
 from .. import i18n
 from ..brand import brand_svg
@@ -39,6 +46,7 @@ ICONS = {
     "chevron": '<path d="m6 9 6 6 6-6"/>',
     "back": '<path d="M19 12H5M12 19l-7-7 7-7"/>',
     "menu": '<path d="M3 6h18M3 12h18M3 18h18"/>',
+    "panel": '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M16 9l-3 3 3 3"/>',
     "lock": '<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
     "key": '<circle cx="7" cy="15" r="4"/><path d="m10 12 10-10 2 2-3 3 2 2-3 3-2-2-3 3"/>',
     "warn": '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
@@ -47,6 +55,21 @@ ICONS = {
 
 # The brand favicon (brand/favicon.svg), served by app.STATIC.
 FAVICON_LINK = '<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">'
+
+# PRD #537 FR-10: nav.js la escribe; sólo `collapsed` cuenta, cualquier otro valor
+# (o ninguno) es el menú abierto.
+NAV_COOKIE = "paynani_web_nav"
+NAV_COLLAPSED = "collapsed"
+
+
+def nav_collapsed(cookie_header: str) -> bool:
+    """FR-11: si la cookie dice que el menú va colapsado."""
+    try:
+        morsel = cookies.SimpleCookie(cookie_header or "").get(NAV_COOKIE)
+    except cookies.CookieError:
+        return False
+    return morsel is not None and morsel.value == NAV_COLLAPSED
+
 
 def e(value) -> str:
     return html.escape("" if value is None else str(value), quote=True)
@@ -129,9 +152,10 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
 
 def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str = "",
          active_account: str = "", accounts: list[dict] | None = None, accounts_error: str = "",
-         icon_name: str = "home", back: str = "", wide: bool = False) -> str:
+         icon_name: str = "home", back: str = "", wide: bool = False, collapsed: bool = False) -> str:
     """Una página con sesión. `body` ya viene escapado. `wide` deja que el panel use todo el ancho
-    (la lista de correos, como Orders en el /dash)."""
+    (la lista de correos, como Orders en el /dash). `collapsed` dibuja el menú colapsado
+    (PRD #537 FR-11); en el celular no cuenta, ahí el menú siempre empieza escondido."""
     th = i18n.th
     accounts = accounts or []
     logo = brand_svg("paynani-horizontal.svg")
@@ -139,6 +163,7 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
     name = user.get("name", "")
     back_link = (f'<a class="atras" href="{e(back)}" aria-label="{th("web.back")}">{icon("back")}</a>'
                  if back else "")
+    expanded = "false" if collapsed else "true"
     return f"""<!doctype html>
 <html lang="{e(lang)}">
 <head>
@@ -149,23 +174,27 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
 <link rel="stylesheet" href="/assets/app.css">
 <link rel="stylesheet" href="/assets/web.css">
 <script src="/assets/time.js" defer></script>
+<script src="/assets/nav.js" defer></script>
 </head>
-<body class="web-shell">
-<aside class="lateral">
-  <div class="marca-lateral"><a href="/" aria-label="PaynaniWeb">{logo}</a></div>
+<body class="web-shell{' menu-colapsado' if collapsed else ''}">
+<aside class="lateral" id="menu-lateral">
+  <div class="marca-lateral">
+    <a href="/" aria-label="PaynaniWeb">{logo}</a>
+    <button type="button" class="colapsar" aria-controls="menu-lateral" aria-expanded="{expanded}"
+            aria-label="{th('web.nav.collapse')}" title="{th('web.nav.collapse')}" hidden>{icon('panel')}</button>
+  </div>
   <div class="usuario">
     <b>{e(name)}</b>
     <small>paynani</small>
   </div>
   {nav}
 </aside>
+<a class="velo" href="#" tabindex="-1" aria-hidden="true"></a>
 <div class="columna">
   <header class="barra">
-    <a class="marca-movil" href="/" aria-label="PaynaniWeb">{logo}</a>
-    <details class="menu-movil">
-      <summary aria-label="{th('web.nav.menu')}">{icon('menu')}<span>{th('web.nav.menu')}</span></summary>
-      <div class="menu-movil-panel">{nav}</div>
-    </details>
+    <a class="mostrar" href="#menu-lateral" role="button" aria-controls="menu-lateral" aria-expanded="{expanded}"
+       aria-label="{th('web.nav.expand')}" title="{th('web.nav.expand')}">{icon('menu')}</a>
+    <a class="marca-barra" href="/" aria-label="PaynaniWeb">{logo}</a>
     <details class="avatar">
       <summary aria-label="{th('web.nav.account_menu')}"><span class="iniciales">{e(initials(name))}</span></summary>
       <div class="avatar-panel">
