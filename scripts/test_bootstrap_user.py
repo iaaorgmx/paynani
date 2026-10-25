@@ -116,7 +116,11 @@ class World:
         self.env_file = self.tmp / "creds.env"
         self.env_file.write_text(ENV_FILE_TEXT, encoding="utf-8")
         self.state = self.tmp / "state"
-        self.saved = {k: os.environ.get(k) for k in ("HOME", "XDG_CONFIG_HOME", "PAYNANI_ENV", "PAYNANI_STATE", "LANG")}
+        self.saved = {k: os.environ.get(k) for k in ("HOME", "XDG_CONFIG_HOME", "PAYNANI_ENV", "PAYNANI_STATE", "LANG",
+                                                     "CODEX_HOME")}
+        # CODEX_HOME wins over HOME for the Codex hooks file: left set, the run wrote
+        # the host's real hooks.json and the #474 checks failed (Lisa, 0.16.1).
+        os.environ.pop("CODEX_HOME", None)
         os.environ["PAYNANI_STATE"] = str(self.state)
         os.environ["HOME"] = str(self.home)
         os.environ["XDG_CONFIG_HOME"] = str(self.tmp / "xdg")

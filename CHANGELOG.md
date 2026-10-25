@@ -3,6 +3,7 @@
 ## Sin publicar
 
 - **En macOS, `upgrade_plan.py --apply` ya reinicia bien los LaunchAgents.** Le pasaba a `launchctl kickstart` el patrón (`com.paynani.idle.*`, `com.paynani.sms*`, `com.paynani.web*`) en vez de los nombres, y se detenía con exit 113 después de reiniciar el listener (Ximena, al actualizar a 0.16.1). Ahora busca en `launchctl list` los LaunchAgents que coinciden y reinicia cada uno; si no hay ninguno cargado, no hace nada, igual que en Linux. Los pasos impresos para macOS también son comandos en vez de un comentario.
+- **`test_bootstrap_user.py` ya no escribe en el `hooks.json` real de Codex.** La prueba cambiaba `HOME` a una carpeta temporal pero dejaba `CODEX_HOME`, que manda sobre `HOME`. En un host con `CODEX_HOME` definido, la prueba escribía los hooks de paynani en el `hooks.json` real de Codex y fallaban dos pruebas de #474/#483, lo que detuvo el `--apply` de Lisa a 0.16.1 en `test_all.sh`. Ahora la prueba quita `CODEX_HOME` mientras corre y lo restaura al terminar.
 
 ## 0.16.1 (2026-10-24)
 
