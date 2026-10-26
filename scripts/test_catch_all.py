@@ -292,9 +292,22 @@ check("show --body después de apagarlo: se niega", (2, True, False),
       (code, "catch-all is off now" in err, "verified body" in out))
 code, out, err = show(events["active"], body=False)
 check("show sin --body sigue mostrando el sobre", (0, True), (code, '"catch_all"' in out))
+# #544: apagado, el sobre tampoco repite el extracto, y dice por qué.
+shown = json.loads(out)
+check("#544: apagado, el sobre no trae el extracto", (False, True, "off"),
+      ("reservar" in out, "catch-all apagado" in shown["notification_text"], shown.get("catch_all_now")))
+check("#544: el sobre conserva quién escribió y el comando", True,
+      shown["sender"]["address"] in shown["notification_text"] and shown["notification_text"].endswith(f"event show {events['active']}]"))
+catch_file.write_text(BROKEN, encoding="utf-8")
+code, out, err = show(events["active"], body=False)
+check("#544: con el archivo roto tampoco", (False, "invalid"), ("reservar" in out, json.loads(out).get("catch_all_now")))
 catch_file.write_text(ACTIVE, encoding="utf-8")
+code, out, err = show(events["active"], body=False)
+check("#544: activo, el sobre sigue con el extracto", (True, None), ("reservar" in out, json.loads(out).get("catch_all_now")))
 
 # --- ledger y replay ----------------------------------------------------------------------
+import paths as harness_paths  # noqa: E402
+harness_paths.roster = lambda *a, **k: roster  # catch_all_active_now lee rules/ junto a este roster
 lifecycle = tmp / "lifecycle.jsonl"
 ledger.observed(lifecycle, envelope_active)
 ledger.transition(lifecycle, envelope_active["event_id"], "presented")
@@ -305,6 +318,18 @@ pending = session_start.unattended_roster(lifecycle, now=time.time())
 check("el replay de avisos sin cerrar incluye el SMS del Catch-All", [envelope_active["event_id"]],
       [event_id for event_id, _ in pending])
 check("y su línea dice catch-all", True, session_start.unattended_line(*pending[0]).endswith("(catch-all)"))
+# #544: apagado, el aviso sin cerrar ya no se repite como trabajo, y lo que se repita
+# del spool o del journal sale sin el extracto.
+check("#544: catch_all_active_now con el archivo activo", True, session_start.catch_all_active_now())
+catch_file.write_text(OFF, encoding="utf-8")
+check("#544: apagado, catch_all_active_now es False", False, session_start.catch_all_active_now())
+check("#544: apagado, el aviso sin cerrar ya no se repite", [],
+      session_start.unattended_roster(lifecycle, now=time.time()))
+replayed = "Mail that arrived:\n" + envelope_active["notification_text"] + "\n[mail 09:00, roster] Ana: hola [x]"
+redacted = ev.redact_catch_all(replayed)
+check("#544: el texto repetido sale sin el extracto y con lo demás igual", (False, True, True),
+      ("reservar" in redacted, "catch-all apagado" in redacted, redacted.endswith("[mail 09:00, roster] Ana: hola [x]")))
+catch_file.write_text(ACTIVE, encoding="utf-8")
 ledger.transition(lifecycle, envelope_active["event_id"], "handled")
 check("cerrado, ya no sale", [], session_start.unattended_roster(lifecycle, now=time.time()))
 

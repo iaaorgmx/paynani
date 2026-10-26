@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **Catch-All apagado: el extracto tampoco se vuelve a ver** (#544). Con el Catch-All apagado o roto, `event show` de un SMS que llegó con él activo ya no repite el extracto en el sobre: `notification_text` dice `catch-all apagado` y «mensaje de un número fuera del roster», y `catch_all_now` dice `off` o `invalid`. Al iniciar una sesión, ese aviso sin cerrar ya no se repite como trabajo pendiente, y los avisos del Catch-All que vengan del spool o del journal salen sin el extracto. `--body` se sigue negando como en 0.17.0. Lo encontró John en la prueba real (#533).
+
 ## 0.17.0 (2026-10-25)
 
 **El Catch-All de SMS: con él activo, los SMS de números que no están en el roster

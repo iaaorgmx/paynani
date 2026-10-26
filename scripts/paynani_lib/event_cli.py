@@ -387,6 +387,14 @@ def _show_sms(record, args) -> int:
     if record.get("event_type") == "sms.unseen":
         output["roster_decision"] = {"matched": False,
                                      "reason": "sms.unseen carries no number, so no roster decision is possible"}
+    if (record.get("catch_all") or {}).get("status") == "active":
+        # #544: con el Catch-All apagado (o roto) el sobre tampoco repite el extracto;
+        # `catch_all_now` dice por qué. Se lee una vez, igual que el --body de abajo.
+        from paynani_lib import rules as rules_mod
+        now = rules_mod.catch_all_notice(roster_file().parent)
+        if not now or now.get("status") != "active":
+            output["notification_text"] = event_mod.redact_catch_all(output.get("notification_text", ""))
+            output["catch_all_now"] = "invalid" if now else "off"
     output["lifecycle"] = ledger.history(state_dir() / "lifecycle.jsonl", args.event_id)
     print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     if not args.body:

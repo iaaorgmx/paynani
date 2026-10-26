@@ -629,6 +629,9 @@ def unattended_roster(ledger_path=None, now=None, days=None, exclude=()):
         # Lo del roster, y un SMS del Catch-All (PRD #535): también es trabajo para el
         # agente, con las instrucciones del dueño, y no se debe perder si la sesión se acaba.
         caught = (envelope.get("catch_all") or {}).get("status") == "active"
+        if caught and not catch_all_active_now():
+            # #544: apagado, ya no es trabajo para el agente; `--body` se negaría.
+            caught = False
         if envelope.get("roster_match") is not True and not caught:
             continue
         seen = _stamp_seconds(envelope.get("observed_at"))
@@ -637,6 +640,23 @@ def unattended_roster(ledger_path=None, now=None, days=None, exclude=()):
         out.append((seen, event_id, envelope))
     out.sort(key=lambda item: item[0])
     return [(event_id, envelope) for _, event_id, envelope in out]
+
+
+def catch_all_active_now():
+    """
+    True si rules/catch-all.md está activo ahora, con la misma lectura que la pasarela
+    (paynani_lib.rules, junto al roster). Si no se puede saber, False: lo que se repite
+    al iniciar la sesión sale sin el extracto, nunca con él (#544).
+    """
+    try:
+        from paths import roster
+        if str(REPO / "scripts") not in sys.path:
+            sys.path.insert(0, str(REPO / "scripts"))
+        from paynani_lib import rules
+        note = rules.catch_all_notice(roster().parent)
+    except Exception:  # noqa: BLE001  un hook no se cae por esto
+        return False
+    return bool(note) and note.get("status") == "active"
 
 
 _UNATTENDED_KINDS = {"sms.received": "SMS", "call.missed": "llamada perdida", "call.answered": "llamada contestada",
@@ -1312,6 +1332,9 @@ def main():
     # to answer first is not what shape to emit -- it is whether that runtime's
     # delivery can fail. If it can, it needs no hook at all.
     additional_context = "\n\n".join(parts)
+    if "catch-all: rules/catch-all.md" in additional_context and not catch_all_active_now():
+        # Avisos del Catch-All del spool o del journal, repetidos después de apagarlo (#544).
+        additional_context = ev.redact_catch_all(additional_context)
     payload = {
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
