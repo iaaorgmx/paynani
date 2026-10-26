@@ -775,5 +775,23 @@ check("restarts_between: a file the table does not know -> cannot tell (None)",
 check("restarts_between: a commit this clone does not have -> None",
       up.restarts_between("0" * 40, "docs", repo=rb, system="Linux") is None)
 
+# #546: runtime.env as the installer writes it, with quotes, still names the runtime.
+import os  # noqa: E402
+_saved_env = os.environ.pop("PAYNANI_RUNTIME", None)
+_real_runtime_env = up.harness_paths.runtime_env
+_tmp_env = pathlib.Path(tempfile.mkdtemp()) / "runtime.env"
+up.harness_paths.runtime_env = lambda *a, **k: _tmp_env
+for text, want in (('PAYNANI_RUNTIME="openclaw"\n', "openclaw"),
+                   ("PAYNANI_RUNTIME='hermes'\n", "hermes"),
+                   ("PAYNANI_RUNTIME=codex\n", "codex"),
+                   ('# generated\nPAYNANI_RUNTIME = "OpenClaw" \n', "openclaw"),
+                   ('PAYNANI_RUNTIME="auto"\n', None),
+                   ("OTHER=1\n", None)):
+    _tmp_env.write_text(text, encoding="utf-8")
+    check(f"selected_runtime: {text.strip()!r} -> {want!r}", up.selected_runtime() == want, repr(up.selected_runtime()))
+up.harness_paths.runtime_env = _real_runtime_env
+if _saved_env is not None:
+    os.environ["PAYNANI_RUNTIME"] = _saved_env
+
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)
