@@ -73,6 +73,12 @@ con PaynaniWeb y todavía no hay usuario.
 Cuentas de correo solo muestra: cerrar o responder un aviso sigue siendo trabajo
 del agente. Mensajes además envía SMS del dueño (PRD #489).
 
+El menú lateral, la barra de arriba y el título se quedan fijos al hacer scroll,
+como en el /dash de ServiceButton (PRD #537). El botón junto al logotipo colapsa el
+menú y ☰, en la barra, lo vuelve a abrir; el navegador lo recuerda en la cookie
+`paynani_web_nav`. En el celular el menú empieza escondido y ☰ lo abre encima de la
+página; se cierra tocando fuera, con Esc o al elegir una entrada.
+
 ### Enviar SMS desde «Mensajes»
 
 El dueño escribe como si lo hiciera desde PaynaniApp, y el SMS sale por el teléfono
@@ -168,6 +174,9 @@ correos como siempre), así que el hilo se arma así.
   `web/known_ips.json`, modo 600). Los cambios al roster y a las cuentas quedan
   donde los dejan `paynani roster` y `paynani account`: `state/history/` y
   `state/roster_changes.jsonl`.
+- **En el navegador** quedan dos cookies que no son de la sesión: el idioma
+  (`paynani_web_lang`) y si el menú va colapsado (`paynani_web_nav`). Ninguna
+  lleva datos del dueño.
 - **No guarda** el cuerpo de ningún correo ni el texto de ningún SMS: los lee al
   abrirlos.
 - **El log** (`state/web.log`) lleva una línea por petición, con el método y la ruta,

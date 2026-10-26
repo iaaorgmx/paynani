@@ -127,7 +127,10 @@ body.web-login {
 /* ---------------------------------------------------------------------------
    El marco con sesión (PDSL-201): menú lateral oscuro, barra blanca arriba,
    encabezado en grana y el panel. El encabezado va en grana fija en los dos
-   temas: es la marca, no un color de texto que cambie con el fondo. */
+   temas: es la marca, no un color de texto que cambie con el fondo.
+   PRD #537: el menú, la barra y el encabezado se quedan fijos con sticky sobre el
+   scroll de la ventana, y el menú se colapsa (body.menu-colapsado, nav.js). */
+html:has(body.web-shell) { scroll-padding-top: 145px; }
 body.web-shell {
   --grana: #8f2d2b;
   --menu: #262b36;
@@ -141,16 +144,36 @@ body.web-shell {
   display: grid;
   grid-template-columns: 245px 1fr;
   background: var(--bg);
+  transition: grid-template-columns .15s ease;
 }
 .web-shell svg.i { width: 18px; height: 18px; flex: none; }
 
-.web-shell .lateral { background: var(--menu); color: var(--menu-texto); min-height: 100vh; }
-.web-shell .marca-lateral { height: 64px; display: flex; align-items: center; padding: 0 14px; background: var(--menu-fondo); border-bottom: 1px solid var(--menu-borde); }
-.web-shell .marca-lateral svg, .web-shell .marca-movil svg { height: 40px; width: auto; display: block; }
+.web-shell .lateral {
+  background: var(--menu); color: var(--menu-texto);
+  position: sticky; top: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; z-index: 6;
+}
+/* El contenido conserva su ancho mientras la columna se cierra: se recorta, no se
+   reacomoda. */
+.web-shell .lateral > * { min-width: 245px; box-sizing: border-box; }
+.web-shell .marca-lateral { height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px 0 14px; background: var(--menu-fondo); border-bottom: 1px solid var(--menu-borde); }
+.web-shell .marca-lateral svg, .web-shell .marca-barra svg { height: 40px; width: auto; display: block; }
+.web-shell .colapsar, .web-shell .mostrar {
+  display: flex; align-items: center; justify-content: center; flex: none;
+  width: 40px; height: 40px; padding: 0; border: 0; border-radius: 8px;
+  background: none; cursor: pointer; font: inherit;
+}
+.web-shell .colapsar { color: var(--menu-texto); }
+.web-shell .colapsar[hidden] { display: none; }
+.web-shell .colapsar:hover { background: var(--menu); color: #fff; }
+.web-shell .colapsar svg.i, .web-shell .mostrar svg.i { width: 22px; height: 22px; }
+.web-shell .mostrar { color: var(--ink); }
+.web-shell .mostrar:hover { background: var(--bg); }
+.web-shell .marca-barra { margin-right: auto; }
+.web-shell .velo { display: none; }
 /* El logotipo claro de brand/ (paynani-horizontal-claro.svg): se cambia de color,
    no de opacidad. */
-.web-shell .lateral .voluta, .web-shell .menu-movil-panel .voluta { stroke: #d8887f; }
-.web-shell .lateral .logotipo, .web-shell .menu-movil-panel .logotipo { fill: #e8e6e1; }
+.web-shell .lateral .voluta { stroke: #d8887f; }
+.web-shell .lateral .logotipo { fill: #e8e6e1; }
 .web-shell .usuario { padding: 14px 12px; border-bottom: 1px solid var(--menu-borde); }
 .web-shell .usuario b { display: block; color: #fff; font-size: 1.15rem; font-weight: 600; }
 .web-shell .usuario small { color: var(--menu-texto); }
@@ -178,35 +201,59 @@ body.web-shell {
 .web-shell nav .aviso-menu { color: #e2c583; }
 
 .web-shell .columna { display: flex; flex-direction: column; min-width: 0; }
-.web-shell .barra { height: 64px; background: var(--card); display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; border-bottom: 1px solid var(--line); gap: 8px; }
-.web-shell .marca-movil, .web-shell .menu-movil { display: none; }
+.web-shell .barra { height: 64px; background: var(--card); display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; border-bottom: 1px solid var(--line); gap: 8px; position: sticky; top: 0; z-index: 4; }
+/* ☰ y el logotipo de la barra sólo con el menú colapsado (y en el celular). */
+.web-shell .mostrar, .web-shell .marca-barra { display: none; }
+/* Sobre la barra blanca (u oscura en modo oscuro), los colores de .marca de app.css. */
+.web-shell .marca-barra .voluta { stroke: var(--accent); }
+.web-shell .marca-barra .logotipo { fill: var(--ink); }
 .web-shell .avatar { position: relative; }
-.web-shell .avatar summary, .web-shell .menu-movil summary { list-style: none; cursor: pointer; }
-.web-shell .avatar summary::-webkit-details-marker, .web-shell .menu-movil summary::-webkit-details-marker { display: none; }
+.web-shell .avatar summary { list-style: none; cursor: pointer; }
+.web-shell .avatar summary::-webkit-details-marker { display: none; }
 .web-shell .iniciales { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #efe3e1; color: var(--grana); font-weight: 600; letter-spacing: .03em; }
 .web-shell .avatar-panel { position: absolute; right: 0; top: 48px; z-index: 5; min-width: 15rem; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(28,28,26,.14); padding: .75rem; display: flex; flex-direction: column; gap: .2rem; }
 .web-shell .avatar-panel small { color: var(--quiet); overflow-wrap: anywhere; margin-bottom: .4rem; }
 .web-shell .avatar-panel a, .web-shell .avatar-panel button { display: flex; align-items: center; gap: 8px; padding: .45rem .4rem; border-radius: 6px; color: var(--ink); text-decoration: none; font: inherit; background: none; border: 0; width: 100%; cursor: pointer; text-align: left; }
 .web-shell .avatar-panel a:hover, .web-shell .avatar-panel button:hover { background: var(--bg); }
 
-.web-shell .encabezado { height: 81px; background: var(--grana); color: #fff; display: flex; align-items: center; gap: 18px; padding: 0 22px 0 24px; }
+.web-shell .encabezado { height: 81px; background: var(--grana); color: #fff; display: flex; align-items: center; gap: 18px; padding: 0 22px 0 24px; position: sticky; top: 64px; z-index: 3; }
 .web-shell .encabezado svg.i { width: 30px; height: 30px; stroke-width: 2; }
 .web-shell .encabezado h1 { margin: 0; font-size: 1.75rem; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .web-shell .encabezado .atras { margin-left: auto; color: #fff; display: flex; }
 .web-shell .panel { margin: 0; max-width: 52rem; width: 100%; border: 0; border-radius: 0; min-height: calc(100vh - 145px); padding: 2rem; }
 
-/* FR-12: en el celular, el menú lateral se vuelve un menú desplegable arriba. */
+/* PRD #537 FR-5, FR-6: colapsado, el menú desaparece y el contenido usa todo el
+   ancho; ☰ y el logotipo aparecen en la barra. Sólo en el escritorio. Sin
+   JavaScript (con la cookie de antes), ☰ lo abre por :target. */
+@media not all and (max-width: 900px) {
+  body.web-shell.menu-colapsado { grid-template-columns: 0 1fr; }
+  body.web-shell.menu-colapsado .lateral { visibility: hidden; transition: visibility 0s .15s; }
+  body.web-shell.menu-colapsado:has(.lateral:target) { grid-template-columns: 245px 1fr; }
+  body.web-shell.menu-colapsado .lateral:target { visibility: visible; transition: none; }
+  .web-shell.menu-colapsado .mostrar, .web-shell.menu-colapsado .marca-barra { display: flex; }
+}
+
+/* FR-12, PRD #537 FR-14 a FR-16: en el celular el mismo menú empieza escondido y
+   ☰ lo abre encima del contenido, con un velo que lo cierra. Con nav.js es
+   body.menu-abierto; sin él, :target. */
 @media (max-width: 900px) {
+  html:has(body.web-shell) { scroll-padding-top: 128px; }
   body.web-shell { display: block; }
-  .web-shell .lateral { display: none; }
-  .web-shell .barra { justify-content: space-between; background: var(--menu); border-bottom-color: var(--menu-borde); }
-  .web-shell .marca-movil { display: block; }
-  .web-shell .marca-movil .voluta { stroke: #d8887f; }
-  .web-shell .marca-movil .logotipo { fill: #e8e6e1; }
-  .web-shell .marca-movil svg { height: 32px; }
-  .web-shell .menu-movil { display: block; margin-left: auto; }
-  .web-shell .menu-movil summary { display: flex; align-items: center; gap: 6px; color: var(--menu-texto); padding: .5rem; }
-  .web-shell .menu-movil-panel { position: absolute; left: 0; right: 0; top: 64px; z-index: 5; background: var(--menu); color: var(--menu-texto); padding-bottom: .5rem; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+  .web-shell .lateral {
+    position: fixed; top: 0; left: 0; bottom: 0; height: auto; width: 280px; max-width: 85vw; z-index: 20;
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform .15s ease, visibility 0s .15s;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  }
+  .web-shell.menu-abierto .lateral, .web-shell .lateral:target { transform: none; visibility: visible; transition: transform .15s ease; }
+  .web-shell.menu-abierto .velo, .web-shell .lateral:target + .velo { display: block; position: fixed; inset: 0; z-index: 19; background: rgba(0,0,0,.45); }
+  .web-shell .barra { justify-content: flex-end; background: var(--menu); border-bottom-color: var(--menu-borde); }
+  .web-shell .mostrar, .web-shell .marca-barra { display: flex; }
+  .web-shell .mostrar { color: var(--menu-texto); }
+  .web-shell .mostrar:hover { background: var(--menu-fondo); }
+  .web-shell .marca-barra .voluta { stroke: #d8887f; }
+  .web-shell .marca-barra .logotipo { fill: #e8e6e1; }
+  .web-shell .marca-barra svg { height: 32px; }
   .web-shell .encabezado { height: 64px; padding: 0 16px; gap: 12px; }
   .web-shell .encabezado h1 { font-size: 1.3rem; }
   .web-shell .encabezado svg.i { width: 24px; height: 24px; }
@@ -424,4 +471,9 @@ body.web-shell {
 .web-shell span.primario.deshabilitado {
   display: inline-block; font-weight: 600; padding: .55rem 1rem; border-radius: 8px;
   background: var(--line); color: var(--quiet); cursor: not-allowed;
+}
+
+/* PRD #537 FR-8: sin animación para quien la pidió quitar. */
+@media (prefers-reduced-motion: reduce) {
+  body.web-shell, .web-shell .lateral { transition: none !important; }
 }

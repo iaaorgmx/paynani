@@ -40,6 +40,7 @@ STATIC = {
     "/assets/web.css": (ASSETS / "web.css", "text/css; charset=UTF-8"),
     "/assets/lang.js": (ASSETS / "lang.js", "application/javascript; charset=UTF-8"),
     "/assets/time.js": (ASSETS / "time.js", "application/javascript; charset=UTF-8"),
+    "/assets/nav.js": (ASSETS / "nav.js", "application/javascript; charset=UTF-8"),
     "/assets/sms.js": (ASSETS / "sms.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
@@ -640,7 +641,8 @@ def make_handler(ctx: Context):
         def _page(self, code: int, *, title: str, body: str, **kw):
             accounts, error = self.CTX.mail_accounts()
             self._html(code, shell.page(self.lang, self.user, self.session["csrf"], title=title, body=body,
-                                        accounts=accounts, accounts_error=error, **kw))
+                                        accounts=accounts, accounts_error=error,
+                                        collapsed=shell.nav_collapsed(self.headers.get("Cookie", "")), **kw))
 
         def dispatch_get(self):
             t = i18n.t
