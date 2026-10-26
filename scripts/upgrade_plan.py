@@ -204,8 +204,13 @@ def selected_runtime(repo=ROOT):
         text = harness_paths.runtime_env().read_text(encoding="utf-8")
     except OSError:
         return None
-    match = re.search(r"^PAYNANI_RUNTIME=(\S+)", text, re.M)
-    return match.group(1) if match else None
+    # The installer writes the value shell-quoted (PAYNANI_RUNTIME="openclaw"), so
+    # strip the quotes the same way session_start.py does (#546).
+    match = re.search(r"^\s*PAYNANI_RUNTIME\s*=(.*)$", text, re.M)
+    if not match:
+        return None
+    value = match.group(1).strip().strip('"').strip("'").strip().lower()
+    return value if value and value != "auto" else None
 
 
 def manifest_path(repo=ROOT):
