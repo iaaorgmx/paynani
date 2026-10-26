@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **`upgrade_plan.py` reconoce el runtime con comillas en `runtime.env`** (#546). El instalador escribe `PAYNANI_RUNTIME="openclaw"`, y el plan leía el valor con las comillas, así que en un host de OpenClaw marcaba `openclaw_rules.py` y `session_start.py` como «not on this host» y no pedía reinstalar la regla permanente (Ximena, al actualizar su Mac a 0.17.0). Ahora quita las comillas igual que `harness/session_start.py`. `--runtime` y la variable `PAYNANI_RUNTIME` siguen mandando.
+
 ## 0.17.0 (2026-10-25)
 
 **El Catch-All de SMS: con él activo, los SMS de números que no están en el roster
