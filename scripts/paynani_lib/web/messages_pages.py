@@ -69,7 +69,8 @@ def _preview(item: dict) -> str:
 
 def _new_button(phone_state: str) -> str:
     th = i18n.th
-    optout = f' <a class="secundario" href="/messages/bajas">{th("web.sms.optout.link")}</a>'
+    optout = (f' <a class="secundario" href="/messages/catch-all">{th("web.catchall.link")}</a>'
+              f' <a class="secundario" href="/messages/bajas">{th("web.sms.optout.link")}</a>')
     if phone_state == PHONE_OK:
         return f'<p class="acciones"><a class="boton primario" href="/messages/nuevo">{th("web.sms.new")}</a>{optout}</p>'
     return (f'<p class="acciones"><span class="boton primario deshabilitado" aria-disabled="true">{th("web.sms.new")}</span>'
@@ -277,3 +278,43 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
              f' data-count="{len(items)}"></div>')
     script = '<script src="/assets/sms.js" defer></script>'
     return "\n".join(head + bubbles + [reply, watch, script]) + "\n"
+
+
+def catchall_body(state: dict, csrf: str, *, notice: str = "", error: str = "", values: dict | None = None) -> str:
+    """
+    El Catch-All de SMS (PRD #535 FR-1 a FR-7): qué hace, la advertencia de los
+    códigos de verificación, la casilla, las instrucciones y la contraseña, que se
+    pide para activarlo o cambiar las instrucciones con él activo (FR-4). `state` es
+    la respuesta de catchall.get; `values`, lo que el dueño escribió si no se guardó.
+    """
+    th = i18n.th
+    values = values if values is not None else {"enabled": state.get("enabled", False), "text": state.get("text", "")}
+    status = state.get("status", "off")
+    if not state.get("exists"):
+        when = th("web.catchall.never")
+    else:
+        label = th("web.catchall.state_on" if status == "active" else
+                   "web.catchall.state_invalid" if status == "invalid" else "web.catchall.state_off")
+        when = (th("web.catchall.changed", state=label, at=state.get("updated_at", ""), by=state.get("updated_by", ""))
+                if state.get("updated_at") else label)
+    out = [f'<p class="volver"><a href="/messages">← {th("web.sms.back")}</a></p>',
+           f'<p class="lead">{th("web.catchall.lead")}</p>',
+           f'<p class="aviso-caja" role="note">{th("web.catchall.codes")}</p>',
+           f'<p class="quiet">{when}</p>']
+    if notice:
+        out.append(f'<p class="aviso-ok" role="status">{e(notice)}</p>')
+    if error:
+        out.append(f'<div class="error-caja" role="alert"><p>{e(error)}</p></div>')
+    checked = " checked" if values.get("enabled") else ""
+    out.append(f"""<form method="post" action="/messages/catch-all" class="formulario">
+  <input type="hidden" name="csrf" value="{e(csrf)}">
+  <input type="hidden" name="etag" value="{e(state.get("etag", ""))}">
+  <label class="casilla"><input type="checkbox" name="enabled" value="1"{checked}> {th("web.catchall.enabled")}</label>
+  <label for="catchall-text">{th("web.catchall.instructions")}</label>
+  <textarea id="catchall-text" name="text" rows="10" maxlength="32768" placeholder="{th("web.catchall.placeholder")}">{e(values.get("text", ""))}</textarea>
+  <label for="catchall-password">{th("web.catchall.password")}</label>
+  <input id="catchall-password" name="password" type="password" autocomplete="current-password">
+  <p class="hint">{th("web.catchall.password_help")}</p>
+  <button class="primario" type="submit">{th("web.catchall.save")}</button>
+</form>""")
+    return "\n".join(out) + "\n"
