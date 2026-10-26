@@ -3,6 +3,7 @@
 ## Sin publicar
 
 - **`upgrade_plan.py` reconoce el runtime con comillas en `runtime.env`** (#546). El instalador escribe `PAYNANI_RUNTIME="openclaw"`, y el plan leía el valor con las comillas, así que en un host de OpenClaw marcaba `openclaw_rules.py` y `session_start.py` como «not on this host» y no pedía reinstalar la regla permanente (Ximena, al actualizar su Mac a 0.17.0). Ahora quita las comillas igual que `harness/session_start.py`. `--runtime` y la variable `PAYNANI_RUNTIME` siguen mandando.
+- **Catch-All apagado: el extracto tampoco se vuelve a ver** (#544). Con el Catch-All apagado o roto, `event show` de un SMS que llegó con él activo ya no repite el extracto en el sobre: `notification_text` dice `catch-all apagado` y «mensaje de un número fuera del roster», y `catch_all_now` dice `off` o `invalid`. Al iniciar una sesión, ese aviso sin cerrar ya no se repite como trabajo pendiente, y los avisos del Catch-All que vengan del spool o del journal salen sin el extracto. `--body` se sigue negando como en 0.17.0. Lo encontró John en la prueba real (#533).
 
 ## 0.17.0 (2026-10-25)
 

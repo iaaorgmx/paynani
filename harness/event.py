@@ -24,6 +24,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -562,6 +563,27 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
         record["api_optout"] = api_optout
     record["notification_text"] = f"{line} [{record['inspection_command']}]"
     return record
+
+
+# Un aviso del Catch-All tal como lo escribe sms_event: la etiqueta dentro del primer
+# corchete, quien escribió, el extracto y el comando al final de la línea. El extracto
+# no tiene saltos de línea (safe_excerpt), así que `.*` llega hasta el último corchete.
+_CATCH_ALL_LINE = re.compile(
+    r"\[sms ([^\]\n]*?)catch-all: rules/catch-all\.md([^\]\n]*)\] (.*?): .* "
+    r"(\[[^\]\n]*paynani event show [^\]\n]+\])$", re.M)
+
+
+def redact_catch_all(text):
+    """
+    El texto con cada aviso del Catch-All sin su extracto (#544).
+
+    Para cuando el Catch-All ya no está activo: `event show --body` se niega, y el
+    sobre y los avisos que se repiten al iniciar una sesión tampoco vuelven a
+    mostrar lo que decía el SMS. Queda quién escribió y el comando, con
+    `catch-all apagado` en lugar del archivo.
+    """
+    return _CATCH_ALL_LINE.sub(
+        r"[sms \1catch-all apagado\2] \3: mensaje de un número fuera del roster \4", str(text or ""))
 
 
 def _rules_tag(rules):
