@@ -24,10 +24,11 @@ git describe --tags          # tiene que decir v0.17.1
 python3 scripts/upgrade_plan.py --from v0.17.0     # y haz lo que imprima
 ```
 
-El plan reinicia todos los servicios de paynani, porque cambia `VERSION`, y dice que
-el hook de sesión cambió: la siguiente sesión lo toma, y ahí se vuelve a armar la
-vigilancia del correo. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen
-que salir bien, y `version_drift` tiene que decir `ok`.
+El plan reinicia todos los servicios de paynani, porque cambia `VERSION`. En Claude
+Code y Codex dice además que el hook de sesión cambió: la siguiente sesión lo toma, y
+en Claude Code ahí se vuelve a armar la vigilancia del correo. En OpenClaw y Hermes ese
+hook no se usa, y el plan lo marca «not on this host». `scripts/healthcheck.py` y
+`scripts/paynani doctor` tienen que salir bien, y `version_drift` tiene que decir `ok`.
 
 ### Si actualizas desde 0.16.2 o anterior
 
