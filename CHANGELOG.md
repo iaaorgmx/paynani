@@ -2,8 +2,48 @@
 
 ## Sin publicar
 
+## 0.17.1 (2026-10-26)
+
+**Dos arreglos que salieron después de 0.17.0: el plan de actualización en hosts de
+OpenClaw con el runtime entre comillas, y el extracto de un SMS del Catch-All después
+de apagarlo.** Los dos los encontró la ronda de 0.17.0: Ximena al actualizar su Mac
+y John en la prueba real.
+
 - **`upgrade_plan.py` reconoce el runtime con comillas en `runtime.env`** (#546). El instalador escribe `PAYNANI_RUNTIME="openclaw"`, y el plan leía el valor con las comillas, así que en un host de OpenClaw marcaba `openclaw_rules.py` y `session_start.py` como «not on this host» y no pedía reinstalar la regla permanente (Ximena, al actualizar su Mac a 0.17.0). Ahora quita las comillas igual que `harness/session_start.py`. `--runtime` y la variable `PAYNANI_RUNTIME` siguen mandando.
 - **Catch-All apagado: el extracto tampoco se vuelve a ver** (#544). Con el Catch-All apagado o roto, `event show` de un SMS que llegó con él activo ya no repite el extracto en el sobre: `notification_text` dice `catch-all apagado` y «mensaje de un número fuera del roster», y `catch_all_now` dice `off` o `invalid`. Al iniciar una sesión, ese aviso sin cerrar ya no se repite como trabajo pendiente, y los avisos del Catch-All que vengan del spool o del journal salen sin el extracto. `--body` se sigue negando como en 0.17.0. Lo encontró John en la prueba real (#533).
+
+Lo hizo Metis, con la revisión de Ximena. Sin requisitos nuevos. Con PaynaniApp
+0.10.0.
+
+### Si actualizas desde 0.17.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.17.1
+python3 scripts/upgrade_plan.py --from v0.17.0     # y haz lo que imprima
+```
+
+El plan reinicia todos los servicios de paynani, porque cambia `VERSION`, y dice que
+el hook de sesión cambió: la siguiente sesión lo toma, y ahí se vuelve a armar la
+vigilancia del correo. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen
+que salir bien, y `version_drift` tiene que decir `ok`.
+
+### Si actualizas desde 0.16.2 o anterior
+
+Un solo salto desde la versión que tienes instalada. Cambia `v0.16.2` por tu versión
+(la que dice `scripts/version.sh` antes de actualizar):
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.17.1
+python3 scripts/upgrade_plan.py --from v0.16.2     # y haz lo que imprima
+```
+
+Después, lo que pidan las secciones «Si actualizas» de 0.17.0 (OpenClaw, Hermes,
+tokens y PaynaniApp 0.10.0) y de las versiones que te saltaste. En OpenClaw, el plan
+ya pide `openclaw_rules.py --install` aunque `runtime.env` tenga las comillas.
 
 ## 0.17.0 (2026-10-25)
 
