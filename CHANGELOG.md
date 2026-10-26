@@ -2,11 +2,67 @@
 
 ## Sin publicar
 
+## 0.17.0 (2026-10-25)
+
+**El Catch-All de SMS: con él activo, los SMS de números que no están en el roster
+le llegan al agente con las instrucciones del dueño (PRD #535, #533).** Se activa y
+se edita desde PaynaniWeb, desde PaynaniApp 0.10.0 o con la API. Mientras esté
+apagado, que es como queda al actualizar, los SMS se manejan igual que en 0.16.2. Trae
+también el menú fijo y colapsable de PaynaniWeb (PRD #537).
+
 - **PaynaniWeb: el menú se queda fijo y se colapsa, como en ServiceButton** (PRD #537, #536). El menú lateral, la barra de arriba y el encabezado grana se quedan fijos al hacer scroll (`position: sticky` sobre el scroll de la ventana; un `scroll-padding-top` evita que un `#m-<id>` del hilo quede debajo de ellos). El botón nuevo junto al logotipo colapsa el menú y el contenido usa todo el ancho; ☰ y el logotipo aparecen en la barra y lo vuelven a abrir. El estado va en la cookie `paynani_web_nav`, que escribe `assets/nav.js` (servido desde `/assets/` con `defer`, así que la CSP no cambia) y que el servidor lee para dibujar la página ya colapsada, sin parpadeo. En el celular hay un solo menú, que empieza escondido y se abre encima del contenido con un velo; se cierra con el velo, con Esc o al elegir una entrada. Se quita la segunda copia del menú (`menu-movil`). Sin JavaScript, el menú queda abierto en el escritorio y ☰ lo abre en el celular por `:target`. Los textos nuevos van en los cinco idiomas; la animación dura 150 ms y se quita con `prefers-reduced-motion`.
-- **Catch-All de SMS, primera parte: la pasarela y el agente (PRD #535, FR-12 a FR-20).** Con `rules/catch-all.md` en `enabled: true` y con instrucciones, un SMS de un número fuera del roster llega al agente con el extracto y la etiqueta `catch-all: rules/catch-all.md` dentro del primer corchete, donde el texto del SMS no puede escribir. Nunca dice `roster`. `paynani event show --body` lo muestra precedido de las instrucciones del dueño, pero sólo si llegó con el Catch-All activo y si sigue activo al leerlo: apagarlo corta el acceso a lo que ya llegó. Si el archivo está roto o está encendido sin instrucciones, el aviso dice `catch-all inválido` y no lleva el texto. Sin el archivo, o con `enabled: false`, todo queda como antes. `catch-all` queda reservado como id de reglas. El ledger guarda `{file, status}` (nunca el texto) para que el aviso de un SMS del Catch-All sin cerrar vuelva al iniciar la sesión. La pantalla para editarlo (web, PaynaniApp) y la API vienen en los siguientes PR.
+- **Catch-All de SMS, primera parte: la pasarela y el agente (PRD #535, FR-12 a FR-20).** Con `rules/catch-all.md` en `enabled: true` y con instrucciones, un SMS de un número fuera del roster llega al agente con el extracto y la etiqueta `catch-all: rules/catch-all.md` dentro del primer corchete, donde el texto del SMS no puede escribir. Nunca dice `roster`. `paynani event show --body` lo muestra precedido de las instrucciones del dueño, pero sólo si llegó con el Catch-All activo y si sigue activo al leerlo: apagarlo corta el acceso a lo que ya llegó. Si el archivo está roto o está encendido sin instrucciones, el aviso dice `catch-all inválido` y no lleva el texto. Sin el archivo, o con `enabled: false`, todo queda como antes. `catch-all` queda reservado como id de reglas. El ledger guarda `{file, status}` (nunca el texto) para que el aviso de un SMS del Catch-All sin cerrar vuelva al iniciar la sesión.
 - **Catch-All de SMS, segunda parte: el canal compartido y la API (PRD #535, FR-0a, FR-0b, FR-10, FR-P1 a FR-P5).** `catchall.get` y `catchall.save` en el mismo servicio que el roster y las reglas, para la web, PaynaniApp y la API. Guardar valida igual que las reglas (32 KB como máximo), rechaza activarlo sin instrucciones y un `etag` viejo, lo anota en `roster_changes.jsonl` y le manda un correo al dueño que dice desde dónde se cambió (PaynaniWeb, el teléfono o el token de la API). Ni el log ni el correo llevan las instrucciones. No se guarda si un contacto del roster ya usa `catch-all` como nombre de reglas, y las reglas de un contacto no pueden escribir `rules/default.md` ni `rules/catch-all.md`. En la API, `GetCatchAll` usa el permiso `read` y `SaveCatchAll` un permiso nuevo, `catchall.write`, que no forma parte de `roster.write`: ningún token existente lo recibe, y «API Tokens» explica qué permite. En `GetSmsThread`, un SMS que llegó con el Catch-All activo lleva `catch_all: true`. `api_agents.md` y `PAYNANI_API.md` documentan las dos acciones, el permiso y la marca. Un cambio de reglas hecho por la API ahora dice `API token <prefijo>` en `updated_by` y en el correo, en vez de `phone api:…`.
 - **Catch-All de SMS: la regla para los agentes (PRD #535, FR-21, FR-22).** `AGENTS.md` y el bloque que `scripts/openclaw_rules.py` escribe en el `AGENTS.md` de OpenClaw explican la etiqueta `catch-all: rules/catch-all.md`. Un SMS que la trae no es trabajo del roster: el agente lee con `event show --body` las instrucciones del dueño y el texto, sigue sólo esas instrucciones y nunca le contesta al número. Con `catch-all inválido`, le avisa al dueño que el archivo está roto. `SMS_GATEWAY.md` §6 describe el aviso. En OpenClaw, el plan de actualización ya pide volver a correr `python3 scripts/openclaw_rules.py --install`. En Hermes, un SMS del Catch-All sigue yendo por la ruta `notify`, que se lo entrega al humano sin pasar por el agente.
 - **Catch-All de SMS en PaynaniWeb (PRD #535, FR-1 a FR-8).** «Mensajes» tiene un botón «Catch-All» junto a «Bajas de la API». Abre `/messages/catch-all`, con la casilla «Activar Catch-All», las instrucciones para el agente, la advertencia de los códigos de verificación y quién lo cambió por última vez. Guarda con `catchall.save`, igual que PaynaniApp y la API. Para activarlo o cambiar las instrucciones con él activo pide la contraseña de la web, con el mismo bloqueo de intentos que la entrada; para apagarlo no. No guarda activo sin instrucciones ni más de 32 KB, y dice cuándo alguien más lo cambió mientras se editaba. Textos en los cinco idiomas.
+
+Lo hizo Metis, con la revisión de Ximena; el menú lo hizo Iris, con la revisión de
+Metis, Ximena y Andy. Sin requisitos nuevos. Con PaynaniApp 0.10.0, que agrega la
+pantalla del Catch-All; PaynaniApp 0.9.0 sigue funcionando, sólo que sin esa
+pantalla.
+
+### Si actualizas desde 0.16.2
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.17.0
+python3 scripts/upgrade_plan.py --from v0.16.2     # y haz lo que imprima
+```
+
+El plan reinicia todos los servicios de paynani, porque cambia `VERSION`, y dice que
+el hook de sesión cambió: la siguiente sesión lo toma, y ahí se vuelve a armar la
+vigilancia del correo. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen
+que salir bien, y `version_drift` tiene que decir `ok`.
+
+- **OpenClaw:** el plan pide `python3 scripts/openclaw_rules.py --install`. Córrelo:
+  es lo que le enseña al agente qué hacer con un SMS del Catch-All.
+- **Hermes:** un SMS del Catch-All sigue yendo por la ruta `notify`, al humano, sin
+  pasar por el agente.
+- **No hace falta activar nada.** Sin `rules/catch-all.md`, ningún SMS de fuera del
+  roster le llega al agente con su texto, igual que antes. Activarlo lo decide el
+  dueño, desde «Mensajes → Catch-All» en PaynaniWeb.
+- **Tokens de la API:** ningún token existente recibe `catchall.write`. Si un
+  sistema tuyo va a cambiar el Catch-All, hace falta un token nuevo con ese permiso.
+- **PaynaniApp 0.10.0** (opcional): la pantalla «Catch-All» aparece en «Mensajes»
+  cuando el teléfono está emparejado con una pasarela 0.17.0. Se instala encima,
+  como siempre (INSTALL.md, sección del teléfono).
+
+### Si actualizas desde 0.16.1 o anterior
+
+Un solo salto desde la versión que tienes instalada. Cambia `v0.16.1` por tu versión
+(la que dice `scripts/version.sh` antes de actualizar):
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.17.0
+python3 scripts/upgrade_plan.py --from v0.16.1     # y haz lo que imprima
+```
+
+Después, lo mismo que arriba para OpenClaw y PaynaniApp, y lo que pidan las
+secciones «Si actualizas» de las versiones que te saltaste (por ejemplo, la nota de
+`CODEX_HOME` de 0.16.2).
 
 ## 0.16.2 (2026-10-25)
 
