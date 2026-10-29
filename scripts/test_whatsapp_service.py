@@ -416,6 +416,8 @@ async def scenario_cli(tmp: Path) -> None:
         check("cli unlink sin terminal ni --yes: 2", 2, rc)
         rc, out, _ = await cli(tmp, "unlink", "--yes")
         check("cli unlink --yes: 0", (0, True), (rc, "desvinculado" in out))
+        check("#578: cli unlink siempre pide revisar Dispositivos vinculados", True,
+              "Dispositivos vinculados" in out)
     finally:
         await svc.stop()
 
