@@ -47,25 +47,50 @@ env_file.write_text("x=1\n")
 env_file.chmod(0o600)
 calls: list = []
 npm_calls: list = []
-fake = {"node": "22", "npm_rc": 0, "which_node": "/Users/x/.nvm/versions/node/v22.0.0/bin/node"}
+npm_paths: list = []   # el PATH con el que corrió cada npm
+NVM = Path("/Users/x/.nvm/versions/node/v22.0.0/bin")
+PRIVATE = Path("/Users/x/.local/lib/paynani/node-v22.23.4-darwin-arm64/bin")
+# node_runtime.py (tested on its own in test_node_runtime.py): `shell` is a Node 20+
+# of this shell, `download` the pinned release it would download, `refuse` a hash
+# that does not match.
+fake = {"node": "shell", "npm_rc": 0, "downloaded": False}
 real_run = subprocess.run
 
 
 def fake_run(argv, *a, **k):
-    if argv and argv[0] == fake["which_node"]:
-        return mock.Mock(returncode=0, stdout=fake["node"] + "\n", stderr="")
+    if argv and argv[0].endswith("/node"):
+        return mock.Mock(returncode=0, stdout="22\n", stderr="")
     if argv and argv[0].endswith("/npm"):
         npm_calls.append(list(argv))
+        npm_paths.append((k.get("env") or {}).get("PATH", ""))
         return mock.Mock(returncode=fake["npm_rc"], stdout="", stderr="")
     return real_run(argv, *a, **k)
 
 
 def which(name, *a, **k):
-    if name == "node":
-        return fake["which_node"]
-    if name == "npm":
-        return str(Path(fake["which_node"]).parent / "npm") if fake["which_node"] else None
     return "/usr/bin/" + name
+
+
+def nr_find():
+    if fake["node"] == "shell":
+        return NVM
+    return PRIVATE if fake["downloaded"] else None
+
+
+def nr_plan():
+    if fake["node"] == "shell":
+        return f"use {NVM}"
+    if fake["node"] == "download":
+        return f"download https://nodejs.org/dist/v22.23.4/node-v22.23.4-darwin-arm64.tar.gz into {PRIVATE.parent}"
+    raise m.node_runtime.Refused("SHA-256 of the archive is 00, expected c9 (scripts/node_release.json); "
+                                 "nothing was installed")
+
+
+def nr_ensure():
+    nr_plan()
+    if fake["node"] == "download":
+        fake["downloaded"] = True
+    return nr_find()
 
 
 def run(argv):
@@ -81,6 +106,9 @@ def run(argv):
          mock.patch.object(m, "service_state", lambda label: "active"), \
          mock.patch.object(m.shutil, "which", which), \
          mock.patch.object(m.subprocess, "run", fake_run), \
+         mock.patch.object(m.node_runtime, "find", nr_find), \
+         mock.patch.object(m.node_runtime, "plan", nr_plan), \
+         mock.patch.object(m.node_runtime, "ensure", nr_ensure), \
          contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         args = m.parse(argv)
         try:
@@ -107,19 +135,17 @@ check("sin --with-whatsapp: ni LaunchAgent, ni whatsapp.env, ni npm", (False, Fa
       (wa.exists(), wa_env.exists(), npm_calls, "com.paynani.whatsapp" in out))
 
 # --- Node ------------------------------------------------------------------------------------------
-fake["which_node"] = None
-code, _, err = run(["--runtime", "codex", "--dry-run", "--with-whatsapp"])
-check("dry-run sin Node: ya falla", (m.EX_CONFIG, True), (code, "Node 20" in err))
+fake["node"] = "refuse"
+code, out, err = run(["--runtime", "codex", "--dry-run", "--with-whatsapp"])
+check("dry-run con un hash que no coincide: ya falla", (m.EX_CONFIG, True), (code, "SHA-256" in err))
 code, _, err = run(["--runtime", "codex", "--with-whatsapp"])
-check("sin Node: no escribe nada y dice cómo instalarlo", (m.EX_CONFIG, False, True),
-      (code, wa.exists(), "brew install node" in err))
-fake["which_node"] = "/Users/x/.nvm/versions/node/v22.0.0/bin/node"
-fake["node"] = "18"
-code, _, err = run(["--runtime", "codex", "--dry-run", "--with-whatsapp"])
-check("dry-run con Node 18: ya falla", (m.EX_CONFIG, True), (code, "is 18" in err))
-code, _, err = run(["--runtime", "codex", "--with-whatsapp"])
-check("con Node 18: no escribe nada", (m.EX_CONFIG, False, True), (code, wa.exists(), "is 18" in err))
-fake["node"] = "22"
+check("hash que no coincide: no escribe nada ni corre npm", (m.EX_CONFIG, False, False, []),
+      (code, wa.exists(), wa_env.exists(), npm_calls))
+fake["node"] = "download"
+code, out, _ = run(["--runtime", "codex", "--dry-run", "--with-whatsapp"])
+check("dry-run sin Node 20+: dice que bajaría el Node fijo, sin bajarlo", (True, False),
+      ("inventory whatsapp-node download https://nodejs.org/dist/v22.23.4/" in out, fake["downloaded"]))
+fake["node"] = "shell"
 fake["npm_rc"] = 1
 code, _, err = run(["--runtime", "codex", "--with-whatsapp"])
 check("npm ci falla: no escribe el LaunchAgent", (m.EX_CONFIG, False), (code, wa.exists()))
@@ -134,7 +160,7 @@ code, out, _ = run(["--runtime", "codex", "--with-whatsapp"])
 check("--with-whatsapp instala y arranca el LaunchAgent", (True, True),
       (wa.exists(), ("bootstrap", "com.paynani.whatsapp") in calls))
 check("npm ci --ignore-scripts en scripts/whatsapp_bridge",
-      [["/Users/x/.nvm/versions/node/v22.0.0/bin/npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix",
+      [[str(NVM / "npm"), "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix",
         str(ROOT / "scripts" / "whatsapp_bridge")]], npm_calls)
 plist = plistlib.loads(wa.read_bytes())
 check("plist: whatsapp_service.py de este clon, siempre vivo, umask 077, con sus registros",
@@ -180,6 +206,21 @@ code, out, _ = run(["--runtime", "codex", "--uninstall"])
 check("uninstall quita y detiene el LaunchAgent de WhatsApp", (False, True),
       (wa.exists(), any(c[:1] == ("bootout",) and "com.paynani.whatsapp" in str(c) for c in calls)))
 check("uninstall deja whatsapp.env (es del dueño)", True, wa_env.exists())
+
+# --- sin Node 20+: el Node fijo de nodejs.org, en ~/.local/lib/paynani (Q197=B) --------------------------
+fake["node"] = "download"
+fake["downloaded"] = False
+npm_calls.clear()
+npm_paths.clear()
+code, out, _ = run(["--runtime", "codex", "--with-whatsapp"])
+check("sin Node 20+: baja el Node fijo e instala", (True, True, True),
+      (fake["downloaded"], wa.exists(), code in (m.EX_OK, m.EX_CHANGED)))
+check("npm ci con el npm de ese Node", str(PRIVATE / "npm"), npm_calls[0][0] if npm_calls else None)
+check("npm corre con ese Node primero en el PATH (su #!/usr/bin/env node)", str(PRIVATE),
+      npm_paths[0].split(os.pathsep)[0] if npm_paths else None)
+plist = plistlib.loads(wa.read_bytes())
+check("plist: la carpeta del Node fijo va primero en el PATH", str(PRIVATE),
+      plist["EnvironmentVariables"]["PATH"].split(":")[0])
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

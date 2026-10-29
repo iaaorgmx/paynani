@@ -58,7 +58,7 @@ Options:
   --notify-secret-file PATH  Pre-provisioned Hermes notification-route secret
   --roster-secret-file PATH  Pre-provisioned Hermes roster-route secret
   --with-sms                 Also install and supervise the SMS gateway (SMS_GATEWAY.md)
-  --with-whatsapp            Also install and supervise WhatsApp (WHATSAPP_BRIDGE.md): needs Node 20+
+  --with-whatsapp            Also install and supervise WhatsApp (WHATSAPP_BRIDGE.md): uses this shell's Node 20+, or downloads the pinned Node 22 into ~/.local/lib/paynani (no sudo)
                              and PaynaniWeb behind it (PRD #434), which is only reachable
                              through the gateway. Optional: without it neither is installed,
                              upgraded or removed unless this installer already owns the
@@ -478,44 +478,39 @@ whatsapp_enabled() {
 }
 
 # WhatsApp (PRD #550 FR-1, FR-3b): before any unit is written, the bridge must be
-# able to run. Node 20 or newer, its exact dependencies from package-lock.json
-# with no install scripts (FR-3), and whatsapp.env with WHATSAPP_ENABLED=1, the
-# one switch `configured()` reads. An existing whatsapp.env is the owner's and is
-# never rewritten; the account keys in state/whatsapp/auth/ are never touched and
-# never recorded in install.manifest (FR-10).
-# Node 20+ and npm, without changing anything: the dry-run runs this too, so a
-# host that cannot run the bridge never gets a successful plan.
+# able to run. Node 20 or newer with npm: the one this shell finds, or else the
+# official release pinned in scripts/node_release.json, downloaded by
+# scripts/node_runtime.py into ~/.local/lib/paynani without sudo and used only if
+# its SHA-256 matches (Q197=B). Then the bridge's exact dependencies from
+# package-lock.json with no install scripts (FR-3), and whatsapp.env with
+# WHATSAPP_ENABLED=1, the one switch `configured()` reads. An existing
+# whatsapp.env is the owner's and is never rewritten; the account keys in
+# state/whatsapp/auth/ are never touched and never recorded in install.manifest
+# (FR-10).
+# What Node the bridge would use, without changing anything: the dry-run runs this
+# too, so a host that cannot get Node never gets a successful plan.
 check_whatsapp_node() {
     whatsapp_enabled || return 0
-    local node_bin npm_bin major
-    node_bin=$(command -v node 2>/dev/null || true)
-    if [[ -z "$node_bin" ]]; then
-        die_config 'WhatsApp needs Node 20 or newer and node is not installed; see INSTALL.md "WhatsApp" for how to install it, then run this again'
+    local out
+    if ! out=$(python3 "$ROOT/scripts/node_runtime.py" plan 2>&1); then
+        die_config "WhatsApp: ${out#node_runtime: }. See INSTALL.md \"WhatsApp\""
     fi
-    major=$("$node_bin" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)
-    if [[ ! "$major" =~ ^[0-9]+$ ]] || ((major < 20)); then
-        die_config "WhatsApp needs Node 20 or newer; $node_bin is ${major:-unknown}. See INSTALL.md \"WhatsApp\""
-    fi
-    npm_bin=$(command -v npm 2>/dev/null || true)
-    [[ -n "$npm_bin" ]] || die_config 'WhatsApp needs npm next to Node 20+; it was not found'
-    printf 'inventory whatsapp-node=%s major=%s npm=%s\n' "$node_bin" "$major" "$npm_bin"
+    printf 'inventory whatsapp-node %s\n' "$out"
 }
 
 prepare_whatsapp() {
     whatsapp_enabled || return 0
-    local node_bin npm_bin major env_path
+    local node_dir out major env_path
     check_whatsapp_node
-    node_bin=$(command -v node 2>/dev/null || true)
-    if [[ -z "$node_bin" ]]; then
-        die_config 'WhatsApp needs Node 20 or newer and node is not installed; see INSTALL.md "WhatsApp" for how to install it, then run this again'
+    if ! out=$(python3 "$ROOT/scripts/node_runtime.py" ensure 2>&1); then
+        die_config "WhatsApp: ${out#node_runtime: }; no unit was written. See INSTALL.md \"WhatsApp\""
     fi
-    major=$("$node_bin" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)
-    if [[ ! "$major" =~ ^[0-9]+$ ]] || ((major < 20)); then
-        die_config "WhatsApp needs Node 20 or newer; $node_bin is ${major:-unknown}. See INSTALL.md \"WhatsApp\""
-    fi
-    npm_bin=$(command -v npm 2>/dev/null || true)
-    [[ -n "$npm_bin" ]] || die_config 'WhatsApp needs npm next to Node 20+; it was not found'
-    "$npm_bin" ci --ignore-scripts --no-audit --no-fund --prefix "$ROOT/scripts/whatsapp_bridge" >/dev/null || \
+    node_dir=${out##*$'\n'}
+    major=$("$node_dir/node" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)
+    printf 'install: whatsapp node %s (Node %s)\n' "$node_dir" "${major:-unknown}"
+    # npm starts with `#!/usr/bin/env node`: that folder goes first, so npm runs
+    # with this Node and not an older one earlier on PATH.
+    PATH="$node_dir:$PATH" "$node_dir/npm" ci --ignore-scripts --no-audit --no-fund --prefix "$ROOT/scripts/whatsapp_bridge" >/dev/null || \
         die_config 'npm ci --ignore-scripts failed in scripts/whatsapp_bridge; no unit was written'
     printf 'install: whatsapp bridge dependencies installed (Node %s, npm ci --ignore-scripts)\n' "$major"
     env_path="$config_dir/whatsapp.env"
@@ -721,13 +716,14 @@ rendered_service_path() {
             *) system="$dir:$system" ;;
         esac
     fi
-    # WhatsApp (PRD #550 FR-3b): the bridge needs the Node this shell finds, which
-    # can be in ~/.local or under nvm, neither on a user service's PATH. Only that
-    # unit: the others keep the PATH they had, so an upgrade does not restart them.
-    found=""
-    [[ "$source" == */paynani-whatsapp.service ]] && found=$(command -v node 2>/dev/null || true)
-    if [[ "$found" == /* ]]; then
-        dir=${found%/*}
+    # WhatsApp (PRD #550 FR-3b): the bridge needs the Node node_runtime.py picks
+    # (this shell's, under nvm or ~/.local, or the pinned one in ~/.local/lib/paynani),
+    # none of them on a user service's PATH. Only that unit: the others keep the PATH
+    # they had, so an upgrade does not restart them.
+    dir=""
+    [[ "$source" == */paynani-whatsapp.service ]] && \
+        dir=$(python3 "$ROOT/scripts/node_runtime.py" find 2>/dev/null || true)
+    if [[ "$dir" == /* ]]; then
         case ":$system:" in
             *":$dir:"*) ;;
             *) system="$dir:$system" ;;

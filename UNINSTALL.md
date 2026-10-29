@@ -257,6 +257,14 @@ cp -r "$REPO/rules" ~/rules.kept 2>/dev/null || true
 Haz esto **al final**. Todo lo de arriba usa rutas dentro del repositorio, y
 borrarlo primero te deja trabajando de memoria.
 
+**El Node de WhatsApp.** Si el instalador bajó Node porque el host no tenía Node 20
+o más nuevo (`--with-whatsapp`), está en `~/.local/lib/paynani/`, fuera del clon.
+Sólo lo usa paynani:
+
+```bash
+rm -rf ~/.local/lib/paynani
+```
+
 ---
 
 ## Lo que se deja en paz a propósito

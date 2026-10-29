@@ -1256,16 +1256,29 @@ direct messages (`WHATSAPP_BRIDGE.md` is the design). Like the SMS gateway it is
 > try it first with a number they can afford to lose.
 
 **Node 20 or newer** runs the bridge. OpenClaw and Hermes hosts already have it.
-Check with `node --version`, and install it only if it is missing or older:
+You do not have to install it yourself:
 
-- macOS: `brew install node`.
-- Debian 13, Ubuntu 25.04 or newer: `sudo apt install nodejs npm`.
-- Ubuntu 24.04 and Debian 12 ship Node 18 in apt, which is too old. Install Node
-  22 from https://nodejs.org (or its official package repository) and check
-  `node --version` again.
-
-The installer looks for `node` and `npm` on your `PATH` and stops, writing
-nothing, if they are missing or Node is older than 20.
+- If `node` on your `PATH` is 20 or newer and `npm` sits in the same folder
+  (Homebrew, nvm, `apt install nodejs npm` on Debian 13 or Ubuntu 25.04 and
+  newer), the installer uses it and downloads nothing.
+- If not (no Node at all, or the Node 18 that Ubuntu 24.04 and Debian 12 ship in
+  apt), the installer downloads the official Node release pinned in
+  `scripts/node_release.json` (Node 22) from `nodejs.org` into
+  `~/.local/lib/paynani/`, without `sudo`. It uses it only if its SHA-256 matches
+  the one pinned in the repository; otherwise it stops before writing anything.
+  The archive's entries are checked before unpacking, and only plain `https` is
+  accepted. Only the WhatsApp service gets that Node on its `PATH`; your shell's
+  `node` is not changed.
+- The pinned hashes come from `SHASUMS256.txt` of that release, whose signature
+  was checked against the Node.js release keys (`nodejs/release-keys`). A new
+  pin is a change to `scripts/node_release.json`, reviewed like any other, and
+  `upgrade_plan.py` asks for the installer again when it changes.
+- `--dry-run` says which one it would use (`inventory whatsapp-node use …` or
+  `… download …`) without downloading. It stops only on a system with no pinned
+  release (Linux and macOS on x64 and arm64 have one); there, install Node 20+
+  yourself and run it again.
+- `PAYNANI_NODE_DIST` replaces `https://nodejs.org/dist` with a mirror. The
+  pinned hash still decides.
 
 **Install it** with the same runtime you installed with:
 
@@ -1289,11 +1302,12 @@ anywhere.
 
 A manual install runs the same `npm ci`, writes `whatsapp.env` itself (mode 0600),
 copies the unit, replaces its placeholders (`/path/to/paynani`, `/path/to/state`,
-and `/path/to/service-path` with the folder of `command -v node` followed by
-`/usr/local/bin:/usr/bin:/bin`) and enables it:
+and `/path/to/service-path` with the folder `scripts/node_runtime.py ensure`
+prints followed by `/usr/local/bin:/usr/bin:/bin`) and enables it:
 
 ```bash
-npm ci --ignore-scripts --prefix scripts/whatsapp_bridge
+node_dir=$(python3 scripts/node_runtime.py ensure)   # this shell's Node 20+, or the pinned one
+PATH="$node_dir:$PATH" npm ci --ignore-scripts --prefix scripts/whatsapp_bridge
 install -Dm644 systemd/paynani-whatsapp.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now paynani-whatsapp.service

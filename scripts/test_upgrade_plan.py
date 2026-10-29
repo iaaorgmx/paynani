@@ -188,6 +188,9 @@ try:
     check("whatsapp/config.py -> restart the WhatsApp service, the gateway and PaynaniWeb",
           (c["verb"], c["unit"]) == ("restart", "whatsapp-all")
           and up._units_of(c) == [up.WHATSAPP, up.SMS_GATEWAY, up.WEB], str(c))
+    for path in ("scripts/node_runtime.py", "scripts/node_release.json"):
+        check(f"{path} -> the installer again (the pinned Node of WhatsApp)",
+              up.classify(path)["verb"] == "reinstall-and-restart")
     # Every file the repository tracks has a rule. bootstrap.sh reached main
     # without one (#351) and every plan to the next release would have said
     # `unknown` and refused --apply: a new file must fail here, in its own PR.

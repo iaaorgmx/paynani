@@ -20,6 +20,9 @@ sys.path.insert(0, str(ROOT / "harness"))
 
 from paths import config_dir, env_file, manifest, runtime_env, state_dir  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import node_runtime  # noqa: E402
+
 EX_OK = 0
 EX_CHANGED = 10
 EX_USAGE = 64
@@ -45,7 +48,6 @@ WEB_LABEL = "com.paynani.web"
 WHATSAPP_LABEL = "com.paynani.whatsapp"
 ALL_LABELS = {**LABELS, "sms": SMS_LABEL, "web": WEB_LABEL, "whatsapp": WHATSAPP_LABEL}
 OPTIONAL = ("sms", "web", "whatsapp")
-MIN_NODE = 20
 # The port and the tunnel address are not written into the LaunchAgent: the gateway
 # reads them from the user's sms.env itself (paynani_lib/sms/config.py).
 
@@ -86,39 +88,45 @@ def optional_names(args: argparse.Namespace) -> list[str]:
 
 
 def node_dir() -> str | None:
-    """The folder of the node this install uses (Homebrew, nvm…), for the WhatsApp PATH."""
-    found = shutil.which("node")
-    return str(Path(found).parent) if found else None
+    """
+    The folder of the Node the WhatsApp bridge uses, for its PATH: this shell's
+    (Homebrew, nvm…) if it is 20 or newer, or the pinned one node_runtime.py put in
+    ~/.local/lib/paynani. None if neither is there yet. Never downloads.
+    """
+    found = node_runtime.find()
+    return str(found) if found else None
 
 
 def check_whatsapp_node() -> None:
-    """Node 20+ and npm, without changing anything; the dry-run runs it too."""
-    node = shutil.which("node")
-    if not node:
-        die('WhatsApp needs Node 20 or newer and node is not installed: brew install node, then run this again')
-    out = subprocess.run([node, "-p", 'process.versions.node.split(".")[0]'],
-                         capture_output=True, text=True, timeout=20).stdout.strip()
-    if not out.isdigit() or int(out) < MIN_NODE:
-        die(f'WhatsApp needs Node 20 or newer; {node} is {out or "unknown"}: brew upgrade node')
-    if not shutil.which("npm"):
-        die("WhatsApp needs npm next to Node 20+; it was not found")
-    print(f"inventory whatsapp-node={node} major={out}")
+    """What Node the bridge would use, without changing anything; the dry-run runs it too."""
+    try:
+        print(f"inventory whatsapp-node {node_runtime.plan()}")
+    except node_runtime.Refused as exc:
+        die(f'WhatsApp: {exc}. See INSTALL.md "WhatsApp"')
 
 
 def prepare_whatsapp() -> bool:
     """
-    Before the WhatsApp LaunchAgent (PRD #550 FR-3, FR-3b): Node 20 or newer, the
-    bridge's exact dependencies with `npm ci --ignore-scripts`, and whatsapp.env with
+    Before the WhatsApp LaunchAgent (PRD #550 FR-3, FR-3b): Node 20 or newer (this
+    shell's, or the official release pinned in scripts/node_release.json, downloaded
+    into ~/.local/lib/paynani and checked against its SHA-256, Q197=B), the bridge's
+    exact dependencies with `npm ci --ignore-scripts`, and whatsapp.env with
     WHATSAPP_ENABLED=1 when there is none. An existing whatsapp.env is the owner's.
     The account keys in state/whatsapp/auth/ are never touched or recorded (FR-10).
     """
     check_whatsapp_node()
-    out = subprocess.run([shutil.which("node"), "-p", 'process.versions.node.split(".")[0]'],
+    try:
+        bin_dir = node_runtime.ensure()
+    except node_runtime.Refused as exc:
+        die(f'WhatsApp: {exc}; no LaunchAgent was written. See INSTALL.md "WhatsApp"')
+    out = subprocess.run([str(bin_dir / "node"), "-p", 'process.versions.node.split(".")[0]'],
                          capture_output=True, text=True, timeout=20).stdout.strip()
-    npm = shutil.which("npm")
-    result = subprocess.run([npm, "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix",
+    print(f"whatsapp_node={bin_dir} major={out or 'unknown'}")
+    # npm starts with `#!/usr/bin/env node`: that folder goes first, so npm runs with this Node.
+    npm_env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    result = subprocess.run([str(bin_dir / "npm"), "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix",
                              str(ROOT / "scripts" / "whatsapp_bridge")], capture_output=True, text=True,
-                            timeout=600)
+                            timeout=600, env=npm_env)
     if result.returncode != 0:
         die("npm ci --ignore-scripts failed in scripts/whatsapp_bridge; no LaunchAgent was written")
     print(f"whatsapp_bridge_dependencies=installed node={out}")

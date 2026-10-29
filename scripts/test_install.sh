@@ -1229,23 +1229,66 @@ check_status 'a dry-run with --with-whatsapp plans the unit and writes nothing' 
     printf 'FAIL --with-whatsapp --dry-run did not plan the unit, or wrote something\n'; fail=$((fail + 1))
 }
 
-rm -f "$fixture_bin/node"
-check_status 'without Node, a --with-whatsapp dry-run already fails' 78 --runtime codex --dry-run --with-whatsapp
-[[ "$LAST_OUTPUT" == *'Node 20 or newer'* && ! -s "$npm_log" ]] || {
-    printf 'FAIL the dry-run without Node did not say so, or ran npm\n'; fail=$((fail + 1))
+# Without Node 20+ the installer downloads the release pinned in
+# scripts/node_release.json into ~/.local/lib/paynani (Q197=B). Here the "release"
+# is a fixture served with file://, and the clone's node_release.json pins its hash,
+# so nothing goes to nodejs.org.
+node_key=$("$PYTHON" -c 'import sys; sys.path.insert(0, sys.argv[1]); import node_runtime as n; print(n.platform_key())' "$clone/scripts")
+node_top="node-v22.23.4-$node_key"
+node_dist="$fixture_root/node-dist"
+node_private="$sandbox/.local/lib/paynani/$node_top/bin"
+mkdir -p "$fixture_root/node-src/$node_top/bin" "$node_dist/v22.23.4"
+printf '#!/bin/sh
+case "$1" in --version) echo v22.23.4;; -p) echo 22;; esac
+' \
+    >"$fixture_root/node-src/$node_top/bin/node"
+printf '#!/bin/sh
+echo "private $*" >>"%s"
+exit ${FAKE_NPM_EXIT:-0}
+' "$npm_log" \
+    >"$fixture_root/node-src/$node_top/bin/npm"
+chmod 0755 "$fixture_root/node-src/$node_top/bin/node" "$fixture_root/node-src/$node_top/bin/npm"
+tar -czf "$node_dist/v22.23.4/$node_top.tar.gz" -C "$fixture_root/node-src" "$node_top"
+node_sha=$(sha256sum "$node_dist/v22.23.4/$node_top.tar.gz" | cut -d ' ' -f1)
+cp "$clone/scripts/node_release.json" "$fixture_root/node_release.json.orig"
+pin_node() {
+    printf '{"version": "22.23.4", "sha256": {"%s": "%s"}}\n' "$node_key" "$1" >"$clone/scripts/node_release.json"
 }
+export PAYNANI_NODE_DIST="file://$node_dist"
+
+pin_node "$node_sha"
 fake_node 18
-check_status 'with Node 18, a --with-whatsapp dry-run already fails' 78 --runtime codex --dry-run --with-whatsapp
-rm -f "$fixture_bin/node"
-check_status 'without Node, --with-whatsapp stops before writing a unit' 78 --runtime codex --with-whatsapp
-[[ "$LAST_OUTPUT" == *'Node 20 or newer'* && ! -e "$wa_unit" && ! -e "$clone/whatsapp.env" ]] || {
-    printf 'FAIL --with-whatsapp without Node did not stop cleanly: %s\n' "$LAST_OUTPUT"; fail=$((fail + 1))
+check_status 'with Node 18, a --with-whatsapp dry-run plans the pinned download' 10 --runtime codex --dry-run --with-whatsapp
+[[ "$LAST_OUTPUT" == *"inventory whatsapp-node download file://$node_dist/v22.23.4/$node_top.tar.gz"* &&
+   ! -e "$sandbox/.local/lib/paynani" && ! -s "$npm_log" ]] || {
+    printf 'FAIL the dry-run did not plan the download, or downloaded or ran npm: %s\n' "$LAST_OUTPUT"; fail=$((fail + 1))
 }
-fake_node 18
-check_status 'with Node 18, --with-whatsapp stops before writing a unit' 78 --runtime codex --with-whatsapp
-[[ "$LAST_OUTPUT" == *'is 18'* && ! -e "$wa_unit" ]] || {
-    printf 'FAIL --with-whatsapp with Node 18 did not stop cleanly\n'; fail=$((fail + 1))
+pin_node 0000000000000000000000000000000000000000000000000000000000000000
+check_status 'a Node archive with another hash stops before writing anything' 78 --runtime codex --with-whatsapp
+[[ "$LAST_OUTPUT" == *'SHA-256'* && ! -e "$wa_unit" && ! -e "$clone/whatsapp.env" && ! -s "$npm_log" &&
+   -z "$(ls -A "$sandbox/.local/lib/paynani" 2>/dev/null)" ]] || {
+    printf 'FAIL a hash mismatch did not stop cleanly: %s\n' "$LAST_OUTPUT"; fail=$((fail + 1))
 }
+pin_node "$node_sha"
+check_status 'with Node 18, --with-whatsapp downloads the pinned Node and installs' 10 --runtime codex --with-whatsapp
+[[ -x "$node_private/node" && "$(file_mode "$sandbox/.local/lib/paynani")" == 700 && -f "$wa_unit" ]] &&
+    grep -q "^private ci --ignore-scripts --no-audit --no-fund --prefix $clone/scripts/whatsapp_bridge\$" "$npm_log" || {
+    printf 'FAIL the pinned Node was not installed and used for npm ci: %s\n' "$(cat "$npm_log")"; fail=$((fail + 1))
+}
+grep -q "^Environment=\"PATH=$node_private:" "$wa_unit" || {
+    printf 'FAIL the WhatsApp unit does not start its PATH with the pinned Node: %s\n' \
+        "$(grep '^Environment=' "$wa_unit")"; fail=$((fail + 1))
+}
+: >"$npm_log"
+check_status 'a second run uses the downloaded Node without downloading again' 0 --runtime codex --with-whatsapp
+mv "$node_dist/v22.23.4/$node_top.tar.gz" "$fixture_root/node.tar.gz.away"
+check_status 'and keeps working without the archive' 0 --runtime codex --with-whatsapp
+mv "$fixture_root/node.tar.gz.away" "$node_dist/v22.23.4/$node_top.tar.gz"
+cp "$fixture_root/node_release.json.orig" "$clone/scripts/node_release.json"
+unset PAYNANI_NODE_DIST
+reset_install; rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
+: >"$FAKE_SYSTEMD_LOG"; : >"$npm_log"; rm -f "$clone/whatsapp.env"
+
 fake_node 22
 FAKE_NPM_EXIT=1 check_status 'a failed npm ci stops before writing a unit' 78 --runtime codex --with-whatsapp
 [[ ! -e "$wa_unit" ]] || { printf 'FAIL a failed npm ci still wrote the unit\n'; fail=$((fail + 1)); }
@@ -1294,15 +1337,19 @@ fi
 [[ "$LAST_OUTPUT" == *"verification_unit=$wa_unit validated=true"* ]] || {
     printf 'FAIL the verification report does not list the WhatsApp unit\n'; fail=$((fail + 1))
 }
-# The bridge needs the Node this shell finds; only the WhatsApp unit gets its folder.
-mkdir -p "$sandbox/node/bin" && mv "$fixture_bin/node" "$sandbox/node/bin/node"
+# The bridge needs the Node this shell finds (node with npm next to it, as nvm and
+# Homebrew have them); only the WhatsApp unit gets its folder.
+mkdir -p "$sandbox/node/bin" && mv "$fixture_bin/node" "$fixture_bin/npm" "$sandbox/node/bin/"
 PATH_EXTRA="$sandbox/node/bin" check_status 'an upgrade puts the folder of node first in the WhatsApp PATH' 10 \
     --runtime codex --upgrade
 grep -q "^Environment=\"PATH=$sandbox/node/bin:$fixture_bin:/usr/bin:/bin\"\$" "$wa_unit" || {
     printf 'FAIL the WhatsApp unit does not start its PATH with the folder of node: %s\n' \
         "$(grep '^Environment=' "$wa_unit")"; fail=$((fail + 1))
 }
-mv "$sandbox/node/bin/node" "$fixture_bin/node"
+mv "$sandbox/node/bin/node" "$sandbox/node/bin/npm" "$fixture_bin/"
+[[ ! -e "$sandbox/.local/lib/paynani" ]] || {
+    printf 'FAIL an install with a usable Node downloaded Node anyway\n'; fail=$((fail + 1))
+}
 check_status 'back to the plain PATH' 10 --runtime codex --upgrade
 
 # whatsapp.env is the owner's after the first write: never rewritten, never removed.
