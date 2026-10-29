@@ -117,6 +117,7 @@ class WhatsAppService:
         self.link: Link | None = None
         self._ended: dict[str, tuple[str | None, float]] = {}  # link_id -> (motivo, cuándo)
         self.watchers: set[asyncio.StreamWriter] = set()
+        self.clients: set[asyncio.StreamWriter] = set()   # todas las conexiones abiertas a control.sock
         self._roster_mtime: float | None = None
         opts = dict(supervisor_opts or {})
         if command:
@@ -151,10 +152,13 @@ class WhatsAppService:
     async def stop(self) -> None:
         if self._server:
             self._server.close()
+            # Primero se cierran las conexiones: desde Python 3.12, wait_closed() espera a
+            # que terminen todas, y la de whatsapp.watch de la pasarela no termina sola.
+            for w in list(self.clients):
+                with contextlib.suppress(Exception):
+                    w.transport.abort()
             with contextlib.suppress(Exception):
-                await self._server.wait_closed()
-        for w in list(self.watchers):
-            w.close()
+                await asyncio.wait_for(self._server.wait_closed(), 5)
         await self.sup.stop()
         for t in self._tasks:
             if not t.done():
@@ -657,6 +661,7 @@ class WhatsAppService:
                 self.watchers.discard(w)
 
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self.clients.add(writer)
         try:
             while True:
                 try:
@@ -678,6 +683,7 @@ class WhatsAppService:
             pass
         finally:
             self.watchers.discard(writer)
+            self.clients.discard(writer)
             writer.close()
 
     async def handle(self, msg: dict, writer: asyncio.StreamWriter | None = None) -> dict:

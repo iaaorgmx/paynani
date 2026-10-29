@@ -295,6 +295,25 @@ async def main() -> None:
         app, welcome = await connect(port, token, device_id)
         check("welcome de nuevo con WhatsApp", True, "whatsapp.status" in (welcome.get("accepts") or []))
 
+        # --- cambia el teléfono emparejado: el anterior sale con 4401 (§5), sin 1012 ------
+        st = store_mod.Store(state)
+        st.revoke()
+        status, body = await http(port, "POST", "/sms/pair", {"code": st.new_code(), "device": {"model": "Pixel 8"},
+                                                              "sims": [{"slot": 0, "number": SIM}]})
+        check("otro teléfono emparejado -> 201", 201, status)
+        await app.send({"type": "whatsapp.status", "id": qid()})
+        await until(lambda: app.closed_code is not None, 3)
+        check("el teléfono anterior: cierre 4401 (token revocado), no 1012", 4401, app.closed_code)
+        ws_old, status = await wsm.connect("127.0.0.1", port, "/sms/ws", headers={"Authorization": f"Bearer {token}"},
+                                           protocol="paynani-sms.v1")
+        check("el token anterior ya no conecta: 401", 401, status)
+        token, device_id = body["token"], body["device_id"]
+        app, welcome = await connect(port, token, device_id)
+        check("el teléfono nuevo: welcome con WhatsApp y whatsapp.admin", (True, ["whatsapp.admin"]),
+              ("whatsapp.link" in (welcome.get("accepts") or []), welcome.get("grants")))
+        r = await app.ask("whatsapp.status")
+        check("el teléfono nuevo: status responde", "result", r.get("type"))
+
         # --- el servicio no corre --------------------------------------------------------
         await svc.stop()
         r = await app.ask("whatsapp.status")
