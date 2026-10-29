@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- **WhatsApp: el contrato del puente y los mensajes de PaynaniApp (WA-0 #552, PRD #550).** `WHATSAPP_BRIDGE.md` describe cómo se hablan el servicio `paynani-whatsapp` y el puente de Baileys: un JSON por línea por stdin/stdout, sin puerto; arranque, estado, vinculación por QR o código (credenciales de un solo uso que nunca se guardan ni se registran), mensajes directos sin historial ni grupos, archivos, llamadas, envío con su lista `allowed`, acuses, salud, desvincular y cierre. `SMS_GATEWAY.md` §12 agrega para PaynaniApp `whatsapp.status`, `whatsapp.link`, `whatsapp.link_cancel`, `whatsapp.unlink`, `whatsapp.threads`, `whatsapp.thread`, `whatsapp.send` y el aviso `whatsapp.changed`, anunciados en `welcome.accepts`, y `welcome.grants` con la capacidad `whatsapp.admin`, que la pasarela sólo le da al teléfono emparejado. Todavía no hay código: es el contrato que siguen WA-1 a WA-7.
 - **`bootstrap.sh` corre los comandos del dueño desde su `$HOME`** (#562). Un `git` reciente no arranca si no puede leer el directorio donde lo lanzaron. Por eso `git clone` fallaba con `Invalid path ...: Permission denied` cuando root corría `bootstrap.sh` desde `/root` o desde el checkout de CI. Un `--dir` relativo se resuelve contra el directorio de quien llama, como antes.
 
 ## 0.17.1 (2026-10-26)
