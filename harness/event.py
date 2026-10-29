@@ -578,7 +578,7 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
 # corchete, quien escribió, el extracto y el comando al final de la línea. El extracto
 # no tiene saltos de línea (safe_excerpt), así que `.*` llega hasta el último corchete.
 _CATCH_ALL_LINE = re.compile(
-    r"\[sms ([^\]\n]*?)catch-all: rules/catch-all\.md([^\]\n]*)\] (.*?): .* "
+    r"\[(sms|whatsapp) ([^\]\n]*?)catch-all: rules/catch-all\.md([^\]\n]*)\] (.*?): .* "
     r"(\[[^\]\n]*paynani event show [^\]\n]+\])$", re.M)
 
 
@@ -592,7 +592,7 @@ def redact_catch_all(text):
     `catch-all apagado` en lugar del archivo.
     """
     return _CATCH_ALL_LINE.sub(
-        r"[sms \1catch-all apagado\2] \3: mensaje de un número fuera del roster \4", str(text or ""))
+        r"[\1 \2catch-all apagado\3] \4: mensaje de un número fuera del roster \5", str(text or ""))
 
 
 def _rules_tag(rules):

@@ -68,6 +68,8 @@ def observed(ledger_path, envelope):
         # {file, status} del Catch-All (PRD #535): el replay de avisos sin cerrar lo
         # necesita. Nunca el texto del SMS.
         "catch_all",
+        # WhatsApp (PRD #550): el canal, para que el replay diga «llamada perdida de WhatsApp».
+        "channel",
     )
     safe_envelope = {key: envelope[key] for key in safe_keys if key in envelope}
     return transition(

@@ -128,5 +128,34 @@ check("SVG: viewBox con zona de silencio de 4 módulos",
 check("SVG: sin scripts y con el título escapado por to_svg", True,
       "<script" not in svg and "<title>QR &lt;de&gt; prueba</title>" in svg)
 
+# WhatsApp (PRD #550, WHATSAPP_BRIDGE.md §11): el QR de Baileys es «ref,llave,llave,adv»,
+# unos 240 a 310 bytes. Tiene que caber, leerse de vuelta y salir en la terminal.
+import base64  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+
+wa = ",".join(["2@" + base64.b64encode(bytes(range(120))).decode()] +
+              [base64.b64encode(bytes(range(i, i + 32))).decode() for i in (1, 2, 3)])
+check("el QR de WhatsApp de prueba mide como el real (240 a 362 bytes)", True, 240 <= len(wa) <= 362)
+wa_matrix = qr.encode(wa)
+got, info = read_back(wa_matrix)
+check("QR de WhatsApp: se lee de vuelta", (wa, True), (got, isinstance(info, int) and 10 <= info <= 14))
+term = qr.to_terminal(wa_matrix)
+rows = term.split("\n")
+check("to_terminal: dos filas de módulos por línea, con zona de silencio de 2",
+      (len(wa_matrix) + 4 + 1) // 2, len(rows))
+check("to_terminal: negro sobre blanco fijo en cada línea", True,
+      all(r.startswith("\x1b[30;47m") and r.endswith("\x1b[0m") for r in rows))
+if shutil.which("zbarimg") and shutil.which("rsvg-convert"):
+    with tempfile.TemporaryDirectory() as d:
+        svg_path, png_path = Path(d) / "wa.svg", Path(d) / "wa.png"
+        svg_path.write_text(qr.to_svg(wa_matrix), encoding="utf-8")
+        subprocess.run(["rsvg-convert", "-w", "600", "-b", "white", "-o", str(png_path), str(svg_path)], check=True)
+        read = subprocess.run(["zbarimg", "--quiet", "--raw", str(png_path)], capture_output=True, text=True)
+        check("zbarimg lee el SVG del QR de WhatsApp", wa, read.stdout.strip())
+else:
+    print("skip zbarimg/rsvg-convert no están: el SVG del QR de WhatsApp no se decodifica con un lector externo")
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

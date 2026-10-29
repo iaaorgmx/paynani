@@ -374,6 +374,102 @@ def _ok(fn) -> bool:
         return False
 
 
+async def cli(tmp: Path, *argv: str, stdin=None) -> tuple[int, str, str]:
+    env = dict(os.environ, PAYNANI_STATE=str(tmp / "state"))
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, str(ROOT / "scripts" / "paynani"), "whatsapp", *argv, env=env,
+        stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    out, err = await asyncio.wait_for(proc.communicate(), 60)
+    return proc.returncode, out.decode(), err.decode()
+
+
+async def scenario_cli(tmp: Path) -> None:
+    rc, _, err = await cli(tmp, "status")
+    check("cli sin servicio: sale con 1 y lo dice", (1, True), (rc, "no está corriendo" in err))
+    svc = make(tmp)
+    await started(svc)
+    try:
+        rc, out, _ = await cli(tmp, "status")
+        check("cli status: unlinked", (0, True), (rc, "estado: unlinked" in out))
+        rc, _, err = await cli(tmp, "link", "--code")
+        check("cli link --code sin --number: 2", 2, rc)
+        proc = asyncio.create_task(cli(tmp, "link", "--code", "--number", NUM))
+        await until(lambda: svc.link is not None and svc.link.state == "waiting", 10)
+        await asyncio.sleep(0.3)
+        await svc.sup.request("fake.link_done")
+        rc, out, err = await proc
+        check("cli link --code: el código una vez y vinculado (0)", (0, 1, True),
+              (rc, out.count("Código de vinculación:"), "WhatsApp vinculado: " + NUM in out))
+        rc, out, _ = await cli(tmp, "status", "--json")
+        check("cli status --json: connected", "connected", json.loads(out)["state"])
+        rc, _, err = await cli(tmp, "send", NUM, "hola")
+        check("cli send antes de que escriba: 2 y dice por qué", (2, True), (rc, "FR-20" in err))
+        await svc.sup.request("fake.message", from_e164=NUM, text="hola", key_id="3EB0EEEE")
+        await until(lambda: NUM in svc.store.wrote_since_link())
+        rc, out, _ = await cli(tmp, "send", NUM, "hola", "Julián")
+        check("cli send: 0 con id y estado", (0, True), (rc, out.startswith("wo_") and "\tsent" in out))
+        rc, _, err = await cli(tmp, "send", NUM, "otra")
+        check("cli send enseguida: 2 rate_limited", (2, True), (rc, "espera" in err))
+        rc, out, _ = await cli(tmp, "thread", NUM)
+        check("cli thread: el hilo con los dos", (0, True, True), (rc, "← hola" in out, "→ hola Julián" in out))
+        rc, _, err = await cli(tmp, "unlink")
+        check("cli unlink sin terminal ni --yes: 2", 2, rc)
+        rc, out, _ = await cli(tmp, "unlink", "--yes")
+        check("cli unlink --yes: 0", (0, True), (rc, "desvinculado" in out))
+    finally:
+        await svc.stop()
+
+
+async def scenario_event_show(tmp: Path) -> None:
+    import contextlib
+    import io
+    from types import SimpleNamespace
+    from paynani_lib import event_cli
+
+    svc = make(tmp)
+    catch = tmp / "rules" / "catch-all.md"
+    await started(svc)
+    try:
+        await svc.sup.request("link", mode="qr")
+        await svc.sup.request("fake.link_done", me="+15550009999")
+        await svc.sup.request("fake.message", from_e164=NUM, text="¿llegas a las 8?", key_id="3EB01111")
+        catch.write_text("---\nversion: 1\nenabled: true\n---\n\nReenvía a Julián.\n")
+        await svc.sup.request("fake.message", from_e164=OTHER, text="oferta", key_id="3EB02222")
+        await svc.sup.request("fake.call", from_e164=NUM, status="answered")
+        await until(lambda: len(journal(tmp)) >= 3)
+    finally:
+        await svc.stop()
+    events = {e["event_type"] + (":in" if e.get("roster_match") else ":out"): e for e in journal(tmp)}
+    event_cli.state_dir = lambda: tmp / "state"
+    event_cli.roster_file = lambda: tmp / "roster.md"
+    event_cli._find = lambda eid, journal_=None: next((e for e in journal(tmp) if e["event_id"] == eid), None)
+
+    def show(eid, body):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = event_cli.run_show(SimpleNamespace(event_id=eid, body=body))
+        return code, out.getvalue(), err.getvalue()
+
+    roster_ev = events["whatsapp.received:in"]["event_id"]
+    code, out, _ = show(roster_ev, False)
+    check("event show de WhatsApp: el sobre, sin el texto completo", (0, True, False),
+          (code, '"channel": "whatsapp"' in out, "verified body" in out))
+    code, out, _ = show(roster_ev, True)
+    check("event show --body del roster: el texto", (0, True), (code, "¿llegas a las 8?" in out))
+    code, out, _ = show(events["whatsapp.received:out"]["event_id"], True)
+    check("event show --body con Catch-All activo: instrucciones y texto", (0, True, True),
+          (code, "Reenvía a Julián." in out, "oferta" in out))
+    catch.unlink()
+    code, out, err = show(events["whatsapp.received:out"]["event_id"], True)
+    check("Catch-All apagado: --body se niega y el sobre no repite el extracto", (2, True, False),
+          (code, "catch-all is off" in err, "oferta" in out))
+    code, _, err = show(events["call.answered:in"]["event_id"], True)
+    check("event show --body de una llamada de WhatsApp: 2", 2, code)
+    (tmp / "roster.md").write_text(ROSTER.replace(NUM, "+15550003333"))
+    code, _, err = show(roster_ev, True)
+    check("event show --body si salió del roster: se niega", (2, True), (code, "no longer" in err))
+
+
 async def main_async() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
@@ -381,6 +477,8 @@ async def main_async() -> None:
         await scenario_qr_idle(tmp / "idle")
         await scenario_catch_all(tmp / "catch")
         await scenario_socket_safety(tmp / "sock")
+        await scenario_cli(tmp / "cli")
+        await scenario_event_show(tmp / "show")
 
 
 if __name__ == "__main__":
