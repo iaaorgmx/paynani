@@ -42,7 +42,7 @@ contraseña, y un token revocado no se puede reactivar.
 
 | Permiso | Deja usar |
 |---|---|
-| `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListRoster`, `GetRules`, `GetDefaultRules`, `GetCatchAll` |
+| `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListWhatsAppConversations`, `GetWhatsAppThread`, `ListRoster`, `GetRules`, `GetDefaultRules`, `GetCatchAll` |
 | `roster.write` | `SaveRosterContact`, `DeleteRosterContact`, `SaveRules`, `SaveDefaultRules` |
 | `accounts.write` | `AddAccount`, `RemoveAccount` |
 | `catchall.write` | `SaveCatchAll` |
@@ -66,6 +66,8 @@ API.
 | `ListSmsConversations` | Las conversaciones SMS, de 50 en 50 |
 | `GetSmsThread` | Una conversación, con estados y llamadas; un SMS que llegó con el Catch-All activo lleva `catch_all: true` |
 | `ListSmsReplies` | Las respuestas a los SMS de ese token desde una hora (`since`) |
+| `ListWhatsAppConversations` | Las conversaciones de WhatsApp, de la más reciente a la más vieja, de 50 en 50 (`limit` de 1 a 100, `before`) |
+| `GetWhatsAppThread` | Una conversación de WhatsApp (`number`), con el estado de lo enviado |
 | `SendSms` | Envía un SMS |
 | `GetSmsStatus` | El estado de una orden del token |
 | `ListRoster`, `SaveRosterContact`, `DeleteRosterContact` | El roster por cuenta, con el mismo servicio que la web y PaynaniApp |
@@ -75,6 +77,22 @@ API.
 
 Cuando la API agrega o quita una cuenta, te llega el mismo correo que cuando lo
 haces en la web, con el nombre y el prefijo del token.
+
+## WhatsApp, sólo lectura
+
+Con WhatsApp activado (`INSTALL.md` 5.4), `ListWhatsAppConversations` y
+`GetWhatsAppThread` dejan que el agente lea los mismos hilos que ves en «Mensajes de
+WhatsApp», con el permiso `read` (PRD #550 FR-26). La API no manda mensajes de
+WhatsApp: no hay acción para eso.
+
+- De un número que no está en el roster sólo se ven la hora y la dirección de cada
+  mensaje, con `hidden: true`, ni el texto ni el archivo (FR-16a). La excepción es un
+  mensaje que llegó con el Catch-All activo, mientras siga activo. Es la misma regla que
+  en la web y en PaynaniApp, y la aplica el servicio de WhatsApp, no la API.
+- `name` sale del roster, nunca del nombre que el contacto puso en WhatsApp.
+- Las páginas van con `before`: se manda el `next_before` que llegó; `null` es que no
+  hay más.
+- Sin WhatsApp activado, o con el servicio caído, responden `whatsapp_unavailable`.
 
 ## Los SMS que manda la API
 
@@ -160,6 +178,7 @@ encabezado `X-Request-Id`. Si un agente te reporta un problema, pídele el
 | `no_phone` | 409 | No hay teléfono emparejado |
 | `app_outdated` | 409 | El teléfono tiene una PaynaniApp anterior a la 0.9.0 |
 | `busy` | 503 | El roster se está escribiendo; hay que reintentar en unos segundos |
+| `whatsapp_unavailable` | 503 | WhatsApp no está activado en la instalación, o el servicio `paynani-whatsapp` no contesta |
 | `internal_error` | 500 | Algo falló en paynani. El detalle queda en el log de `paynani-web`, nunca en la respuesta |
 
 ## Seguridad
