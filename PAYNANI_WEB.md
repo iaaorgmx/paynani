@@ -67,6 +67,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Cuentas de correo** | Una entrada por cuenta: la del agente y las de `accounts.json`. Lista sus últimos correos, de 50 en 50, con el estado del aviso y la marca del roster. Abrir uno lo pide a IMAP en ese momento, como texto, y no lo guarda. |
 | **Agregar y quitar cuentas** | «+ Agregar cuenta» prueba el acceso IMAP y SMTP antes de guardar y escribe como `paynani account add`. «Quitar esta cuenta» deja de vigilarla como `paynani account remove`, sin borrar su buzón ni su roster. Las dos piden la contraseña de la web. |
 | **Mensajes** | Las conversaciones SMS de la pasarela, de 50 en 50: lo que llegó, lo que mandó el agente con su estado, lo que contestó el dueño desde PaynaniApp o desde la web, y las llamadas perdidas y contestadas. «Nuevo SMS» y el cuadro de responder envían por el teléfono emparejado (ver abajo). |
+| **Mensajes de WhatsApp** | Sólo con WhatsApp activado (`whatsapp.env` con `WHATSAPP_ENABLED=1`). Las conversaciones de WhatsApp, como «Mensajes» las de SMS, sin mensaje nuevo: sólo se contesta donde el contacto ya escribió. «Cuenta de WhatsApp» (`/whatsapp`) vincula, cancela y desvincula (ver abajo). |
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. |
 
@@ -183,13 +184,40 @@ correos como siempre), así que el hilo se arma así.
   nunca la consulta ni el cuerpo. `state/web.err.log` lleva los errores, con su
   tipo y sin su texto.
 
+### WhatsApp
+
+Con WhatsApp activado en la instalación (PRD #550), el menú agrega «Mensajes de
+WhatsApp» (`/whatsapp/messages`). Sin activar, no aparece nada de WhatsApp. La web le
+habla al servicio `paynani-whatsapp` por `state/whatsapp/control.sock`
+(`WHATSAPP_BRIDGE.md` §11), con las mismas peticiones que PaynaniApp.
+
+- **La cuenta** (`/whatsapp`): el estado, el número vinculado y, sin vincular, la
+  advertencia del bloqueo de WhatsApp y dos formas de vincular: con QR, que se
+  escanea desde WhatsApp → Dispositivos vinculados, o con código, para escribirlo en
+  el teléfono. Vincular, cancelar y desvincular piden la contraseña de la web, con el
+  mismo bloqueo de intentos que la entrada.
+- **El QR** se dibuja en la página y `whatsapp.js` lo cambia por el vigente cada 3 s
+  (`/whatsapp/link/current`), porque WhatsApp lo rota cada ~20 s. Sólo lo ve la sesión
+  del navegador que empezó a vincular. Si cierras la página, a los 60 s el servicio
+  cancela la vinculación. **El código** se muestra una sola vez, en la respuesta que
+  lo pidió; recargar ya no lo enseña. Ninguno de los dos se guarda.
+- **Las conversaciones**: lo que llegó, lo que mandó el agente con su estado y lo que
+  contestaste tú. Un archivo se muestra por su tipo («[foto]»), sin descargarlo. De un
+  número fuera del roster sólo se ven el número y la hora, nunca el texto.
+- **Responder** sólo aparece en la conversación de un contacto del roster que ya
+  escribió por WhatsApp, con WhatsApp conectado. No hay «Nuevo mensaje»: paynani nunca
+  escribe primero, ni el agente ni tú desde aquí.
+
 ## Seguridad
 
 - Ninguna página carga nada de fuera: ni fuentes, ni scripts, ni imágenes. La
   `Content-Security-Policy` es `default-src 'none'; style-src 'self';
-  script-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'`, con
+  script-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none';
+  connect-src 'self'`, con
   `X-Frame-Options: DENY` y `nosniff`. La única imagen que se carga es el favicon
   (`brand/favicon.svg`), del mismo servidor; la marca va en línea en el HTML.
+  `connect-src 'self'` deja que los scripts de la página le pregunten a este mismo
+  servidor (el QR de WhatsApp y los estados de los SMS), y a nada más.
 - Todo `POST` tiene que traer `Origin` (o `Referer`) de la misma dirección, y los
   formularios con sesión llevan su token.
 - Nunca se muestra un secreto: ni la contraseña de la web, ni la de una cuenta de
