@@ -482,11 +482,16 @@ Con ese `link_id`, quien empezó la vinculación pregunta por el QR vigente:
 - `reason` es el de `link.ended` (§3): `linked`, `expired`, `canceled`, `replaced` o
   `failed`. Un `link_id` terminado responde `ended` durante 5 minutos y luego
   `not_found`.
-- **Si nadie pregunta, se cancela.** Si pasan 60 s sin un `whatsapp.link_current`
-  con ese `link_id`, el servicio cancela la vinculación (`link.ended`
-  `canceled`). Así un QR no queda vivo con la página cerrada. La web pregunta cada
-  2 a 5 s mientras la página está abierta. Con `mode: "code"` la regla es la misma,
-  y la app la cumple al refrescar el estado.
+- **Con `mode: "qr"`, si nadie pregunta, se cancela.** Si pasan 60 s sin un
+  `whatsapp.link_current` con ese `link_id`, el servicio cancela la vinculación
+  (`link.ended` `canceled`). Así un QR no queda vivo con la página cerrada. La web
+  pregunta cada 2 a 5 s mientras la página está abierta.
+- **Con `mode: "code"` no hay cancelación por silencio.** El código vive sus 180 s
+  (FR-6a) o hasta que alguien cancele o empiece otra vinculación. PaynaniApp sólo
+  refresca `whatsapp.status`, y eso basta. `whatsapp.link_current` con el `link_id`
+  de un código responde el estado (`waiting` o `ended`) y `expires_in_s`, **nunca el
+  código otra vez**: el código sale una sola vez, en el `result` de
+  `whatsapp.link`, como en §12.
 - La terminal (`paynani whatsapp link`) usa el mismo mecanismo.
 
 **De punta a punta en PaynaniWeb** (WA-5):
@@ -510,9 +515,10 @@ Con ese `link_id`, quien empezó la vinculación pregunta por el QR vigente:
 **El QR se dibuja con `scripts/paynani_lib/sms/qr.py`,** no con un codificador nuevo.
 Es el que paynani ya usa desde SRV-4 para el QR de emparejamiento de SMS, que
 PaynaniApp escanea en cada instalación. `scripts/test_qr.py` lee cada matriz de vuelta
-como un lector (bits de formato, máscara, Reed-Solomon y modo byte). WA-2 agrega casos
-del tamaño de un QR de WhatsApp (~250 a 310 bytes, versión 13, nivel M) y, si
-`zbarimg` está instalado, los decodifica también con él. paynani no lleva dependencias
+como un lector (bits de formato, máscara, Reed-Solomon y modo byte). WA-2 agrega una
+regresión con una cadena del tamaño máximo observado para un QR de WhatsApp (~310
+bytes, versión 13, nivel M): la matriz se lee de vuelta y el SVG que sale de `to_svg`
+se rasteriza y se decodifica (con `zbarimg` si está instalado). paynani no lleva dependencias
 de Python, así que no se agrega una biblioteca de QR.
 
 ### `whatsapp.watch`
