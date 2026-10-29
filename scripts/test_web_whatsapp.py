@@ -289,6 +289,13 @@ status, _, page = req("GET", "/whatsapp?ok=unlinked_local&lang=es-MX", cookie=co
 check("y explica que hay que quitar el dispositivo desde WhatsApp", (True, True),
       (th("web.wa.ok_unlinked_local") in page, th("web.wa.state.unlinked") in page))
 demo.unlink_remote = True
+# #578: aunque WhatsApp acepte la salida, el teléfono puede seguir mostrando el dispositivo.
+from paynani_lib.web import whatsapp_strings as _wa_strings  # noqa: E402
+_phone_check = {"es-MX": "Dispositivos vinculados", "en": "Linked devices", "es": "Dispositivos vinculados",
+                "fr": "Appareils connectés", "pt": "Aparelhos conectados"}
+_ok = {lang: v["ok_unlinked"] for lang, v in _wa_strings.STRINGS.items()}
+check("#578: «desvinculado» pide revisar el teléfono en los cinco idiomas", (5, True),
+      (len(_ok), all(any(w in t for w in _phone_check.values()) for t in _ok.values())))
 
 # ---- FR-6a, FR-7: vincular con código ----------------------------------------------------
 status, _, page = req("POST", "/whatsapp/link", form={"csrf": csrf, "mode": "code", "number": "55 1234",

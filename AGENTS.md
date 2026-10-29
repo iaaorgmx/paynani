@@ -651,6 +651,8 @@ installed it (`--with-whatsapp`, `INSTALL.md` 5.4) and linked an account, the
 - Never run `paynani whatsapp link` or `unlink` on your own. Linking and
   unlinking are your human's decisions, and the link code is a one-time
   credential that belongs only on their screen.
+  After your human unlinks, remind them to check WhatsApp → Linked devices on
+  the phone and log the device out there if it is still listed (#578).
 
 **Say "no new mail" only when something checked.** `scripts/healthcheck.py`
 answers whether mail could arrive; silence does not. Reporting a quiet mailbox

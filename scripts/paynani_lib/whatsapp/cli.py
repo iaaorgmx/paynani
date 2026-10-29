@@ -199,8 +199,10 @@ def run_unlink(args) -> int:
     data, rc = _call(args, "whatsapp.unlink")
     if rc:
         return rc
-    print("WhatsApp desvinculado" + ("" if data.get("remote") else
-                                    " (aquí; el teléfono puede seguir mostrando el dispositivo: quítalo a mano)"))
+    # #578: aunque WhatsApp acepte la salida (remote), el teléfono puede seguir
+    # mostrando el dispositivo. Por eso siempre se pide revisarlo.
+    print("WhatsApp desvinculado" + ("" if data.get("remote") else " aquí, pero WhatsApp no contestó"))
+    print("Revisa WhatsApp → Dispositivos vinculados en el teléfono; si el dispositivo sigue ahí, quítalo.")
     return 0
 
 

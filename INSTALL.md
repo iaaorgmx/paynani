@@ -1333,6 +1333,12 @@ message, with an excerpt only for a roster number or while the Catch-All is on) 
 After more than 10 minutes without a connection, or if WhatsApp ends the session,
 the agent gets a `whatsapp.health` event.
 
+**Unlinking.** `scripts/paynani whatsapp unlink` (or PaynaniWeb, or PaynaniApp)
+deletes the keys in `state/whatsapp/auth/` and asks WhatsApp to end the session.
+Even when WhatsApp accepts, the phone can keep showing the device: in a field test
+it was still listed four minutes later (#578). Always check WhatsApp → Linked
+devices on the phone afterwards, and log the device out there if it is still listed.
+
 ## 6. Harness wiring
 
 `harness/dispatch.py` and `harness/session_start.py` are in this repo and working.
