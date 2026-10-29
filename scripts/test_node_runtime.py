@@ -147,13 +147,44 @@ check("ensure again: no download", got, nr.ensure())
 
 # A copy that does not answer with its version is replaced.
 (got / "node").write_text("#!/bin/sh\necho v0\n")
-archive()
+pin(archive())  # gzip lleva la hora: el tarball nuevo puede tener otro hash
 check("a broken copy is downloaded again", got, nr.ensure())
 check("and answers with the pinned version", f"v{VERSION}", nr.version_of(str(got / "node")))
 
-# --- refusals ---------------------------------------------------------------------------------------
+# --- a copy already there is checked before anything in it runs (Ximena, #567) -------------------
 import shutil  # noqa: E402
 
+marker = tmp / "ran"
+evil = tmp / "evil-tree" / TOP / "bin"
+evil.mkdir(parents=True)
+(evil / "node").write_text(f'#!/bin/sh\ntouch "{marker}"\necho v{VERSION}\n')
+(evil / "node").chmod(0o755)
+(evil / "npm").write_text("#!/bin/sh\n")
+shutil.rmtree(home)
+home.mkdir(parents=True, mode=0o700)
+(home / TOP).symlink_to(evil.parent)
+check("a symlink at the release folder is not a pinned install, and its node never runs", (None, False),
+      (nr.find(), marker.exists()))
+try:
+    nr.ensure()
+    check("ensure over that symlink is refused", "Refused", "installed")
+except nr.Refused as exc:
+    check("ensure over that symlink is refused, without running it", (True, False),
+          ("symlink" in str(exc), marker.exists()))
+(home / TOP).unlink()
+shutil.copytree(evil.parent, home / TOP, symlinks=True)
+os.chmod(home / TOP, 0o777)
+check("a group/world-writable release folder does not count, and its node never runs", (None, False),
+      (nr.find(), marker.exists()))
+os.chmod(home / TOP, 0o755)
+os.chmod(home / TOP / "bin" / "node", 0o777)
+check("a group/world-writable bin/node does not count either", (None, False), (nr.find(), marker.exists()))
+shutil.rmtree(home / TOP)
+(home / TOP).mkdir()
+(home / TOP / "bin").symlink_to(evil)
+check("a symlinked bin/ does not count", (None, False), (nr.find(), marker.exists()))
+
+# --- refusals ---------------------------------------------------------------------------------------
 shutil.rmtree(home)
 
 

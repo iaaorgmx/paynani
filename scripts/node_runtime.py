@@ -99,12 +99,33 @@ def shell_node() -> Path | None:
     return Path(node).parent
 
 
+def _owned(path: Path, kind: str) -> bool:
+    """lstat, never following a link: the right kind, this user's, not group- or world-writable."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    is_kind = stat.S_ISDIR(st.st_mode) if kind == "dir" else stat.S_ISREG(st.st_mode)
+    return is_kind and st.st_uid == os.getuid() and not stat.S_IMODE(st.st_mode) & 0o022
+
+
 def installed(rel: dict, key: str) -> Path | None:
-    """The pinned release under home_dir(), if it is there and answers with its version."""
-    bin_dir = private_dir(rel, key) / "bin"
+    """
+    The pinned release under home_dir(), if it is there and answers with its version.
+    Nothing is run before every folder on the way and bin/node itself are checked
+    with lstat: no symlinks, this user's, not group- or world-writable (Ximena, #567).
+    """
+    home = home_dir()
+    target = private_dir(rel, key)
+    bin_dir = target / "bin"
     node = bin_dir / "node"
-    if node.is_file() and os.access(node, os.X_OK) and (bin_dir / "npm").exists() \
-            and version_of(str(node)) == f"v{rel['version']}":
+    if not (_owned(home, "dir") and _owned(target, "dir") and _owned(bin_dir, "dir")
+            and _owned(node, "file") and os.access(node, os.X_OK)):
+        return None
+    npm = bin_dir / "npm"
+    if not npm.exists() or not os.path.realpath(npm).startswith(os.path.realpath(target) + os.sep):
+        return None
+    if version_of(str(node)) == f"v{rel['version']}":
         return bin_dir
     return None
 
