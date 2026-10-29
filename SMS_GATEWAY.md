@@ -569,7 +569,8 @@ Los mensajes del Roster y las reglas tienen sus propios códigos (sección 11), 
 de WhatsApp también (sección 12).
 
 **Códigos de cierre propios:** `4400` protocolo, `4401` token revocado o inválido,
-`4409` otra conexión del mismo teléfono la reemplazó. `1001` se usa cuando la
+`4409` otra conexión del mismo teléfono la reemplazó, `4205` cambió lo que anuncia el
+`welcome` (sección 12): la app reconecta en seguida, sin espera. `1001` se usa cuando la
 pasarela se apaga.
 
 ## 6. Lo que entra a `events.jsonl`
@@ -1239,6 +1240,11 @@ responden `error` `unavailable`.
   desvincular, y la pasarela rechaza esos mensajes con `forbidden` aunque la app los
   mande (FR-6a). Una pasarela anterior no manda `grants`: la app lo trata como lista
   vacía.
+- **Si cambia la configuración con la app conectada** (se activa o se desactiva
+  WhatsApp, o cambia el teléfono emparejado), cambian `accepts` y `grants`, y esos sólo
+  llegan en el `welcome`. Por eso la pasarela cierra la conexión con el código `4205`
+  («reconecta»). La app reconecta en seguida, sin la espera creciente, y recibe un
+  `welcome` nuevo. `whatsapp.changed` no cubre este caso.
 
 ### `whatsapp.status`: el estado
 
@@ -1256,8 +1262,8 @@ responden `error` `unavailable`.
   `disconnected`, `logged_out`, ver `WHATSAPP_BRIDGE.md` §3) o `service_down`.
 - `me` es el número vinculado, o `null`.
 - `linking` dice si hay una vinculación en curso y de quién: `null`, o
-  `{"by": "phone", "mode": "code", "expires_at": "…"}`. `by` es `phone`, `web` o
-  `terminal`. **Nunca trae el código ni el QR.**
+  `{"by": "phone", "mode": "code", "expires_at": "…", "expires_in_s": 142}`. `by` es
+  `phone`, `web` o `terminal`. **Nunca trae el código ni el QR.**
 - `link_number` es el número que se usaría para el código: el de la SIM del teléfono
   emparejado (FR-6), o `null` si la app no lo conoce. Con `null`, la app pide el número
   antes de pedir el código.
@@ -1272,8 +1278,12 @@ Requiere `whatsapp.admin`.
 
 ```json
 {"type": "result", "ref": "q_…", "ok": true, "data": {
-  "code": "ABCD-EFGH", "expires_at": "2026-10-28T19:03:00Z"}}
+  "code": "ABCD-EFGH", "expires_at": "2026-10-28T19:03:00Z", "expires_in_s": 180}}
 ```
+
+- `expires_in_s` son los segundos que le quedan al código cuando la pasarela manda la
+  respuesta. La app cuenta hacia atrás desde que la recibe, sin depender de que su
+  reloj coincida con el del host. `expires_at` queda para el log y la web.
 
 - Siempre es por código, nunca QR: el teléfono no puede escanear su propia pantalla
   (FR-8). `number` es opcional si `link_number` no es `null`.
