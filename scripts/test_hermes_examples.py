@@ -68,8 +68,18 @@ check("roster prompt uses Hermes dot notation for nested sender data",
 check("roster prompt says the webhook includes no body", "no message body" in prompt)
 check("roster prompt keeps tools constrained", "only the tools" in prompt)
 check("roster prompt names the event type", "{event_type}" in roster.get("prompt", ""))
-check("roster prompt reads texts, WhatsApp and calls only through event show",
-      "scripts/paynani event show {event_id} --body" in roster.get("prompt", ""))
+raw_prompt = roster.get("prompt", "")
+check("roster prompt reads texts and WhatsApp messages with event show --body",
+      "For sms.received, sms.human_sent and whatsapp.received: read it only with "
+      "scripts/paynani event show {event_id} --body." in raw_prompt)
+# A call has no body: `event show --body` exits 2 for it (test_sms_gateway.py,
+# test_whatsapp_service.py), so the prompt must send calls to plain event show.
+check("roster prompt reads calls with event show and without --body",
+      "For call.missed and call.answered: a call has no body; read it only with "
+      "scripts/paynani event show {event_id}, without --body." in raw_prompt)
+check("roster prompt never pairs a call type with --body in the same sentence",
+      not any("call." in sentence and "--body" in sentence.replace("without --body", "")
+              for sentence in raw_prompt.split(". ")))
 check("roster prompt forbids writing first and linking WhatsApp",
       "never write first" in prompt and "never run paynani whatsapp link or unlink" in prompt)
 check("neither prompt renders the full raw payload", "{__raw__}" not in notify.get("prompt", "")
