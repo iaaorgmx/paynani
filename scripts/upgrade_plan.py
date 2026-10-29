@@ -111,12 +111,16 @@ RULES = (
     # Long-running services.
     (r"^scripts/idle_listener\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
     (r"^scripts/roster\.py$", "restart", "listener and SMS gateway", "listener-all", "listener-all", None, None),
-    (r"^scripts/(sms_gateway\.py|paynani_lib/sms/(__init__|gateway|store|websocket)\.py)$", "restart", "SMS gateway", *SMS_GATEWAY, None, None),
+    (r"^scripts/(sms_gateway\.py|paynani_lib/sms/(__init__|gateway|store|websocket|whatsapp_api)\.py)$", "restart", "SMS gateway", *SMS_GATEWAY, None, None),
+    # The gateway (§11) and PaynaniWeb both import these once at start.
+    (r"^scripts/paynani_lib/sms/(roster_api|api_replies)\.py$", "restart", "SMS gateway and PaynaniWeb", "gateway-web", "gateway-web", None, None),
     # WhatsApp (PRD #550 FR-3): the bridge's dependencies come from the lockfile, so
     # a change to either file needs `npm ci` before the restart.
     (r"^scripts/whatsapp_bridge/test/", "none", "tests", None, None, None, None),
     (r"^scripts/whatsapp_bridge/fake_bridge\.py$", "none", "tests (the fake bridge)", None, None, None, None),
     (r"^scripts/whatsapp_bridge/package(-lock)?\.json$", "reinstall-and-restart", "WhatsApp bridge dependencies", *WHATSAPP, None, WHATSAPP_NPM),
+    # `configured()` is read by the WhatsApp service, the SMS gateway (§12) and PaynaniWeb.
+    (r"^scripts/paynani_lib/whatsapp/config\.py$", "restart", "WhatsApp service, SMS gateway and PaynaniWeb", "whatsapp-all", "whatsapp-all", None, None),
     (r"^scripts/(whatsapp_service\.py|paynani_lib/whatsapp/.*\.py|whatsapp_bridge/.*\.js)$", "restart", "WhatsApp service and bridge", *WHATSAPP, None, None),
     # Both read sms.env at start: the gateway for its own port and PaynaniWeb's,
     # PaynaniWeb for its port.
@@ -320,6 +324,8 @@ def _units_of(f):
         return [LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB]
     if f["unit"] == "gateway-web":
         return [SMS_GATEWAY, WEB]
+    if f["unit"] == "whatsapp-all":
+        return [WHATSAPP, SMS_GATEWAY, WEB]
     if f["unit"] == "listener-all":
         return [LISTENER, LISTENER_INSTANCES, SMS_GATEWAY]
     if f["unit"] == "all":

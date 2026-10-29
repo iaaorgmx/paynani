@@ -1438,7 +1438,8 @@ Ningún error cierra la conexión.
 
 - Vincular, cancelar y desvincular desde la app quedan en el log de cambios con la
   hora y el `device_id`, sin el código, y le llegan por correo al humano, como los
-  cambios de la sección 11.
+  cambios de la sección 11. El log es `state/whatsapp_changes.jsonl`, junto a
+  `state/roster_changes.jsonl`.
 - Un `whatsapp.send` queda en el hilo como `by: owner`, y el agente lo ve al leer el
   hilo, como un SMS del dueño desde PaynaniWeb.
 - La pasarela no escribe en su log el texto de los mensajes, el código de

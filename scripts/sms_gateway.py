@@ -32,6 +32,7 @@ import paths  # noqa: E402
 from paynani_lib.sms import config as sms_config  # noqa: E402
 from paynani_lib.sms import gateway as gw  # noqa: E402
 from paynani_lib.sms import roster_api  # noqa: E402
+from paynani_lib.sms import whatsapp_api  # noqa: E402
 
 DEFAULT_PORT = 8770  # 8765 es del onboarding y de `sms pair --web`, que corren a la vez
 
@@ -54,6 +55,16 @@ def roster_service(state: Path, roster: Path) -> roster_api.RosterService:
     return roster_api.RosterService(roster, state, accounts_file=accounts.accounts_path(),
                                     agent_email=agent_email, notifier=roster_api.send_sh_notifier,
                                     log=gw.log, rules_root=roster.parent)
+
+
+def whatsapp_relay(state: Path, roster: roster_api.RosterService) -> whatsapp_api.WhatsAppRelay:
+    """
+    WhatsApp desde PaynaniApp (SMS_GATEWAY.md §12): el servicio paynani-whatsapp por
+    state/whatsapp/control.sock, `whatsapp.env` para saber si está configurado, y el
+    aviso al dueño por send.sh, como los cambios del roster.
+    """
+    return whatsapp_api.WhatsAppRelay(state, notifier=roster_api.send_sh_notifier,
+                                      owner_email=roster.owner_email, log=gw.log)
 
 
 def api_tokens_path() -> Path | None:
@@ -94,10 +105,11 @@ def main(argv=None) -> int:
     for problem in problems:
         gw.log(f"sms.env: {problem}")
     gw.log(f"avisos de batería: warn bajo {warn} %, critical bajo {critical} %")
+    roster = roster_service(state, Path(args.roster))
     gateway = gw.Gateway(state, state / "events.jsonl", Path(args.roster), public_url=args.public_url,
                          battery_warn_pct=warn, battery_critical_pct=critical,
-                         roster_service=roster_service(state, Path(args.roster)), web_port=web_port,
-                         api_tokens_path=api_tokens_path())
+                         roster_service=roster, web_port=web_port,
+                         api_tokens_path=api_tokens_path(), whatsapp=whatsapp_relay(state, roster))
 
     async def run():
         server = await gw.serve(gateway, args.host, args.port)
