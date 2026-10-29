@@ -4,7 +4,8 @@ encabezado de PDSL-201 (PRD #434 FR-10, FR-12).
 
 - **Menú** (FR-10): *Management* con Email Accounts (un desplegable con una
   entrada por cuenta: la del agente, del `.env`, y las de `accounts.json`),
-  Messages y Roster; *Tools* con Log out. Lo que el PRD deja fuera de la v1 (AI
+  Messages, «WhatsApp messages» (sólo con WhatsApp configurado, PRD #550 FR-24) y
+  Roster; *Tools* con Log out. Lo que el PRD deja fuera de la v1 (AI
   Assistant, Settings, Sessions, el buscador, el chat flotante) no se dibuja: un
   control que no hace nada es peor que no tenerlo.
 - **Avatar** (FR-8): las iniciales arriba a la derecha abren un menú con el
@@ -49,6 +50,7 @@ ICONS = {
     "panel": '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M16 9l-3 3 3 3"/>',
     "lock": '<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
     "key": '<circle cx="7" cy="15" r="4"/><path d="m10 12 10-10 2 2-3 3 2 2-3 3-2-2-3 3"/>',
+    "chat": '<path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.6-5.4A8.4 8.4 0 1 1 21 11.5z"/>',
     "warn": '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
 }
 
@@ -104,7 +106,8 @@ def mail_accounts(agent_email: str, additional: list[dict]) -> list[dict]:
     return out
 
 
-def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, accounts_error: str) -> str:
+def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, accounts_error: str,
+         whatsapp: bool = False) -> str:
     th = i18n.th
     open_attr = " open"   # abierto siempre, como en PDSL-201: las cuentas son el centro
     items = []
@@ -137,6 +140,7 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
       {''.join(items)}
     </details>
     {entry('messages', '/messages', 'inbox', 'web.nav.messages')}
+    {entry('whatsapp', '/whatsapp/messages', 'chat', 'web.wa.nav') if whatsapp else ''}
     {entry('roster', '/roster', 'roster', 'web.nav.roster')}
     {entry('api_tokens', '/api-tokens', 'key', 'web.tokens.title')}
   </nav>
@@ -152,14 +156,16 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
 
 def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str = "",
          active_account: str = "", accounts: list[dict] | None = None, accounts_error: str = "",
-         icon_name: str = "home", back: str = "", wide: bool = False, collapsed: bool = False) -> str:
+         icon_name: str = "home", back: str = "", wide: bool = False, collapsed: bool = False,
+         whatsapp: bool = False) -> str:
     """Una página con sesión. `body` ya viene escapado. `wide` deja que el panel use todo el ancho
     (la lista de correos, como Orders en el /dash). `collapsed` dibuja el menú colapsado
-    (PRD #537 FR-11); en el celular no cuenta, ahí el menú siempre empieza escondido."""
+    (PRD #537 FR-11); en el celular no cuenta, ahí el menú siempre empieza escondido. `whatsapp`
+    agrega «WhatsApp messages» al menú, sólo con WhatsApp configurado (PRD #550 FR-24)."""
     th = i18n.th
     accounts = accounts or []
     logo = brand_svg("paynani-horizontal.svg")
-    nav = _nav(accounts, active, active_account, csrf, accounts_error)
+    nav = _nav(accounts, active, active_account, csrf, accounts_error, whatsapp)
     name = user.get("name", "")
     back_link = (f'<a class="atras" href="{e(back)}" aria-label="{th("web.back")}">{icon("back")}</a>'
                  if back else "")

@@ -21,6 +21,7 @@ import json
 import re
 import secrets
 import sys
+import threading
 import time
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -29,9 +30,9 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from .. import guard, i18n
 from ..brand import brand_svg
-from . import catchall_strings, strings, token_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import catchall_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (accounts_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
-               thread, users)
+               thread, users, whatsapp_pages, whatsapp_source)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 FAVICON = Path(__file__).resolve().parents[3] / "brand" / "favicon.svg"
@@ -42,6 +43,7 @@ STATIC = {
     "/assets/time.js": (ASSETS / "time.js", "application/javascript; charset=UTF-8"),
     "/assets/nav.js": (ASSETS / "nav.js", "application/javascript; charset=UTF-8"),
     "/assets/sms.js": (ASSETS / "sms.js", "application/javascript; charset=UTF-8"),
+    "/assets/whatsapp.js": (ASSETS / "whatsapp.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
@@ -56,6 +58,12 @@ MAX_BODY_BYTES = 64 * 1024
 # urlencoded: a byte becomes %XX, and a newline becomes CRLF, %0D%0A, six bytes. This
 # allows the worst case plus room for the password and the other fields.
 CATCHALL_BODY_BYTES = 6 * 32 * 1024 + 16 * 1024
+# La CSP de guard.py más `connect-src 'self'`: sin ella el `fetch()` de los scripts de la
+# misma página cae en `default-src 'none'` y el navegador lo bloquea. Lo necesitan
+# whatsapp.js (el QR vigente, WHATSAPP_BRIDGE.md §11) y sms.js (los estados de
+# /messages/estados, PRD #489 FR-5, que por esto no se actualizaban solos). Sólo este
+# mismo origen: nada de otro sitio.
+CSP = guard.CSP + "; connect-src 'self'"
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 SERVER_NAME = "paynani-web"
 
@@ -248,7 +256,8 @@ class Context:
     def __init__(self, user_file: Path | None = None, notifier: notify.Notifier | None = None, clock=time.time,
                  agent_email=None, accounts_file: Path | None = None, ledger_path: Path | None = None,
                  env_path: Path | None = None, imap_connect=None, imap_uidvalidity=None,
-                 state_dir: Path | None = None, roster_path: Path | None = None, roster_notifier=None):
+                 state_dir: Path | None = None, roster_path: Path | None = None, roster_notifier=None,
+                 whatsapp_source: whatsapp_source.Source | None = None, whatsapp_root: Path | None = None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -288,6 +297,18 @@ class Context:
         self.account_ops = accounts_cli
         self.probe_imap = probe_mod.probe_imap
         self.probe_smtp = probe_mod.probe_smtp
+        # WhatsApp (PRD #550 FR-7, FR-24): el servicio por control.sock, o la fuente que
+        # pasen las pruebas. `whatsapp_root` es donde está runtime.env, y junto a él
+        # whatsapp.env, que dice si WhatsApp está configurado (WHATSAPP_BRIDGE.md §11).
+        self._whatsapp = whatsapp_source
+        self._whatsapp_root = whatsapp_root
+        # La vinculación por QR o código de cada sesión del navegador: el link_id vive
+        # sólo aquí, en memoria, nunca en una cookie, una URL ni la página (§11).
+        self._wa_links: dict[str, dict] = {}
+        # Cómo terminó la última vinculación de cada sesión, para decirlo una vez al
+        # recargar (whatsapp.js recarga cuando /whatsapp/link/current dice `ended`).
+        self._wa_ended: dict[str, str] = {}
+        self._wa_lock = threading.Lock()
 
     def state_dir(self) -> Path:
         if self._state_dir is not None:
@@ -366,6 +387,35 @@ class Context:
     def user(self) -> dict | None:
         return users.load(self.user_file)
 
+    def whatsapp(self) -> whatsapp_source.Source:
+        if self._whatsapp is None:
+            self._whatsapp = whatsapp_source.for_install(self.state_dir())
+        return self._whatsapp
+
+    def whatsapp_configured(self) -> bool:
+        return whatsapp_source.configured(self._whatsapp_root)
+
+    def wa_link(self, sid: str) -> dict | None:
+        with self._wa_lock:
+            link = self._wa_links.get(sid)
+            return dict(link) if link else None
+
+    def wa_link_set(self, sid: str, link_id: str, mode: str) -> None:
+        with self._wa_lock:
+            # Una sola vinculación en curso (FR-6a): la nueva reemplaza a cualquier otra.
+            self._wa_links.clear()
+            self._wa_links[sid] = {"link_id": link_id, "mode": mode}
+
+    def wa_link_drop(self, sid: str, reason: str = "") -> None:
+        with self._wa_lock:
+            self._wa_links.pop(sid, None)
+            if reason:
+                self._wa_ended[sid] = reason
+
+    def wa_ended_pop(self, sid: str) -> str:
+        with self._wa_lock:
+            return self._wa_ended.pop(sid, "")
+
     def user_path(self) -> Path:
         return Path(self.user_file) if self.user_file else users.user_path()
 
@@ -427,7 +477,7 @@ def make_handler(ctx: Context):
             return cookie[name].OutputString()
 
         def _html(self, code: int, page: str, cookies_out=()):
-            extra = [("Content-Security-Policy", guard.CSP)]
+            extra = [("Content-Security-Policy", CSP)]
             if self.set_lang:
                 extra.append(("Set-Cookie", self._cookie(LANG_COOKIE, self.set_lang, 365 * 86400)))
             extra.extend(("Set-Cookie", c) for c in cookies_out)
@@ -642,7 +692,8 @@ def make_handler(ctx: Context):
             accounts, error = self.CTX.mail_accounts()
             self._html(code, shell.page(self.lang, self.user, self.session["csrf"], title=title, body=body,
                                         accounts=accounts, accounts_error=error,
-                                        collapsed=shell.nav_collapsed(self.headers.get("Cookie", "")), **kw))
+                                        collapsed=shell.nav_collapsed(self.headers.get("Cookie", "")),
+                                        whatsapp=self.CTX.whatsapp_configured(), **kw))
 
         def dispatch_get(self):
             t = i18n.t
@@ -666,6 +717,9 @@ def make_handler(ctx: Context):
                 return
             if self.route == "/messages/estados":
                 self._sms_statuses()
+                return
+            if self.route in ("/whatsapp", "/whatsapp/link/current", "/whatsapp/messages", "/whatsapp/messages/ver"):
+                self._whatsapp_get()
                 return
             if self.route in ("/roster", "/roster/editar", "/roster/quitar", "/roster/reglas"):
                 self._roster_get()
@@ -1047,6 +1101,197 @@ def make_handler(ctx: Context):
                 return
             self._redirect(f"/messages/ver?n={_quote(number, safe='')}&ok=queued#responder")
 
+        # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
+        # Toda respuesta de aquí sale con Cache-Control: no-store (guard.SECURITY_HEADERS):
+        # la de /whatsapp y la de /whatsapp/link/current pueden traer un QR o un código.
+        def _wa_page(self, code: int, body: str, *, title_key: str = "web.wa.title", back: str = ""):
+            self._page(code, title=i18n.t(title_key), body=body, back=back, active="whatsapp", icon_name="chat")
+
+        def _wa_ended_text(self, reason: str) -> str:
+            key = "web.wa.ended." + reason
+            text = i18n.t(key)
+            return i18n.t("web.wa.ended.gone") if text == key else text
+
+        def _wa_current(self) -> tuple[dict | None, str]:
+            """(la vinculación vigente de esta sesión por `link_current`, aviso de que
+            terminó). Al terminar, el `link_id` se olvida."""
+            sid = self.session["sid"]
+            link = self.CTX.wa_link(sid)
+            if link is None:
+                return None, ""
+            try:
+                cur = self.CTX.whatsapp().request("whatsapp.link_current", link_id=link["link_id"])
+            except whatsapp_source.Failed as exc:
+                if exc.code != "not_found":
+                    return {"state": "retry", "mode": link["mode"]}, ""
+                cur = {"state": "ended", "reason": "gone"}
+            if cur.get("state") == "ended":
+                reason = str(cur.get("reason") or "gone")
+                self.CTX.wa_link_drop(sid, reason)
+                return None, self._wa_ended_text(reason)
+            return dict(cur, mode=link["mode"]), ""
+
+        def _whatsapp_get(self):
+            if not self.CTX.whatsapp_configured():
+                self._wa_page(404, whatsapp_pages.not_configured_body())
+                return
+            if self.route == "/whatsapp/link/current":
+                self._whatsapp_current()
+                return
+            if self.route == "/whatsapp":
+                done = self.query.get("ok", [""])[0]
+                notice = i18n.t("web.wa.ok_" + done) if done in ("unlinked", "unlinked_local", "canceled") else ""
+                self._whatsapp_account(notice=notice)
+                return
+            self._whatsapp_messages()
+
+        def _whatsapp_account(self, *, notice: str = "", error: str = "", code_info: dict | None = None,
+                              number: str = "", status_code: int = 200):
+            """GET /whatsapp (FR-7), y la respuesta de los POST que no redirigen."""
+            current = None
+            if code_info is None:
+                cur, ended = self._wa_current()
+                last = self.CTX.wa_ended_pop(self.session["sid"])
+                notice = notice or ended or (self._wa_ended_text(last) if last else "")
+                if cur is not None and cur.get("mode") == "qr" and cur.get("state") in ("waiting", "retry"):
+                    current = cur
+            status = self.CTX.whatsapp().status()
+            self._wa_page(status_code, whatsapp_pages.account_body(status, self.session["csrf"], current=current,
+                                                                  code=code_info, notice=notice, error=error,
+                                                                  number=number))
+
+        def _whatsapp_current(self):
+            """GET /whatsapp/link/current (§11): el QR vigente de la vinculación de esta
+            sesión, para whatsapp.js. Lectura con la sesión iniciada, sin contraseña."""
+            cur, _ = self._wa_current()
+            if cur is None:
+                body = {"state": "ended"}
+            elif cur.get("state") == "retry":
+                body = {"state": "retry"}
+            else:
+                body = {"state": "waiting", "expires_in_s": int(cur.get("expires_in_s") or 0)}
+                if cur.get("mode") == "qr":
+                    body["html"] = whatsapp_pages.qr_area(cur)
+            self._send(200, "application/json; charset=UTF-8", json.dumps(body, ensure_ascii=False).encode("utf-8"))
+
+        def _whatsapp_messages(self, *, values: dict | None = None, error: str = "", code: int = 200):
+            """GET /whatsapp/messages y /whatsapp/messages/ver?n=<número> (FR-24)."""
+            t = i18n.t
+            source = self.CTX.whatsapp()
+            before = self.query.get("antes", [None])[0]
+            if self.route == "/whatsapp/messages":
+                try:
+                    data = source.request("whatsapp.threads", limit=whatsapp_pages.PAGE, before=before)
+                except whatsapp_source.Failed as exc:
+                    self._wa_page(503 if exc.code == "unavailable" else 400,
+                                  f'<p class="aviso-caja" role="status">{html.escape(whatsapp_pages.error_text(exc.code, exc.fields))}</p>',
+                                  title_key="web.wa.messages_title")
+                    return
+                self._page(200, title=t("web.wa.messages_title"),
+                           body=whatsapp_pages.list_body(data.get("threads") or [], data.get("next_before")),
+                           wide=True, active="whatsapp", icon_name="chat")
+                return
+            number = (values or {}).get("n") or self.query.get("n", [""])[0]
+            try:
+                thread_data = source.request("whatsapp.thread", number=number, limit=whatsapp_pages.PAGE,
+                                             before=before)
+            except whatsapp_source.Failed as exc:
+                status = 404 if exc.code in ("not_found", "invalid") else 503
+                self._wa_page(status, f'<p class="volver"><a href="/whatsapp/messages">← {i18n.th("web.wa.back")}</a></p>'
+                                      f'<p class="lead">{html.escape(whatsapp_pages.error_text(exc.code, exc.fields))}</p>',
+                              title_key="web.wa.messages_title", back="/whatsapp/messages")
+                return
+            connected = source.status().get("state") == "connected"
+            reply = whatsapp_pages.reply_box(thread_data, self.session["csrf"], connected, values, error)
+            notice = t("web.wa.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
+            self._wa_page(code, whatsapp_pages.thread_body(thread_data, reply, notice),
+                          title_key="web.wa.messages_title", back="/whatsapp/messages")
+
+        def _whatsapp_post(self, post: dict):
+            """
+            POST /whatsapp/link, /whatsapp/link/cancel y /whatsapp/unlink (FR-6a, FR-7): CSRF
+            y Origin como todo POST, y además la contraseña, con el bloqueo de la entrada.
+            POST /whatsapp/messages/enviar (FR-24): contesta en un hilo; las reglas de
+            FR-19 a FR-21 las aplica el servicio.
+            """
+            from urllib.parse import quote as _quote
+            th = i18n.th
+            if not self.CTX.whatsapp_configured():
+                self._wa_page(404, whatsapp_pages.not_configured_body())
+                return
+            source = self.CTX.whatsapp()
+            sid = self.session["sid"]
+            if self.route == "/whatsapp/messages/enviar":
+                values = {"n": post.get("n", "").strip()[:40], "text": post.get("text", "").replace("\r\n", "\n")}
+                if not values["text"].strip() or len(values["text"]) > whatsapp_source.MAX_TEXT:
+                    self._whatsapp_messages(values=values, error=whatsapp_pages.error_text("invalid", {"field": "text"}),
+                                            code=400)
+                    return
+                try:
+                    source.request("whatsapp.send", number=values["n"], text=values["text"])
+                except whatsapp_source.Failed as exc:
+                    code = {"rate_limited": 429, "unavailable": 503, "not_connected": 409}.get(exc.code, 400)
+                    self._whatsapp_messages(values=values, error=whatsapp_pages.error_text(exc.code, exc.fields),
+                                            code=code)
+                    return
+                self._redirect(f"/whatsapp/messages/ver?n={_quote(values['n'], safe='')}&ok=sent#responder")
+                return
+
+            number = post.get("number", "").strip()[:40]
+            # La contraseña antes de pedirle nada al servicio. Vacía no cuenta como intento.
+            password = post.get("password", "")[:users.MAX_PASSWORD]
+            if self.route == "/whatsapp/unlink" and post.get("confirm") != "1":
+                self._whatsapp_account(error=th("web.wa.err.confirm"), status_code=400)
+                return
+            problem = self._check_current(password) if password else th("web.wa.err.password")
+            if problem:
+                self._whatsapp_account(error=problem, number=number, status_code=403 if password else 400)
+                return
+            if self.route == "/whatsapp/link/cancel":
+                try:
+                    source.request("whatsapp.link_cancel")
+                except whatsapp_source.Failed as exc:
+                    self._whatsapp_account(error=whatsapp_pages.error_text(exc.code, exc.fields), status_code=503)
+                    return
+                self.CTX.wa_link_drop(sid)
+                self._redirect("/whatsapp?ok=canceled")
+                return
+            if self.route == "/whatsapp/unlink":
+                try:
+                    data = source.request("whatsapp.unlink")
+                except whatsapp_source.Failed as exc:
+                    self._whatsapp_account(error=whatsapp_pages.error_text(exc.code, exc.fields), status_code=503)
+                    return
+                self.CTX.wa_link_drop(sid)
+                self._redirect("/whatsapp?ok=" + ("unlinked" if data.get("remote") else "unlinked_local"))
+                return
+            # /whatsapp/link
+            mode = post.get("mode", "qr")
+            fields = {"mode": mode}
+            if mode == "code":
+                clean = re.sub(r"[\s().-]", "", number)
+                if not re.fullmatch(r"\+[1-9]\d{6,14}", clean):
+                    self._whatsapp_account(error=th("web.wa.err.invalid_number"), number=number, status_code=400)
+                    return
+                fields["number"] = clean
+            elif mode != "qr":
+                self._whatsapp_account(error=whatsapp_pages.error_text("invalid", {"field": "mode"}), status_code=400)
+                return
+            try:
+                data = source.request("whatsapp.link", **fields)
+            except whatsapp_source.Failed as exc:
+                self._whatsapp_account(error=whatsapp_pages.error_text(exc.code, exc.fields), number=number,
+                                       status_code={"already_linked": 409, "unavailable": 503}.get(exc.code, 400))
+                return
+            self.CTX.wa_link_set(sid, str(data.get("link_id", "")), mode)
+            if mode == "code":
+                # El código sólo viaja en esta respuesta; link_current no lo repite (§11).
+                self._whatsapp_account(code_info=data)
+                return
+            # El QR se ve en GET /whatsapp, que lo pide con el link_id de esta sesión: así
+            # recargar la página no vuelve a mandar el formulario.
+            self._redirect("/whatsapp")
+
         # ---- Agregar y quitar cuentas (FR-16, Q23) --------------------------------
         def _accounts_page(self, code: int, body: str, active_account: str = ""):
             self._page(code, title=i18n.t("web.nav.email"), body=body, active="email",
@@ -1415,6 +1660,9 @@ def make_handler(ctx: Context):
                 return
             if self.route == "/messages/catch-all":
                 self._catchall_post(post)
+                return
+            if self.route in ("/whatsapp/link", "/whatsapp/link/cancel", "/whatsapp/unlink", "/whatsapp/messages/enviar"):
+                self._whatsapp_post(post)
                 return
             if self.route in ("/roster/guardar", "/roster/quitar", "/roster/reglas"):
                 self._roster_post(post)

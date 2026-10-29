@@ -473,6 +473,20 @@ body.web-shell {
   background: var(--line); color: var(--quiet); cursor: not-allowed;
 }
 
+/* WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557). El QR va sobre blanco aun en modo oscuro:
+   los lectores necesitan módulos oscuros sobre fondo claro. */
+.web-shell .wa-estado { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; margin: 1rem 0; }
+.web-shell .wa-estado dt { color: var(--quiet); font-size: .9rem; }
+.web-shell .wa-estado dd { margin: 0; }
+.web-shell .estado-wa-connected, .web-shell .estado-wa-delivered, .web-shell .estado-wa-read, .web-shell .estado-wa-sent { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-ink); }
+.web-shell .estado-wa-logged_out, .web-shell .estado-wa-service_down, .web-shell .estado-wa-failed { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad-ink); }
+.web-shell .wa-vincular { margin: 1rem 0; }
+.web-shell .wa-qr-imagen { background: #fff; padding: .75rem; border-radius: 8px; border: 1px solid var(--line); display: inline-block; }
+.web-shell .wa-qr-imagen svg { display: block; width: min(18rem, 70vw); height: auto; }
+.web-shell .wa-codigo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 2rem; letter-spacing: .2rem; font-weight: 700; margin: .5rem 0; }
+.web-shell .formulario > button + label { margin-top: 1.2rem; }
+.web-shell .formulario textarea#wa-text { font-family: inherit; font-size: 1rem; min-height: 6rem; }
+
 /* PRD #537 FR-8: sin animación para quien la pidió quitar. */
 @media (prefers-reduced-motion: reduce) {
   body.web-shell, .web-shell .lateral { transition: none !important; }

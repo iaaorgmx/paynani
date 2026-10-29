@@ -179,7 +179,9 @@ pages = {
     "/cuentas/nueva": ("/cuentas/nueva", cookie),
     "una ruta que no existe": ("/no-existe", cookie),
 }
-CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'"
+# connect-src 'self': el fetch() de sms.js y whatsapp.js a este mismo servidor (WA-5 #557).
+CSP = ("default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; "
+       "connect-src 'self'")
 for label, (path, ck) in pages.items():
     status, h, page = req("GET", path, cookie=ck)
     problems = []
