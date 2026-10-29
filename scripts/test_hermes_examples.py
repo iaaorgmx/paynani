@@ -3,6 +3,7 @@
 
 import json
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -36,9 +37,23 @@ check("the two route secrets are unique", notify["secret"] != roster["secret"])
 check("notify route is direct delivery", notify.get("deliver_only") is True)
 check("notify route has no model tools", not notify.get("toolsets"))
 check("notify route does not load a skill", not notify.get("skills"))
-check("notify route accepts mail and listener faults while roster accepts only mail",
-      notify.get("events") == ["email.received", "listener.error"]
-      and roster.get("events") == ["email.received"])
+# #582: Hermes answers 200 ignored for an event type a route does not list, and
+# the dispatcher holds the whole queue behind it, mail included. So the lists are
+# exact, and every event type paynani writes must reach at least the notify route.
+NOTIFY_EVENTS = ["email.received", "listener.error", "sms.received", "sms.human_sent",
+                 "sms.unseen", "sms.gateway.offline", "sms.gateway.online",
+                 "sms.gateway.battery_low", "sms.gateway.battery_ok",
+                 "whatsapp.received", "whatsapp.health", "call.missed", "call.answered"]
+ROSTER_EVENTS = ["email.received", "sms.received", "sms.human_sent",
+                 "whatsapp.received", "call.missed", "call.answered"]
+check("notify route accepts every event type, roster only the ones with a sender",
+      notify.get("events") == NOTIFY_EVENTS and roster.get("events") == ROSTER_EVENTS)
+written = set(re.findall(r'^[A-Z_]+ = "([a-z_]+\.[a-z_.]+)"$',
+                         (ROOT / "harness" / "event.py").read_text(encoding="utf-8"), re.M))
+check("every event type in harness/event.py is on the notify route (#582)",
+      bool(written) and written <= set(NOTIFY_EVENTS))
+check("every event type on the roster route is also on the notify route",
+      set(ROSTER_EVENTS) <= set(NOTIFY_EVENTS))
 check("roster route runs an agent", roster.get("deliver_only") is not True)
 check("roster route names the mail skill", roster.get("skills") == ["himalaya"])
 check("roster route grants only the toolset the mail skill needs",
@@ -52,6 +67,11 @@ check("roster prompt uses Hermes dot notation for nested sender data",
       "{sender.address}" in roster.get("prompt", "") and "{sender[" not in roster.get("prompt", ""))
 check("roster prompt says the webhook includes no body", "no message body" in prompt)
 check("roster prompt keeps tools constrained", "only the tools" in prompt)
+check("roster prompt names the event type", "{event_type}" in roster.get("prompt", ""))
+check("roster prompt reads texts, WhatsApp and calls only through event show",
+      "scripts/paynani event show {event_id} --body" in roster.get("prompt", ""))
+check("roster prompt forbids writing first and linking WhatsApp",
+      "never write first" in prompt and "never run paynani whatsapp link or unlink" in prompt)
 check("neither prompt renders the full raw payload", "{__raw__}" not in notify.get("prompt", "")
       and "{__raw__}" not in roster.get("prompt", ""))
 

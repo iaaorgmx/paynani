@@ -262,7 +262,7 @@ def _route_settings():
     return routes, None
 
 
-def _classify(http_status, payload, route_class, expected_route):
+def _classify(http_status, payload, route_class, expected_route, event_type=""):
     status = payload.get("status") if isinstance(payload, dict) else None
     response_route = payload.get("route") if isinstance(payload, dict) else None
     if response_route and response_route != expected_route:
@@ -293,8 +293,10 @@ def _classify(http_status, payload, route_class, expected_route):
         )
     if http_status == 200 and status == "ignored":
         return config(
-            "Hermes ignored an event the adapter expected to route. Check route "
-            "event filters and HERMES_*_URL."
+            f"Hermes ignored {event_type or 'an event'} on route {expected_route!r}: "
+            "its events list does not include it. Add it to that route's events "
+            "(HERMES.md, \"Event lists\") and restart the gateway; the queue waits "
+            "behind it, mail included."
         )
     if 300 <= http_status <= 399:
         return config(
@@ -421,7 +423,8 @@ def deliver(envelope):
             f"transport ID has duplicate risk if the gateway accepted it: {exc}"
         )
 
-    result = _classify(http_status, payload, route_class, expected_route)
+    result = _classify(http_status, payload, route_class, expected_route,
+                       str(envelope.get("event_type") or ""))
     if result.ok and attempt_path is not None:
         attempt_error = _attempt_clear(attempt_path)
         if attempt_error:

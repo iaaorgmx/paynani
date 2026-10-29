@@ -351,6 +351,19 @@ try:
     check("a registration alone does not call the installer",
           not any(c.startswith("scripts/install.sh") for c in hooks["openclaw"]), str(hooks["openclaw"]))
 
+    # #582: the Hermes routes are copied by hand into ~/.hermes/config.yaml, so a
+    # changed example is a manual step on a Hermes host and nothing elsewhere.
+    write(repo, "examples/hermes-routes.yaml", "{}\n")
+    sh(repo, "add", "-A")
+    sh(repo, "commit", "-q", "-m", "routes")
+    sh(repo, "tag", "v2.1.1")
+    routes = {rt: up.commands(up.plan("v2.1.0", "v2.1.1", repo=repo, runtime=rt, system="Linux"))
+              for rt in ("hermes", "claudecode")}
+    check("a changed Hermes route example asks a Hermes host to copy the routes and restart the gateway",
+          any("hermes gateway restart" in c and "events lists" in c for c in routes["hermes"]),
+          str(routes["hermes"]))
+    check("and asks nothing of another runtime", routes["claudecode"] == [], str(routes["claudecode"]))
+
     # --- local overlays (Lisa's addendum on #167; Ocelotl point 3) ------------
     # A tracked file modified in the clone is an overlay; the plan names it,
     # says whether the upgrade also touches it, and how to keep a record. An
