@@ -49,6 +49,13 @@ QR_TTL_S = 20
 FILE_SEND_KINDS = ("agent", "terminal")
 
 
+MAX_SOCKET_PATH = 103   # sun_path: 104 en macOS, 108 en Linux, con el NUL al final
+
+
+class StartError(Exception):
+    """El servicio no puede arrancar (por ejemplo, control.sock no se puede abrir)."""
+
+
 class Refused(Exception):
     def __init__(self, code: str, detail: str = "", **extra: Any):
         super().__init__(code)
@@ -125,10 +132,20 @@ class WhatsAppService:
 
     # --- ciclo de vida ------------------------------------------------------------
     async def start(self) -> None:
+        """
+        Abre control.sock antes de lanzar el puente: si el socket no se puede abrir
+        (StartError, UnsafePath), no queda un puente huérfano y quien llama sale limpio.
+        """
         self.layout.prepare()  # UnsafePath antes de abrir nada
+        if len(os.fsencode(str(self.socket_path))) > MAX_SOCKET_PATH:
+            raise StartError(f"la ruta de control.sock mide más de {MAX_SOCKET_PATH} bytes "
+                             f"(límite de los sockets Unix): usa un --state más corto")
+        try:
+            await self._serve()
+        except OSError as exc:
+            raise StartError(f"no se pudo abrir control.sock ({type(exc).__name__}: {exc})") from None
         self.sup.allowed = self._allowed()
         self._tasks.append(asyncio.create_task(self.sup.run()))
-        await self._serve()
         self._tasks.append(asyncio.create_task(self._loops()))
 
     async def stop(self) -> None:

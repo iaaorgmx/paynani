@@ -510,6 +510,37 @@ async def scenario_link_timeout(tmp: Path) -> None:
         await svc.stop()
 
 
+async def scenario_entrypoint(tmp: Path) -> None:
+    """whatsapp_service.py de punta a punta: ruta larga y SIGTERM (Iris en #566)."""
+    import signal
+    import subprocess
+
+    tmp.mkdir(parents=True, exist_ok=True)
+    (tmp / "roster.md").write_text(ROSTER)
+    fake = " ".join(FAKE)
+    long_state = tmp / ("s" * 120) / "state"
+    t0 = time.monotonic()
+    p = subprocess.run([sys.executable, str(ROOT / "scripts" / "whatsapp_service.py"), "--state", str(long_state),
+                        "--roster", str(tmp / "roster.md"), "--bridge-cmd", fake],
+                       capture_output=True, text=True, timeout=30)
+    check("ruta de control.sock demasiado larga: sale con 1, rápido y lo dice", (1, True, True),
+          (p.returncode, time.monotonic() - t0 < 10, "--state más corto" in p.stdout))
+    state = tmp / "state"
+    proc = subprocess.Popen([sys.executable, str(ROOT / "scripts" / "whatsapp_service.py"), "--state", str(state),
+                             "--roster", str(tmp / "roster.md"), "--bridge-cmd", fake],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    sock = state / "whatsapp" / "control.sock"
+    await until(lambda: sock.exists(), 10)
+    check("whatsapp_service.py abre control.sock", True, sock.exists())
+    proc.send_signal(signal.SIGTERM)
+    try:
+        rc = proc.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        rc = "colgado"
+    check("SIGTERM: sale con 0 y borra el socket", (0, False), (rc, sock.exists()))
+
+
 async def main_async() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
@@ -521,6 +552,7 @@ async def main_async() -> None:
         await scenario_event_show(tmp / "show")
         await scenario_reply_never(tmp / "never")
         await scenario_link_timeout(tmp / "timeout")
+        await scenario_entrypoint(tmp / "entry")
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 
 import paths  # noqa: E402
 from paynani_lib.whatsapp import bridge, config  # noqa: E402
-from paynani_lib.whatsapp.service import WhatsAppService  # noqa: E402
+from paynani_lib.whatsapp.service import StartError, WhatsAppService  # noqa: E402
 
 MIN_NODE = 20
 
@@ -74,7 +74,12 @@ async def main_async(args: argparse.Namespace) -> int:
         await service.start()
     except bridge.UnsafePath as exc:
         log(f"no arranca: {exc}")
+        await service.stop()
         return 4
+    except StartError as exc:
+        log(f"no arranca: {exc}")
+        await service.stop()
+        return 1
     runner = service._tasks[0]
     waiter = asyncio.create_task(stop.wait())
     await asyncio.wait({runner, waiter}, return_when=asyncio.FIRST_COMPLETED)
