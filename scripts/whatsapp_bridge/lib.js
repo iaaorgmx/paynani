@@ -166,6 +166,25 @@ export function quietConsole(target, write) {
   target.error = keep;
 }
 
+// Quién escribió o llamó, como número. WhatsApp puede mandar un LID (un id interno)
+// en lugar del número: un mensaje trae el número en remoteJidAlt y una llamada en
+// callerPn. Si no viene, se busca en el mapa LID -> número de Baileys. Sin número,
+// e164 queda null y el servicio lo trata como «número sin resolver».
+export async function resolveJid(s, rawJid, rawAlt) {
+  const jid = normalizeJid(rawJid || '');
+  const alt = normalizeJid(rawAlt || '');
+  if (isPnJid(jid)) return { e164: pnJidToE164(jid), jid, lid: isLidJid(alt) ? alt : null };
+  if (isLidJid(jid)) {
+    let pn = isPnJid(alt) ? alt : null;
+    if (!pn) {
+      try { pn = normalizeJid(await s?.signalRepository?.lidMapping?.getPNForLID(jid) || ''); } catch { pn = null; }
+      if (!isPnJid(pn)) pn = null;
+    }
+    return { e164: pn ? pnJidToE164(pn) : null, jid: pn || jid, lid: jid };
+  }
+  return { e164: null, jid, lid: null };
+}
+
 // Estado de un envío (WAMessageStatus) -> receipt.status
 export function receiptStatus(ack) {
   if (ack === 2) return 'server';

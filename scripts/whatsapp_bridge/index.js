@@ -12,7 +12,7 @@ import {
   PROTOCOL, ID_RE, E164_RE, MAX_TEXT, MAX_FILE_BYTES, CODE_TTL_MS,
   parseLine, refOf, isDirectChat, isLidJid, isPnJid, normalizeJid, pnJidToE164,
   e164ToJid, extForMime, classify, unwrap, makeLogger, receiptStatus, callOutcome,
-  sendContent, quietConsole,
+  sendContent, quietConsole, resolveJid,
 } from './lib.js';
 
 process.umask(0o077);
@@ -217,18 +217,8 @@ async function startLink(ref, msg) {
 
 // --- lo que llega (FR-11, FR-13, FR-16, FR-17, FR-18) -----------------------
 
-async function resolveSender(s, key) {
-  const jid = normalizeJid(key.remoteJid);
-  const alt = normalizeJid(key.remoteJidAlt || '');
-  if (isPnJid(jid)) return { e164: pnJidToE164(jid), jid, lid: isLidJid(alt) ? alt : null };
-  if (isLidJid(jid)) {
-    let pn = isPnJid(alt) ? alt : null;
-    if (!pn) {
-      try { pn = normalizeJid(await s.signalRepository.lidMapping.getPNForLID(jid) || ''); } catch { pn = null; }
-    }
-    return { e164: pn ? pnJidToE164(pn) : null, jid: pn || jid, lid: jid };
-  }
-  return { e164: null, jid, lid: null };
+function resolveSender(s, key) {
+  return resolveJid(s, key.remoteJid, key.remoteJidAlt);
 }
 
 async function saveMedia(s, msg, info) {
@@ -288,10 +278,9 @@ function onCalls(list) {
     if (c.status === 'accept') seen.accepted = true;
     if (outcome && !seen.done && (!c.isGroup)) {
       seen.done = true;
-      const jid = normalizeJid(c.from);
-      out({ type: 'call', call_id: c.id,
-        from: { e164: pnJidToE164(jid), jid, lid: isLidJid(jid) ? jid : null },
-        status: outcome, video: Boolean(c.isVideo), at: nowIso() });
+      const at = nowIso();
+      resolveJid(sock, c.from, c.callerPn).then((from) => out({ type: 'call', call_id: c.id,
+        from, status: outcome, video: Boolean(c.isVideo), at }));
     }
     calls.set(c.id, seen);
     if (calls.size > 200) calls.delete(calls.keys().next().value);
