@@ -103,6 +103,9 @@ RULES = (
     (r"^systemd/", "reinstall-and-restart", "systemd units (copied)", None, None, {"Linux"}, INSTALLER),
     (r"^scripts/install_macos\.py$", "reinstall-and-restart", "LaunchAgents (written by the installer)", None, None, {"Darwin"}, INSTALLER),
     (r"^scripts/(install\.sh|install_manifest\.py)$", "reinstall-and-restart", "the installer", None, None, None, INSTALLER),
+    # The Node of the WhatsApp bridge (Q197=B): the installer downloads the pinned
+    # release when the host has no Node 20+, so a new pin needs the installer again.
+    (r"^scripts/(node_runtime\.py|node_release\.json)$", "reinstall-and-restart", "the installer (WhatsApp's Node)", None, None, None, INSTALLER),
     # Copies the installer names but does not write: each has its own command.
     (r"^scripts/opencode_plugin\.py$|^harness/opencode/.*\.js$", "reinstall-and-restart", "OpenCode plugin (~/.config/opencode/plugins/paynani.js)", None, None, {"opencode"}, OPENCODE_PLUGIN),
     (r"^scripts/claude_hook\.py$", "reinstall-and-restart", "Claude Code session hook (settings.json)", None, None, {"claudecode"}, "python3 scripts/claude_hook.py --install"),

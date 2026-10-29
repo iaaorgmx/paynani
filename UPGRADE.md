@@ -295,6 +295,16 @@ user, its pages only say how.
 An `install.sh --upgrade` keeps an installed gateway converged without the flag;
 add `--with-sms` to install it on a host that does not have it yet.
 
+If you installed WhatsApp (`install.sh --with-whatsapp`, INSTALL.md 5.4),
+restart it too. A change to `scripts/whatsapp_bridge/package-lock.json` needs
+`npm ci --ignore-scripts --prefix scripts/whatsapp_bridge` first, and
+`scripts/upgrade_plan.py` prints it when it does:
+
+```bash
+systemctl --user enable paynani-whatsapp.service
+systemctl --user restart paynani-whatsapp.service
+```
+
 With additional accounts (`MULTI_ACCOUNT.md`), restart their instances as well:
 
 ```bash

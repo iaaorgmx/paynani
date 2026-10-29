@@ -1241,6 +1241,98 @@ each one instructions for the agent, plus general ones for everybody.
   as `reglas inválidas: rules/<id>.md` in the notice and as a `WARNING` from
   `send.sh`, and paynani ignores that file until it is fixed.
 
+### 5.4 Optional: WhatsApp (direct messages through a linked phone)
+
+Skip this unless your human wants the agent to receive and answer WhatsApp
+direct messages (`WHATSAPP_BRIDGE.md` is the design). Like the SMS gateway it is
+**optional**: nothing about it is installed, upgraded or removed unless you ask.
+
+> **Warning: Meta can restrict or ban the number.** paynani links as a WhatsApp
+> Web device through Baileys, an unofficial client, and WhatsApp does not allow
+> those. The risk cannot be removed, only reduced. paynani never shows as online
+> and never downloads the full history. It handles direct messages only, from
+> roster contacts only. It never writes first, even to a roster contact, and it
+> caps sends at one every 3 s and 200 a day. Before linking, tell your human, and
+> try it first with a number they can afford to lose.
+
+**Node 20 or newer** runs the bridge. OpenClaw and Hermes hosts already have it.
+You do not have to install it yourself:
+
+- If `node` on your `PATH` is 20 or newer and `npm` sits in the same folder
+  (Homebrew, nvm, `apt install nodejs npm` on Debian 13 or Ubuntu 25.04 and
+  newer), the installer uses it and downloads nothing.
+- If not (no Node at all, or the Node 18 that Ubuntu 24.04 and Debian 12 ship in
+  apt), the installer downloads the official Node release pinned in
+  `scripts/node_release.json` (Node 22) from `nodejs.org` into
+  `~/.local/lib/paynani/`, without `sudo`. It uses it only if its SHA-256 matches
+  the one pinned in the repository; otherwise it stops before writing anything.
+  The archive's entries are checked before unpacking, and only plain `https` is
+  accepted. Only the WhatsApp service gets that Node on its `PATH`; your shell's
+  `node` is not changed.
+- The pinned hashes come from `SHASUMS256.txt` of that release, whose signature
+  was checked against the Node.js release keys (`nodejs/release-keys`). A new
+  pin is a change to `scripts/node_release.json`, reviewed like any other, and
+  `upgrade_plan.py` asks for the installer again when it changes.
+- `--dry-run` says which one it would use (`inventory whatsapp-node use …` or
+  `… download …`) without downloading. It stops only on a system with no pinned
+  release (Linux and macOS on x64 and arm64 have one); there, install Node 20+
+  yourself and run it again.
+- `PAYNANI_NODE_DIST` replaces `https://nodejs.org/dist` with a mirror. The
+  pinned hash still decides.
+
+**Install it** with the same runtime you installed with:
+
+```bash
+scripts/install.sh --runtime <runtime> --with-whatsapp --dry-run   # what it would add
+scripts/install.sh --runtime <runtime> --with-whatsapp
+```
+
+That runs `npm ci --ignore-scripts` in `scripts/whatsapp_bridge/`: the exact
+versions in `package-lock.json`, with no install scripts. It writes
+`whatsapp.env` with `WHATSAPP_ENABLED=1` next to `runtime.env` if there is none.
+It adds `paynani-whatsapp.service` (LaunchAgent `com.paynani.whatsapp` on macOS),
+enables it and records it in the ownership manifest. Like `--with-sms`, adding
+the unit restarts the other paynani services that are already running; their unit
+files do not change. From then on `--upgrade`
+keeps it current and `--uninstall` removes it. `whatsapp.env` is yours after the
+first write: no install, upgrade or uninstall changes or removes it, and
+`WHATSAPP_ENABLED=0` there turns WhatsApp off. The account keys in
+`state/whatsapp/auth/` (0700) are never recorded in the manifest or copied
+anywhere.
+
+A manual install runs the same `npm ci`, writes `whatsapp.env` itself (mode 0600),
+copies the unit, replaces its placeholders (`/path/to/paynani`, `/path/to/state`,
+and `/path/to/service-path` with the folder `scripts/node_runtime.py ensure`
+prints followed by `/usr/local/bin:/usr/bin:/bin`) and enables it:
+
+```bash
+node_dir=$(python3 scripts/node_runtime.py ensure)   # this shell's Node 20+, or the pinned one
+PATH="$node_dir:$PATH" npm ci --ignore-scripts --prefix scripts/whatsapp_bridge
+install -Dm644 systemd/paynani-whatsapp.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now paynani-whatsapp.service
+```
+
+**Link the account** from the terminal, from PaynaniWeb (WhatsApp page) or from
+PaynaniApp:
+
+```bash
+scripts/paynani whatsapp link                                  # a QR in the terminal
+scripts/paynani whatsapp link --code --number +1XXXXXXXXXX     # or a code to type on the phone
+scripts/paynani whatsapp status
+```
+
+On the phone: WhatsApp → Linked devices → Link a device. The QR changes every
+20 s, and a code is shown once and lasts 180 s. Neither is ever written to disk
+or to a log.
+
+**Verifying it.** `paynani whatsapp status` says `connected` with the linked
+number. The unit writes `state/whatsapp.log` (state changes and one line per
+message, with an excerpt only for a roster number or while the Catch-All is on) and
+`state/whatsapp.err.log`.
+After more than 10 minutes without a connection, or if WhatsApp ends the session,
+the agent gets a `whatsapp.health` event.
+
 ## 6. Harness wiring
 
 `harness/dispatch.py` and `harness/session_start.py` are in this repo and working.

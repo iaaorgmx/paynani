@@ -235,6 +235,14 @@ cp "$REPO/roster.md" ~/roster.md.kept
 Do this **last**. Everything above references paths inside it, and removing it
 first leaves you working from memory.
 
+**WhatsApp's Node.** If the installer downloaded Node because the host had no
+Node 20 or newer (`--with-whatsapp`), it is in `~/.local/lib/paynani/`, outside
+the clone. Only paynani uses it:
+
+```bash
+rm -rf ~/.local/lib/paynani
+```
+
 ---
 
 ## What is deliberately left alone

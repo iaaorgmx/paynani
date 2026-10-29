@@ -1,0 +1,36 @@
+# Template. scripts/install.sh renders it only when the owner turns WhatsApp on
+# (`--with-whatsapp`, PRD #550 FR-1); a manual install edits it by hand. Three
+# placeholders:
+#
+#   /path/to/paynani      your clone's absolute path, which is also the install
+#   /path/to/state        the state tree, normally <clone>/state
+#   /path/to/service-path the PATH the service runs with: the folder of
+#                         `command -v node` first (Node 20 or newer), then the system's
+#
+# The service starts the Baileys bridge (scripts/whatsapp_bridge/) as a child
+# process and talks to it over stdin/stdout. Neither of them listens on a port
+# (WHATSAPP_BRIDGE.md). The account keys live in /path/to/state/whatsapp/auth/.
+
+[Unit]
+Description=paynani WhatsApp (Baileys bridge as a child process, no port)
+Documentation=file:///path/to/paynani/WHATSAPP_BRIDGE.md
+
+[Service]
+Type=simple
+Environment="PATH=/path/to/service-path"
+ExecStart=/usr/bin/python3 /path/to/paynani/scripts/whatsapp_service.py
+WorkingDirectory=/path/to/paynani
+UMask=0077
+
+# The service restarts the bridge itself (5 s, 10 s, 30 s, then every 60 s);
+# this only matters if the Python process dies outright.
+Restart=always
+RestartSec=10
+
+# stdout: state changes and notices, never a message text, a QR or a link code.
+StandardOutput=append:/path/to/state/whatsapp.log
+StandardError=append:/path/to/state/whatsapp.err.log
+SyslogIdentifier=paynani-whatsapp
+
+[Install]
+WantedBy=default.target
