@@ -227,6 +227,54 @@ def get_sms_thread(call: Call) -> dict:
             "items": mine[start:end]}
 
 
+# ---- WhatsApp (WA-6 #558, PRD #550 FR-26) -------------------------------------------
+# Sólo lectura, con el permiso `read`. Las dos acciones le preguntan al servicio
+# paynani-whatsapp por control.sock, como PaynaniWeb, con `by: api`. El servicio aplica
+# FR-16a: de un número fuera del roster sólo salen la hora y la dirección (`hidden`),
+# salvo un mensaje que llegó con el Catch-All mientras siga activo. La API no tiene su
+# propia copia de los hilos y no puede saltarse esa regla.
+WA_LIMIT_MAX = 100
+_WA_BEFORE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$")
+
+
+def _wa_page(call: Call) -> dict:
+    limit = call.number("limit", PAGE)
+    if not 1 <= limit <= WA_LIMIT_MAX:
+        raise ApiError(400, "invalid_parameter", f"limit must be from 1 to {WA_LIMIT_MAX}.", field="limit")
+    before = call.text("before", limit=40).strip() or None
+    if before is not None and not _WA_BEFORE.match(before):
+        raise ApiError(400, "invalid_parameter", "before must be the next_before you got.", field="before")
+    return {"limit": limit, "before": before}
+
+
+def _whatsapp(call: Call, kind: str, **fields) -> dict:
+    from . import whatsapp_source
+    if not call.ctx.whatsapp_configured():
+        raise ApiError(503, "whatsapp_unavailable", "WhatsApp is not set up on this install.")
+    try:
+        return call.ctx.whatsapp().request(kind, by="api", **fields)
+    except whatsapp_source.Failed as exc:
+        if exc.code == "not_found":
+            raise ApiError(404, "not_found", "No WhatsApp messages with that number.", field="number") from None
+        if exc.code == "invalid":
+            field = str(exc.fields.get("field") or "number")
+            raise ApiError(400, "invalid_parameter", f"{field} is not valid.", field=field) from None
+        raise ApiError(503, "whatsapp_unavailable",
+                       "The WhatsApp service is not answering; try again in a minute.") from None
+
+
+def list_whatsapp_conversations(call: Call) -> dict:
+    data = _whatsapp(call, "whatsapp.threads", **_wa_page(call))
+    return {"threads": data.get("threads") or [], "next_before": data.get("next_before")}
+
+
+def get_whatsapp_thread(call: Call) -> dict:
+    import phone as phone_mod
+    raw = call.required("number", 40)
+    number = phone_mod.to_e164(raw, phone_mod.default_region()) or raw
+    return _whatsapp(call, "whatsapp.thread", number=number, **_wa_page(call))
+
+
 # ---- roster y reglas ---------------------------------------------------------------
 
 def list_roster(call: Call) -> dict:
@@ -599,6 +647,8 @@ ACTIONS = {
     "GetMailThread": (READ, get_mail_thread),
     "ListSmsConversations": (READ, list_sms_conversations),
     "GetSmsThread": (READ, get_sms_thread),
+    "ListWhatsAppConversations": (READ, list_whatsapp_conversations),
+    "GetWhatsAppThread": (READ, get_whatsapp_thread),
     "ListRoster": (READ, list_roster),
     "SaveRosterContact": (ROSTER_WRITE, save_roster_contact),
     "DeleteRosterContact": (ROSTER_WRITE, delete_roster_contact),

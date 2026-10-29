@@ -49,7 +49,7 @@ The owner chose the token's permissions when creating it:
 
 | Permission | Allows |
 |---|---|
-| `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListRoster`, `GetRules`, `GetDefaultRules`, `GetCatchAll` |
+| `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListWhatsAppConversations`, `GetWhatsAppThread`, `ListRoster`, `GetRules`, `GetDefaultRules`, `GetCatchAll` |
 | `roster.write` | `SaveRosterContact`, `DeleteRosterContact`, `SaveRules`, `SaveDefaultRules` |
 | `accounts.write` | `AddAccount`, `RemoveAccount` |
 | `catchall.write` | `SaveCatchAll` |
@@ -85,6 +85,18 @@ profile and password are not in the API.
 | `SendSms` | `to`, `text`, `idempotency_key` | Sends an SMS (see below) |
 | `GetSmsStatus` | `order_id` (`a_…`) | The order and its history, only for the token that created it |
 | `ListSmsReplies` | `since` (ISO 8601 with a time zone, at most 7 days ago) | `replies` to this token's messages (see below) |
+
+### WhatsApp (read only)
+
+| Action | Parameters | Returns |
+|---|---|---|
+| `ListWhatsAppConversations` | `limit` (1 to 100, 50 by default), `before` | `threads`, newest first: `number`, `name` (from the roster), `in_roster`, `last_at`, `last_dir`, `last_excerpt`, `last_kind`, `can_reply`, and `hidden: true` for a number outside the roster; `next_before` for the next page, `null` when there is no more |
+| `GetWhatsAppThread` | `number` (E.164), `limit`, `before` | `number`, `name`, `in_roster`, `can_reply` and `messages`, newest first, each with `dir`, `at`, `kind`, `text`, `media` (type and size, never the file) and, for what was sent, `by` (`agent`, `owner` or `api`) and `status` |
+
+Only when the owner turned WhatsApp on; otherwise `whatsapp_unavailable`. From a
+number outside the roster you get only the time and direction of each message, with
+`hidden: true` and no text or media, unless it arrived with the Catch-All on and the
+Catch-All is still on. The API cannot send WhatsApp messages.
 
 ### Roster and rules
 
@@ -241,4 +253,5 @@ ask a person who opted out to opt back in.
 | `idempotency_conflict` | 409 | That `idempotency_key` was used with another number or text; `order_id` |
 | `opted_out`, `human_replied`, `no_phone`, `app_outdated` | 403, 409 | See «When the API cannot write to a number» |
 | `busy` | 503 | The roster is being written; retry in a few seconds |
+| `whatsapp_unavailable` | 503 | WhatsApp is not set up on this install, or its service is not answering; retry later |
 | `internal_error` | 500 | Something failed in paynani. Report the `request_id` to the owner |
