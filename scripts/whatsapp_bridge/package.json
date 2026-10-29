@@ -1,0 +1,13 @@
+{
+  "name": "paynani-whatsapp-bridge",
+  "private": true,
+  "description": "Puente de Baileys para paynani-whatsapp (WHATSAPP_BRIDGE.md). Versiones exactas: FR-3.",
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc14"
+  }
+}

@@ -52,7 +52,7 @@ primero `start`:
 {"type": "start", "id": "c_…", "protocol": 1,
  "auth_dir": "/home/agente/paynani/state/whatsapp/auth",
  "media_dir": "/home/agente/paynani/state/whatsapp/media",
- "read_receipts": false,
+ "read_receipts": false, "max_media_mb": 25,
  "allowed": ["+1XXXXXXXXXX"]}
 ```
 
@@ -62,6 +62,7 @@ primero `start`:
 - `media_dir` es donde el puente guarda lo que descarga (sección 4), con 0600.
 - `read_receipts` sale de `WHATSAPP_READ_RECEIPTS` en `whatsapp.env`; por omisión
   `false` (FR-4).
+- `max_media_mb` sale de `WHATSAPP_MAX_MEDIA_MB`; por omisión 25 (sección 4).
 - `allowed` es la lista de números a los que el puente puede mandar (sección 5).
 
 Antes de `start`, el puente sólo contesta `error` `not_started` a cualquier otra orden.
@@ -100,7 +101,7 @@ El puente lo manda al arrancar y cada vez que cambia:
 | `linking` | Hay una vinculación en curso (QR o código) |
 | `connecting` | Hay llaves y el puente se está conectando |
 | `connected` | Conectado; llegan y salen mensajes |
-| `disconnected` | Se perdió la conexión; Baileys reintenta |
+| `disconnected` | Se perdió la conexión; el puente reintenta a los 2, 5, 10 y 30 s, y luego cada 60 s |
 | `logged_out` | WhatsApp cerró la sesión (el dueño la quitó del teléfono, o la cuenta se bloqueó). Las llaves ya no sirven |
 
 - `me` es el número de la cuenta vinculada en E.164, o `null` sin vincular.
@@ -173,6 +174,8 @@ responde `result` igual: no es un error.
 - **Sólo mensajes directos.** El puente descarta antes de mandarlos y sin guardar nada
   los de grupos (`@g.us`), estados (`status@broadcast`), listas de difusión
   (`@broadcast`) y canales (`@newsletter`) (FR-17), y los suyos propios (`fromMe`).
+  Tampoco manda reacciones, ediciones ni mensajes de protocolo: no son algo que el
+  contacto escribió.
 - **`chat`** es el JID canónico del chat, el mismo para todos los mensajes de ese
   contacto. El servicio arma el id del evento con la cuenta, `chat` y `key_id`:
   `wa:<cuenta>:<hex(sha256(cuenta + "\n" + chat + "\n" + key_id))>` (FR-11). Si
