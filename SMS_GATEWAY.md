@@ -569,9 +569,9 @@ Los mensajes del Roster y las reglas tienen sus propios códigos (sección 11), 
 de WhatsApp también (sección 12).
 
 **Códigos de cierre propios:** `4400` protocolo, `4401` token revocado o inválido,
-`4409` otra conexión del mismo teléfono la reemplazó, `4205` cambió lo que anuncia el
-`welcome` (sección 12): la app reconecta en seguida, sin espera. `1001` se usa cuando la
-pasarela se apaga.
+`4409` otra conexión del mismo teléfono la reemplazó. `1001` se usa cuando la
+pasarela se apaga, y `1012` cuando cambió lo que anuncia el `welcome` (sección 12): la
+app reconecta en seguida, sin espera.
 
 ## 6. Lo que entra a `events.jsonl`
 
@@ -1242,9 +1242,15 @@ responden `error` `unavailable`.
   vacía.
 - **Si cambia la configuración con la app conectada** (se activa o se desactiva
   WhatsApp, o cambia el teléfono emparejado), cambian `accepts` y `grants`, y esos sólo
-  llegan en el `welcome`. Por eso la pasarela cierra la conexión con el código `4205`
-  («reconecta»). La app reconecta en seguida, sin la espera creciente, y recibe un
-  `welcome` nuevo. `whatsapp.changed` no cubre este caso.
+  llegan en el `welcome`. Por eso la pasarela cierra la conexión con el código `1012`
+  (*Service Restart*). La app reconecta en seguida, sin la espera creciente, y recibe
+  un `welcome` nuevo. `whatsapp.changed` no cubre este caso: una app sin
+  `whatsapp.status` en `accepts` no puede pedirlo ni recibe ese aviso.
+  - **Al activar WhatsApp**, el `welcome` nuevo trae los tipos `whatsapp.*` y, para el
+    teléfono emparejado, `whatsapp.admin`; la app agrega la sección y la opción del
+    menú.
+  - **Al desactivarlo**, el `welcome` nuevo ya no los trae; la app quita la sección y
+    la opción, y borra de memoria los hilos que tenía.
 
 ### `whatsapp.status`: el estado
 
@@ -1281,8 +1287,9 @@ Requiere `whatsapp.admin`.
   "code": "ABCD-EFGH", "expires_at": "2026-10-28T19:03:00Z", "expires_in_s": 180}}
 ```
 
-- `expires_in_s` son los segundos que le quedan al código cuando la pasarela manda la
-  respuesta. La app cuenta hacia atrás desde que la recibe, sin depender de que su
+- `expires_in_s` es un entero, en segundos, de 0 a 180: lo que le queda al código
+  cuando la pasarela manda la respuesta (en `linking`, lo que le queda a la
+  vinculación en curso). La app cuenta hacia atrás desde que la recibe, sin depender de que su
   reloj coincida con el del host. `expires_at` queda para el log y la web.
 
 - Siempre es por código, nunca QR: el teléfono no puede escanear su propia pantalla
