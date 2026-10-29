@@ -149,6 +149,23 @@ export function makeLogger(write) {
   return logger;
 }
 
+// libsignal, debajo de Baileys, escribe con console.* y a veces le pasa la sesión
+// cifrada entera, con sus llaves: console.info("Closing session:", session),
+// console.warn("Session already closed", session). console.log e info salen por
+// stdout, que es el canal del protocolo; warn y error, por stderr, que termina en
+// state/whatsapp.log. Así que log, info y debug no escriben nada, y de warn y error
+// sólo queda el primer argumento si es texto, recortado. Un objeto nunca sale (FR-10).
+export function quietConsole(target, write) {
+  const noop = () => {};
+  for (const k of ['log', 'info', 'debug', 'trace', 'dir', 'dirxml', 'table']) target[k] = noop;
+  const keep = (first, ...rest) => {
+    if (typeof first !== 'string') return;
+    write(`consola: ${first.slice(0, 200)}${rest.length ? ' (sin los datos)' : ''}`);
+  };
+  target.warn = keep;
+  target.error = keep;
+}
+
 // Estado de un envío (WAMessageStatus) -> receipt.status
 export function receiptStatus(ack) {
   if (ack === 2) return 'server';

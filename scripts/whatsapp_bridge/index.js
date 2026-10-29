@@ -12,7 +12,7 @@ import {
   PROTOCOL, ID_RE, E164_RE, MAX_TEXT, MAX_FILE_BYTES, CODE_TTL_MS,
   parseLine, refOf, isDirectChat, isLidJid, isPnJid, normalizeJid, pnJidToE164,
   e164ToJid, extForMime, classify, unwrap, makeLogger, receiptStatus, callOutcome,
-  sendContent,
+  sendContent, quietConsole,
 } from './lib.js';
 
 process.umask(0o077);
@@ -23,6 +23,7 @@ const BRIDGE_VERSION = (() => {
 })();
 const log = (line) => process.stderr.write(`${String(line).slice(0, 1000)}\n`);
 const out = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);
+quietConsole(console, log); // antes de cargar Baileys: libsignal escribe con console.*
 const result = (ref, data = {}) => out({ type: 'result', ref, ok: true, data });
 const fail = (ref, code, detail, extra = {}) => out({ type: 'error', ref, code, ...(detail ? { detail } : {}), ...extra });
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');

@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseLine, isDirectChat, normalizeJid, pnJidToE164, e164ToJid, cleanFilename,
-  extForMime, classify, receiptStatus, callOutcome, sendContent, makeLogger,
+  extForMime, classify, receiptStatus, callOutcome, sendContent, makeLogger, quietConsole,
 } from '../lib.js';
 
 test('parseLine: JSON, no JSON, sin type, demasiado largo', () => {
@@ -86,4 +86,25 @@ test('makeLogger: sólo errores y sólo el texto, nunca el objeto', () => {
   l.child({}).warn('aviso');
   l.error({ message: { conversation: 'texto privado' } }, 'falló algo');
   assert.deepEqual(lines, ['baileys: falló algo']);
+});
+
+test('quietConsole: las llaves de libsignal no salen ni por stdout ni al log', () => {
+  const lines = [];
+  const fake = { log() { throw new Error('stdout'); }, info() { throw new Error('stdout'); },
+    warn() { throw new Error('stderr'); }, error() { throw new Error('stderr'); } };
+  quietConsole(fake, (x) => lines.push(x));
+  const session = { currentRatchet: { rootKey: Buffer.from('raiz-secreta'), ephemeralKeyPair: { privKey: 'llave-privada' } } };
+  fake.info('Closing session:', session);
+  fake.log('Opening session:', session);
+  fake.debug(session);
+  fake.dir(session);
+  fake.warn('Session already closed', session);
+  fake.error(session);
+  fake.warn('Decrypted message with closed session.');
+  fake.warn('x'.repeat(500));
+  assert.deepEqual(lines.slice(0, 2), ['consola: Session already closed (sin los datos)',
+    'consola: Decrypted message with closed session.']);
+  assert.equal(lines[2].length, 'consola: '.length + 200);
+  assert.equal(lines.length, 3);
+  assert.ok(!lines.join('\n').match(/secreta|privada|privKey|rootKey/));
 });
