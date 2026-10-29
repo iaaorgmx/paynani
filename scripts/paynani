@@ -222,6 +222,25 @@ def main(argv: list[str] | None = None) -> int:
     sms_check.add_argument("--wait", type=int, default=60, help="Seconds to wait for the phone to send the test text (default 60).")
     sms_check.add_argument("--wait-reply", type=int, default=0, help="Seconds to wait for a reply from --to (default 0: do not wait).")
 
+    wa_parser = subparsers.add_parser("whatsapp", help="WhatsApp: link, status, send and threads (WHATSAPP_BRIDGE.md).")
+    wa_sub = wa_parser.add_subparsers(dest="wa_command", required=True)
+    wa_status = wa_sub.add_parser("status", help="Show the WhatsApp state, the linked number and any linking in progress.")
+    wa_status.add_argument("--json", action="store_true", help="Print the service's answer as JSON.")
+    wa_link = wa_sub.add_parser("link", help="Link WhatsApp: a QR in the terminal, or a code with --code --number.")
+    wa_link.add_argument("--code", action="store_true", help="Link with a code typed on the phone instead of a QR.")
+    wa_link.add_argument("--number", help="With --code: the phone's own number, E.164.")
+    wa_unlink = wa_sub.add_parser("unlink", help="Unlink WhatsApp and delete the keys in state/whatsapp/auth/.")
+    wa_unlink.add_argument("--yes", action="store_true", help="Do not ask for confirmation.")
+    wa_send = wa_sub.add_parser("send", help="Reply on WhatsApp to a roster contact who wrote first (exit 2 if not allowed).")
+    wa_send.add_argument("number", help="Recipient number; it must be in roster.md and have written since linking.")
+    wa_send.add_argument("text", nargs="*", help="Message text (max 4000 characters).")
+    wa_send.add_argument("--file", help="A file inside state/whatsapp/outbox/ or WHATSAPP_ATTACH_DIRS.")
+    wa_send.add_argument("--by", choices=("agent", "terminal"), default="agent", help="Who sends, as shown in the thread (default agent).")
+    wa_thread = wa_sub.add_parser("thread", help="Show the WhatsApp conversation with a number.")
+    wa_thread.add_argument("number")
+    wa_thread.add_argument("--limit", type=int, default=50, help="Messages to show (1 to 100, default 50).")
+    wa_thread.add_argument("--json", action="store_true", help="Print the service's answer as JSON.")
+
     account_parser = subparsers.add_parser(
         "account", help="Additional mail accounts in accounts.json (#276)."
     )
@@ -368,6 +387,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.sms_command == "check":
             from paynani_lib.sms import check as sms_check_mod
             return sms_check_mod.run(args)
+    if args.command == "whatsapp":
+        from paynani_lib.whatsapp import cli as wa_cli
+        return {"status": wa_cli.run_status, "link": wa_cli.run_link, "unlink": wa_cli.run_unlink,
+                "send": wa_cli.run_send, "thread": wa_cli.run_thread}[args.wa_command](args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)
