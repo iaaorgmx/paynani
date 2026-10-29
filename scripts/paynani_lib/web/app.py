@@ -402,8 +402,9 @@ class Context:
 
     def wa_link_set(self, sid: str, link_id: str, mode: str) -> None:
         with self._wa_lock:
-            # Una sola vinculación en curso (FR-6a): la nueva reemplaza a cualquier otra.
-            self._wa_links.clear()
+            # Una sola vinculación en curso (FR-6a) la cuida el servicio, no este mapa. El
+            # link_id de otra sesión se queda: con él esa sesión consulta y dice que la
+            # reemplazaron (`ended` `replaced`, §11), y se olvida al consultarlo.
             self._wa_links[sid] = {"link_id": link_id, "mode": mode}
 
     def wa_link_drop(self, sid: str, reason: str = "") -> None:

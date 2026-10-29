@@ -327,6 +327,30 @@ check("§11: con la página cerrada 60 s, el servicio cancela el QR", "ended", j
 status, _, page = req("GET", "/whatsapp?lang=es-MX", cookie=cookie)
 check("y la página lo dice", True, th("web.wa.ended.canceled") in page)
 
+# ---- Dos sesiones: la segunda vinculación reemplaza a la primera, y la primera lo dice ------
+IP[0] = "198.51.100.20"
+cookie_a = login()
+csrf_a = csrf_of(req("GET", "/whatsapp", cookie=cookie_a)[2])
+IP[0] = "198.51.100.21"
+cookie_b = login()
+csrf_b = csrf_of(req("GET", "/whatsapp", cookie=cookie_b)[2])
+req("POST", "/whatsapp/link", form={"csrf": csrf_a, "mode": "qr", "password": PASSWORD}, cookie=cookie_a)
+qr_a = demo.link["qr"]
+req("POST", "/whatsapp/link", form={"csrf": csrf_b, "mode": "qr", "password": PASSWORD}, cookie=cookie_b)
+qr_b = demo.link["qr"]
+status, _, body = req("GET", "/whatsapp/link/current", cookie=cookie_a)
+check("A: su vinculación terminó porque B empezó otra", "ended", json.loads(body)["state"])
+status, _, page = req("GET", "/whatsapp?lang=es-MX", cookie=cookie_a)
+check("A: /whatsapp dice «reemplazada», sin el QR de B", (1, False, False),
+      (page.count(th("web.wa.ended.replaced")), "wa-qr-imagen" in page, qr_b in page))
+status, _, page = req("GET", "/whatsapp?lang=es-MX", cookie=cookie_a)
+check("A: el aviso sale una sola vez", 0, page.count(th("web.wa.ended.replaced")))
+status, _, page = req("GET", "/whatsapp?lang=es-MX", cookie=cookie_b)
+check("B: sigue viendo sólo su propio QR", (True, qr.encode(qr_b), False),
+      ("wa-qr-imagen" in page, svg_matrix(page), qr_a in page))
+req("POST", "/whatsapp/link/cancel", form={"csrf": csrf_b, "password": PASSWORD}, cookie=cookie_b)
+IP[0] = "203.0.113.5"
+
 # ---- FR-4: el bloqueo de intentos de la entrada vale aquí --------------------------------------
 IP[0] = "198.51.100.77"
 cookie3 = login()
