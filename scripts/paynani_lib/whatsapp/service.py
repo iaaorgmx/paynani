@@ -11,6 +11,7 @@ en el `result` de `whatsapp.link`; el QR sólo con su `link_id`.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import os
@@ -651,6 +652,28 @@ class WhatsAppService:
                 "messages": [self._public(m, self._visible(m, in_roster, catch_active)) for m in page],
                 "next_before": page[-1].get("at") if len(msgs) > limit else None}
 
+    def image(self, message_id: str) -> dict:
+        """
+        #573: la foto de un mensaje recibido, para PaynaniWeb. Sólo si su texto también
+        se mostraría (FR-16a), recalculado en cada pedido: apagar el Catch-All o sacar al
+        contacto del roster la deja de servir, también a una URL ya abierta. Un id que no
+        existe, que no es una foto, que no se puede mostrar o cuyo archivo falta da el
+        mismo not_found.
+        """
+        mid = str(message_id or "")
+        data = self.store.inbox(mid.rsplit(":", 1)[-1]) if mid.startswith("wa:") else None
+        if not data or data.get("event_id") != mid or data.get("kind") != "image":
+            raise Refused("not_found")
+        party = data.get("from_e164") or data.get("lid") or "?"
+        view = {"dir": "in", "catch_all": bool(data.get("catch_all"))}
+        if not self._visible(view, party in self._phones(), self._catch_all_active()):
+            raise Refused("not_found")
+        try:
+            body, mime = self.store.read_image(data)
+        except LookupError:
+            raise Refused("not_found") from None
+        return {"mime": mime, "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
+
     # --- el socket (§11) -------------------------------------------------------------------
     def _notify(self, what: str) -> None:
         line = (json.dumps({"type": "whatsapp.changed", "what": what}) + "\n").encode()
@@ -711,6 +734,8 @@ class WhatsAppService:
                 data = self.thread(str(msg.get("number") or ""), msg.get("limit", 50), msg.get("before"))
             elif kind == "whatsapp.send":
                 data = await self.send(str(msg.get("number") or ""), msg.get("text") or "", by, msg.get("file"))
+            elif kind == "whatsapp.image":
+                data = self.image(str(msg.get("message_id") or ""))
             elif kind == "whatsapp.watch":
                 if writer is not None:
                     self.watchers.add(writer)

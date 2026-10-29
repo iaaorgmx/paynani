@@ -184,10 +184,11 @@ try:
         c = up.classify(path)
         check(f"{path} -> restart the gateway and PaynaniWeb (both import it)",
               (c["verb"], c["unit"]) == ("restart", "gateway-web"), str(c))
-    c = up.classify("scripts/paynani_lib/whatsapp/config.py")
-    check("whatsapp/config.py -> restart the WhatsApp service, the gateway and PaynaniWeb",
-          (c["verb"], c["unit"]) == ("restart", "whatsapp-all")
-          and up._units_of(c) == [up.WHATSAPP, up.SMS_GATEWAY, up.WEB], str(c))
+    for path in ("scripts/paynani_lib/whatsapp/config.py", "scripts/paynani_lib/whatsapp/media.py"):
+        c = up.classify(path)
+        check(f"{path} -> restart the WhatsApp service, the gateway and PaynaniWeb",
+              (c["verb"], c["unit"]) == ("restart", "whatsapp-all")
+              and up._units_of(c) == [up.WHATSAPP, up.SMS_GATEWAY, up.WEB], str(c))
     for path in ("scripts/node_runtime.py", "scripts/node_release.json"):
         check(f"{path} -> the installer again (the pinned Node of WhatsApp)",
               up.classify(path)["verb"] == "reinstall-and-restart")

@@ -16,6 +16,7 @@ pone el túnel.
 """
 from __future__ import annotations
 
+import base64
 import html
 import json
 import re
@@ -30,6 +31,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from .. import guard, i18n
 from ..brand import brand_svg
+from ..whatsapp import media as wa_media
 from . import catchall_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (accounts_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source)
@@ -66,6 +68,8 @@ CATCHALL_BODY_BYTES = 6 * 32 * 1024 + 16 * 1024
 CSP = guard.CSP + "; connect-src 'self'"
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 SERVER_NAME = "paynani-web"
+# El id de un mensaje de WhatsApp recibido (`wa:<cuenta>:<hash>`), para /whatsapp/media (#573).
+WA_MESSAGE_ID = re.compile(r"^wa:[0-9A-Za-z_.+-]{1,40}:[0-9a-f]{64}$")
 
 
 def e(value) -> str:
@@ -719,7 +723,8 @@ def make_handler(ctx: Context):
             if self.route == "/messages/estados":
                 self._sms_statuses()
                 return
-            if self.route in ("/whatsapp", "/whatsapp/link/current", "/whatsapp/messages", "/whatsapp/messages/ver"):
+            if self.route in ("/whatsapp", "/whatsapp/link/current", "/whatsapp/messages", "/whatsapp/messages/ver",
+                              "/whatsapp/media"):
                 self._whatsapp_get()
                 return
             if self.route in ("/roster", "/roster/editar", "/roster/quitar", "/roster/reglas"):
@@ -1139,6 +1144,9 @@ def make_handler(ctx: Context):
             if self.route == "/whatsapp/link/current":
                 self._whatsapp_current()
                 return
+            if self.route == "/whatsapp/media":
+                self._whatsapp_image()
+                return
             if self.route == "/whatsapp":
                 done = self.query.get("ok", [""])[0]
                 notice = i18n.t("web.wa.ok_" + done) if done in ("unlinked", "unlinked_local", "canceled") else ""
@@ -1160,6 +1168,37 @@ def make_handler(ctx: Context):
             self._wa_page(status_code, whatsapp_pages.account_body(status, self.session["csrf"], current=current,
                                                                   code=code_info, notice=notice, error=error,
                                                                   number=number))
+
+        def _whatsapp_image(self):
+            """
+            GET /whatsapp/media?id=<id del mensaje> (#573): la foto de un mensaje de WhatsApp.
+            La pide al servicio, que decide con FR-16a en cada pedido y abre el archivo. Un
+            id inventado, uno de fuera del roster, uno que no es foto o uno sin archivo dan
+            el mismo 404. El tipo sale de los primeros bytes, otra vez aquí.
+            """
+            mid = self.query.get("id", [""])[0]
+            not_found = (404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+            if not WA_MESSAGE_ID.match(mid):
+                self._send(*not_found)
+                return
+            try:
+                data = self.CTX.whatsapp().request("whatsapp.image", message_id=mid)
+            except whatsapp_source.Failed as exc:
+                if exc.code in ("service_down", "unavailable"):
+                    self._send(503, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                else:
+                    self._send(*not_found)
+                return
+            try:
+                body = base64.b64decode(str(data.get("data") or ""), validate=True)
+            except (ValueError, TypeError):
+                body = b""
+            mime = wa_media.image_mime(body[:16])
+            if not body or len(body) > wa_media.IMAGE_MAX_BYTES or mime is None:
+                self._send(*not_found)
+                return
+            self._send(200, mime, body, [("Content-Disposition", "inline"),
+                                         ("Content-Security-Policy", "default-src 'none'; sandbox")])
 
         def _whatsapp_current(self):
             """GET /whatsapp/link/current (§11): el QR vigente de la vinculación de esta

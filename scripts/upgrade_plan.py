@@ -123,7 +123,7 @@ RULES = (
     (r"^scripts/whatsapp_bridge/fake_bridge\.py$", "none", "tests (the fake bridge)", None, None, None, None),
     (r"^scripts/whatsapp_bridge/package(-lock)?\.json$", "reinstall-and-restart", "WhatsApp bridge dependencies", *WHATSAPP, None, WHATSAPP_NPM),
     # `configured()` is read by the WhatsApp service, the SMS gateway (§12) and PaynaniWeb.
-    (r"^scripts/paynani_lib/whatsapp/config\.py$", "restart", "WhatsApp service, SMS gateway and PaynaniWeb", "whatsapp-all", "whatsapp-all", None, None),
+    (r"^scripts/paynani_lib/whatsapp/(config|media)\.py$", "restart", "WhatsApp service, SMS gateway and PaynaniWeb", "whatsapp-all", "whatsapp-all", None, None),
     (r"^scripts/(whatsapp_service\.py|paynani_lib/whatsapp/.*\.py|whatsapp_bridge/.*\.js)$", "restart", "WhatsApp service and bridge", *WHATSAPP, None, None),
     # Both read sms.env at start: the gateway for its own port and PaynaniWeb's,
     # PaynaniWeb for its port.
