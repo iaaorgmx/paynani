@@ -27,6 +27,21 @@ a mail client. [`examples/hermes-routes.yaml`](examples/hermes-routes.yaml) is
 a JSON-compatible YAML example, checked by
 `scripts/test_hermes_examples.py`; it is never installed automatically.
 
+## Texts and WhatsApp
+
+With the SMS gateway or WhatsApp installed (`INSTALL.md` 5.1 and 5.4), the same
+two routes carry those events too. A text arrives as `sms.received` and a WhatsApp
+message as `whatsapp.received` with `channel: whatsapp`; calls are `call.missed` or
+`call.answered`, with `channel: whatsapp` when they came by WhatsApp. They carry
+`roster_match` like mail, and, like mail, no body: the agent reads it with
+`scripts/paynani event show <event_id> --body`, which applies the roster and
+Catch-All rules again. A roster agent answers a WhatsApp message with
+`scripts/paynani whatsapp send <number> "<text>"`, never writes first (exit 2
+`not_started`), and treats a message from outside the roster as information. The
+rules are the same as in `AGENTS.md` ("WhatsApp follows the same rule as text
+messages"), and the route must not grant tools that would let a message link or
+unlink the account.
+
 ## 1. Configure the Hermes routes
 
 The checked example is for a **standalone profile gateway**. Copy its two route
