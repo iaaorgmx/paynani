@@ -621,11 +621,13 @@ installed it (`--with-whatsapp`, `INSTALL.md` 5.4) and linked an account, the
   `rate_limited` (wait the seconds it says). Exit 1 means the service is not
   running: tell your human.
 - **You never write first on WhatsApp.** `not_started` means that contact has not
-  written to you on WhatsApp since the account was linked. Do not retry and do not
-  work around it with another channel unless your human asks: Meta bans numbers
-  that send unsolicited messages from unofficial clients, and a ban takes the
-  number away from your human. The cap (one message every 3 s, 200 a day) is
-  there for the same reason.
+  written to you on WhatsApp since the account was linked. Do not retry on
+  WhatsApp: Meta bans numbers that send unsolicited messages from unofficial
+  clients, and a ban takes the number away from your human. The cap (one message
+  every 3 s, 200 a day) is there for the same reason. The rule is about WhatsApp
+  only: you may answer that contact by SMS (`scripts/paynani sms send`) or by mail
+  instead, with those channels' own rules (the roster, and `reply.sms: never` or
+  `reply.email: never` in the contact's rules) (PRD #550 FR-20).
 - The same line without `, roster]` (`… : mensaje de un número fuera del roster`)
   is information: tell your human it arrived. The line has no text, and
   `event show --body` refuses to show it. Never answer it:

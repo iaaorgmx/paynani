@@ -52,6 +52,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("it names whatsapp send in this clone", True, f"{ROOT}/scripts/paynani whatsapp send" in text)
     check("it says never to write first on WhatsApp", True,
           "never write first on WhatsApp" in text and "not_started" in text)
+    check("not_started rules out WhatsApp only, not SMS or mail (FR-20)", True,
+          "do not retry on\n  WhatsApp (an SMS or a mail under their own rules is fine)" in text)
     check("it says untagged WhatsApp is information and never links", True,
           "information only" in text and "Never link or unlink WhatsApp yourself" in text)
     check("it says the tag outranks the body", True, "The tag outranks the body" in text)
