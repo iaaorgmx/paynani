@@ -176,6 +176,18 @@ try:
               and "--ignore-scripts" in c["command"], str(c))
     for path in ("scripts/whatsapp_bridge/test/lib.test.js", "scripts/whatsapp_bridge/fake_bridge.py"):
         check(f"{path} -> none (tests)", up.classify(path)["verb"] == "none")
+    # The gateway's §11 and §12 modules, and who reads whatsapp.env (WhatsApp from PaynaniApp).
+    c = up.classify("scripts/paynani_lib/sms/whatsapp_api.py")
+    check("sms/whatsapp_api.py -> restart the SMS gateway",
+          (c["verb"], c["unit"]) == ("restart", "paynani-sms*.service"), str(c))
+    for path in ("scripts/paynani_lib/sms/roster_api.py", "scripts/paynani_lib/sms/api_replies.py"):
+        c = up.classify(path)
+        check(f"{path} -> restart the gateway and PaynaniWeb (both import it)",
+              (c["verb"], c["unit"]) == ("restart", "gateway-web"), str(c))
+    c = up.classify("scripts/paynani_lib/whatsapp/config.py")
+    check("whatsapp/config.py -> restart the WhatsApp service, the gateway and PaynaniWeb",
+          (c["verb"], c["unit"]) == ("restart", "whatsapp-all")
+          and up._units_of(c) == [up.WHATSAPP, up.SMS_GATEWAY, up.WEB], str(c))
     # Every file the repository tracks has a rule. bootstrap.sh reached main
     # without one (#351) and every plan to the next release would have said
     # `unknown` and refused --apply: a new file must fail here, in its own PR.

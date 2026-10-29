@@ -30,6 +30,7 @@ from pathlib import Path
 from . import api_replies
 from . import config as sms_config
 from . import roster_api
+from . import whatsapp_api
 from . import store as store_mod
 from .websocket import ConnectionClosed, WebSocket, accept_key
 
@@ -162,7 +163,8 @@ class Gateway:
                  offline_after_s: int = OFFLINE_AFTER_S, health_every_s: float = HEALTH_EVERY_S,
                  battery_warn_pct: int = 25, battery_critical_pct: int = 10,
                  battery_stale_s: int = BATTERY_STALE_S, roster_service=None,
-                 web_port: int = WEB_PORT, web_host: str = "127.0.0.1", api_tokens_path: Path | None = None):
+                 web_port: int = WEB_PORT, web_host: str = "127.0.0.1", api_tokens_path: Path | None = None,
+                 whatsapp: whatsapp_api.WhatsAppRelay | None = None, whatsapp_check_s: float = 5.0):
         self.store = store_mod.Store(state_dir)
         self.journal = Path(journal)
         self.ledger_path = ledger.path_for(self.journal)
@@ -191,6 +193,10 @@ class Gateway:
         self.clients: set = set()   # todos los writers abiertos, para cerrarlos al apagar
         self.health_task = None
         self.roster_tasks: set = set()   # los pedidos de §11 en curso
+        # WhatsApp desde PaynaniApp (§12). Sin uno dado, WhatsApp no está configurado:
+        # sms_gateway.py pasa el de la instalación, que lee whatsapp.env.
+        self.whatsapp = whatsapp or whatsapp_api.WhatsAppRelay(state_dir, log=log, configured=lambda: False)
+        self.whatsapp_check_s = whatsapp_check_s
         # 0 apaga el reenvío: fuera de /sms/ se responde 404, como antes de #434.
         self.web_port = web_port
         self.web_host = web_host
@@ -589,15 +595,26 @@ class Gateway:
                 log(f"hello.device_status no se guardó: {exc}")
         log(f"teléfono conectado: {device_id}")
         allowed = sorted(roster_phones(self.roster_path))
+        # §12: los tipos whatsapp.* y `grants` sólo con WhatsApp configurado. Esta conexión
+        # es la del teléfono emparejado (el token es el de device.json), así que lleva
+        # `whatsapp.admin`.
+        ws.wa_configured = self.whatsapp.configured()
+        ws.wa_grants = self.whatsapp.grants(ws.wa_configured)
+        ws.wa_watching = False
         welcome = {"type": "welcome", "protocol": PROTOCOL, "server_time": store_mod.now_utc(),
                    "heartbeat_s": self.heartbeat_s, "allowed": allowed,
-                   "max_out_per_hour": self.max_out_per_hour, "accepts": list(ACCEPTS)}
+                   "max_out_per_hour": self.max_out_per_hour,
+                   "accepts": list(ACCEPTS) + self.whatsapp.accepts(ws.wa_configured),
+                   "grants": list(ws.wa_grants)}
         if SERVER_VERSION:
             welcome["server_version"] = SERVER_VERSION
         await self._send(ws, welcome)
         tasks = [asyncio.create_task(self._pump_outbox(ws)),
                  asyncio.create_task(self._watch_roster(ws, allowed)),
-                 asyncio.create_task(self._watchdog(ws))]
+                 asyncio.create_task(self._watchdog(ws)),
+                 asyncio.create_task(self._watch_whatsapp_config(ws))]
+        if ws.wa_configured:
+            tasks.append(asyncio.create_task(self.whatsapp.watch(device_id, lambda what: self._wa_changed(ws, what))))
         try:
             while True:
                 raw = await ws.recv()
@@ -652,6 +669,49 @@ class Gateway:
             if current != getattr(ws, "allowed_sent", None):
                 ws.allowed_sent = current
                 await self._send(ws, {"type": "allowed", "allowed": current})
+
+    async def _watch_whatsapp_config(self, ws: WebSocket) -> None:
+        """
+        §12: si WhatsApp se activa o se desactiva con la app conectada, cambian `accepts` y
+        `grants`, que sólo van en el `welcome`. Se cierra con 1012 y la app reconecta
+        en seguida. (Un teléfono emparejado nuevo ya cierra esta conexión con 4401.)
+        """
+        while not ws.closed:
+            await asyncio.sleep(self.whatsapp_check_s)
+            if self.whatsapp.configured() != ws.wa_configured:
+                log("cambió la configuración de WhatsApp; se cierra la conexión (1012) para un welcome nuevo")
+                await ws.close(1012, "cambió la configuración de WhatsApp")
+                return
+
+    async def _wa_changed(self, ws: WebSocket, what: str) -> None:
+        """`whatsapp.changed` sólo a una conexión que ya pidió status o threads (§12)."""
+        if ws.closed or not getattr(ws, "wa_watching", False):
+            return
+        try:
+            await self._send(ws, {"type": "whatsapp.changed", "what": what})
+        except (ConnectionClosed, ConnectionError, OSError):
+            pass
+
+    def _link_number(self) -> str | None:
+        """El número de la SIM del teléfono emparejado, para el código de vinculación (FR-6)."""
+        device = self.store.device() or {}
+        for sim in device.get("sims") or []:
+            number = phone.to_e164(str((sim or {}).get("number") or ""), self._region())
+            if number:
+                return number
+        return None
+
+    async def _whatsapp(self, ws: WebSocket, device_id: str, msg: dict) -> None:
+        """Un pedido `whatsapp.*` de la app (§12), pasado al servicio paynani-whatsapp."""
+        if msg.get("type") in ("whatsapp.status", "whatsapp.threads"):
+            ws.wa_watching = True
+        response = await self.whatsapp.handle(msg, device_id, grants=getattr(ws, "wa_grants", []),
+                                              configured=getattr(ws, "wa_configured", False),
+                                              link_number=self._link_number())
+        try:
+            await self._send(ws, response)
+        except (ConnectionClosed, ConnectionError, OSError):
+            pass
 
     def _expire(self, order: dict) -> bool:
         """Marca la orden vencida y la saca de outbox/ si ya pasó su hora. True si venció."""
@@ -723,6 +783,11 @@ class Gateway:
             # Como tarea: un pedido que espera el bloqueo del roster (hasta 10 s) no
             # detiene la lectura de los demás frames, como un sms.in.
             task = asyncio.create_task(self._roster(ws, device_id, msg))
+            self.roster_tasks.add(task)
+            task.add_done_callback(self.roster_tasks.discard)
+        elif kind in whatsapp_api.TYPES:
+            # Como tarea, igual que el roster: el servicio puede tardar (unlink, hasta 20 s).
+            task = asyncio.create_task(self._whatsapp(ws, device_id, msg))
             self.roster_tasks.add(task)
             task.add_done_callback(self.roster_tasks.discard)
         elif kind == "hello":

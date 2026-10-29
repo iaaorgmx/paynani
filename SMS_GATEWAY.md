@@ -1241,9 +1241,8 @@ responden `error` `unavailable`.
   mande (FR-6a). Una pasarela anterior no manda `grants`: la app lo trata como lista
   vacía.
 - **Si cambia la configuración con la app conectada** (se activa o se desactiva
-  WhatsApp, o cambia el teléfono emparejado), cambian `accepts` y `grants`, y esos sólo
-  llegan en el `welcome`. Por eso la pasarela cierra la conexión con el código `1012`
-  (*Service Restart*). La app reconecta en seguida, sin la espera creciente, y recibe
+  WhatsApp), cambian `accepts` y `grants`, y esos sólo llegan en el `welcome`. Por eso
+  la pasarela cierra la conexión con el código `1012` (*Service Restart*). La app reconecta en seguida, sin la espera creciente, y recibe
   un `welcome` nuevo. `whatsapp.changed` no cubre este caso: una app sin
   `whatsapp.status` en `accepts` no puede pedirlo ni recibe ese aviso.
   - **Al activar WhatsApp**, el `welcome` nuevo trae los tipos `whatsapp.*` y, para el
@@ -1251,6 +1250,10 @@ responden `error` `unavailable`.
     menú.
   - **Al desactivarlo**, el `welcome` nuevo ya no los trae; la app quita la sección y
     la opción, y borra de memoria los hilos que tenía.
+  - **Si cambia el teléfono emparejado** no hay `1012`: revocar o emparejar otro
+    teléfono invalida el token del anterior, y su conexión se cierra con `4401`, como
+    dice la sección 5. Reconectar con ese token daría 401. El teléfono nuevo abre su
+    propia conexión y recibe su `welcome`, con `whatsapp.admin`.
 
 ### `whatsapp.status`: el estado
 
@@ -1438,7 +1441,8 @@ Ningún error cierra la conexión.
 
 - Vincular, cancelar y desvincular desde la app quedan en el log de cambios con la
   hora y el `device_id`, sin el código, y le llegan por correo al humano, como los
-  cambios de la sección 11.
+  cambios de la sección 11. El log es `state/whatsapp_changes.jsonl`, junto a
+  `state/roster_changes.jsonl`.
 - Un `whatsapp.send` queda en el hilo como `by: owner`, y el agente lo ve al leer el
   hilo, como un SMS del dueño desde PaynaniWeb.
 - La pasarela no escribe en su log el texto de los mensajes, el código de

@@ -541,6 +541,22 @@ async def scenario_entrypoint(tmp: Path) -> None:
     check("SIGTERM: sale con 0 y borra el socket", (0, False), (rc, sock.exists()))
 
 
+async def scenario_stop_with_watcher(tmp: Path) -> None:
+    """stop() no espera a que la pasarela suelte su whatsapp.watch (#568): sin esto, SIGTERM colgaba."""
+    svc = make(tmp)
+    await started(svc)
+    r, w = await asyncio.open_unix_connection(str(svc.socket_path))
+    w.write((json.dumps({"type": "whatsapp.watch", "id": qid(), "by": "phone:d_abc123"}) + "\n").encode())
+    await w.drain()
+    first = json.loads(await asyncio.wait_for(r.readline(), 5))
+    check("watch: suscrito", True, first.get("data", {}).get("watching"))
+    began = time.monotonic()
+    await asyncio.wait_for(svc.stop(), 30)
+    check("stop() con un watcher conectado termina en menos de 10 s", True, time.monotonic() - began < 10)
+    check("el watcher ve el cierre", b"", await asyncio.wait_for(r.read(), 5))
+    w.close()
+
+
 async def scenario_authors(tmp: Path) -> None:
     """El autor del hilo es agent, owner o api, nunca la etiqueta de quién llama (Ximena en #565)."""
     svc = make(tmp, settings={"WHATSAPP_SEND_INTERVAL_S": "1"})
@@ -580,6 +596,7 @@ async def main_async() -> None:
         await scenario_link_timeout(tmp / "timeout")
         await scenario_entrypoint(tmp / "entry")
         await scenario_authors(tmp / "authors")
+        await scenario_stop_with_watcher(tmp / "stopwatch")
 
 
 if __name__ == "__main__":
