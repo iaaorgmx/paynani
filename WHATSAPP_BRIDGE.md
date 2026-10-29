@@ -408,19 +408,29 @@ servicio: la que usan `paynani whatsapp` (la terminal y el agente), la pasarela 
   **siempre** el servicio, venga de quien venga la petición.
 - Si el servicio no corre, el socket no existe o rechaza la conexión. El cliente lo
   trata como `unavailable`.
-- **WhatsApp configurado** quiere decir que existe `whatsapp.env` junto a
-  `runtime.env` (lo escribe la instalación de WA-3 al activar WhatsApp). La web y la
-  pasarela lo miran para mostrar o anunciar WhatsApp, sin preguntarle al servicio.
-  Configurado y con el servicio caído, `whatsapp.status` (que contesta el propio
-  cliente) dice `service_down`.
+- **WhatsApp configurado** es un solo predicado, `whatsapp_config.configured()` en
+  `scripts/paynani_lib/whatsapp/config.py`, que usan el servicio, la pasarela, la web,
+  `doctor` y el instalador. Es verdadero sólo si `whatsapp.env`, junto a
+  `runtime.env`, es un archivo regular (no un enlace), se puede leer y trae
+  `WHATSAPP_ENABLED=1`. Faltante, ilegible, con otro valor o con una línea que no se
+  entiende: **no configurado**, y nadie anuncia nada de WhatsApp.
+  - Lo escribe sólo la instalación al activar WhatsApp (WA-3, `install.sh
+    --with-whatsapp`). Lo apaga `paynani whatsapp disable`, que lo deja en
+    `WHATSAPP_ENABLED=0`, y la desinstalación, que lo borra.
+  - Configurado y con el servicio caído, el cliente contesta él mismo
+    `whatsapp.status` con `state: "service_down"`. La web sigue mostrando el menú.
 
 ### Cómo se habla
 
 - Un JSON por línea en cada sentido, como con el puente. Una conexión puede llevar
   varias peticiones.
 - Cada petición lleva `type`, `id` (`q_` + 32 hex) y `by`, que dice de dónde viene:
-  `terminal`, `agent`, `web`, `phone:<device_id>` o `api`. El servicio lo usa para
-  el log, para `linking.by` y para marcar quién mandó un mensaje (`by` del hilo).
+  `terminal`, `agent`, `web`, `phone:<device_id>` o `api`.
+- **`by` es sólo una etiqueta.** Todos los clientes entran con el mismo usuario por el
+  mismo socket, así que cualquiera puede escribir cualquier `by`. El servicio lo usa
+  para el log, para `linking.by` y para marcar quién mandó un mensaje en el hilo,
+  nunca para decidir un permiso. Las reglas que protegen algo (FR-16a, FR-19 a
+  FR-22) las aplica el servicio igual para todos.
 - El servicio contesta una vez a cada petición, con `result` o `error` y `ref` igual
   al `id`, con las mismas formas que `SMS_GATEWAY.md` §12.
 
@@ -443,7 +453,7 @@ necesitan:
 | `whatsapp.unlink` | Desvincula | Igual |
 | `whatsapp.threads` | Hilos | Igual |
 | `whatsapp.thread` | Un hilo | Igual |
-| `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta) con `by: agent` o `terminal` (FR-22). Desde `web`, `phone:` o `api` sólo texto |
+| `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta), que el servicio valida siempre contra FR-22, sin importar `by`. La pasarela y la web no aceptan archivos de sus propios clientes, así que nunca mandan `file` |
 | `whatsapp.watch` | Avisos sin pedirlos | Nuevo. Ver abajo |
 
 ### Vincular: `link_id` y `whatsapp.link_current`
@@ -479,10 +489,43 @@ Con ese `link_id`, quien empezó la vinculación pregunta por el QR vigente:
   y la app la cumple al refrescar el estado.
 - La terminal (`paynani whatsapp link`) usa el mismo mecanismo.
 
+**De punta a punta en PaynaniWeb** (WA-5):
+
+1. `POST /whatsapp/link` con la contraseña y el CSRF (FR-6a). La web manda
+   `whatsapp.link` con `mode: "qr"` y guarda el `link_id` **sólo en el servidor**,
+   ligado a la sesión del navegador; nunca va al navegador ni a una URL. Responde la
+   página del QR.
+2. La página pide `GET /whatsapp/link/current` cada 2 a 5 s. Es una lectura con la
+   sesión ya iniciada, sin contraseña ni CSRF. La web manda `whatsapp.link_current`
+   con el `link_id` de esa sesión y devuelve el QR vigente como SVG, `expires_in_s` y
+   el estado, o el final.
+3. `POST /whatsapp/link/cancel` y `POST /whatsapp/unlink` llevan contraseña y CSRF.
+4. **Toda respuesta que pueda traer un QR o un código** lleva `Cache-Control:
+   no-store`, y el SVG se arma en memoria; nunca se escribe en disco.
+5. Si la página se cierra, nadie pregunta y a los 60 s el servicio cancela. Si una
+   pregunta falla (socket caído), la página reintenta con la misma espera; si el
+   servicio contesta `not_found`, la página dice que la vinculación terminó y ofrece
+   empezar otra.
+
+**El QR se dibuja con `scripts/paynani_lib/sms/qr.py`,** no con un codificador nuevo.
+Es el que paynani ya usa desde SRV-4 para el QR de emparejamiento de SMS, que
+PaynaniApp escanea en cada instalación. `scripts/test_qr.py` lee cada matriz de vuelta
+como un lector (bits de formato, máscara, Reed-Solomon y modo byte). WA-2 agrega casos
+del tamaño de un QR de WhatsApp (~250 a 310 bytes, versión 13, nivel M) y, si
+`zbarimg` está instalado, los decodifica también con él. paynani no lleva dependencias
+de Python, así que no se agrega una biblioteca de QR.
+
 ### `whatsapp.watch`
 
 ```json
 {"type": "whatsapp.watch", "id": "q_…", "by": "phone:d_3f9a1c"}
+```
+
+El servicio contesta primero `result` con el estado actual, y desde ahí esa conexión
+recibe los avisos:
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {"watching": true, "status": {"state": "connected", …}}}
 ```
 
 Desde ahí, esa conexión recibe `{"type": "whatsapp.changed", "what": "threads"}` y
