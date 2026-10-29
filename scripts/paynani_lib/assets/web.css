@@ -322,6 +322,10 @@ body.web-shell {
 @media (prefers-color-scheme: dark) { .web-shell .hilo .sms-agent .globo { background: #2a1c1b; border-color: #5e3229; } }
 .web-shell .hilo .de { font-size: .78rem; font-weight: 600; color: var(--quiet); margin-bottom: .2rem; }
 .web-shell .hilo .texto { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* #573: la foto de un mensaje de WhatsApp, reducida; al tocarla se abre completa. */
+.web-shell .hilo .wa-foto { display: block; }
+.web-shell .hilo .wa-foto img { display: block; max-width: min(100%, 260px); max-height: 320px; height: auto; border-radius: 8px; }
+.web-shell .hilo .wa-pie { display: block; margin-top: .35rem; }
 .web-shell .hilo time { display: block; font-size: .72rem; color: var(--quiet); margin-top: .25rem; text-align: right; }
 .web-shell .hilo .llamada { align-self: center; font-size: .85rem; color: var(--quiet); background: var(--bg); border: 1px dashed var(--line); border-radius: 999px; padding: .25rem .8rem; }
 .web-shell .hilo .llamada time { display: inline; margin: 0 0 0 .4rem; }

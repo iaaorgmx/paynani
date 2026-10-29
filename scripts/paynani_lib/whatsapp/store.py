@@ -16,10 +16,15 @@ import json
 import os
 import re
 import secrets
+import stat
 import time
 from pathlib import Path
 
+from .media import IMAGE_MAX_BYTES, image_mime  # #573, compartido con PaynaniWeb
+
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+# Un archivo de media/ como lo guarda el puente: su sha256 y una extensión corta.
+MEDIA_NAME_RE = re.compile(r"^[0-9a-f]{64}\.[a-z0-9]{1,8}$")
 SENT_ID_RE = re.compile(r"^wo_[0-9a-f]{32}$")
 
 
@@ -132,6 +137,40 @@ class Store:
             pass
         data["media"] = dict(data["media"], path=None, sha256=None, skipped="hidden")
         self.save_inbox(message_hash, data)
+
+    def read_image(self, data: dict) -> tuple[bytes, str]:
+        """
+        #573: los bytes de la foto de un mensaje recibido. La ruta guardada no se confía:
+        tiene que ser un archivo con nombre de media/ directamente dentro de media/, se
+        abre sin seguir enlaces simbólicos, tiene que ser un archivo regular de hasta
+        IMAGE_MAX_BYTES, y el tipo sale de sus primeros bytes. Cualquier otra cosa es
+        LookupError, y quien llama responde lo mismo que si no existiera.
+        """
+        raw_path = (data.get("media") or {}).get("path")
+        if not isinstance(raw_path, str) or not raw_path:
+            raise LookupError("sin archivo")
+        media_root = os.path.abspath(self.root / "media")
+        path = os.path.abspath(raw_path)
+        name = os.path.basename(path)
+        if os.path.dirname(path) != media_root or not MEDIA_NAME_RE.match(name):
+            raise LookupError("fuera de media/")
+        try:
+            if stat.S_ISLNK(os.lstat(media_root).st_mode):
+                raise LookupError("media/ es un enlace")
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+        except OSError:
+            raise LookupError("no se abre") from None
+        with os.fdopen(fd, "rb") as fh:
+            info = os.fstat(fh.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > IMAGE_MAX_BYTES:
+                raise LookupError("no es un archivo regular o es grande")
+            body = fh.read(IMAGE_MAX_BYTES + 1)
+        if len(body) > IMAGE_MAX_BYTES:
+            raise LookupError("creció al leerlo")
+        mime = image_mime(body[:16])
+        if mime is None:
+            raise LookupError("no es una imagen")
+        return body, mime
 
     # --- enviados (FR-23) ---------------------------------------------------------
     def new_sent_id(self) -> str:

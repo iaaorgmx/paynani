@@ -455,6 +455,7 @@ necesitan:
 | `whatsapp.thread` | Un hilo | Igual |
 | `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta), que el servicio valida siempre contra FR-22, sin importar `by`. La pasarela y la web no aceptan archivos de sus propios clientes, así que nunca mandan `file` |
 | `whatsapp.watch` | Avisos sin pedirlos | Nuevo. Ver abajo |
+| `whatsapp.image` | La foto de un mensaje recibido, para PaynaniWeb | Nuevo (#573). Ver abajo. La pasarela no lo anuncia ni lo reenvía |
 
 ### Vincular: `link_id` y `whatsapp.link_current`
 
@@ -520,6 +521,33 @@ regresión con una cadena del tamaño máximo observado para un QR de WhatsApp (
 bytes, versión 13, nivel M): la matriz se lee de vuelta y el SVG que sale de `to_svg`
 se rasteriza y se decodifica (con `zbarimg` si está instalado). paynani no lleva dependencias
 de Python, así que no se agrega una biblioteca de QR.
+
+### `whatsapp.image` (#573)
+
+PaynaniWeb lo usa para mostrar en «WhatsApp messages» la foto de un mensaje recibido:
+
+```json
+{"type": "whatsapp.image", "id": "q_…", "by": "web", "message_id": "wa:<cuenta>:<hash>"}
+{"type": "result", "ref": "q_…", "ok": true, "data": {"mime": "image/jpeg", "bytes": 287177, "data": "<base64>"}}
+```
+
+- **Se decide en cada pedido, con FR-16a.** La foto sale sólo si el texto del mensaje
+  también se mostraría: un número del roster, o un mensaje que llegó con el Catch-All
+  activo mientras el Catch-All **siga** activo y válido. Apagarlo, o sacar al contacto
+  del roster, deja de servir la foto también a una URL que ya estaba abierta.
+- **La ruta guardada no se confía.** El servicio abre sólo un archivo con nombre de
+  `media/` (sha256 y extensión) directamente dentro de `state/whatsapp/media/`, sin
+  seguir enlaces simbólicos (`O_NOFOLLOW`). Tiene que ser un archivo regular de hasta
+  10 MB, con el tamaño revisado después de abrirlo, y el tipo sale de sus primeros
+  bytes: JPEG, PNG o WebP. Nunca de la extensión ni del `mime` guardado.
+- **Un solo error.** Un `message_id` que no existe, que no es una foto, que no se puede
+  mostrar o cuyo archivo falta o no pasa las revisiones responde el mismo `not_found`.
+  Quien pregunta no puede saber cuál de esos casos fue.
+- PaynaniWeb la sirve en `GET /whatsapp/media?id=<message_id>`, con la sesión iniciada.
+  Vuelve a revisar el tipo por los primeros bytes y responde con `Cache-Control:
+  no-store`, `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` y una CSP
+  `sandbox`. Cualquier rechazo es el mismo 404; con el servicio caído, 503. La API de
+  PaynaniWeb (WA-6) no da archivos.
 
 ### `whatsapp.watch`
 

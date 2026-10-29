@@ -295,6 +295,8 @@ class Demo(Source):
                 return {"number": t["number"], "name": t["name"] if t["in_roster"] else None,
                         "in_roster": t["in_roster"], "can_reply": t["can_reply"], "messages": chunk,
                         "next_before": nxt}
+            if kind == "whatsapp.image":
+                raise Failed("not_found")  # la demostración no tiene archivos (#573)
             if kind == "whatsapp.send":
                 text = str(fields.get("text", ""))
                 if not text.strip() or len(text) > MAX_TEXT:

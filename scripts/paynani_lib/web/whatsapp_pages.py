@@ -256,6 +256,14 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
             m.get("by"), _th("sent_prefix")) if out_dir else e(who)
         if m.get("hidden") or not in_roster:
             body = f'<span class="quiet">{_th("hidden_short")}</span>'
+        elif m.get("kind") == "image" and m.get("dir") == "in" and _shows_image(m):
+            # #573: la foto la sirve /whatsapp/media, que vuelve a pedirle permiso al
+            # servicio en cada carga; aquí sólo va el id del mensaje, nunca una ruta.
+            src = "/whatsapp/media?id=" + quote(str(m.get("id") or ""), safe="")
+            caption = e(m.get("text") or "")
+            body = (f'<a class="wa-foto" href="{e(src)}" target="_blank" rel="noopener">'
+                    f'<img src="{e(src)}" alt="{kind_label("image")}" loading="lazy"></a>'
+                    + (f'<span class="wa-pie">{caption}</span>' if caption else ""))
         elif m.get("kind") and m.get("kind") != "text":
             caption = e(m.get("text") or "")
             body = kind_label(m.get("kind")) + (f" {caption}" if caption else "")
@@ -266,6 +274,15 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
                        f'<div class="texto">{body}</div>{when}</div></li>')
     bubbles.append("</ol>")
     return "\n".join(out + bubbles + [reply]) + "\n"
+
+
+IMAGE_MIMES = ("image/jpeg", "image/png", "image/webp")
+
+
+def _shows_image(m: dict) -> bool:
+    """Una foto que PaynaniWeb puede pedir: JPEG, PNG o WebP según el servicio (#573)."""
+    media = m.get("media") if isinstance(m.get("media"), dict) else {}
+    return str(media.get("mime") or "").split(";")[0].strip().lower() in IMAGE_MIMES
 
 
 def not_configured_body() -> str:
