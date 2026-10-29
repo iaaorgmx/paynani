@@ -408,6 +408,11 @@ servicio: la que usan `paynani whatsapp` (la terminal y el agente), la pasarela 
   **siempre** el servicio, venga de quien venga la petición.
 - Si el servicio no corre, el socket no existe o rechaza la conexión. El cliente lo
   trata como `unavailable`.
+- **WhatsApp configurado** quiere decir que existe `whatsapp.env` junto a
+  `runtime.env` (lo escribe la instalación de WA-3 al activar WhatsApp). La web y la
+  pasarela lo miran para mostrar o anunciar WhatsApp, sin preguntarle al servicio.
+  Configurado y con el servicio caído, `whatsapp.status` (que contesta el propio
+  cliente) dice `service_down`.
 
 ### Cómo se habla
 
@@ -432,7 +437,8 @@ necesitan:
 | `type` | Qué hace | Diferencia con §12 |
 |---|---|---|
 | `whatsapp.status` | Estado | Igual |
-| `whatsapp.link` | Empieza a vincular | Acepta `mode: "qr"` además de `"code"`. Con `qr`, el `result` trae el primer QR y los siguientes llegan por la misma conexión como `link.qr` |
+| `whatsapp.link` | Empieza a vincular | Acepta `mode: "qr"` además de `"code"`, y el `result` trae `link_id` (ver abajo) |
+| `whatsapp.link_current` | El QR o código vigente de una vinculación | Nuevo. Pide `link_id` |
 | `whatsapp.link_cancel` | Cancela | Igual |
 | `whatsapp.unlink` | Desvincula | Igual |
 | `whatsapp.threads` | Hilos | Igual |
@@ -440,14 +446,38 @@ necesitan:
 | `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta) con `by: agent` o `terminal` (FR-22). Desde `web`, `phone:` o `api` sólo texto |
 | `whatsapp.watch` | Avisos sin pedirlos | Nuevo. Ver abajo |
 
-### `link.qr` y `link.ended` por la conexión que vincula
+### Vincular: `link_id` y `whatsapp.link_current`
 
-Quien pidió `whatsapp.link` recibe, por esa misma conexión y sin `ref`, cada QR nuevo
-(`{"type": "link.qr", "qr": "…", "expires_at": "…", "expires_in_s": 20}`) y el final
-(`{"type": "link.ended", "reason": "linked"}`). **Nadie más los recibe.** Si esa
-conexión se cierra, la vinculación se cancela: así el QR no queda vivo sin nadie
-mirándolo. La web mantiene la conexión abierta mientras la página del QR está
-abierta.
+La web es pregunta y respuesta, y el QR rota cada ~20 s. Por eso el `result` de
+`whatsapp.link` trae un `link_id` (`l_` + 32 hex), además del primer QR o del código:
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "link_id": "l_…", "mode": "qr", "qr": "2@…", "expires_at": "…", "expires_in_s": 20}}
+```
+
+Con ese `link_id`, quien empezó la vinculación pregunta por el QR vigente:
+
+```json
+{"type": "whatsapp.link_current", "id": "q_…", "by": "web", "link_id": "l_…"}
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "state": "waiting", "mode": "qr", "qr": "2@…", "expires_at": "…", "expires_in_s": 14}}
+{"type": "result", "ref": "q_…", "ok": true, "data": {"state": "ended", "reason": "linked"}}
+```
+
+- **Sólo el `link_id` da el QR o el código.** `whatsapp.status` nunca los trae, y
+  `whatsapp.watch` tampoco. El `link_id` sólo va en el `result` a quien pidió
+  vincular (FR-6a). Un `link_id` que no es el de la vinculación en curso responde
+  `not_found`.
+- `reason` es el de `link.ended` (§3): `linked`, `expired`, `canceled`, `replaced` o
+  `failed`. Un `link_id` terminado responde `ended` durante 5 minutos y luego
+  `not_found`.
+- **Si nadie pregunta, se cancela.** Si pasan 60 s sin un `whatsapp.link_current`
+  con ese `link_id`, el servicio cancela la vinculación (`link.ended`
+  `canceled`). Así un QR no queda vivo con la página cerrada. La web pregunta cada
+  2 a 5 s mientras la página está abierta. Con `mode: "code"` la regla es la misma,
+  y la app la cumple al refrescar el estado.
+- La terminal (`paynani whatsapp link`) usa el mismo mecanismo.
 
 ### `whatsapp.watch`
 
