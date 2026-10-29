@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "harness"))
 
-from paths import env_file, manifest, runtime_env, state_dir  # noqa: E402
+from paths import config_dir, env_file, manifest, runtime_env, state_dir  # noqa: E402
 
 EX_OK = 0
 EX_CHANGED = 10
@@ -40,8 +40,12 @@ SMS_LABEL = "com.paynani.sms"
 # host with a gateway gets it (an upgrade of such a host adds it) and a host
 # without one never runs it (#435, Q-T2-1). Keyed on the gateway's LaunchAgent.
 WEB_LABEL = "com.paynani.web"
-ALL_LABELS = {**LABELS, "sms": SMS_LABEL, "web": WEB_LABEL}
-OPTIONAL = ("sms", "web")
+# WhatsApp (PRD #550 FR-1) is optional the same way: --with-whatsapp, or a
+# LaunchAgent of this checkout that is already here.
+WHATSAPP_LABEL = "com.paynani.whatsapp"
+ALL_LABELS = {**LABELS, "sms": SMS_LABEL, "web": WEB_LABEL, "whatsapp": WHATSAPP_LABEL}
+OPTIONAL = ("sms", "web", "whatsapp")
+MIN_NODE = 20
 # The port and the tunnel address are not written into the LaunchAgent: the gateway
 # reads them from the user's sms.env itself (paynani_lib/sms/config.py).
 
@@ -68,9 +72,58 @@ def sms_wanted(args: argparse.Namespace) -> bool:
     return bool(getattr(args, "with_sms", False)) or plist_path("sms").exists()
 
 
+def whatsapp_wanted(args: argparse.Namespace) -> bool:
+    """--with-whatsapp, or a WhatsApp LaunchAgent that is already here."""
+    return bool(getattr(args, "with_whatsapp", False)) or plist_path("whatsapp").exists()
+
+
 def optional_names(args: argparse.Namespace) -> list[str]:
-    """The gateway and PaynaniWeb, together, when the gateway is wanted."""
-    return list(OPTIONAL) if sms_wanted(args) else []
+    """The gateway and PaynaniWeb together when the gateway is wanted; WhatsApp on its own."""
+    names = ["sms", "web"] if sms_wanted(args) else []
+    if whatsapp_wanted(args):
+        names.append("whatsapp")
+    return names
+
+
+def node_dir() -> str | None:
+    """The folder of the node this install uses (Homebrew, nvm…), for the WhatsApp PATH."""
+    found = shutil.which("node")
+    return str(Path(found).parent) if found else None
+
+
+def prepare_whatsapp() -> bool:
+    """
+    Before the WhatsApp LaunchAgent (PRD #550 FR-3, FR-3b): Node 20 or newer, the
+    bridge's exact dependencies with `npm ci --ignore-scripts`, and whatsapp.env with
+    WHATSAPP_ENABLED=1 when there is none. An existing whatsapp.env is the owner's.
+    The account keys in state/whatsapp/auth/ are never touched or recorded (FR-10).
+    """
+    node = shutil.which("node")
+    if not node:
+        die('WhatsApp needs Node 20 or newer and node is not installed: brew install node, then run this again')
+    out = subprocess.run([node, "-p", 'process.versions.node.split(".")[0]'],
+                         capture_output=True, text=True, timeout=20).stdout.strip()
+    if not out.isdigit() or int(out) < MIN_NODE:
+        die(f'WhatsApp needs Node 20 or newer; {node} is {out or "unknown"}: brew upgrade node')
+    npm = shutil.which("npm")
+    if not npm:
+        die("WhatsApp needs npm next to Node 20+; it was not found")
+    result = subprocess.run([npm, "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix",
+                             str(ROOT / "scripts" / "whatsapp_bridge")], capture_output=True, text=True,
+                            timeout=600)
+    if result.returncode != 0:
+        die("npm ci --ignore-scripts failed in scripts/whatsapp_bridge; no LaunchAgent was written")
+    print(f"whatsapp_bridge_dependencies=installed node={out}")
+    env_path = config_dir() / "whatsapp.env"
+    if env_path.is_symlink():
+        die(f"{env_path} is a symlink; replace it with a regular file before retrying")
+    if env_path.exists():
+        return False
+    fd = os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write("# WhatsApp (WHATSAPP_BRIDGE.md). WHATSAPP_ENABLED=0 turns it off.\nWHATSAPP_ENABLED=1\n")
+    print(f"whatsapp_env=written path={env_path}")
+    return True
 
 
 def account_label(account_id: str) -> str:
@@ -174,6 +227,22 @@ def plist_for(name: str, python: str, runtime: str, runtime_bin: str | None = No
             "EnvironmentVariables": env,
             "StandardOutPath": str(state / "web.log"),
             "StandardErrorPath": str(state / "web.err.log"),
+        }
+    if name == "whatsapp":
+        wa_env = dict(env)
+        node = node_dir()
+        if node:
+            wa_env["PATH"] = ":".join(dict.fromkeys([node, *env["PATH"].split(":")]))
+        return {
+            "Label": WHATSAPP_LABEL,
+            "ProgramArguments": [python, str(ROOT / "scripts" / "whatsapp_service.py")],
+            "WorkingDirectory": str(ROOT),
+            "RunAtLoad": True,
+            "KeepAlive": True,
+            "Umask": 0o077,
+            "EnvironmentVariables": wa_env,
+            "StandardOutPath": str(state / "whatsapp.log"),
+            "StandardErrorPath": str(state / "whatsapp.err.log"),
         }
     if name == "logrotate":
         return {
@@ -312,6 +381,7 @@ def parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--notify-secret-file")
     parser.add_argument("--roster-secret-file")
     parser.add_argument("--with-sms", action="store_true")
+    parser.add_argument("--with-whatsapp", action="store_true")
     args = parser.parse_args(argv)
     if args.runtime == "hermes":
         die("macOS install currently supports --runtime openclaw, codex and opencode only", EX_USAGE)
@@ -320,6 +390,8 @@ def parse(argv: list[str]) -> argparse.Namespace:
         die("--upgrade and --uninstall are mutually exclusive", EX_USAGE)
     if args.with_sms and args.uninstall:
         die("--with-sms does not apply to --uninstall: it removes the gateway LaunchAgent when it is this checkout's", EX_USAGE)
+    if args.with_whatsapp and args.uninstall:
+        die("--with-whatsapp does not apply to --uninstall: it removes the WhatsApp LaunchAgent when it is this checkout's", EX_USAGE)
     return args
 
 
@@ -473,6 +545,8 @@ def install(args: argparse.Namespace) -> int:
     state_dir().mkdir(parents=True, exist_ok=True)
     os.chmod(state_dir(), 0o700)
     launch_agent_dir().mkdir(parents=True, exist_ok=True)
+    if whatsapp_wanted(args):
+        changed = prepare_whatsapp() or changed
     ensure_manifest(args.runtime)
     changed = write_runtime_env(args.runtime, runtime_bin) or changed
     record_artifact(args.runtime, runtime_env())

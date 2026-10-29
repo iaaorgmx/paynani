@@ -58,6 +58,7 @@ Options:
   --notify-secret-file PATH  Pre-provisioned Hermes notification-route secret
   --roster-secret-file PATH  Pre-provisioned Hermes roster-route secret
   --with-sms                 Also install and supervise the SMS gateway (SMS_GATEWAY.md)
+  --with-whatsapp            Also install and supervise WhatsApp (WHATSAPP_BRIDGE.md): needs Node 20+
                              and PaynaniWeb behind it (PRD #434), which is only reachable
                              through the gateway. Optional: without it neither is installed,
                              upgraded or removed unless this installer already owns the
@@ -470,6 +471,46 @@ sms_enabled() {
     ((with_sms)) || [[ -n "${owned_digests[$unit_dir/paynani-sms.service]+present}" ]]
 }
 
+# WhatsApp (PRD #550 FR-1) is the same: only when this run asked for it
+# (--with-whatsapp) or this installer already owns the unit.
+whatsapp_enabled() {
+    ((with_whatsapp)) || [[ -n "${owned_digests[$unit_dir/paynani-whatsapp.service]+present}" ]]
+}
+
+# WhatsApp (PRD #550 FR-1, FR-3b): before any unit is written, the bridge must be
+# able to run. Node 20 or newer, its exact dependencies from package-lock.json
+# with no install scripts (FR-3), and whatsapp.env with WHATSAPP_ENABLED=1, the
+# one switch `configured()` reads. An existing whatsapp.env is the owner's and is
+# never rewritten; the account keys in state/whatsapp/auth/ are never touched and
+# never recorded in install.manifest (FR-10).
+prepare_whatsapp() {
+    whatsapp_enabled || return 0
+    local node_bin npm_bin major env_path
+    node_bin=$(command -v node 2>/dev/null || true)
+    if [[ -z "$node_bin" ]]; then
+        die_config 'WhatsApp needs Node 20 or newer and node is not installed; see INSTALL.md "WhatsApp" for how to install it, then run this again'
+    fi
+    major=$("$node_bin" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)
+    if [[ ! "$major" =~ ^[0-9]+$ ]] || ((major < 20)); then
+        die_config "WhatsApp needs Node 20 or newer; $node_bin is ${major:-unknown}. See INSTALL.md \"WhatsApp\""
+    fi
+    npm_bin=$(command -v npm 2>/dev/null || true)
+    [[ -n "$npm_bin" ]] || die_config 'WhatsApp needs npm next to Node 20+; it was not found'
+    "$npm_bin" ci --ignore-scripts --no-audit --no-fund --prefix "$ROOT/scripts/whatsapp_bridge" >/dev/null || \
+        die_config 'npm ci --ignore-scripts failed in scripts/whatsapp_bridge; no unit was written'
+    printf 'install: whatsapp bridge dependencies installed (Node %s, npm ci --ignore-scripts)\n' "$major"
+    env_path="$config_dir/whatsapp.env"
+    if [[ -L "$env_path" ]]; then
+        die_config "$env_path is a symlink; replace it with a regular file before retrying"
+    fi
+    if [[ ! -e "$env_path" ]]; then
+        (umask 077 && printf '# WhatsApp (WHATSAPP_BRIDGE.md). WHATSAPP_ENABLED=0 turns it off.\nWHATSAPP_ENABLED=1\n' > "$env_path") || \
+            die_config "could not write $env_path"
+        printf 'install: wrote %s (WHATSAPP_ENABLED=1)\n' "$env_path"
+        changes_made=1
+    fi
+}
+
 set_managed_paths() {
     # The clone is the install: config, state, credentials, secrets and roster
     # all hang off it.
@@ -488,6 +529,7 @@ set_managed_paths() {
         "$unit_dir/paynani-logrotate.timer"
         "$unit_dir/paynani-sms.service"
         "$unit_dir/paynani-web.service"
+        "$unit_dir/paynani-whatsapp.service"
         "$config_dir/runtime.env"
         # Generated Hermes secrets remain installer-owned across an explicit
         # runtime migration so rollback can reuse them and uninstall can still
@@ -616,7 +658,7 @@ for name, value in values.items():
 PYINNER
         return
     fi
-    python3 - "$source" "$ROOT" "$credentials" "$config_dir" "$state_dir" "$(rendered_service_path)" <<'PYINNER'
+    python3 - "$source" "$ROOT" "$credentials" "$config_dir" "$state_dir" "$(rendered_service_path "$source")" <<'PYINNER'
 import sys
 from pathlib import Path
 
@@ -641,7 +683,7 @@ PYINNER
 # invisible to send.sh run by the SMS gateway, and the email to the human for a
 # roster change from PaynaniApp never goes out.
 rendered_service_path() {
-    local system="" systemctl_bin found dir
+    local source=${1:-} system="" systemctl_bin found dir
     systemctl_bin=$(resolve_command systemctl || true)
     if [[ -n "$systemctl_bin" ]]; then
         system=$(systemd_service_path "$systemctl_bin" || true)
@@ -653,6 +695,18 @@ rendered_service_path() {
     if [[ "$found" != /* && -x "$HOME/.local/bin/himalaya" ]]; then
         found="$HOME/.local/bin/himalaya"
     fi
+    if [[ "$found" == /* ]]; then
+        dir=${found%/*}
+        case ":$system:" in
+            *":$dir:"*) ;;
+            *) system="$dir:$system" ;;
+        esac
+    fi
+    # WhatsApp (PRD #550 FR-3b): the bridge needs the Node this shell finds, which
+    # can be in ~/.local or under nvm, neither on a user service's PATH. Only that
+    # unit: the others keep the PATH they had, so an upgrade does not restart them.
+    found=""
+    [[ "$source" == */paynani-whatsapp.service ]] && found=$(command -v node 2>/dev/null || true)
     if [[ "$found" == /* ]]; then
         dir=${found%/*}
         case ":$system:" in
@@ -791,6 +845,9 @@ print_managed_inventory() {
         paynani-logrotate.service paynani-logrotate.timer)
     if sms_enabled; then
         plan_units+=(paynani-sms.service paynani-web.service)
+    fi
+    if whatsapp_enabled; then
+        plan_units+=(paynani-whatsapp.service)
     fi
     for unit in "${plan_units[@]}"; do
         if ((unit_container_safe)); then
@@ -987,7 +1044,7 @@ deactivate_owned_services() {
         return 0
     fi
     for unit in paynani-idle.service paynani-dispatch.service \
-        paynani-logrotate.timer paynani-sms.service paynani-web.service; do
+        paynani-logrotate.timer paynani-sms.service paynani-web.service paynani-whatsapp.service; do
         unit_path="$unit_dir/$unit"
         [[ -n "${owned_digests[$unit_path]+present}" ]] || continue
         if "$discovered_systemctl" --user is-enabled --quiet "$unit" 2>/dev/null ||
@@ -1081,6 +1138,9 @@ converge_runtime_filesystem() {
         paynani-logrotate.service paynani-logrotate.timer)
     if sms_enabled; then
         converge_units+=(paynani-sms.service paynani-web.service)
+    fi
+    if whatsapp_enabled; then
+        converge_units+=(paynani-whatsapp.service)
     fi
     for unit in "${converge_units[@]}"; do
         converge_artifact file "$unit_dir/$unit" "$ROOT/systemd/$unit" 0644
@@ -1185,6 +1245,9 @@ verify_installed_units() {
     )
     if sms_enabled; then
         verify_paths+=("$unit_dir/paynani-sms.service" "$unit_dir/paynani-web.service")
+    fi
+    if whatsapp_enabled; then
+        verify_paths+=("$unit_dir/paynani-whatsapp.service")
     fi
     systemd_analyze=$(resolve_command systemd-analyze || true)
     [[ -n "$systemd_analyze" ]] || \
@@ -1296,6 +1359,9 @@ print_final_verification_report() {
     if sms_enabled; then
         report_units+=(paynani-sms.service paynani-web.service)
     fi
+    if whatsapp_enabled; then
+        report_units+=(paynani-whatsapp.service)
+    fi
     for unit in "${report_units[@]}"; do
         printf 'verification_unit=%s/%s validated=true\n' "$unit_dir" "$unit"
     done
@@ -1370,6 +1436,9 @@ converge_required_services() {
     if sms_enabled; then
         service_units+=(paynani-sms.service paynani-web.service)
     fi
+    if whatsapp_enabled; then
+        service_units+=(paynani-whatsapp.service)
+    fi
     for unit in "${service_units[@]}"; do
         if "$discovered_systemctl" --user is-enabled --quiet "$unit" && \
            "$discovered_systemctl" --user is-active --quiet "$unit"; then
@@ -1412,6 +1481,7 @@ uninstall=0
 non_interactive=0
 dry_run=0
 with_sms=0
+with_whatsapp=0
 declare -A seen_options=()
 # What the ownership manifest says this installer owns. Declared here, empty, and
 # filled by load_ownership_manifest: the inventory skips that load when the
@@ -1469,6 +1539,11 @@ while (($#)); do
             with_sms=1
             shift
             ;;
+        --with-whatsapp)
+            mark_option_once "$1"
+            with_whatsapp=1
+            shift
+            ;;
         -h|--help)
             usage
             exit "$EX_OK"
@@ -1487,6 +1562,9 @@ esac
 
 if ((with_sms && uninstall)); then
     die_usage '--with-sms does not apply to --uninstall: it removes the gateway unit when this installer owns it'
+fi
+if ((with_whatsapp && uninstall)); then
+    die_usage '--with-whatsapp does not apply to --uninstall: it removes the WhatsApp unit when this installer owns it'
 fi
 
 if ((upgrade + uninstall > 1)); then
@@ -1621,6 +1699,7 @@ initialize_ownership_manifest
 if [[ "$runtime" == hermes ]]; then
     prepare_hermes_secrets
 fi
+prepare_whatsapp
 converge_runtime_filesystem
 verify_installed_units
 if [[ "$runtime" == openclaw ]]; then
