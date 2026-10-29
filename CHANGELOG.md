@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **`bootstrap.sh` corre los comandos del dueño desde su `$HOME`** (#562). Un `git` reciente no arranca si no puede leer el directorio donde lo lanzaron. Por eso `git clone` fallaba con `Invalid path ...: Permission denied` cuando root corría `bootstrap.sh` desde `/root` o desde el checkout de CI. Un `--dir` relativo se resuelve contra el directorio de quien llama, como antes.
+
 ## 0.17.1 (2026-10-26)
 
 **Dos arreglos que salieron después de 0.17.0: el plan de actualización en hosts de
