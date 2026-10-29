@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseLine, isDirectChat, normalizeJid, pnJidToE164, e164ToJid, cleanFilename,
-  extForMime, classify, receiptStatus, callOutcome, sendContent, makeLogger, quietConsole,
+  extForMime, classify, receiptStatus, callOutcome, sendContent, makeLogger, quietConsole, resolveJid,
 } from '../lib.js';
 
 test('parseLine: JSON, no JSON, sin type, demasiado largo', () => {
@@ -107,4 +107,21 @@ test('quietConsole: las llaves de libsignal no salen ni por stdout ni al log', (
   assert.equal(lines[2].length, 'consola: '.length + 200);
   assert.equal(lines.length, 3);
   assert.ok(!lines.join('\n').match(/secreta|privada|privKey|rootKey/));
+});
+
+test('resolveJid: número, LID con alterno (mensaje o callerPn de llamada), LID con mapa y LID sin resolver', async () => {
+  const PN = '15550001111@s.whatsapp.net';
+  const LID = '123456789012345@lid';
+  const map = (pn) => ({ signalRepository: { lidMapping: { getPNForLID: async (j) => (j === LID ? pn : null) } } });
+  assert.deepEqual(await resolveJid(null, PN, null), { e164: '+15550001111', jid: PN, lid: null });
+  assert.deepEqual(await resolveJid(null, PN, LID), { e164: '+15550001111', jid: PN, lid: LID });
+  // una llamada de WA-8: from es el LID y el número viene en callerPn
+  assert.deepEqual(await resolveJid(map(null), LID, PN), { e164: '+15550001111', jid: PN, lid: LID });
+  assert.deepEqual(await resolveJid(map('15550001111:12@s.whatsapp.net'), LID, undefined),
+    { e164: '+15550001111', jid: PN, lid: LID });
+  assert.deepEqual(await resolveJid(map(null), LID, undefined), { e164: null, jid: LID, lid: LID });
+  const broken = { signalRepository: { lidMapping: { getPNForLID: async () => { throw new Error('x'); } } } };
+  assert.deepEqual(await resolveJid(broken, LID, ''), { e164: null, jid: LID, lid: LID });
+  assert.deepEqual(await resolveJid(map('otro@lid'), LID, ''), { e164: null, jid: LID, lid: LID });
+  assert.deepEqual(await resolveJid(null, LID, ''), { e164: null, jid: LID, lid: LID });
 });
