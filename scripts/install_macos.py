@@ -91,13 +91,8 @@ def node_dir() -> str | None:
     return str(Path(found).parent) if found else None
 
 
-def prepare_whatsapp() -> bool:
-    """
-    Before the WhatsApp LaunchAgent (PRD #550 FR-3, FR-3b): Node 20 or newer, the
-    bridge's exact dependencies with `npm ci --ignore-scripts`, and whatsapp.env with
-    WHATSAPP_ENABLED=1 when there is none. An existing whatsapp.env is the owner's.
-    The account keys in state/whatsapp/auth/ are never touched or recorded (FR-10).
-    """
+def check_whatsapp_node() -> None:
+    """Node 20+ and npm, without changing anything; the dry-run runs it too."""
     node = shutil.which("node")
     if not node:
         die('WhatsApp needs Node 20 or newer and node is not installed: brew install node, then run this again')
@@ -105,9 +100,22 @@ def prepare_whatsapp() -> bool:
                          capture_output=True, text=True, timeout=20).stdout.strip()
     if not out.isdigit() or int(out) < MIN_NODE:
         die(f'WhatsApp needs Node 20 or newer; {node} is {out or "unknown"}: brew upgrade node')
-    npm = shutil.which("npm")
-    if not npm:
+    if not shutil.which("npm"):
         die("WhatsApp needs npm next to Node 20+; it was not found")
+    print(f"inventory whatsapp-node={node} major={out}")
+
+
+def prepare_whatsapp() -> bool:
+    """
+    Before the WhatsApp LaunchAgent (PRD #550 FR-3, FR-3b): Node 20 or newer, the
+    bridge's exact dependencies with `npm ci --ignore-scripts`, and whatsapp.env with
+    WHATSAPP_ENABLED=1 when there is none. An existing whatsapp.env is the owner's.
+    The account keys in state/whatsapp/auth/ are never touched or recorded (FR-10).
+    """
+    check_whatsapp_node()
+    out = subprocess.run([shutil.which("node"), "-p", 'process.versions.node.split(".")[0]'],
+                         capture_output=True, text=True, timeout=20).stdout.strip()
+    npm = shutil.which("npm")
     result = subprocess.run([npm, "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix",
                              str(ROOT / "scripts" / "whatsapp_bridge")], capture_output=True, text=True,
                             timeout=600)
@@ -538,6 +546,12 @@ def install(args: argparse.Namespace) -> int:
         die("himalaya executable not found in PATH; install Himalaya before running paynani")
     secure_existing_env(env_file())
     plan_status = print_plan(args.runtime, runtime_bin, python, args)
+    if plan_status == EX_CONFIG:
+        # A LaunchAgent that is not this checkout's: stop before any folder, npm
+        # run or whatsapp.env (Ximena en #567).
+        die("refusing to overwrite unowned LaunchAgent; nothing was changed")
+    if whatsapp_wanted(args):
+        check_whatsapp_node()
     if args.dry_run:
         return plan_status
 

@@ -483,9 +483,28 @@ whatsapp_enabled() {
 # one switch `configured()` reads. An existing whatsapp.env is the owner's and is
 # never rewritten; the account keys in state/whatsapp/auth/ are never touched and
 # never recorded in install.manifest (FR-10).
+# Node 20+ and npm, without changing anything: the dry-run runs this too, so a
+# host that cannot run the bridge never gets a successful plan.
+check_whatsapp_node() {
+    whatsapp_enabled || return 0
+    local node_bin npm_bin major
+    node_bin=$(command -v node 2>/dev/null || true)
+    if [[ -z "$node_bin" ]]; then
+        die_config 'WhatsApp needs Node 20 or newer and node is not installed; see INSTALL.md "WhatsApp" for how to install it, then run this again'
+    fi
+    major=$("$node_bin" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)
+    if [[ ! "$major" =~ ^[0-9]+$ ]] || ((major < 20)); then
+        die_config "WhatsApp needs Node 20 or newer; $node_bin is ${major:-unknown}. See INSTALL.md \"WhatsApp\""
+    fi
+    npm_bin=$(command -v npm 2>/dev/null || true)
+    [[ -n "$npm_bin" ]] || die_config 'WhatsApp needs npm next to Node 20+; it was not found'
+    printf 'inventory whatsapp-node=%s major=%s npm=%s\n' "$node_bin" "$major" "$npm_bin"
+}
+
 prepare_whatsapp() {
     whatsapp_enabled || return 0
     local node_bin npm_bin major env_path
+    check_whatsapp_node
     node_bin=$(command -v node 2>/dev/null || true)
     if [[ -z "$node_bin" ]]; then
         die_config 'WhatsApp needs Node 20 or newer and node is not installed; see INSTALL.md "WhatsApp" for how to install it, then run this again'
@@ -1623,6 +1642,7 @@ set_managed_paths
 
 if ((dry_run)); then
     print_managed_inventory
+    check_whatsapp_node
     if ((inventory_conflicts || inventory_blocked)); then
         if ((inventory_unproven_conflicts)); then
             printf 'install: unproven pre-existing artifacts are preserved; ownership manifest support is required before mutation\n' >&2

@@ -1223,11 +1223,19 @@ check_status 'a plain install does not plan WhatsApp' 10 --runtime codex --dry-r
 [[ "$LAST_OUTPUT" != *paynani-whatsapp* ]] || {
     printf 'FAIL a dry-run without --with-whatsapp mentioned WhatsApp\n'; fail=$((fail + 1))
 }
+fake_node 22
 check_status 'a dry-run with --with-whatsapp plans the unit and writes nothing' 10 --runtime codex --dry-run --with-whatsapp
 [[ "$LAST_OUTPUT" == *paynani-whatsapp.service* && ! -e "$wa_unit" && ! -e "$clone/whatsapp.env" && ! -s "$npm_log" ]] || {
     printf 'FAIL --with-whatsapp --dry-run did not plan the unit, or wrote something\n'; fail=$((fail + 1))
 }
 
+rm -f "$fixture_bin/node"
+check_status 'without Node, a --with-whatsapp dry-run already fails' 78 --runtime codex --dry-run --with-whatsapp
+[[ "$LAST_OUTPUT" == *'Node 20 or newer'* && ! -s "$npm_log" ]] || {
+    printf 'FAIL the dry-run without Node did not say so, or ran npm\n'; fail=$((fail + 1))
+}
+fake_node 18
+check_status 'with Node 18, a --with-whatsapp dry-run already fails' 78 --runtime codex --dry-run --with-whatsapp
 rm -f "$fixture_bin/node"
 check_status 'without Node, --with-whatsapp stops before writing a unit' 78 --runtime codex --with-whatsapp
 [[ "$LAST_OUTPUT" == *'Node 20 or newer'* && ! -e "$wa_unit" && ! -e "$clone/whatsapp.env" ]] || {
@@ -1243,7 +1251,13 @@ FAKE_NPM_EXIT=1 check_status 'a failed npm ci stops before writing a unit' 78 --
 [[ ! -e "$wa_unit" ]] || { printf 'FAIL a failed npm ci still wrote the unit\n'; fail=$((fail + 1)); }
 : >"$npm_log"
 
+check_status 'a plain install first, to compare the other units against' 10 --runtime codex
+: >"$npm_log"
+units_before=$(cd "$sandbox/.config/systemd/user" && sha256sum paynani-idle.service paynani-dispatch.service paynani-logrotate.timer)
 check_status '--with-whatsapp installs the service' 10 --runtime codex --with-whatsapp
+[[ "$(cd "$sandbox/.config/systemd/user" && sha256sum paynani-idle.service paynani-dispatch.service paynani-logrotate.timer)" == "$units_before" ]] || {
+    printf 'FAIL adding WhatsApp changed another unit file\n'; fail=$((fail + 1))
+}
 [[ -f "$wa_unit" && "$(file_mode "$wa_unit")" == 644 ]] && ! grep -q '/path/to' "$wa_unit" || {
     printf 'FAIL --with-whatsapp did not write a rendered 0644 unit\n'; fail=$((fail + 1))
 }

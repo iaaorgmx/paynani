@@ -108,11 +108,15 @@ check("sin --with-whatsapp: ni LaunchAgent, ni whatsapp.env, ni npm", (False, Fa
 
 # --- Node ------------------------------------------------------------------------------------------
 fake["which_node"] = None
+code, _, err = run(["--runtime", "codex", "--dry-run", "--with-whatsapp"])
+check("dry-run sin Node: ya falla", (m.EX_CONFIG, True), (code, "Node 20" in err))
 code, _, err = run(["--runtime", "codex", "--with-whatsapp"])
 check("sin Node: no escribe nada y dice cómo instalarlo", (m.EX_CONFIG, False, True),
       (code, wa.exists(), "brew install node" in err))
 fake["which_node"] = "/Users/x/.nvm/versions/node/v22.0.0/bin/node"
 fake["node"] = "18"
+code, _, err = run(["--runtime", "codex", "--dry-run", "--with-whatsapp"])
+check("dry-run con Node 18: ya falla", (m.EX_CONFIG, True), (code, "is 18" in err))
 code, _, err = run(["--runtime", "codex", "--with-whatsapp"])
 check("con Node 18: no escribe nada", (m.EX_CONFIG, False, True), (code, wa.exists(), "is 18" in err))
 fake["node"] = "22"
@@ -158,9 +162,15 @@ check("un upgrade sin la bandera sigue atendiendo el LaunchAgent instalado", (Tr
 
 # --- un LaunchAgent ajeno no se pisa ------------------------------------------------------------------
 run(["--runtime", "codex", "--uninstall"])
+import shutil as _sh  # noqa: E402
+_sh.rmtree(state, ignore_errors=True)
+wa_env.unlink()
+npm_calls.clear()
 wa.write_bytes(plistlib.dumps({"Label": "com.paynani.whatsapp", "ProgramArguments": ["/otro/whatsapp_service.py"]}))
 code, _, err = run(["--runtime", "codex", "--with-whatsapp"])
 check("un LaunchAgent de WhatsApp que no es de este clon se rechaza", (m.EX_CONFIG, True), (code, "unowned" in err))
+check("y antes de cambiar nada: sin npm, sin whatsapp.env, sin state/ (Ximena en #567)", ([], False, False),
+      (npm_calls, wa_env.exists(), state.exists()))
 wa.unlink()
 
 # --- desinstalar ------------------------------------------------------------------------------------------
