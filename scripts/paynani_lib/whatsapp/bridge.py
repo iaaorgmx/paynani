@@ -48,6 +48,45 @@ EXIT_REASONS = {2: "faltan Node o las dependencias (npm ci)", 3: "protocolo dist
                 4: "auth/ con permisos abiertos"}
 
 
+class UnsafePath(Exception):
+    """Una carpeta de state/whatsapp/ que es un enlace simbólico o no es carpeta."""
+
+
+def _private_dir(path: Path) -> None:
+    """
+    Crea `path` si falta y lo deja en 0700, sin seguir enlaces: si es un enlace
+    simbólico (o un archivo), UnsafePath. Seguirlo cambiaría permisos, o borraría
+    archivos (`logout`), fuera de state/whatsapp/.
+    """
+    try:
+        os.mkdir(path, 0o700)
+    except FileExistsError:
+        pass
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise UnsafePath(f"{path} es un enlace simbólico o no es una carpeta") from exc
+    try:
+        if not stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise UnsafePath(f"{path} no es una carpeta")
+        os.fchmod(fd, 0o700)
+    finally:
+        os.close(fd)
+
+
+def _tighten(tree: Path) -> None:
+    """Dentro de auth/: carpetas 0700, archivos 0600, enlaces fuera. Nunca sigue enlaces."""
+    for entry in os.scandir(tree):
+        if entry.is_symlink():
+            os.unlink(entry.path)
+        elif entry.is_dir(follow_symlinks=False):
+            _private_dir(Path(entry.path))
+            _tighten(Path(entry.path))
+        else:
+            os.chmod(entry.path, 0o600)
+
+
 class BridgeError(Exception):
     """Una orden que el puente contestó con `error`, o que no contestó."""
 
@@ -81,17 +120,14 @@ class Layout:
         return self.root / "outbox"
 
     def prepare(self) -> None:
-        """Crea las carpetas con 0700 y deja los archivos de auth/ en 0600."""
+        """
+        Crea las carpetas con 0700 y deja lo de auth/ en 0600. Ninguna de las cinco
+        puede ser un enlace simbólico: si lo es, UnsafePath y no se toca nada más.
+        """
+        self.root.parent.mkdir(parents=True, exist_ok=True)
         for d in (self.root, self.auth, self.media, self.inbox, self.outbox):
-            d.mkdir(parents=True, exist_ok=True)
-            os.chmod(d, 0o700)
-        for p in self.auth.iterdir():
-            if p.is_symlink():
-                p.unlink()
-            elif p.is_dir():
-                os.chmod(p, 0o700)
-            else:
-                os.chmod(p, 0o600)
+            _private_dir(d)
+        _tighten(self.auth)
 
 
 def default_command() -> list[str]:
@@ -181,8 +217,17 @@ class BridgeSupervisor:
     # --- ciclo de vida -------------------------------------------------------
 
     async def run(self) -> None:
-        """Lanza el puente y lo relanza hasta que alguien llame a stop()."""
-        self.layout.prepare()
+        """
+        Lanza el puente y lo relanza hasta que alguien llame a stop(). Si
+        state/whatsapp/ tiene un enlace simbólico donde va una carpeta, no arranca:
+        lanza UnsafePath (código de salida 4 del servicio).
+        """
+        try:
+            self.layout.prepare()
+        except UnsafePath as exc:
+            self.log(f"whatsapp: no arranca: {exc}")
+            self.last_exit = 4
+            raise
         watchdog = asyncio.create_task(self._health_watch())
         try:
             while not self._stop.is_set():
@@ -425,10 +470,10 @@ class BridgeSupervisor:
 def auth_is_private(auth: Path) -> bool:
     """auth/ en 0700 y cada archivo en 0600, como exige el puente (código de salida 4)."""
     try:
-        st = auth.stat()
+        st = auth.lstat()
     except FileNotFoundError:
         return False
-    if stat.S_IMODE(st.st_mode) & 0o077:
+    if not stat.S_ISDIR(st.st_mode) or stat.S_IMODE(st.st_mode) & 0o077:
         return False
     for p in auth.iterdir():
         if p.is_symlink() or stat.S_IMODE(p.lstat().st_mode) & 0o077:

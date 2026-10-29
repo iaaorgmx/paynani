@@ -223,6 +223,61 @@ async def scenario_start_failures(tmp: Path) -> None:
     check("exit 2: sigue reintentando con espera, sin ready", True, h2.sup.restarts >= 2)
 
 
+async def scenario_symlinks(tmp: Path) -> None:
+    """Ximena en #564: un enlace donde va una carpeta no se sigue, ni se cambia ni se borra."""
+    outside = tmp / "ajeno"
+    outside.mkdir(parents=True)
+    os.chmod(outside, 0o755)
+    victim = outside / "importante.txt"
+    victim.write_text("no tocar")
+    os.chmod(victim, 0o644)
+
+    def untouched():
+        return (victim.exists(), victim.read_text(), mode(victim), mode(outside)) == (True, "no tocar", 0o644, 0o755)
+
+    for name in ("auth", "media", "outbox"):
+        layout = bridge.Layout(tmp / name / "state" / "whatsapp")
+        layout.root.mkdir(parents=True)
+        os.symlink(outside, layout.root / name)
+        h = Harness(tmp / name)
+        h.sup.layout = layout
+        try:
+            await asyncio.wait_for(h.sup.run(), 5)
+            raised = False
+        except bridge.UnsafePath:
+            raised = True
+        check(f"{name}/ es un enlace: el supervisor no arranca (UnsafePath)", True, raised)
+        check(f"{name}/ es un enlace: el destino queda intacto (permisos y archivo)", True, untouched())
+        check(f"{name}/ es un enlace: el log lo dice", True, any("no arranca" in line for line in h.logs))
+        check(f"{name}/ es un enlace: el puente nunca se lanzó", None, h.sup.proc)
+
+    layout = bridge.Layout(tmp / "root" / "state" / "whatsapp")
+    layout.root.parent.mkdir(parents=True)
+    os.symlink(outside, layout.root)
+    try:
+        layout.prepare()
+        check("state/whatsapp es un enlace: UnsafePath", True, False)
+    except bridge.UnsafePath:
+        check("state/whatsapp es un enlace: UnsafePath", True, True)
+    check("state/whatsapp es un enlace: el destino queda intacto", True, untouched())
+
+    layout = bridge.Layout(tmp / "child" / "state" / "whatsapp")
+    layout.prepare()
+    os.symlink(victim, layout.auth / "creds.json")
+    layout.prepare()
+    check("un enlace dentro de auth/: se quita el enlace", False, (layout.auth / "creds.json").is_symlink())
+    check("un enlace dentro de auth/: el destino queda intacto", True, untouched())
+
+    auth = tmp / "fake-link" / "auth"
+    auth.parent.mkdir()
+    os.symlink(outside, auth)
+    start = {"type": "start", "id": bridge.new_id(), "protocol": 1, "auth_dir": str(auth),
+             "media_dir": str(tmp / "fake-link" / "media")}
+    p = subprocess.run(FAKE, input=json.dumps(start) + "\n", capture_output=True, text=True, timeout=10)
+    check("puente falso: auth/ enlazado sale con 4", 4, p.returncode)
+    check("puente falso: auth/ enlazado no toca el destino", True, untouched())
+
+
 def scenario_fake_stdin_eof(tmp: Path) -> None:
     auth = tmp / "eof" / "auth"
     auth.mkdir(parents=True, mode=0o700)
@@ -274,6 +329,26 @@ def node_checks(tmp: Path) -> None:
     check("puente real: auth/ en 0755 no arranca (código 4)", 4, p.returncode)
     os.chmod(auth, 0o700)
 
+    outside = tmp / "real-ajeno"
+    outside.mkdir()
+    os.chmod(outside, 0o700)
+    (outside / "importante.txt").write_text("no tocar")
+    linked = tmp / "real-link" / "auth"
+    linked.parent.mkdir()
+    os.symlink(outside, linked)
+    start_link = json.dumps({"type": "start", "id": bridge.new_id(), "protocol": 1,
+                             "auth_dir": str(linked), "media_dir": str(tmp / "real-link" / "media")})
+    p = subprocess.run(["node", str(index)], input=start_link + "\n", capture_output=True, text=True, timeout=30)
+    check("puente real: auth/ enlazado (aunque el destino sea 0700) sale con 4", 4, p.returncode)
+    check("puente real: auth/ enlazado no toca el destino", True,
+          (outside / "importante.txt").read_text() == "no tocar")
+
+    os.symlink(outside, tmp / "real" / "media-link")
+    start_media = json.dumps({"type": "start", "id": bridge.new_id(), "protocol": 1,
+                              "auth_dir": str(auth), "media_dir": str(tmp / "real" / "media-link")})
+    p = subprocess.run(["node", str(index)], input=start_media + "\n", capture_output=True, text=True, timeout=30)
+    check("puente real: media/ enlazado sale con 4", 4, p.returncode)
+
     if not (ROOT / "scripts" / "whatsapp_bridge" / "node_modules" / "baileys").is_dir():
         p = subprocess.run(["node", str(index)], input=start + "\n", capture_output=True, text=True, timeout=30)
         check("puente real sin npm ci: sale con 2 y lo dice en stderr", (2, True),
@@ -292,6 +367,7 @@ async def main_async() -> None:
         await scenario_restart(tmp / "restart")
         await scenario_health(tmp / "health")
         await scenario_start_failures(tmp / "fail")
+        await scenario_symlinks(tmp / "links")
         scenario_fake_stdin_eof(tmp)
         describe_checks()
         node_checks(tmp)

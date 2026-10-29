@@ -89,6 +89,11 @@ SMS_GATEWAY = ("paynani-sms*.service", "com.paynani.sms*")
 # PaynaniWeb (PRD #434) goes with the gateway, and is just as absent from most
 # hosts: a pattern, for the same reason.
 WEB = ("paynani-web*.service", "com.paynani.web*")
+# The optional WhatsApp service (PRD #550): a pattern too, absent from most hosts.
+# It runs the Baileys bridge as a child, so a change to the bridge's code needs it
+# restarted as well.
+WHATSAPP = ("paynani-whatsapp*.service", "com.paynani.whatsapp*")
+WHATSAPP_NPM = "npm ci --ignore-scripts --prefix scripts/whatsapp_bridge"
 INSTALLER = None
 OPENCODE_PLUGIN = "python3 scripts/opencode_plugin.py --install"
 OPENCODE_RESTART = "OpenCode (close and reopen it)"
@@ -107,6 +112,12 @@ RULES = (
     (r"^scripts/idle_listener\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
     (r"^scripts/roster\.py$", "restart", "listener and SMS gateway", "listener-all", "listener-all", None, None),
     (r"^scripts/(sms_gateway\.py|paynani_lib/sms/(__init__|gateway|store|websocket)\.py)$", "restart", "SMS gateway", *SMS_GATEWAY, None, None),
+    # WhatsApp (PRD #550 FR-3): the bridge's dependencies come from the lockfile, so
+    # a change to either file needs `npm ci` before the restart.
+    (r"^scripts/whatsapp_bridge/test/", "none", "tests", None, None, None, None),
+    (r"^scripts/whatsapp_bridge/fake_bridge\.py$", "none", "tests (the fake bridge)", None, None, None, None),
+    (r"^scripts/whatsapp_bridge/package(-lock)?\.json$", "reinstall-and-restart", "WhatsApp bridge dependencies", *WHATSAPP, None, WHATSAPP_NPM),
+    (r"^scripts/(whatsapp_service\.py|paynani_lib/whatsapp/.*\.py|whatsapp_bridge/.*\.js)$", "restart", "WhatsApp service and bridge", *WHATSAPP, None, None),
     # Both read sms.env at start: the gateway for its own port and PaynaniWeb's,
     # PaynaniWeb for its port.
     (r"^scripts/paynani_lib/sms/config\.py$", "restart", "SMS gateway and PaynaniWeb", "gateway-web", "gateway-web", None, None),
@@ -385,6 +396,9 @@ def plan(from_ref, to_ref, repo=ROOT, runtime=None, system=None):
                 out["reinstall"] = True
             elif f["command"] not in out["reinstall_commands"]:
                 out["reinstall_commands"].append(f["command"])
+            # New bridge dependencies load when the WhatsApp service restarts its bridge.
+            if f["unit"]:
+                units.extend(_units_of(f))
             # A re-registered plugin is loaded by the harness at its own start.
             if f["command"] == OPENCODE_PLUGIN and OPENCODE_RESTART not in out["restart_runtime"]:
                 out["restart_runtime"].append(OPENCODE_RESTART)

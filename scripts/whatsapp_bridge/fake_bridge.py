@@ -80,6 +80,8 @@ class Fake:
 
     def wipe(self) -> None:
         auth = Path(self.cfg["auth_dir"])
+        if auth.is_symlink():
+            sys.exit(4)
         for p in auth.iterdir():
             shutil.rmtree(p) if p.is_dir() else p.unlink()
 
@@ -101,12 +103,16 @@ class Fake:
             fail(ref, "unsupported_protocol")
             sys.exit(3)
         auth = Path(msg["auth_dir"])
-        st = auth.stat()
-        if stat.S_IMODE(st.st_mode) & 0o077 or any(
+        st = auth.lstat()
+        if not stat.S_ISDIR(st.st_mode) or stat.S_IMODE(st.st_mode) & 0o077 or any(
                 stat.S_IMODE(p.lstat().st_mode) & 0o077 for p in auth.iterdir()):
             sys.stderr.write("auth_dir con permisos abiertos\n")
             sys.exit(4)
-        Path(msg["media_dir"]).mkdir(parents=True, exist_ok=True, mode=0o700)
+        media = Path(msg["media_dir"])
+        media.mkdir(exist_ok=True, mode=0o700)
+        if media.is_symlink() or not media.is_dir():
+            sys.stderr.write("media_dir es un enlace simbólico\n")
+            sys.exit(4)
         self.cfg = msg
         self.allowed = {n for n in msg.get("allowed") or [] if E164_RE.match(n)}
         result(ref, {"protocol": PROTOCOL, "bridge_version": "fake", "baileys_version": None})

@@ -69,7 +69,10 @@ async def main_async(args: argparse.Namespace) -> int:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, lambda: asyncio.ensure_future(sup.stop()))
     log(f"arranca ({' '.join(Path(c).name for c in command[:2])})")
-    await sup.run()
+    try:
+        await sup.run()
+    except bridge.UnsafePath:
+        return 4
     log("detenido")
     return 0
 

@@ -162,6 +162,20 @@ try:
     check("session watcher -> next-session", verbs.get("harness/session_watch.sh") == "next-session")
     check("README -> none", verbs.get("README.md") == "none")
     check("bootstrap.sh (#335) -> none: it runs by hand and nothing loads it", up.classify("bootstrap.sh")["verb"] == "none")
+    # WhatsApp (PRD #550, Ximena en #564): the bridge runs as a child of the service.
+    for path in ("scripts/whatsapp_service.py", "scripts/paynani_lib/whatsapp/bridge.py",
+                 "scripts/whatsapp_bridge/index.js", "scripts/whatsapp_bridge/lib.js"):
+        c = up.classify(path)
+        check(f"{path} -> restart the WhatsApp service",
+              (c["verb"], c["unit"]) == ("restart", "paynani-whatsapp*.service"), str(c))
+    for path in ("scripts/whatsapp_bridge/package.json", "scripts/whatsapp_bridge/package-lock.json"):
+        c = up.classify(path)
+        check(f"{path} -> npm ci (from the lockfile) and restart",
+              (c["verb"], c["command"], c["unit"]) == ("reinstall-and-restart", up.WHATSAPP_NPM,
+                                                         "paynani-whatsapp*.service")
+              and "--ignore-scripts" in c["command"], str(c))
+    for path in ("scripts/whatsapp_bridge/test/lib.test.js", "scripts/whatsapp_bridge/fake_bridge.py"):
+        check(f"{path} -> none (tests)", up.classify(path)["verb"] == "none")
     # Every file the repository tracks has a rule. bootstrap.sh reached main
     # without one (#351) and every plan to the next release would have said
     # `unknown` and refused --apply: a new file must fail here, in its own PR.

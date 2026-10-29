@@ -47,9 +47,20 @@ function setStatus(next, reason = null) {
 
 // --- llaves (FR-10) ---------------------------------------------------------
 
+// lstat, nunca stat: un auth/ que es un enlace simbólico se rechaza, porque `logout`
+// borraría lo que hay del otro lado (FR-10).
+function realDir(dir) {
+  try {
+    const st = fs.lstatSync(dir);
+    return st.isDirectory() && !st.isSymbolicLink() ? st : null;
+  } catch {
+    return null;
+  }
+}
+
 function checkAuthDir(dir) {
-  const st = fs.statSync(dir);
-  if (!st.isDirectory() || (st.mode & 0o077) !== 0) return false;
+  const st = realDir(dir);
+  if (!st || (st.mode & 0o077) !== 0) return false;
   for (const name of fs.readdirSync(dir)) {
     const f = fs.lstatSync(path.join(dir, name));
     if (f.isSymbolicLink() || (f.mode & 0o077) !== 0) return false;
@@ -67,6 +78,10 @@ function hasCreds() {
 }
 
 function wipeAuth() {
+  if (!realDir(cfg.auth_dir)) {
+    log('auth_dir dejó de ser una carpeta: no se borra nada');
+    process.exit(4);
+  }
   for (const name of fs.readdirSync(cfg.auth_dir)) {
     fs.rmSync(path.join(cfg.auth_dir, name), { recursive: true, force: true });
   }
@@ -348,7 +363,11 @@ async function start(ref, msg) {
     log('auth_dir con permisos abiertos: se esperan 0700 y archivos 0600');
     process.exit(4);
   }
-  fs.mkdirSync(msg.media_dir, { recursive: true, mode: 0o700 });
+  try { fs.mkdirSync(msg.media_dir, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  if (!realDir(msg.media_dir)) {
+    log('media_dir es un enlace simbólico o no es una carpeta');
+    process.exit(4);
+  }
   try {
     B = await import('baileys');
   } catch (e) {
