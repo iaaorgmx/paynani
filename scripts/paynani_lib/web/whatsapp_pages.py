@@ -239,7 +239,8 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
     in_roster = bool(thread.get("in_roster"))
     who = (thread.get("name") if in_roster else None) or number
     out = [f'<p class="volver"><a href="/whatsapp/messages">← {_th("back")}</a></p>',
-           f'<h2 class="asunto-correo">{e(who)}</h2>', f'<p class="quiet">{e(number)}</p>', _notice(notice)]
+           f'<h2 class="asunto-correo">{e(who)}</h2>',
+           f'<p class="quiet">{e(number)}</p>' if who != number else "", _notice(notice)]
     if not in_roster:
         out.append(f'<p class="aviso-caja" role="note">{_th("hidden")}</p>')
     if thread.get("next_before"):
