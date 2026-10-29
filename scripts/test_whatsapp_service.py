@@ -470,6 +470,46 @@ async def scenario_event_show(tmp: Path) -> None:
     check("event show --body si salió del roster: se niega", (2, True), (code, "no longer" in err))
 
 
+async def scenario_reply_never(tmp: Path) -> None:
+    svc = make(tmp)
+    (tmp / "rules" / "julian-1a2b.md").write_text("---\nversion: 1\nenabled: true\nreply:\n  sms: never\n---\n\n## General\nNo le contestes.\n")
+    (tmp / "roster.md").write_text(ROSTER.replace("| Name | Email | Type | GitHub | Phone |\n|---|---|---|---|---|",
+                                                  "| Name | Email | Type | GitHub | Phone | Rules |\n|---|---|---|---|---|---|")
+                                   .replace(f"{NUM} |", f"{NUM} | julian-1a2b |").replace("irisclaudetob |  |", "irisclaudetob |  |  |"))
+    await started(svc)
+    try:
+        await svc.sup.request("link", mode="qr")
+        await svc.sup.request("fake.link_done", me="+15550009999")
+        await svc.sup.request("fake.message", from_e164=NUM, text="hola", key_id="3EB03333")
+        await until(lambda: NUM in svc.store.wrote_since_link())
+        got = {}
+        async with Client(svc.socket_path) as c:
+            for by in ("agent", "terminal", "web", "api", "phone:dev_1"):
+                r = await c.ask("whatsapp.send", by=by, number=NUM, text="hola")
+                got[by] = (r.get("code"), r.get("reason"))
+        check("reply.sms: never vale para todo by (Ximena en #565)",
+              {b: ("not_allowed", "reply_never") for b in got}, got)
+    finally:
+        await svc.stop()
+
+
+async def scenario_link_timeout(tmp: Path) -> None:
+    svc = make(tmp, link_wait_s=0.5)
+    await started(svc)
+    try:
+        async with Client(svc.socket_path) as c:
+            for mode, extra in (("qr", {}), ("code", {"number": NUM})):
+                await svc.sup.request("fake.silent_link")  # acepta el link pero nunca manda la credencial
+                r = await c.ask("whatsapp.link", mode=mode, **extra)
+                check(f"link {mode} sin credencial a tiempo: unavailable, nunca éxito vacío",
+                      ("error", "unavailable"), (r.get("type"), r.get("code")))
+                check(f"link {mode} sin credencial: no queda vinculación en curso", None, svc._linking())
+                check(f"link {mode} sin credencial: el puente recibió link.cancel", True,
+                      await until(lambda: svc.sup.state.get("state") == "unlinked", 3))
+    finally:
+        await svc.stop()
+
+
 async def main_async() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
@@ -479,6 +519,8 @@ async def main_async() -> None:
         await scenario_socket_safety(tmp / "sock")
         await scenario_cli(tmp / "cli")
         await scenario_event_show(tmp / "show")
+        await scenario_reply_never(tmp / "never")
+        await scenario_link_timeout(tmp / "timeout")
 
 
 if __name__ == "__main__":

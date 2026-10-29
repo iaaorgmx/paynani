@@ -411,12 +411,22 @@ class WhatsAppService:
         except bridge.BridgeError as exc:
             self._end_link(link, "failed")
             raise Refused(_bridge_code(exc.code), exc.detail or "") from None
-        with contextlib.suppress(asyncio.TimeoutError):
+        try:
             await asyncio.wait_for(link.first.wait(), self.link_wait_s)
+        except asyncio.TimeoutError:
+            pass
+        got = link.qr if mode == "qr" else link.code
+        if link.state != "waiting" or not got:
+            # Sin la primera credencial no hay éxito vacío: se cancela y se dice (§11).
+            reason = link.reason if link.state != "waiting" else "timeout"
+            if link.state == "waiting":
+                self._end_link(link, "failed")
+                with contextlib.suppress(bridge.BridgeError):
+                    await self.sup.request("link.cancel")
+            self._notify("status")
+            raise Refused("unavailable", f"WhatsApp no entregó el {'QR' if mode == 'qr' else 'código'} ({reason})")
         self.log(f"whatsapp: vinculación por {mode} pedida desde {by}")
         self._notify("status")
-        if link.state != "waiting":
-            raise Refused("unavailable", f"la vinculación terminó ({link.reason})")
         out = {"link_id": link.link_id, "mode": mode,
                "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(link.expires)),
                "expires_in_s": max(0, int(link.expires - time.time()))}
@@ -512,11 +522,11 @@ class WhatsAppService:
         phones = self._phones()
         if e164 not in phones:
             raise Refused("not_allowed", "el número no está en roster.md (Phone)", reason="roster")
-        if by in ("agent", "terminal", "api"):
-            from paynani_lib import reply_policy
-            never, _ = reply_policy.check(self.roster_path, "sms", [e164], rules_root=self.rules_root)
-            if never:
-                raise Refused("not_allowed", "las reglas del contacto dicen reply.sms: never", reason="reply_never")
+        # `by` es sólo una etiqueta (§11): la regla vale igual para todos los que llaman.
+        from paynani_lib import reply_policy
+        never, _ = reply_policy.check(self.roster_path, "sms", [e164], rules_root=self.rules_root)
+        if never:
+            raise Refused("not_allowed", "las reglas del contacto dicen reply.sms: never", reason="reply_never")
         if e164 not in self.store.wrote_since_link():
             raise Refused("not_started", "el contacto no ha escrito por WhatsApp desde que se vinculó")
         path = self.check_file(file) if file else None

@@ -155,7 +155,7 @@ if shutil.which("zbarimg") and shutil.which("rsvg-convert"):
         read = subprocess.run(["zbarimg", "--quiet", "--raw", str(png_path)], capture_output=True, text=True)
         check("zbarimg lee el SVG del QR de WhatsApp", wa, read.stdout.strip())
 else:
-    print("skip zbarimg/rsvg-convert no están: el SVG del QR de WhatsApp no se decodifica con un lector externo")
+    print("nota: sin zbarimg o rsvg-convert, el SVG del QR de WhatsApp no se decodifica con un lector externo")
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
