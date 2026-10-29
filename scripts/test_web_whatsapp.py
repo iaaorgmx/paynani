@@ -291,11 +291,13 @@ check("y explica que hay que quitar el dispositivo desde WhatsApp", (True, True)
 demo.unlink_remote = True
 # #578: aunque WhatsApp acepte la salida, el teléfono puede seguir mostrando el dispositivo.
 from paynani_lib.web import whatsapp_strings as _wa_strings  # noqa: E402
-_phone_check = {"es-MX": "Dispositivos vinculados", "en": "Linked devices", "es": "Dispositivos vinculados",
-                "fr": "Appareils connectés", "pt": "Aparelhos conectados"}
+_phone_check = {"es-MX": "Dispositivos vinculados", "en-US": "Linked devices", "es-ES": "Dispositivos vinculados",
+                "fr-FR": "Appareils connectés", "pt-BR": "Aparelhos conectados"}
 _ok = {lang: v["ok_unlinked"] for lang, v in _wa_strings.STRINGS.items()}
-check("#578: «desvinculado» pide revisar el teléfono en los cinco idiomas", (5, True),
-      (len(_ok), all(any(w in t for w in _phone_check.values()) for t in _ok.values())))
+check("#578: los cinco idiomas tienen «desvinculado»", sorted(_phone_check), sorted(_ok))
+for _lang, _text in _ok.items():
+    check(f"#578: «desvinculado» en {_lang} pide revisar el teléfono en su idioma", True,
+          _phone_check[_lang] in _text)
 
 # ---- FR-6a, FR-7: vincular con código ----------------------------------------------------
 status, _, page = req("POST", "/whatsapp/link", form={"csrf": csrf, "mode": "code", "number": "55 1234",
