@@ -541,6 +541,32 @@ async def scenario_entrypoint(tmp: Path) -> None:
     check("SIGTERM: sale con 0 y borra el socket", (0, False), (rc, sock.exists()))
 
 
+async def scenario_authors(tmp: Path) -> None:
+    """El autor del hilo es agent, owner o api, nunca la etiqueta de quién llama (Ximena en #565)."""
+    svc = make(tmp, settings={"WHATSAPP_SEND_INTERVAL_S": "1"})
+    await started(svc)
+    try:
+        await svc.sup.request("link", mode="qr")
+        await svc.sup.request("fake.link_done", me="+15550009999")
+        await svc.sup.request("fake.message", from_e164=NUM, text="hola", key_id="3EB04444")
+        await until(lambda: NUM in svc.store.wrote_since_link())
+        want = {"agent": "agent", "terminal": "agent", "web": "owner", "phone:dev_1": "owner", "api": "api"}
+        got_result, ids = {}, {}
+        async with Client(svc.socket_path) as c:
+            for by in want:
+                r = await c.ask("whatsapp.send", by=by, number=NUM, text=f"de {by}")
+                msg = (r.get("data") or {}).get("message") or {}
+                got_result[by] = msg.get("by")
+                ids[msg.get("id")] = by
+                await asyncio.sleep(1.1)
+            r = await c.ask("whatsapp.thread", by="web", number=NUM)
+        got_thread = {ids[m["id"]]: m.get("by") for m in r["data"]["messages"] if m.get("id") in ids}
+        check("send: result.message.by es agent, owner o api", want, got_result)
+        check("thread: el mismo autor al leerlo después", want, got_thread)
+    finally:
+        await svc.stop()
+
+
 async def main_async() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
@@ -553,6 +579,7 @@ async def main_async() -> None:
         await scenario_reply_never(tmp / "never")
         await scenario_link_timeout(tmp / "timeout")
         await scenario_entrypoint(tmp / "entry")
+        await scenario_authors(tmp / "authors")
 
 
 if __name__ == "__main__":

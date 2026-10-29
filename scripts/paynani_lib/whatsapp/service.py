@@ -552,7 +552,7 @@ class WhatsAppService:
         if wait:
             raise Refused("rate_limited", f"espera {wait} s", retry_after_s=wait)
         sid = self.store.new_sent_id()
-        record = {"id": sid, "to": e164, "text": text, "by": by.split(":")[0], "at": now_utc(),
+        record = {"id": sid, "to": e164, "text": text, "by": author(by), "at": now_utc(),
                   "status": "sending", "file": path.name if path else None}
         self.store.record_sent(record)
         self.store.rate_take()
@@ -718,6 +718,18 @@ class WhatsAppService:
             out.update(exc.extra)
             return out
         return {"type": "result", "ref": rid, "ok": True, "data": data}
+
+
+def author(by: str) -> str:
+    """
+    Quién escribió, para el hilo (SMS_GATEWAY.md §12): `agent` (el agente o la terminal),
+    `owner` (PaynaniWeb o PaynaniApp) o `api`. `by` es la etiqueta de quién llama (§11).
+    """
+    if by == "api":
+        return "api"
+    if by == "web" or by.startswith("phone:"):
+        return "owner"
+    return "agent"
 
 
 def _limit(value) -> int:
