@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **WhatsApp: el contrato del puente y los mensajes de PaynaniApp (WA-0 #552, PRD #550).** `WHATSAPP_BRIDGE.md` describe cómo se hablan el servicio `paynani-whatsapp` y el puente de Baileys: un JSON por línea por stdin/stdout, sin puerto; arranque, estado, vinculación por QR o código (credenciales de un solo uso que nunca se guardan ni se registran), mensajes directos sin historial ni grupos, archivos, llamadas, envío con su lista `allowed`, acuses, salud, desvincular y cierre. `SMS_GATEWAY.md` §12 agrega para PaynaniApp `whatsapp.status`, `whatsapp.link`, `whatsapp.link_cancel`, `whatsapp.unlink`, `whatsapp.threads`, `whatsapp.thread`, `whatsapp.send` y el aviso `whatsapp.changed`, anunciados en `welcome.accepts`, y `welcome.grants` con la capacidad `whatsapp.admin`, que la pasarela sólo le da al teléfono emparejado. Todavía no hay código: es el contrato que siguen WA-1 a WA-7.
+
 ## 0.17.1 (2026-10-26)
 
 **Dos arreglos que salieron después de 0.17.0: el plan de actualización en hosts de

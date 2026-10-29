@@ -207,6 +207,10 @@ La pasarela contesta:
 - `server_version` es la versión de paynani de la pasarela; la app la muestra en
   Estado. Una pasarela anterior no lo trae.
 
+- `grants` es opcional: las capacidades que la pasarela le concede a esta conexión,
+  como `whatsapp.admin` (sección 12). La app no las pide ni las anuncia. Sin `grants`,
+  la app lo trata como lista vacía.
+
 - `allowed` es la lista de teléfonos de `roster.md`. La app **sólo** envía SMS a esos
   números (segunda barrera, por si la primera falla). Cuando cambia el roster, la
   pasarela manda `{"type": "allowed", "allowed": [...]}`.
@@ -561,7 +565,8 @@ número durante la pausa, salvo que el humano se lo pida (Q101 de PaynaniApp#111
 | `rate_limited` | Se pasó `max_out_per_hour` | Sigue abierta |
 | `text_too_long` | `text` de más de 1,000 caracteres | Sigue abierta |
 
-Los mensajes del Roster y las reglas tienen sus propios códigos (sección 11).
+Los mensajes del Roster y las reglas tienen sus propios códigos (sección 11), y los
+de WhatsApp también (sección 12).
 
 **Códigos de cierre propios:** `4400` protocolo, `4401` token revocado o inválido,
 `4409` otra conexión del mismo teléfono la reemplazó. `1001` se usa cuando la
@@ -839,6 +844,9 @@ del humano sale y la app sólo avisa que paynani no lo recibe. Los mensajes del 
 Las órdenes `w_` y `a_` (sección 4) entraron al revés: es la app la que anuncia
 `accepts_owner_out` y `accepts_api_out` en el `hello`, y una app que no lo anuncia nunca
 las recibe.
+Los mensajes de WhatsApp (sección 12) entraron igual que los del Roster: con una
+pasarela que no los anuncia, la app no muestra nada de WhatsApp. `welcome.grants`
+también es opcional: sin él, la app no ofrece vincular ni desvincular.
 Un cambio que rompe a la otra parte sube `protocol` y se documenta aquí antes de
 escribir el código.
 
@@ -1188,3 +1196,233 @@ Ningún error cierra la conexión.
   `[reglas: rules/<id>.md]` del aviso (A-1).
 - La pasarela no escribe en su log el texto de las reglas ni los datos de los
   contactos, igual que con el texto de los SMS (sección 8).
+
+## 12. WhatsApp desde PaynaniApp (PRD #550)
+
+Con WhatsApp configurado en la instalación (FR-1), PaynaniApp muestra la sección
+«WhatsApp» con el estado y el código de vinculación (FR-8), y la opción «WhatsApp
+messages» con los hilos (FR-25). Esta sección es el contrato entre la app y la
+pasarela. Lo que pasa entre la pasarela y el puente de Baileys está en
+`WHATSAPP_BRIDGE.md`.
+
+### Cómo se habla
+
+Igual que la sección 11: sólo el teléfono emparejado, por su WebSocket autenticado;
+pregunta y respuesta sin cola, con `id` `q_` + 32 hex, una sola respuesta `result` o
+`error` con `ref`, espera de 15 segundos y reenvío seguro con el mismo `id`. Sin
+conexión, la app no muestra hilos viejos de memoria: muestra «Sin conexión con
+paynani».
+
+La pasarela consulta al servicio `paynani-whatsapp` por dentro. Si el servicio no
+corre, `whatsapp.status` responde `state: "service_down"` y los demás mensajes
+responden `error` `unavailable`.
+
+### Anuncio en el `welcome`
+
+```json
+"accepts": ["sms.in", …, "whatsapp.status", "whatsapp.threads", "whatsapp.thread",
+            "whatsapp.send", "whatsapp.link", "whatsapp.link_cancel", "whatsapp.unlink"],
+"grants": ["whatsapp.admin"]
+```
+
+- La pasarela pone los tipos `whatsapp.*` en `accepts` **sólo si WhatsApp está
+  configurado** en la instalación. Sin WhatsApp no los anuncia, y la app no muestra
+  nada de WhatsApp: ni la sección ni la opción del menú (FR-25).
+- La app revisa cada tipo en `accepts` antes de mandarlo, como en la sección 11. Sin
+  `whatsapp.threads` no muestra «WhatsApp messages»; sin `whatsapp.send`, muestra los
+  hilos sin cuadro de responder.
+- **`grants`** es nuevo y opcional: las capacidades que la pasarela **le concede** a
+  esta conexión. No es algo que la app anuncie ni pida. Por ahora hay una,
+  `whatsapp.admin`, que la pasarela da sólo al teléfono emparejado de la instalación
+  (el `device_id` de `device.json`) y sólo si WhatsApp está configurado. Sin
+  `whatsapp.admin`, la app no muestra los botones de vincular, cancelar ni
+  desvincular, y la pasarela rechaza esos mensajes con `forbidden` aunque la app los
+  mande (FR-6a). Una pasarela anterior no manda `grants`: la app lo trata como lista
+  vacía.
+
+### `whatsapp.status`: el estado
+
+```json
+{"type": "whatsapp.status", "id": "q_…"}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "state": "connected", "me": "+1XXXXXXXXXX", "since": "2026-10-28T19:05:00Z",
+  "linking": null, "link_number": "+1XXXXXXXXXX"}}
+```
+
+- `state` es el del puente (`unlinked`, `linking`, `connecting`, `connected`,
+  `disconnected`, `logged_out`, ver `WHATSAPP_BRIDGE.md` §3) o `service_down`.
+- `me` es el número vinculado, o `null`.
+- `linking` dice si hay una vinculación en curso y de quién: `null`, o
+  `{"by": "phone", "mode": "code", "expires_at": "…"}`. `by` es `phone`, `web` o
+  `terminal`. **Nunca trae el código ni el QR.**
+- `link_number` es el número que se usaría para el código: el de la SIM del teléfono
+  emparejado (FR-6), o `null` si la app no lo conoce. Con `null`, la app pide el número
+  antes de pedir el código.
+
+### `whatsapp.link`: pedir un código de vinculación
+
+Requiere `whatsapp.admin`.
+
+```json
+{"type": "whatsapp.link", "id": "q_…", "number": "+1XXXXXXXXXX"}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "code": "ABCD-EFGH", "expires_at": "2026-10-28T19:03:00Z"}}
+```
+
+- Siempre es por código, nunca QR: el teléfono no puede escanear su propia pantalla
+  (FR-8). `number` es opcional si `link_number` no es `null`.
+- **Una sola vinculación en curso** (FR-6a): pedir otra cancela la anterior, venga de
+  la app, la web o la terminal.
+- **El código es una credencial de un solo uso.** Va sólo en el `result` de este
+  pedido, nunca en un aviso ni a otra conexión. La pasarela no lo guarda en disco ni
+  en su log. La app lo muestra, permite copiarlo y lo borra de memoria al vencer o al
+  salir de la pantalla; no lo guarda ni lo escribe en su log, tampoco en *debug*.
+- El reenvío seguro con el mismo `id` **no** devuelve el código otra vez: responde
+  `conflict` y la app pide uno nuevo.
+- Con una cuenta ya conectada responde `error` `already_linked`.
+
+### `whatsapp.link_cancel` y `whatsapp.unlink`
+
+Requieren `whatsapp.admin`.
+
+```json
+{"type": "whatsapp.link_cancel", "id": "q_…"}
+{"type": "whatsapp.unlink", "id": "q_…"}
+```
+
+- `whatsapp.link_cancel` cancela la vinculación en curso, sea de quien sea. Sin
+  vinculación en curso responde `result` igual.
+- `whatsapp.unlink` cierra la sesión en WhatsApp y borra las llaves del host (FR-9).
+  Responde `data: {"remote": true}`, o `false` si WhatsApp no contestó y el dueño tiene
+  que quitar el dispositivo desde WhatsApp → Dispositivos vinculados. La app pide
+  confirmación antes de mandarlo.
+
+### `whatsapp.threads`: la lista de hilos
+
+```json
+{"type": "whatsapp.threads", "id": "q_…", "limit": 50, "before": null}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "threads": [
+    {"number": "+1XXXXXXXXXX", "name": "Ana López", "in_roster": true,
+     "last_at": "2026-10-28T19:13:05Z", "last_dir": "out",
+     "last_excerpt": "Sí, a las 8 tenemos lugar.", "last_kind": "text",
+     "can_reply": true},
+    {"number": "+1XXXXXXXXXX", "name": null, "in_roster": false,
+     "last_at": "2026-10-28T18:40:11Z", "last_dir": "in",
+     "last_excerpt": null, "last_kind": null, "can_reply": false, "hidden": true}],
+  "next_before": null}}
+```
+
+- Del más reciente al más viejo. `limit` de 1 a 100 (50 por omisión). Para la página
+  siguiente se manda `before` con el `next_before` que llegó; `null` es que no hay más.
+- `name` sale del roster; nunca del `push_name` de WhatsApp.
+- `last_excerpt` se limpia como el aviso (sin saltos de línea ni caracteres de
+  control, cortado a 160). Para un archivo, `last_kind` dice el tipo (`image`,
+  `audio`, `document`…) y la app lo muestra como en el aviso (`[foto]`).
+- **Fuera del roster** (FR-16a): `hidden: true`, y ni `last_excerpt` ni `last_kind`
+  ni nada del mensaje. Sólo se ve el número y la hora. La excepción es un mensaje que
+  llegó con el Catch-All activo, mientras el Catch-All **siga** activo y válido.
+- `can_reply` es `true` sólo si el número está en el roster y ya escribió por WhatsApp
+  después de vincular (FR-20, Q8=B). No hay forma de empezar un hilo nuevo desde la
+  app (FR-25, Q189=A).
+
+### `whatsapp.thread`: un hilo
+
+```json
+{"type": "whatsapp.thread", "id": "q_…", "number": "+1XXXXXXXXXX", "limit": 50, "before": null}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "number": "+1XXXXXXXXXX", "name": "Ana López", "in_roster": true, "can_reply": true,
+  "messages": [
+    {"id": "wa:agente:9f2c…", "dir": "in", "at": "2026-10-28T19:10:02Z",
+     "kind": "text", "text": "Hola, ¿tienen mesa para 4 hoy?", "media": null},
+    {"id": "wo_6b1e…", "dir": "out", "by": "agent", "at": "2026-10-28T19:13:05Z",
+     "kind": "text", "text": "Sí, a las 8 tenemos lugar.", "status": "read"}],
+  "next_before": null}}
+```
+
+- Del más reciente al más viejo, con la misma paginación que `whatsapp.threads`.
+- `by` en los que salen: `agent`, `owner` (desde PaynaniApp o PaynaniWeb) o `api`
+  (no se usa en esta versión). `status` es `sending`, `sent`, `delivered`, `read` o
+  `failed` (FR-23).
+- `media` trae `{"kind": "image", "mime": "image/jpeg", "bytes": 48213,
+  "filename": null, "seconds": null}`, sin ruta ni contenido: esta versión no manda
+  los archivos a la app. La app muestra el tipo, como en el aviso.
+- **Fuera del roster** (FR-16a): `messages` trae la hora y la dirección de cada mensaje
+  con `hidden: true`, sin `text` ni `media`, salvo la excepción del Catch-All.
+- Un número sin hilo responde `not_found`.
+
+### `whatsapp.send`: contestar en un hilo
+
+```json
+{"type": "whatsapp.send", "id": "q_…", "number": "+1XXXXXXXXXX", "text": "Con gusto, lo esperamos."}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "message": {"id": "wo_…", "dir": "out", "by": "owner", "at": "…", "kind": "text",
+              "text": "Con gusto, lo esperamos.", "status": "sending"}}}
+```
+
+- Sólo texto en esta versión, de 1 a 4,000 caracteres.
+- Sigue las mismas reglas que `paynani whatsapp send` (FR-19 a FR-21): número del
+  roster, que ya escribió después de vincular, y dentro del tope. Si no, `error` con
+  `not_allowed`, `not_started` o `rate_limited`, y no sale nada. No pide
+  `whatsapp.admin`: contestar en un hilo es lo mismo que puede hacer PaynaniWeb.
+- El reenvío seguro con el mismo `id` no lo manda dos veces: responde el mismo
+  `result` con `"replayed": true`.
+- El estado del envío se ve al volver a leer el hilo.
+
+### `whatsapp.changed`: aviso de la pasarela
+
+```json
+{"type": "whatsapp.changed", "what": "threads"}
+```
+
+- Sin `id` ni `ref`. La pasarela lo manda cuando llega un mensaje, cambia un estado de
+  envío (`what: "threads"`) o cambia el estado de la cuenta (`what: "status"`). Lleva
+  sólo `what`: nada del mensaje ni del número.
+- Sólo se manda a una conexión que ya pidió `whatsapp.status` o `whatsapp.threads`,
+  así que una app anterior nunca lo recibe. La app vuelve a leer lo que tenga en
+  pantalla; si no muestra nada de WhatsApp, lo ignora.
+- No pasa por la cola de la app ni recibe `ack`. Si se pierde, la app lo nota al
+  volver a abrir la pantalla.
+
+### Errores de esta sección
+
+Además de los de las secciones 5 y 11:
+
+| `code` | Cuándo |
+|---|---|
+| `forbidden` | Vincular, cancelar o desvincular sin `whatsapp.admin` |
+| `unavailable` | WhatsApp no está configurado, o el servicio `paynani-whatsapp` no corre |
+| `already_linked` | `whatsapp.link` con una cuenta ya conectada |
+| `not_connected` | `whatsapp.send` sin cuenta conectada |
+| `not_allowed` | `whatsapp.send` a un número fuera del roster (FR-19) |
+| `not_started` | `whatsapp.send` a un contacto que no ha escrito por WhatsApp (FR-20) |
+| `rate_limited` | Se pasó el tope de FR-21. Va `retry_after_s` |
+| `not_found` | `whatsapp.thread` de un número sin hilo |
+| `invalid` | Un campo no pasa la validación (`number` no es E.164, `text` vacío o de más de 4,000, `limit` fuera de rango). Van `field` y `reason` |
+
+Ningún error cierra la conexión.
+
+### Lo que se registra
+
+- Vincular, cancelar y desvincular desde la app quedan en el log de cambios con la
+  hora y el `device_id`, sin el código, y le llegan por correo al humano, como los
+  cambios de la sección 11.
+- Un `whatsapp.send` queda en el hilo como `by: owner`, y el agente lo ve al leer el
+  hilo, como un SMS del dueño desde PaynaniWeb.
+- La pasarela no escribe en su log el texto de los mensajes, el código de
+  vinculación ni el número completo: igual que con los SMS (sección 8).
