@@ -251,8 +251,9 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
         out_dir = m.get("dir") == "out"
         css = {"agent": "sms-agent", "owner": "sms-human", "api": "sms-agent"}.get(m.get("by"), "sms-agent") \
             if out_dir else "sms-received"
+        # §12: `by` es agent, owner o api. Otro valor no se adivina: sólo dice que salió.
         label = {"agent": _th("by_agent"), "owner": _th("by_owner"), "api": _th("by_api")}.get(
-            m.get("by"), _th("by_agent")) if out_dir else e(who)
+            m.get("by"), _th("sent_prefix")) if out_dir else e(who)
         if m.get("hidden") or not in_roster:
             body = f'<span class="quiet">{_th("hidden_short")}</span>'
         elif m.get("kind") and m.get("kind") != "text":

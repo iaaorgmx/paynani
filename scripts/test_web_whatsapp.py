@@ -436,6 +436,13 @@ html_out = whatsapp_pages.thread_body(leaky, "")
 check("FR-16a: fuera del roster no se dibuja el texto ni el nombre, aunque llegaran", (False, False),
       ("secreto" in html_out, "<script>" in html_out))
 
+odd = {"number": "+15550100001", "name": "Ana López", "in_roster": True, "can_reply": True,
+       "messages": [{"id": "wo_1", "dir": "out", "by": "web", "at": "2026-10-28T19:00:00Z", "kind": "text",
+                     "text": "Hola", "status": "sent"}]}
+html_out = whatsapp_pages.thread_body(odd, "")
+check("un `by` fuera de §12 no se toma por el agente: sólo dice «Enviado»", (False, True),
+      ('class="de">' + th("web.wa.by_agent") in html_out, 'class="de">' + th("web.wa.sent_prefix") in html_out))
+
 # Desconectado: no se puede contestar.
 demo.state = "disconnected"
 status, _, page = req("GET", "/whatsapp/messages/ver?n=%2B15550100001&lang=es-MX", cookie=cookie)
