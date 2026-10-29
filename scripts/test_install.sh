@@ -1253,10 +1253,21 @@ FAKE_NPM_EXIT=1 check_status 'a failed npm ci stops before writing a unit' 78 --
 
 check_status 'a plain install first, to compare the other units against' 10 --runtime codex
 : >"$npm_log"
+: >"$FAKE_SYSTEMD_LOG"
 units_before=$(cd "$sandbox/.config/systemd/user" && sha256sum paynani-idle.service paynani-dispatch.service paynani-logrotate.timer)
 check_status '--with-whatsapp installs the service' 10 --runtime codex --with-whatsapp
 [[ "$(cd "$sandbox/.config/systemd/user" && sha256sum paynani-idle.service paynani-dispatch.service paynani-logrotate.timer)" == "$units_before" ]] || {
     printf 'FAIL adding WhatsApp changed another unit file\n'; fail=$((fail + 1))
+}
+# What #567 promises, and no more: the other unit FILES stay byte for byte the same,
+# but adding a unit restarts every enabled paynani service (runtime_filesystem_changed
+# is global, the same as when --with-sms adds the gateway). Pinned so a change to
+# that granularity is a deliberate one.
+grep -qx -- '--user restart paynani-idle.service' "$FAKE_SYSTEMD_LOG" &&
+grep -qx -- '--user restart paynani-dispatch.service' "$FAKE_SYSTEMD_LOG" &&
+grep -qx -- '--user enable --now paynani-whatsapp.service' "$FAKE_SYSTEMD_LOG" || {
+    printf 'FAIL adding WhatsApp did not enable it and restart the other enabled services as documented: %s\n' \
+        "$(grep -E 'restart|enable' "$FAKE_SYSTEMD_LOG" | tr '\n' ';')"; fail=$((fail + 1))
 }
 [[ -f "$wa_unit" && "$(file_mode "$wa_unit")" == 644 ]] && ! grep -q '/path/to' "$wa_unit" || {
     printf 'FAIL --with-whatsapp did not write a rendered 0644 unit\n'; fail=$((fail + 1))

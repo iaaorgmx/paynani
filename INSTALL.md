@@ -1278,7 +1278,9 @@ That runs `npm ci --ignore-scripts` in `scripts/whatsapp_bridge/`: the exact
 versions in `package-lock.json`, with no install scripts. It writes
 `whatsapp.env` with `WHATSAPP_ENABLED=1` next to `runtime.env` if there is none.
 It adds `paynani-whatsapp.service` (LaunchAgent `com.paynani.whatsapp` on macOS),
-enables it and records it in the ownership manifest. From then on `--upgrade`
+enables it and records it in the ownership manifest. Like `--with-sms`, adding
+the unit restarts the other paynani services that are already running; their unit
+files do not change. From then on `--upgrade`
 keeps it current and `--uninstall` removes it. `whatsapp.env` is yours after the
 first write: no install, upgrade or uninstall changes or removes it, and
 `WHATSAPP_ENABLED=0` there turns WhatsApp off. The account keys in
