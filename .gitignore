@@ -45,3 +45,7 @@
 
 *.log
 __pycache__/
+
+# The WhatsApp bridge's dependencies (PRD #550 FR-3): `npm ci` installs them from
+# package-lock.json at install or upgrade time; they are never committed.
+/scripts/whatsapp_bridge/node_modules/
