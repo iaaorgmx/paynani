@@ -380,7 +380,9 @@ assert "~/.claude, which the script creates for the clone, is not group or world
 assert "...and neither is the himalaya installer's target nor anything else it made" \
     '! find "$home" -perm /022 | grep -q .'
 assert "with umask 002 in the caller, every command handed to sudo carries umask 077" \
-    '[ "$(grep -c "^sudo -u owner -H " "$log")" -gt 3 ] && [ "$(grep "^sudo -u owner -H " "$log" | grep -vc "umask 077; exec")" -eq 0 ]'
+    '[ "$(grep -c "^sudo -u owner -H " "$log")" -gt 3 ] && [ "$(grep "^sudo -u owner -H " "$log" | grep -vc "umask 077; ")" -eq 0 ]'
+assert "...and runs from the user's home, not from the caller's directory (git refuses an unreadable one)" \
+    '[ "$(grep "^sudo -u owner -H " "$log" | grep -vc "cd \"\$HOME\" 2>/dev/null || cd /; exec")" -eq 0 ]'
 
 # ---- directories that already exist on the way to the clone (install.sh refuses g/o-writable ones) ---
 

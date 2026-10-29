@@ -144,7 +144,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --runtime)      need_value "$1" $#; runtime=$2; shift 2 ;;
         --user)         need_value "$1" $#; user=$2; shift 2 ;;
-        --dir)          need_value "$1" $#; dir=$2; shift 2 ;;
+        --dir)          need_value "$1" $#; dir=$2; [[ "$dir" == /* ]] || dir="$PWD/$dir"; shift 2 ;;
         --ref)          need_value "$1" $#; ref=$2; shift 2 ;;
         --env-file)     need_value "$1" $#; env_file=$2; shift 2 ;;
         --owner-name)   need_value "$1" $#; owner_name=$2; shift 2 ;;
@@ -199,7 +199,12 @@ run() {
 # (found by the end-to-end job). A umask is not an environment variable, so
 # `env -i` does not fix it.
 user_env=()
-as_user() { sudo -u "$user" -H "${user_env[@]}" sh -c 'umask 077; exec "$@"' sh "$@"; }
+# The user's commands run from their home, not from root's current directory: a
+# recent git refuses to start when it cannot read the directory it was started in (a
+# root shell in /root, or the CI checkout under /home/runner), and `git clone`
+# fails with "Invalid path ...: Permission denied". Every path given here is
+# absolute, so the change of directory does not change what they mean.
+as_user() { sudo -u "$user" -H "${user_env[@]}" sh -c 'umask 077; cd "$HOME" 2>/dev/null || cd /; exec "$@"' sh "$@"; }
 
 # Same as run, for what runs as the user.
 run_user() {
