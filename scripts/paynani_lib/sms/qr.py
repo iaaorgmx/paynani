@@ -306,3 +306,26 @@ def to_svg(matrix: list[list[bool]], quiet: int = 4, label: str = "") -> str:
             f'width="256" height="256" role="img" shape-rendering="crispEdges">{title}'
             f'<rect width="{total}" height="{total}" fill="#fff"/>'
             f'<path d="{"".join(parts)}" fill="#000"/></svg>')
+
+
+def to_terminal(matrix: list[list[bool]], quiet: int = 2) -> str:
+    """
+    El QR para la terminal, dos filas por línea con medios bloques. Negro sobre blanco
+    con colores ANSI fijos, para que el teléfono lo lea también en una terminal oscura.
+    """
+    size = len(matrix)
+    full = size + 2 * quiet
+
+    def dark(r: int, c: int) -> bool:
+        r -= quiet
+        c -= quiet
+        return 0 <= r < size and 0 <= c < size and matrix[r][c]
+
+    lines = []
+    for r in range(0, full, 2):
+        row = []
+        for c in range(full):
+            top, bottom = dark(r, c), dark(r + 1, c) if r + 1 < full else False
+            row.append("█" if top and bottom else "▀" if top else "▄" if bottom else " ")
+        lines.append("\x1b[30;47m" + "".join(row) + "\x1b[0m")
+    return "\n".join(lines)

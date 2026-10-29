@@ -662,7 +662,8 @@ def catch_all_active_now():
 _UNATTENDED_KINDS = {"sms.received": "SMS", "call.missed": "llamada perdida", "call.answered": "llamada contestada",
                      "sms.human_sent": "SMS que mandó el dueño desde PaynaniApp",
                      "sms.gateway.battery_low": "batería baja del teléfono",
-                     "sms.gateway.battery_ok": "batería del teléfono recuperada"}
+                     "sms.gateway.battery_ok": "batería del teléfono recuperada",
+                     "whatsapp.received": "WhatsApp", "whatsapp.health": "estado de WhatsApp"}
 
 
 def unattended_line(event_id, envelope):
@@ -672,6 +673,8 @@ def unattended_line(event_id, envelope):
         who = f"{sender['name']} <{sender['address']}>"
     # An SMS or a call has no subject: say what it was instead of leaving a dangling dash.
     what = envelope.get("subject") or _UNATTENDED_KINDS.get(envelope.get("event_type"), "")
+    if envelope.get("channel") == "whatsapp" and envelope.get("event_type", "").startswith("call."):
+        what += " de WhatsApp"
     if (envelope.get("catch_all") or {}).get("status") == "active":
         what += " (catch-all)"
     return f"{event_id}  {envelope.get('observed_at', '')}  {who} — {what}"

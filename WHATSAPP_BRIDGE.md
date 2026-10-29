@@ -389,3 +389,165 @@ las órdenes por stdin, contesta por stdout y, con órdenes de prueba que el pue
 no tiene (`fake.*`), simula un mensaje que llega, una llamada, una desconexión o un
 `logged_out`. Ninguna prueba se conecta a WhatsApp. El puente real sólo se prueba en
 las pruebas reales de WA-8 (#560).
+
+## 11. Interfaz local del servicio (WA-2)
+
+Las secciones 1 a 10 son entre el servicio y su puente. Esta es la otra puerta del
+servicio: la que usan `paynani whatsapp` (la terminal y el agente), la pasarela SMS
+(para PaynaniApp, `SMS_GATEWAY.md` §12) y PaynaniWeb.
+
+### Dónde y quién
+
+- Un socket Unix en `state/whatsapp/control.sock`. La carpeta es 0700 y el socket
+  0600, así que sólo el usuario de la instalación puede conectarse. No hay puerto TCP:
+  nada de la red, ni otro usuario de la máquina, llega a él.
+- El servicio confía en quien se conecta, porque es el mismo usuario. Las barreras
+  de quién puede pedir qué son de cada cliente: la pasarela revisa `whatsapp.admin`
+  (FR-6a) y la web pide su contraseña y el CSRF (FR-6a, FR-7) **antes** de mandar la
+  petición. Las reglas de envío y de privacidad (FR-16a, FR-19 a FR-22) las aplica
+  **siempre** el servicio, venga de quien venga la petición.
+- Si el servicio no corre, el socket no existe o rechaza la conexión. El cliente lo
+  trata como `unavailable`.
+- **WhatsApp configurado** es un solo predicado, `whatsapp_config.configured()` en
+  `scripts/paynani_lib/whatsapp/config.py`, que usan el servicio, la pasarela, la web,
+  `doctor` y el instalador. Es verdadero sólo si `whatsapp.env`, junto a
+  `runtime.env`, es un archivo regular (no un enlace), se puede leer y trae
+  `WHATSAPP_ENABLED=1`. Faltante, ilegible, con otro valor o con una línea que no se
+  entiende: **no configurado**, y nadie anuncia nada de WhatsApp.
+  - Lo escribe sólo la instalación al activar WhatsApp (WA-3, `install.sh
+    --with-whatsapp`). Lo apaga `paynani whatsapp disable`, que lo deja en
+    `WHATSAPP_ENABLED=0`, y la desinstalación, que lo borra.
+  - Configurado y con el servicio caído, el cliente contesta él mismo
+    `whatsapp.status` con `state: "service_down"`. La web sigue mostrando el menú.
+
+### Cómo se habla
+
+- Un JSON por línea en cada sentido, como con el puente. Una conexión puede llevar
+  varias peticiones.
+- Cada petición lleva `type`, `id` (`q_` + 32 hex) y `by`, que dice de dónde viene:
+  `terminal`, `agent`, `web`, `phone:<device_id>` o `api`.
+- **`by` es sólo una etiqueta.** Todos los clientes entran con el mismo usuario por el
+  mismo socket, así que cualquiera puede escribir cualquier `by`. El servicio lo usa
+  para el log, para `linking.by` y para marcar quién mandó un mensaje en el hilo,
+  nunca para decidir un permiso. Las reglas que protegen algo (FR-16a, FR-19 a
+  FR-22) las aplica el servicio igual para todos.
+- El servicio contesta una vez a cada petición, con `result` o `error` y `ref` igual
+  al `id`, con las mismas formas que `SMS_GATEWAY.md` §12.
+
+```json
+{"type": "whatsapp.status", "id": "q_…", "by": "web"}
+{"type": "result", "ref": "q_…", "ok": true, "data": {"state": "connected", "me": "+1XXXXXXXXXX", …}}
+```
+
+### Los tipos
+
+Los de `SMS_GATEWAY.md` §12, con los mismos campos, más lo que la web y la terminal
+necesitan:
+
+| `type` | Qué hace | Diferencia con §12 |
+|---|---|---|
+| `whatsapp.status` | Estado | Igual |
+| `whatsapp.link` | Empieza a vincular | Acepta `mode: "qr"` además de `"code"`, y el `result` trae `link_id` (ver abajo) |
+| `whatsapp.link_current` | El QR o código vigente de una vinculación | Nuevo. Pide `link_id` |
+| `whatsapp.link_cancel` | Cancela | Igual |
+| `whatsapp.unlink` | Desvincula | Igual |
+| `whatsapp.threads` | Hilos | Igual |
+| `whatsapp.thread` | Un hilo | Igual |
+| `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta), que el servicio valida siempre contra FR-22, sin importar `by`. La pasarela y la web no aceptan archivos de sus propios clientes, así que nunca mandan `file` |
+| `whatsapp.watch` | Avisos sin pedirlos | Nuevo. Ver abajo |
+
+### Vincular: `link_id` y `whatsapp.link_current`
+
+La web es pregunta y respuesta, y el QR rota cada ~20 s. Por eso el `result` de
+`whatsapp.link` trae un `link_id` (`l_` + 32 hex), además del primer QR o del código:
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "link_id": "l_…", "mode": "qr", "qr": "2@…", "expires_at": "…", "expires_in_s": 20}}
+```
+
+Con ese `link_id`, quien empezó la vinculación pregunta por el QR vigente:
+
+```json
+{"type": "whatsapp.link_current", "id": "q_…", "by": "web", "link_id": "l_…"}
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "state": "waiting", "mode": "qr", "qr": "2@…", "expires_at": "…", "expires_in_s": 14}}
+{"type": "result", "ref": "q_…", "ok": true, "data": {"state": "ended", "reason": "linked"}}
+```
+
+- **Sólo el `link_id` da el QR o el código.** `whatsapp.status` nunca los trae, y
+  `whatsapp.watch` tampoco. El `link_id` sólo va en el `result` a quien pidió
+  vincular (FR-6a). Un `link_id` que no es el de la vinculación en curso responde
+  `not_found`.
+- `reason` es el de `link.ended` (§3): `linked`, `expired`, `canceled`, `replaced` o
+  `failed`. Un `link_id` terminado responde `ended` durante 5 minutos y luego
+  `not_found`.
+- **Con `mode: "qr"`, si nadie pregunta, se cancela.** Si pasan 60 s sin un
+  `whatsapp.link_current` con ese `link_id`, el servicio cancela la vinculación
+  (`link.ended` `canceled`). Así un QR no queda vivo con la página cerrada. La web
+  pregunta cada 2 a 5 s mientras la página está abierta.
+- **Con `mode: "code"` no hay cancelación por silencio.** El código vive sus 180 s
+  (FR-6a) o hasta que alguien cancele o empiece otra vinculación. PaynaniApp sólo
+  refresca `whatsapp.status`, y eso basta. `whatsapp.link_current` con el `link_id`
+  de un código responde el estado (`waiting` o `ended`) y `expires_in_s`, **nunca el
+  código otra vez**: el código sale una sola vez, en el `result` de
+  `whatsapp.link`, como en §12.
+- La terminal (`paynani whatsapp link`) usa el mismo mecanismo.
+
+**De punta a punta en PaynaniWeb** (WA-5):
+
+1. `POST /whatsapp/link` con la contraseña y el CSRF (FR-6a). La web manda
+   `whatsapp.link` con `mode: "qr"` y guarda el `link_id` **sólo en el servidor**,
+   ligado a la sesión del navegador; nunca va al navegador ni a una URL. Responde la
+   página del QR.
+2. La página pide `GET /whatsapp/link/current` cada 2 a 5 s. Es una lectura con la
+   sesión ya iniciada, sin contraseña ni CSRF. La web manda `whatsapp.link_current`
+   con el `link_id` de esa sesión y devuelve el QR vigente como SVG, `expires_in_s` y
+   el estado, o el final.
+3. `POST /whatsapp/link/cancel` y `POST /whatsapp/unlink` llevan contraseña y CSRF.
+4. **Toda respuesta que pueda traer un QR o un código** lleva `Cache-Control:
+   no-store`, y el SVG se arma en memoria; nunca se escribe en disco.
+5. Si la página se cierra, nadie pregunta y a los 60 s el servicio cancela. Si una
+   pregunta falla (socket caído), la página reintenta con la misma espera; si el
+   servicio contesta `not_found`, la página dice que la vinculación terminó y ofrece
+   empezar otra.
+
+**El QR se dibuja con `scripts/paynani_lib/sms/qr.py`,** no con un codificador nuevo.
+Es el que paynani ya usa desde SRV-4 para el QR de emparejamiento de SMS, que
+PaynaniApp escanea en cada instalación. `scripts/test_qr.py` lee cada matriz de vuelta
+como un lector (bits de formato, máscara, Reed-Solomon y modo byte). WA-2 agrega una
+regresión con una cadena del tamaño máximo observado para un QR de WhatsApp (~310
+bytes, versión 13, nivel M): la matriz se lee de vuelta y el SVG que sale de `to_svg`
+se rasteriza y se decodifica (con `zbarimg` si está instalado). paynani no lleva dependencias
+de Python, así que no se agrega una biblioteca de QR.
+
+### `whatsapp.watch`
+
+```json
+{"type": "whatsapp.watch", "id": "q_…", "by": "phone:d_3f9a1c"}
+```
+
+El servicio contesta primero `result` con el estado actual, y desde ahí esa conexión
+recibe los avisos:
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {"watching": true, "status": {"state": "connected", …}}}
+```
+
+Desde ahí, esa conexión recibe `{"type": "whatsapp.changed", "what": "threads"}` y
+`{"type": "whatsapp.changed", "what": "status"}`, igual que el aviso de §12: sin
+datos del mensaje ni del número, y nunca un QR ni un código. La pasarela lo usa para
+reenviar el aviso a PaynaniApp, y la web para refrescar la página.
+
+### Errores
+
+Los de `SMS_GATEWAY.md` §12 (`unavailable`, `already_linked`, `not_connected`,
+`not_allowed`, `not_started`, `rate_limited`, `not_found`, `invalid`), más
+`bad_json`, `unknown_type` y `missing_field` como en §7. `forbidden` no sale de aquí:
+lo da el cliente que revisa sus propias barreras.
+
+### `paynani whatsapp`
+
+La terminal y el agente usan esta misma interfaz. `paynani whatsapp send` sale con
+código 2 y el `code` en stderr para `not_allowed`, `not_started` y `rate_limited`,
+como `paynani sms send`, y con 1 si el servicio no corre.

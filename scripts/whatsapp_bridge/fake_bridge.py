@@ -13,6 +13,7 @@ Habla el mismo protocolo que index.js, por stdin y stdout, sin red ni Baileys. L
     fake.logged_out     WhatsApp cerró la sesión: borra auth/ y avisa logged_out
     fake.crash          sale con el código `code` (1 por omisión) sin cerrar
     fake.hang           deja de contestar (para probar los pings)
+    fake.silent_link    el próximo link contesta bien pero no manda QR ni código
     fake.stderr         escribe `text` en stderr
 
 Variables de entorno, para las pruebas de arranque:
@@ -65,6 +66,7 @@ class Fake:
         self.state = {"state": "unlinked", "me": None, "since": iso(), "reason": None}
         self.link: dict | None = None
         self.hung = False
+        self.silent_link = False
 
     # --- estado ---
     def creds(self) -> Path:
@@ -146,6 +148,9 @@ class Fake:
         self.link = {"mode": mode, "number": msg.get("number")}
         self.set_status("linking")
         result(ref)
+        if self.silent_link:
+            self.silent_link = False
+            return
         if mode == "qr":
             out({"type": "link.qr", "qr": "2@" + secrets.token_urlsafe(24), "expires_at": iso(20)})
         else:
@@ -243,6 +248,10 @@ class Fake:
 
     def do_fake_crash(self, ref, msg) -> None:
         os._exit(int(msg.get("code", 1)))
+
+    def do_fake_silent_link(self, ref, msg) -> None:
+        self.silent_link = True
+        result(ref)
 
     def do_fake_hang(self, ref, msg) -> None:
         self.hung = True
