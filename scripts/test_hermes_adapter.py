@@ -273,6 +273,19 @@ class HermesAdapterTest(unittest.TestCase):
                 result = hermes.deliver(self.envelope)
                 self.assertEqual(expected, result.status, result.detail)
 
+    def test_ignored_event_names_its_type_and_the_fix(self):
+        # #582: a route without whatsapp.received in its events answers 200
+        # ignored, and the queue halts behind it. The detail is what the
+        # healthcheck shows, so it has to say which type and what to change.
+        self.envelope["event_type"] = "whatsapp.received"
+        _Handler.response_status = 200
+        _Handler.response_body = {"status": "ignored"}
+        result = hermes.deliver(self.envelope)
+        self.assertEqual("config", result.status)
+        self.assertIn("whatsapp.received", result.detail)
+        self.assertIn("events", result.detail)
+        self.assertIn("restart the gateway", result.detail)
+
     def test_route_mode_and_named_route_are_enforced(self):
         self.envelope["roster_match"] = False
         _Handler.response_status = 202

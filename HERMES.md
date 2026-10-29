@@ -30,7 +30,8 @@ a JSON-compatible YAML example, checked by
 ## Texts and WhatsApp
 
 With the SMS gateway or WhatsApp installed (`INSTALL.md` 5.1 and 5.4), the same
-two routes carry those events too. A text arrives as `sms.received` and a WhatsApp
+two routes carry those events too, as long as their `events` lists include them
+(see "Event lists" under section 1). A text arrives as `sms.received` and a WhatsApp
 message as `whatsapp.received` with `channel: whatsapp`; calls are `call.missed` or
 `call.answered`, with `channel: whatsapp` when they came by WhatsApp. They carry
 `roster_match` like mail, and, like mail, no body: the agent reads it with
@@ -52,6 +53,35 @@ replace:
 - the notification delivery target and chat ID;
 - the roster-agent final delivery target and chat ID;
 - the `himalaya` skill/toolset names if that profile exposes mail differently.
+
+Keep each route's `events` list and `prompt` exactly as in the example (see
+"Event lists" below).
+
+### Event lists
+
+Hermes reads the event type from `event_type` in the payload and answers
+`200 status=ignored` for a type that is not in the route's `events` list. The
+dispatcher treats that as a configuration failure and keeps the ordered queue
+where it is, so one ignored event holds back everything after it, mail
+included (#582). That is why both lists are exact:
+
+- `paynani-notify` takes every event type paynani writes: mail, `listener.error`,
+  the SMS gateway (`sms.*`), WhatsApp (`whatsapp.received`, `whatsapp.health`)
+  and calls (`call.missed`, `call.answered`).
+- `paynani-roster` takes only the types that have a sender and can carry
+  `roster_match=true`: `email.received`, `sms.received`, `sms.human_sent`,
+  `whatsapp.received`, `call.missed` and `call.answered`.
+
+`scripts/test_hermes_examples.py` fails if a new event type in
+`harness/event.py` is missing from the notify list.
+
+**Routes from paynani 0.17.1 or earlier** listed only mail. Replace both `events`
+lists and the roster `prompt` with the ones in the example, then run
+`hermes gateway restart` from a terminal outside the gateway. The dispatcher
+then delivers the held events in order, oldest first: answer or close each one
+(`scripts/paynani event mark <event_id> handled`) rather than reply late to a
+conversation that has moved on. While the queue is held, `healthcheck.py`
+shows the last delivery error, which names the ignored event type.
 
 For a **multiplexed gateway**, port-binding webhook configuration and all route
 definitions belong only in the default profile's `config.yaml`. Enable
@@ -220,7 +250,7 @@ that detail deliberately distinguishes transport acceptance from completion.
 | `200 status=delivered` on notify route | accepted | Direct delivery completed. |
 | `200 status=duplicate` | accepted | Hermes already recorded this transport ID; after an ambiguous timeout, verify the user-facing result. |
 | accepted/delivered status on the wrong route mode, or a mismatched response `route` | configuration failure | Route URLs or secrets may be swapped; the routing boundary is not acknowledged. |
-| `200 status=ignored` | configuration failure | The configured event filter did not route an event this adapter expected to route. |
+| `200 status=ignored` | configuration failure | The route's `events` list does not include this event type (see "Event lists"). The detail names the type. |
 | redirect, `400`, `401`, `403`, `404`, `413` | configuration failure | The ordered queue stops loudly without acknowledging the event. |
 | network error, timeout, `408`, `429`, other `5xx` | retry | The cursor remains still and the dispatcher retries in place. |
 
