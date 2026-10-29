@@ -5,7 +5,7 @@ STRINGS = {
     "es-MX": {
         "link": "Catch-All",
         "title": "Catch-All",
-        "lead": "Con el Catch-All activo, los SMS de números que no están en el roster le llegan a tu agente con su texto. El agente sigue solo estas instrucciones y nunca le contesta al número.",
+        "lead": "Con el Catch-All activo, los SMS y los mensajes de WhatsApp de números que no están en el roster le llegan a tu agente con su texto. Activarlo o apagarlo cambia los dos canales. El agente sigue solo estas instrucciones y nunca le contesta al número.",
         "codes": "Los códigos de verificación (WhatsApp, Telegram, bancos) también le llegarán al agente. Tus instrucciones pueden decirle que los ignore.",
         "enabled": "Activar Catch-All",
         "instructions": "Instrucciones para el agente",
@@ -32,7 +32,7 @@ STRINGS = {
     "en-US": {
         "link": "Catch-All",
         "title": "Catch-All",
-        "lead": "With the Catch-All on, SMS from numbers that are not on the roster reach your agent with their text. The agent follows only these instructions and never replies to the number.",
+        "lead": "With the Catch-All on, SMS and WhatsApp messages from numbers that are not on the roster reach your agent with their text. Turning it on or off changes both channels. The agent follows only these instructions and never replies to the number.",
         "codes": "Verification codes (WhatsApp, Telegram, banks) will reach the agent too. Your instructions can tell it to ignore them.",
         "enabled": "Turn on the Catch-All",
         "instructions": "Instructions for the agent",
@@ -59,7 +59,7 @@ STRINGS = {
     "es-ES": {
         "link": "Catch-All",
         "title": "Catch-All",
-        "lead": "Con el Catch-All activado, los SMS de números que no están en el roster le llegan a tu agente con su texto. El agente sigue solo estas instrucciones y nunca contesta al número.",
+        "lead": "Con el Catch-All activado, los SMS y los mensajes de WhatsApp de números que no están en el roster le llegan a tu agente con su texto. Activarlo o desactivarlo cambia los dos canales. El agente sigue solo estas instrucciones y nunca contesta al número.",
         "codes": "Los códigos de verificación (WhatsApp, Telegram, bancos) también le llegarán al agente. Tus instrucciones pueden decirle que los ignore.",
         "enabled": "Activar Catch-All",
         "instructions": "Instrucciones para el agente",
@@ -86,7 +86,7 @@ STRINGS = {
     "fr-FR": {
         "link": "Catch-All",
         "title": "Catch-All",
-        "lead": "Avec le Catch-All activé, les SMS des numéros absents du roster parviennent à votre agent avec leur texte. L’agent suit uniquement ces instructions et ne répond jamais au numéro.",
+        "lead": "Avec le Catch-All activé, les SMS et les messages WhatsApp des numéros absents du roster parviennent à votre agent avec leur texte. L’activer ou le désactiver change les deux canaux. L’agent suit uniquement ces instructions et ne répond jamais au numéro.",
         "codes": "Les codes de vérification (WhatsApp, Telegram, banques) parviendront aussi à l’agent. Vos instructions peuvent lui dire de les ignorer.",
         "enabled": "Activer le Catch-All",
         "instructions": "Instructions pour l’agent",
@@ -113,7 +113,7 @@ STRINGS = {
     "pt-BR": {
         "link": "Catch-All",
         "title": "Catch-All",
-        "lead": "Com o Catch-All ativo, os SMS de números que não estão no roster chegam ao seu agente com o texto. O agente segue apenas estas instruções e nunca responde ao número.",
+        "lead": "Com o Catch-All ativo, os SMS e as mensagens de WhatsApp de números que não estão no roster chegam ao seu agente com o texto. Ativá-lo ou desativá-lo muda os dois canais. O agente segue apenas estas instruções e nunca responde ao número.",
         "codes": "Os códigos de verificação (WhatsApp, Telegram, bancos) também chegarão ao agente. Suas instruções podem dizer a ele que os ignore.",
         "enabled": "Ativar o Catch-All",
         "instructions": "Instruções para o agente",
