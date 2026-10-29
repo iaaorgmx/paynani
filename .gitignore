@@ -22,6 +22,8 @@
 /install.manifest
 # The user's SMS gateway settings (paynani_lib/sms/config.py): never tracked, never the installer's.
 /sms.env
+# WhatsApp on or off, and its settings (paynani_lib/whatsapp/config.py): per-install, never tracked.
+/whatsapp.env
 
 # The two Hermes route secrets. Anchored so HERMES.md, harness/adapters/hermes.py
 # and examples/hermes-routes.yaml stay tracked.
