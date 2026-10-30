@@ -340,6 +340,7 @@ def _with_main_block(text: str, merged: dict) -> str:
 TXN_DIR = "main_account.txn"
 TXN_FILE = "snapshot.json"
 COMMIT_FILE = "committed.json"
+ABORT_FILE = "aborted.json"
 
 
 def _read(path: Path) -> str | None:
@@ -389,6 +390,20 @@ def _commit_path() -> Path:
     return listener_control.state_dir() / TXN_DIR / COMMIT_FILE
 
 
+def _abort_path() -> Path:
+    return listener_control.state_dir() / TXN_DIR / ABORT_FILE
+
+
+def _names(path: Path, txn: str) -> bool:
+    """path is a regular file whose JSON names txn."""
+    if not txn or path.is_symlink():
+        return False
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("txn") == txn
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 class _Unreadable(Exception):
     """A snapshot is there but cannot be trusted: a symlink, or not the JSON this module writes."""
 
@@ -435,19 +450,26 @@ class _Snapshot:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         directory.chmod(0o700)
         _fsync_dir(directory.parent)
-        _commit_path().unlink(missing_ok=True)   # a stray marker from an earlier cleanup
+        _commit_path().unlink(missing_ok=True)   # stray markers from an earlier cleanup
+        _abort_path().unlink(missing_ok=True)
         _write_private(_txn_path(), json.dumps(data))
         return cls(data)
 
     @property
     def committed(self) -> bool:
-        """True only if this snapshot's commit marker is there and names it."""
-        path = _commit_path()
-        if path.is_symlink():
-            return False
+        """
+        True only if this snapshot's commit marker is there and names it, and no
+        abort marker names it: an abort marker is written when a failed commit's
+        marker could not be removed, and it wins.
+        """
+        return _names(_commit_path(), self.txn) and not _names(_abort_path(), self.txn)
+
+    def abort(self) -> bool:
+        """Say durably that this txn did not commit, for a commit marker that would not go away."""
         try:
-            return bool(self.txn) and json.loads(path.read_text(encoding="utf-8")).get("txn") == self.txn
-        except (OSError, ValueError, AttributeError):
+            _write_private(_abort_path(), json.dumps({"txn": self.txn}))
+            return True
+        except OSError:
             return False
 
     @classmethod
@@ -531,6 +553,7 @@ class _Snapshot:
         except OSError:
             pass
         _Snapshot.drop_marker()
+        _abort_path().unlink(missing_ok=True)
         return True
 
 
@@ -670,8 +693,14 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
 
     def undo(code: str, detail: str, restart=None, ready="") -> Result:
         """Put the old settings back and prove the listener is on them; the snapshot stays until then."""
-        if not _Snapshot.drop_marker():
-            detail += "; the commit marker could not be removed"
+        if not _Snapshot.drop_marker() and not snapshot.abort():
+            # Neither marker can be changed. Restoring now would leave old files
+            # next to a marker that says committed; leaving the change in place
+            # keeps the files and the marker telling the same story.
+            _audit(by, changed, code, "failed")
+            return Result(False, code, changed, probe=checked.probe, restart=restart, ready=ready, rollback="failed",
+                          detail=detail + "; the commit marker could not be removed or overruled, "
+                                          "so the new settings were left in place")
         restored = snapshot.restore()
         back_ok = restored and (not reconnect
                                 or _back_on(candidate.stored.get(ACCOUNT, ""), timeout_s) == "connected")

@@ -712,24 +712,68 @@ with tempfile.TemporaryDirectory() as td:
         ma._write_private = real_write
         restore(saved)
 
-with tempfile.TemporaryDirectory() as td:
-    # Same, and the marker cannot even be removed: the snapshot still never says "committed".
-    env, cfg, state, roster, fake, saved = scenario(td, fake=Fake(back_on_old=False))
-    real_write, real_drop = ma._write_private, ma._Snapshot.drop_marker
+def stuck_marker(td, *, abort_ok=True, restore_ok=False):
+    """The marker's rename lands and its sync fails, it cannot be removed, and the restore fails too."""
+    sc = scenario(td, fake=Fake(back_on_old=False))
+    real_write, real_drop, real_restore = ma._write_private, ma._Snapshot.drop_marker, ma._Snapshot.restore
 
-    def lands_then_fails(path, text):
+    def writes(path, text):
+        if path.name == "aborted.json" and not abort_ok:
+            raise OSError(5, "Input/output error")
         real_write(path, text)
         if path.name == "committed.json":
             raise OSError(5, "Input/output error")
-    ma._write_private = lands_then_fails
+    ma._write_private = writes
     ma._Snapshot.drop_marker = staticmethod(lambda: False)
+    if not restore_ok:
+        ma._Snapshot.restore = lambda self: False
     try:
         r = ma.update(NEW, by="web", timeout_s=1)
-        snap = json.loads((state / "main_account.txn" / "snapshot.json").read_text())
-        check("when the marker cannot be removed the result says so, and the snapshot itself has no phase",
-              not r.ok and "commit marker could not be removed" in r.detail and "phase" not in snap, (r, snap))
     finally:
-        ma._write_private, ma._Snapshot.drop_marker = real_write, real_drop
+        ma._write_private, ma._Snapshot.drop_marker, ma._Snapshot.restore = real_write, real_drop, real_restore
+    return sc, r
+
+
+with tempfile.TemporaryDirectory() as td:
+    (env, cfg, state, roster, fake, saved), r = stuck_marker(td)
+    try:
+        txn = state / "main_account.txn"
+        check("a commit marker that cannot be removed is overruled by an abort marker",
+              not r.ok and r.code == "commit_failed" and r.rollback == "failed"
+              and (txn / "committed.json").exists() and (txn / "aborted.json").exists() and (txn / "snapshot.json").exists(), r)
+        later = ma.recover(timeout_s=1)
+        check("the next recovery does not take it as committed: it restores, and fails closed if it must",
+              later.found and later.restored and "AGENT_EMAIL_ACCOUNT=viejo@example.org" in env.read_text()
+              and audit(state)[-1]["result"] != "committed_cleanup", later)
+    finally:
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    (env, cfg, state, roster, fake, saved), r = stuck_marker(td, restore_ok=True)
+    try:
+        real_restore = ma._Snapshot.restore
+        ma._Snapshot.restore = lambda self: False
+        try:
+            later = ma.recover(timeout_s=1)
+            txn = state / "main_account.txn"
+            check("with an abort marker, a recovery whose restore fails keeps the transaction and fails closed",
+                  later.found and not later.ok and (txn / "snapshot.json").exists()
+                  and audit(state)[-1]["result"] == "recover_failed", later)
+            r2 = ma.update({"AGENT_EMAIL_FROM_NAME": "Otro"}, by="web", timeout_s=1)
+            check("and the next change does not run over it", not r2.ok and r2.code == "recovery_failed", r2)
+        finally:
+            ma._Snapshot.restore = real_restore
+    finally:
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    (env, cfg, state, roster, fake, saved), r = stuck_marker(td, abort_ok=False)
+    try:
+        check("if neither marker can be changed, the new settings are left in place, whole",
+              not r.ok and r.rollback == "failed" and "left in place" in r.detail
+              and "AGENT_EMAIL_ACCOUNT=nuevo@example.net" in env.read_text()
+              and 'email = "nuevo@example.net"' in cfg.read_text(), r)
+    finally:
         restore(saved)
 
 with tempfile.TemporaryDirectory() as td:
