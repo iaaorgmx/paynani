@@ -15,7 +15,6 @@ banner appropriate to editing an install that already works.
 
 from __future__ import annotations
 
-import getpass
 import hashlib
 import json
 import os
@@ -210,14 +209,6 @@ def run(port: int = 8765, mode: str = "setup") -> int:
         except OSError:
             pass
 
-        # gethostname(), not getfqdn(): the latter does a reverse DNS lookup
-        # that can block for many seconds (macOS CI runners hit this) and,
-        # worse, is not reliably interruptible by the SIGTERM this function
-        # depends on to shut down promptly -- a signal delivered while libc
-        # is blocked in that lookup is not handled until it returns. This is
-        # only an illustrative hint in the ssh command below; the short name
-        # serves that exactly as well as the fully qualified one.
-        host = socket.gethostname()
         print()
         if mode == "setup":
             print("  paynani — mailbox setup")
@@ -236,14 +227,6 @@ def run(port: int = 8765, mode: str = "setup") -> int:
             print("  Open this link to change what's in .env:")
         print()
         print(f"      {url}")
-        print()
-        print("  If they are not sitting at this machine, they run this first,")
-        print("  on their own computer, and then open the same link there:")
-        print()
-        print(f"      ssh -L {port}:127.0.0.1:{port} {getpass.getuser()}@{host}")
-        print()
-        print("  (that host name is this machine's idea of itself — replace it")
-        print("   with whatever you normally ssh to, if they differ)")
         print()
         print("  The link works once, until this stops. Ctrl-C when finished.")
         print()
