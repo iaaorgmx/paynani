@@ -430,9 +430,13 @@ with tempfile.TemporaryDirectory() as td:
         (state / "main_account.txn").mkdir(mode=0o700)
         (state / "main_account.txn" / "snapshot.json").write_text("{not json")
         rec = ma.recover(timeout_s=1)
-        check("an unreadable snapshot is dropped, not trusted", not rec.found
-              and not (state / "main_account.txn" / "snapshot.json").exists()
-              and audit(state)[-1]["result"] == "snapshot_unreadable" and files_as_before(env, cfg, state))
+        check("an unreadable snapshot fails closed and is kept as evidence",
+              rec.found and not rec.ok and (state / "main_account.txn" / "snapshot.json").exists()
+              and audit(state)[-1]["result"] == "snapshot_unreadable" and files_as_before(env, cfg, state), rec)
+        r = ma.update(NEW, by="web", timeout_s=1)
+        check("an unreadable snapshot blocks the next change, which writes nothing",
+              not r.ok and r.code == "recovery_failed" and r.rollback == "failed" and files_as_before(env, cfg, state)
+              and fake.restarts == 0, r)
     finally:
         restore(saved)
 
@@ -444,8 +448,128 @@ with tempfile.TemporaryDirectory() as td:
         (state / "main_account.txn").symlink_to(elsewhere)
         r = ma.update(NEW, by="web", timeout_s=1)
         check("a snapshot directory that is a symlink stops the change before writing",
-              not r.ok and r.code == "write_failed" and files_as_before(env, cfg, state)
+              not r.ok and r.code == "recovery_failed" and files_as_before(env, cfg, state)
               and not any(elsewhere.iterdir()), r)
+    finally:
+        restore(saved)
+
+# --- Ximena's review of abfff38 ---------------------------------------------------------------
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    real_discard = ma._Snapshot.discard
+    calls = []
+
+    def crash_on_cleanup():
+        calls.append(1)
+        raise Crash()
+    ma._Snapshot.discard = staticmethod(crash_on_cleanup)
+    try:
+        try:
+            ma.update(NEW, by="web", timeout_s=1)
+        except Crash:
+            pass
+        ma._Snapshot.discard = real_discard
+        snap = json.loads((state / "main_account.txn" / "snapshot.json").read_text())
+        check("a crash after readiness, before cleanup, leaves a committed snapshot", snap["phase"] == "committed", snap["phase"])
+        rec = ma.recover(timeout_s=1)
+        check("recover() keeps a committed change and only cleans up",
+              rec.found and rec.ok and "AGENT_EMAIL_ACCOUNT=nuevo@example.net" in env.read_text()
+              and 'email = "nuevo@example.net"' in cfg.read_text()
+              and not (state / "main_account.txn" / "snapshot.json").exists()
+              and audit(state)[-1]["result"] == "committed_cleanup", rec)
+    finally:
+        ma._Snapshot.discard = real_discard
+        restore(saved)
+
+
+def interrupted(td, **kw):
+    """A change cut off between the .env and himalaya writes; returns the scenario."""
+    sc = scenario(td, **kw)
+    real_write = ma._write_himalaya
+    ma._write_himalaya = lambda path, text: (_ for _ in ()).throw(Crash())
+    try:
+        ma.update(NEW, by="web", timeout_s=1)
+    except Crash:
+        pass
+    finally:
+        ma._write_himalaya = real_write
+    return sc
+
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = interrupted(td)
+    real_restore = ma._Snapshot.restore
+    ma._Snapshot.restore = lambda self: False
+    try:
+        r = ma.update({"AGENT_EMAIL_FROM_NAME": "Otro"}, by="web", timeout_s=1)
+        check("a recovery that cannot restore stops the next change before it writes",
+              not r.ok and r.code == "recovery_failed" and "Otro" not in env.read_text()
+              and (state / "main_account.txn" / "snapshot.json").exists(), r)
+    finally:
+        ma._Snapshot.restore = real_restore
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = interrupted(td, fake=Fake(back_on_old=False))
+    try:
+        rec = ma.recover(timeout_s=1)
+        check("a recovery whose old listener does not come back fails and keeps the snapshot",
+              rec.found and not rec.ok and rec.restored and rec.ready == "waiting"
+              and (state / "main_account.txn" / "snapshot.json").exists()
+              and audit(state)[-1]["result"] == "recover_failed", rec)
+    finally:
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td, fake=Fake(back_on_new=False, back_on_old=False))
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        check("a rollback that is not proven keeps the snapshot for the next try",
+              r.rollback == "failed" and (state / "main_account.txn" / "snapshot.json").exists(), r)
+    finally:
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    real_fsync = ma._fsync_dir
+
+    def no_fsync(path):
+        raise OSError(5, "Input/output error")
+    ma._fsync_dir = no_fsync
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        check("a snapshot that cannot be made durable stops the change before it writes",
+              not r.ok and r.code == "write_failed" and files_as_before(env, cfg, state) and fake.restarts == 0, r)
+    finally:
+        ma._fsync_dir = real_fsync
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    try:
+        r = ma.update({"AGENT_EMAIL_FROM_NAME": ""}, by="web", timeout_s=1)
+        h = cfg.read_text()
+        check("an empty sender name takes display-name out of himalaya too",
+              r.ok and "display-name" not in h and "AGENT_EMAIL_FROM_NAME=\n" in env.read_text(), (r, h))
+        r = ma.update({"AGENT_EMAIL_FROM_NAME": "De Vuelta"}, by="web", timeout_s=1)
+        h = cfg.read_text()
+        check("a sender name with no display-name line adds it after email",
+              r.ok and 'email = "viejo@example.org"\ndisplay-name = "De Vuelta"\n' in h, h)
+    finally:
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    incomplete = OLD_HIMALAYA.replace('server = "smtps://smtp.example.org:465"\n', "")
+    env, cfg, state, roster, fake, saved = scenario(td, himalaya=incomplete)
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        h = cfg.read_text()
+        check("a main block missing a value is written anew, complete",
+              r.ok and h.count("[accounts.paynani]") == 1 and 'server = "smtps://smtp.example.net:465"' in h
+              and 'server = "imaps://imap.example.net:993"' in h and h.count('authcid = "nuevo@example.net"') == 2
+              and 'display-name = "Agente"' in h, h)
+        check("rewriting an incomplete main block keeps the other accounts",
+              '[accounts.paynani-ventas]\nemail = "ventas@example.org"' in h, h)
     finally:
         restore(saved)
 

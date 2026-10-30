@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import accounts, envfile, himalaya_config, listener_control, validate
-from .accounts_cli import _REPO_ROOT, _write_himalaya, himalaya_config_path
+from .accounts_cli import _REPO_ROOT, _without_himalaya_section, _write_himalaya, himalaya_config_path
 from .probe import probe_imap, probe_smtp
 
 FIELDS = envfile.ENV_FIELDS
@@ -70,7 +70,7 @@ CONNECTION = (ACCOUNT, PASSWORD, IMAP_HOST, IMAP_PORT, SMTP_HOST, SMTP_PORT)
 class Result:
     ok: bool
     code: str            # "checked" | "updated" | "unchanged" | "unknown_field" | "invalid"
-                         # | "is_additional_account" | "probe_failed" | "busy"
+                         # | "is_additional_account" | "probe_failed" | "busy" | "recovery_failed"
                          # | "write_failed" | "restart_failed" | "not_ready"
     changed: list = field(default_factory=list)
     field_errors: dict = field(default_factory=dict)
@@ -194,10 +194,12 @@ def _server(value: str, host: str, port) -> str:
 def rewrite_main_block(text: str, merged: dict) -> str | None:
     """
     The config with [accounts.paynani] pointing at the merged settings, or None
-    if those tables are not there. Edits only the values that name the mailbox:
-    email, display-name when present, the two servers and the two logins. Other
-    lines in those tables (folder aliases, password.cmd, a signature) and every
-    other account survive.
+    if those tables are not there or are missing a value that names the mailbox
+    (email, either server, either login): then the caller writes the tables anew.
+    Edits only those values and display-name, which follows AGENT_EMAIL_FROM_NAME:
+    set, it is written (added after email if missing); empty, the line goes.
+    Other lines in those tables (folder aliases, password.cmd, a signature) and
+    every other account survive.
     """
     prefix = f"accounts.{HIMALAYA_NAME}"
     servers = {"imap": (merged[IMAP_HOST], merged[IMAP_PORT]), "smtp": (merged[SMTP_HOST], merged[SMTP_PORT])}
@@ -216,30 +218,67 @@ def rewrite_main_block(text: str, merged: dict) -> str | None:
             continue
         indent, key, eq, value = kv.groups()
         new = None
+        name = merged.get(FROM_NAME, "")
         if table == prefix and key == "email":
             new = merged[ACCOUNT]
             seen.add("email")
-        elif table == prefix and key == "display-name" and merged.get(FROM_NAME):
-            new = merged[FROM_NAME]
+            out.append(f"{indent}{key}{eq}{himalaya_config.toml_string(new)}{ending}")
+            if name and "display-name" not in _keys_of(text, prefix):
+                out.append(f"{indent}display-name = {himalaya_config.toml_string(name)}{ending or chr(10)}")
+            continue
+        elif table == prefix and key == "display-name":
+            if not name:
+                continue
+            new = name
         elif key == "server" and table in (f"{prefix}.imap", f"{prefix}.smtp"):
             try:
                 current = json.loads(value)
             except ValueError:
                 current = value.strip('"')
             new = _server(current, *servers[table.rsplit(".", 1)[1]])
-        elif key == "authcid" and table.endswith(".sasl.plain"):
+            seen.add(table.rsplit(".", 1)[1] + ".server")
+        elif key == "authcid" and table in (f"{prefix}.imap.sasl.plain", f"{prefix}.smtp.sasl.plain"):
             new = merged[ACCOUNT]
+            seen.add(table.split(".")[2] + ".authcid")
         out.append(f"{indent}{key}{eq}{himalaya_config.toml_string(new)}{ending}" if new is not None else line)
-    return "".join(out) if "email" in seen else None
+    required = {"email", "imap.server", "smtp.server", "imap.authcid", "smtp.authcid"}
+    return "".join(out) if required <= seen else None
+
+
+def _keys_of(text: str, table_name: str) -> set:
+    """The keys of one TOML table, read the same line-by-line way as above."""
+    keys, table = set(), None
+    for line in text.splitlines():
+        header = re.match(r"^\s*\[([^\]]+)\]\s*$", line)
+        if header:
+            table = header.group(1).strip()
+            continue
+        kv = re.match(r"^\s*([A-Za-z0-9_.\-]+)\s*=", line)
+        if kv and table == table_name:
+            keys.add(kv.group(1))
+    return keys
 
 
 def _main_block(merged: dict) -> str:
     secret = himalaya_config.secret_command(_REPO_ROOT / "scripts" / "env_secret.py", envfile.env_path(), PASSWORD)
-    return himalaya_config.account_block(
+    block = himalaya_config.account_block(
         HIMALAYA_NAME, merged[ACCOUNT],
         {"host": merged[IMAP_HOST], "port": merged[IMAP_PORT]},
         {"host": merged[SMTP_HOST], "port": merged[SMTP_PORT]},
         secret, default=True)
+    if merged.get(FROM_NAME):
+        email_line = f"email = {himalaya_config.toml_string(merged[ACCOUNT])}\n"
+        block = block.replace(email_line, email_line + f"display-name = {himalaya_config.toml_string(merged[FROM_NAME])}\n", 1)
+    return block
+
+
+def _with_main_block(text: str, merged: dict) -> str:
+    """text with [accounts.paynani] pointing at merged: edited in place, or written anew if incomplete."""
+    rewritten = rewrite_main_block(text, merged)
+    if rewritten is not None:
+        return rewritten
+    rest = _without_himalaya_section(text, HIMALAYA_NAME)
+    return (rest.rstrip("\n") + "\n\n" if rest.strip() else "") + _main_block(merged)
 
 
 # --- the transaction: a protected snapshot on disk ----------------------------------
@@ -257,14 +296,10 @@ def _read(path: Path) -> str | None:
 
 
 def _fsync_dir(path: Path) -> None:
-    try:
-        fd = os.open(path, os.O_RDONLY)
-    except OSError:
-        return
+    """Make a rename or unlink in path durable. Raises OSError if it cannot be confirmed."""
+    fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(fd)
-    except OSError:
-        pass
     finally:
         os.close(fd)
 
@@ -295,16 +330,23 @@ def _txn_path() -> Path:
     return listener_control.state_dir() / TXN_DIR / TXN_FILE
 
 
+class _Unreadable(Exception):
+    """A snapshot is there but cannot be trusted: a symlink, or not the JSON this module writes."""
+
+
 class _Snapshot:
     """
-    What the three files hold before anything is written, kept on disk until the
-    change is committed or undone, so a crash between the .env and himalaya
-    writes is undone by the next update() or recover(). It holds the old .env,
-    password included, so it lives in a 0700 directory as a 0600 file, is never
-    followed through a symlink, and is deleted as soon as it is not needed.
+    What the three files held before the change, on disk from before the first
+    write until the change is committed or undone, with the phase it reached:
+    "prepared" (undo it) or "committed" (keep it, only clean up). It holds the
+    old .env, password included, so it lives in a 0700 directory as a 0600 file,
+    is synced before anything is written, is never followed through a symlink,
+    and is deleted as soon as it is not needed.
     """
 
     def __init__(self, data: dict):
+        self.data = data
+        self.phase = data.get("phase", "prepared")
         self.env_path = Path(data["env_path"])
         self.himalaya_path = Path(data["himalaya_path"])
         self.state_path = Path(data["state_path"])
@@ -314,8 +356,9 @@ class _Snapshot:
 
     @classmethod
     def take(cls, *, reconnect: bool, address: str) -> "_Snapshot":
+        """Raises OSError if the snapshot cannot be made durable; nothing has been written then."""
         himalaya_path, state_path = himalaya_config_path(), listener_control.state_path()
-        data = {"started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        data = {"phase": "prepared", "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "env_path": str(envfile.env_path()), "himalaya_path": str(himalaya_path),
                 "state_path": str(state_path), "env": _read(envfile.env_path()),
                 "himalaya": _read(himalaya_path), "state": _read(state_path),
@@ -325,24 +368,28 @@ class _Snapshot:
             raise OSError(f"{directory} is a symlink")
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         directory.chmod(0o700)
+        _fsync_dir(directory.parent)
         _write_private(_txn_path(), json.dumps(data))
         return cls(data)
 
     @classmethod
     def pending(cls) -> "_Snapshot | None":
+        """The snapshot left behind, None if there is none; raises _Unreadable rather than guess."""
         path = _txn_path()
-        if path.is_symlink() or path.parent.is_symlink():
-            return None
+        if path.parent.is_symlink() or path.is_symlink():
+            raise _Unreadable(f"{path} is a symlink")
         try:
-            return cls(json.loads(path.read_text(encoding="utf-8")))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return cls(data)
         except FileNotFoundError:
             return None
-        except (ValueError, KeyError):
-            # Unreadable: nothing can be restored from it, and keeping it would
-            # block every change. The audit line says it happened.
-            path.unlink(missing_ok=True)
-            _audit("recover", [], "snapshot_unreadable", "failed")
-            return None
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise _Unreadable(f"{path} cannot be read ({type(exc).__name__})") from exc
+
+    def commit(self) -> None:
+        """Record that the change took; raises OSError if that cannot be made durable."""
+        self.data["phase"] = self.phase = "committed"
+        _write_private(_txn_path(), json.dumps(self.data))
 
     def restore(self) -> bool:
         ok = True
@@ -370,35 +417,67 @@ class _Snapshot:
         return ok
 
     @staticmethod
-    def discard() -> None:
+    def discard() -> bool:
+        """Delete it. A failed directory sync is tolerated: a committed snapshot that comes back is only cleaned up."""
         path = _txn_path()
-        path.unlink(missing_ok=True)
-        _fsync_dir(path.parent)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            return False
+        try:
+            _fsync_dir(path.parent)
+        except OSError:
+            pass
+        return True
+
+
+def _back_on(address: str, timeout_s: float) -> str:
+    """Restart the listener and wait for address; the state it ends in."""
+    back = listener_control.restart()
+    if not back.ok:
+        return "waiting"
+    return listener_control.wait(back.requested_at, timeout_s=timeout_s, expect=address or None,
+                                 previous_pid=back.previous_pid).state
 
 
 @dataclass
 class Recovery:
-    found: bool
+    found: bool            # a snapshot was there
+    ok: bool = True        # nothing is left to undo: no snapshot, or it was undone and proven back
     restored: bool = False
     ready: str = ""
     detail: str = ""
 
 
 def _recover(timeout_s: float) -> Recovery:
-    snapshot = _Snapshot.pending()
+    """
+    Undo what a crashed change left behind. A snapshot that cannot be read, files
+    that cannot be restored or an old listener that does not come back all fail
+    closed: the snapshot stays, ok is False, and update() writes nothing.
+    """
+    try:
+        snapshot = _Snapshot.pending()
+    except _Unreadable as exc:
+        _audit("recover", [], "snapshot_unreadable", "failed")
+        return Recovery(True, False, detail=f"{exc}; it was kept, and nothing will change until someone looks at it")
     if snapshot is None:
         return Recovery(False)
-    restored = snapshot.restore()
-    ready = ""
-    if restored:
+    if snapshot.phase == "committed":
         _Snapshot.discard()
-        if snapshot.reconnect:
-            back = listener_control.restart()
-            ready = listener_control.wait(back.requested_at, timeout_s=timeout_s, expect=snapshot.address or None,
-                                          previous_pid=back.previous_pid).state if back.ok else "waiting"
-    _audit("recover", [], "recovered" if restored else "recover_failed", "ok" if restored else "failed")
-    return Recovery(True, restored, ready,
-                    "an interrupted change was undone" if restored else "an interrupted change could not be undone")
+        _audit("recover", [], "committed_cleanup", "none")
+        return Recovery(True, True, detail="a change that had already taken was only cleaned up")
+    if not snapshot.restore():
+        _audit("recover", [], "recover_failed", "failed")
+        return Recovery(True, False, detail="the settings from before an interrupted change could not be restored")
+    ready = _back_on(snapshot.address, timeout_s) if snapshot.reconnect else ""
+    if snapshot.reconnect and ready != "connected":
+        _audit("recover", [], "recover_failed", "failed")
+        return Recovery(True, False, True, ready,
+                        "the settings from before an interrupted change were restored, "
+                        "but the listener did not come back on them")
+    _Snapshot.discard()
+    _audit("recover", [], "recovered", "ok")
+    return Recovery(True, True, True, ready, "an interrupted change was undone")
 
 
 def recover(timeout_s: float = WAIT_S) -> Recovery:
@@ -463,6 +542,8 @@ def update(changes: dict, *, by: str, timeout_s: float = WAIT_S) -> Result:
         if not held:
             return Result(False, "busy", detail="another change to the main account is running")
         recovered = _recover(timeout_s)
+        if not recovered.ok:
+            return Result(False, "recovery_failed", rollback="failed", detail=recovered.detail, recovered=True)
         result = _update(changes, by=by, timeout_s=timeout_s)
         result.recovered = recovered.found
         return result
@@ -485,16 +566,13 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
                       detail="could not keep a copy of the current settings, so nothing was changed")
 
     def undo(code: str, detail: str, restart=None, ready="") -> Result:
+        """Put the old settings back and prove the listener is on them; the snapshot stays until then."""
         restored = snapshot.restore()
-        if restored:
+        back_ok = restored and (not reconnect
+                                or _back_on(candidate.stored.get(ACCOUNT, ""), timeout_s) == "connected")
+        if back_ok:
             _Snapshot.discard()
-        back_ok = True
-        if reconnect:
-            back = listener_control.restart()
-            back_ok = back.ok and listener_control.wait(
-                back.requested_at, timeout_s=timeout_s, expect=candidate.stored.get(ACCOUNT) or None,
-                previous_pid=back.previous_pid).state == "connected"
-        rollback = "ok" if restored and back_ok else "failed"
+        rollback = "ok" if back_ok else "failed"
         _audit(by, changed, code, rollback)
         return Result(False, code, changed, probe=checked.probe, restart=restart, ready=ready,
                       rollback=rollback, detail=detail)
@@ -503,21 +581,15 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
     if not ok:
         return undo("write_failed", "could not write .env")
 
-    text = snapshot.himalaya or ""
-    rewritten = rewrite_main_block(text, merged)
-    if rewritten is None:
-        rewritten = (text.rstrip("\n") + "\n\n" if text.strip() else "") + _main_block(merged)
     try:
-        _write_himalaya(snapshot.himalaya_path, rewritten)
+        _write_himalaya(snapshot.himalaya_path, _with_main_block(snapshot.himalaya or "", merged))
         if candidate.address_changed:
             _set_cursor(snapshot.state_path, merged[ACCOUNT], candidate.cursor)
     except OSError:
         return undo("write_failed", "could not write the himalaya configuration or the listener state")
 
     if not reconnect:
-        _Snapshot.discard()
-        _audit(by, changed, "updated", "none")
-        return Result(True, "updated", changed)
+        return _committed(snapshot, by, changed, Result(True, "updated", changed))
 
     restart = listener_control.restart()
     if not restart.ok:
@@ -529,6 +601,23 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
             "the listener did not come back on the new settings in time"
         return undo("not_ready", reason, restart=restart, ready=status.state)
 
-    _Snapshot.discard()
+    return _committed(snapshot, by, changed,
+                      Result(True, "updated", changed, probe=checked.probe, restart=restart, ready=status.state))
+
+
+def _committed(snapshot: _Snapshot, by: str, changed: list, result: Result) -> Result:
+    """
+    The change took. Record that durably before deleting the snapshot, so a crash
+    in between is cleaned up by recover() and not undone. If neither the record
+    nor the delete works, the change still stands, and the result says the
+    snapshot is left behind as committed or prepared.
+    """
+    try:
+        snapshot.commit()
+    except OSError:
+        if not _Snapshot.discard():
+            result.detail = "the change took, but its snapshot could not be marked or removed"
+    else:
+        _Snapshot.discard()
     _audit(by, changed, "updated", "none")
-    return Result(True, "updated", changed, probe=checked.probe, restart=restart, ready=status.state)
+    return result
