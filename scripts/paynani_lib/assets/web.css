@@ -491,6 +491,14 @@ body.web-shell {
 .web-shell .formulario > button + label { margin-top: 1.2rem; }
 .web-shell .formulario textarea#wa-text { font-family: inherit; font-size: 1rem; min-height: 6rem; }
 
+/* Nuevo correo (#590 cambio 2): la libreta del roster, debajo de Para, CC y CCO. */
+.web-shell .libreta { margin: .3rem 0 .6rem; }
+.web-shell .libreta summary { cursor: pointer; font-size: .9rem; color: var(--quiet); }
+.web-shell .libreta-lista { list-style: none; margin: .4rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; }
+.web-shell .libreta-lista button { background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: .25rem .7rem; cursor: pointer; font: inherit; font-size: .85rem; color: inherit; }
+.web-shell .libreta-lista button:hover, .web-shell .libreta-lista button:focus-visible { border-color: var(--accent); }
+.web-shell .formulario.correo-nuevo textarea { font-family: inherit; font-size: 1rem; min-height: 12rem; }
+
 /* PRD #537 FR-8: sin animación para quien la pidió quitar. */
 @media (prefers-reduced-motion: reduce) {
   body.web-shell, .web-shell .lateral { transition: none !important; }

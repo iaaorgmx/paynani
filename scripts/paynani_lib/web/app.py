@@ -32,9 +32,9 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
-from . import catchall_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import catchall_strings, compose_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (accounts_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
-               thread, users, whatsapp_pages, whatsapp_source)
+               thread, users, whatsapp_pages, whatsapp_source, compose_pages, mail_compose)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 FAVICON = Path(__file__).resolve().parents[3] / "brand" / "favicon.svg"
@@ -46,6 +46,7 @@ STATIC = {
     "/assets/nav.js": (ASSETS / "nav.js", "application/javascript; charset=UTF-8"),
     "/assets/sms.js": (ASSETS / "sms.js", "application/javascript; charset=UTF-8"),
     "/assets/whatsapp.js": (ASSETS / "whatsapp.js", "application/javascript; charset=UTF-8"),
+    "/assets/compose.js": (ASSETS / "compose.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
@@ -261,7 +262,8 @@ class Context:
                  agent_email=None, accounts_file: Path | None = None, ledger_path: Path | None = None,
                  env_path: Path | None = None, imap_connect=None, imap_uidvalidity=None,
                  state_dir: Path | None = None, roster_path: Path | None = None, roster_notifier=None,
-                 whatsapp_source: whatsapp_source.Source | None = None, whatsapp_root: Path | None = None):
+                 whatsapp_source: whatsapp_source.Source | None = None, whatsapp_root: Path | None = None,
+                 mailer: mail_compose.Mailer | None = None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -305,6 +307,9 @@ class Context:
         # pasen las pruebas. `whatsapp_root` es donde está runtime.env, y junto a él
         # whatsapp.env, que dice si WhatsApp está configurado (WHATSAPP_BRIDGE.md §11).
         self._whatsapp = whatsapp_source
+        # «Nuevo correo» (#590 cambio 2): el envío del dueño del núcleo (#591 N1), o el
+        # que pasen las pruebas.
+        self.mailer = mailer or mail_compose.CoreMailer()
         self._whatsapp_root = whatsapp_root
         # La vinculación por QR o código de cada sesión del navegador: el link_id vive
         # sólo aquí, en memoria, nunca en una cookie, una URL ni la página (§11).
@@ -830,6 +835,9 @@ def make_handler(ctx: Context):
             account_id, _, view = rest.partition("/")
             accounts, _ = self.CTX.mail_accounts()
             match = next((a for a in accounts if a["id"] == account_id), None)
+            if match is not None and view == "nuevo":
+                self._compose(match)
+                return
             if match is None or view not in ("", "ver"):
                 self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
                 return
@@ -845,6 +853,12 @@ def make_handler(ctx: Context):
                 chunk, nxt = mail.page_of(rows, offset)
                 head = mail_pages.account_head(account_id, removable=not match["agent"],
                                                ok=self.query.get("ok", [""])[0])
+                sent = self.query.get("enviado", [""])[0]
+                try:
+                    outside_n = int(self.query.get("fuera", ["0"])[0])
+                except ValueError:
+                    outside_n = 0
+                head = compose_pages.notice(sent, outside_n) + head
                 self._page(200, title=match["email"], icon_name="mail",
                            body=head + mail_pages.list_body(account_id, chunk, len(rows), offset, nxt), wide=True, **kw)
                 return
@@ -1132,6 +1146,92 @@ def make_handler(ctx: Context):
                 self._messages(values, message, 429 if exc.code == "rate_limited" else 400)
                 return
             self._redirect(f"/messages/ver?n={_quote(number, safe='')}&ok=queued#responder")
+
+        # ---- Nuevo correo (#590 cambio 2) ----------------------------------------
+        def _compose(self, match: dict, *, values: dict | None = None, error: str = "", code: int = 200):
+            """GET /email/<cuenta>/nuevo, y el formulario otra vez si no salió."""
+            account_id = match["id"]
+            try:
+                book = mail_compose.address_book(mail_compose.roster_file(account_id, self.CTX.roster_path(),
+                                                                          self.CTX.accounts_file))
+            except Exception:  # noqa: BLE001 -- sin libreta se puede escribir igual
+                book = []
+            signed = self._signed(account_id)
+            self._page(code, title=i18n.t("web.compose.title"), icon_name="mail", back=f"/email/{account_id}",
+                       body=compose_pages.body(account_id, match["email"], self.session["csrf"], book, values=values,
+                                               error=error, signed=signed),
+                       active="email", active_account=account_id)
+
+        def _signed(self, account_id: str) -> bool:
+            """Si la cuenta tiene firma: PAYNANI_SIGNATURE_FILE para la del agente,
+            `signature_file` de accounts.json para las demás."""
+            from .. import accounts as accounts_mod
+            try:
+                if account_id == accounts_mod.MAIN:
+                    import idle_listener
+                    env = idle_listener.load_env(self.CTX.env_path())
+                    return bool(env.get("PAYNANI_SIGNATURE_FILE") or env.get("AGENT_EMAIL_SIGNATURE_FILE"))
+                return bool(accounts_mod.get(account_id, self.CTX.accounts_file).get("signature_file"))
+            except Exception:  # noqa: BLE001 -- sólo es para mostrar
+                return False
+
+        def _compose_post(self, post: dict):
+            """
+            POST /email/<cuenta>/enviar (#590 cambio 2): el correo del dueño. CSRF y Origin
+            como todo POST. Si alguien está fuera del roster de esa cuenta, la contraseña
+            de la web con el bloqueo de la entrada (Q5), antes de mandar. El envío y la
+            regla de «fuera del roster» son del núcleo (#591 N1).
+            """
+            from urllib.parse import quote as _quote
+            account_id = self.route[len("/email/"):-len("/enviar")]
+            accounts, _ = self.CTX.mail_accounts()
+            match = next((a for a in accounts if a["id"] == account_id), None)
+            if match is None:
+                self._page(404, title=i18n.t("web.notfound.h1"), body="", icon_name="warn")
+                return
+            values = {k: post.get(k, "")[:mail_compose.MAX_TEXT] for k in ("to", "cc", "bcc", "subject", "text")}
+            values["text"] = values["text"].replace("\r\n", "\n")
+            try:
+                to, cc, bcc = (mail_compose.split_addresses(values[k]) for k in ("to", "cc", "bcc"))
+                mail_compose.check(to, cc, bcc, values["subject"], values["text"])
+                outside = self.CTX.mailer.outside_roster(account_id, list(dict.fromkeys(to + cc + bcc)))
+            except mail_compose.Refused as exc:
+                status = 503 if exc.code == "not_available" else 400
+                self._compose(match, values=values, error=compose_pages.error_text(exc.code, detail=exc.detail),
+                              code=status)
+                return
+            if outside:
+                password = post.get("password", "")[:users.MAX_PASSWORD]
+                problem = (self._check_current(password) if password
+                           else compose_pages.error_text("password", outside=outside))
+                if problem:
+                    self._compose(match, values=values, error=problem, code=403 if password else 400)
+                    return
+            try:
+                # El permiso de un solo uso del núcleo (#591 N1), ligado a la cuenta y a
+                # estos destinatarios; se pide sólo después de la contraseña.
+                grant = self.CTX.mailer.authorize(account_id, to, cc, bcc, by=f"web:{self.ip}",
+                                                  owner_email=str(self.user.get("email") or ""))
+                res = self.CTX.mailer.send(grant, values["subject"].strip(), values["text"])
+            except mail_compose.Refused as exc:
+                self._compose(match, values=values, error=compose_pages.error_text(exc.code, detail=exc.detail),
+                              code=503 if exc.code == "not_available" else 400)
+                return
+            if not res.get("ok"):
+                # not_authorized: el permiso se perdió; no se reintenta, se vuelve a pedir (N1).
+                self._compose(match, values=values, code=502 if res.get("code") == "send_failed" else 400,
+                              error=compose_pages.error_text(str(res.get("code")), detail=str(res.get("detail") or "")))
+                return
+            shown = res.get("outside_roster") or outside
+            if res.get("sent_copy") == "failed":
+                flag = "sent_no_copy"
+            elif shown:
+                flag = "sent_outside"
+            else:
+                flag = "sent"
+            # Las direcciones no van en la URL (quedarían en el historial y en logs): sólo cuántas.
+            extra = f"&fuera={len(shown)}" if flag == "sent_outside" else ""
+            self._redirect(f"/email/{_quote(account_id, safe='')}?enviado={flag}{extra}")
 
         # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
         # Toda respuesta de aquí sale con Cache-Control: no-store (guard.SECURITY_HEADERS):
@@ -1739,6 +1839,9 @@ def make_handler(ctx: Context):
                 return
             if self.route == "/cuentas/nueva" or (self.route.startswith("/cuentas/") and self.route.endswith("/quitar")):
                 self._accounts_post(post)
+                return
+            if self.route.startswith("/email/") and self.route.endswith("/enviar"):
+                self._compose_post(post)
                 return
             self._html(405, message_page(self.lang, "web.title", "web.method.h1"))
 
