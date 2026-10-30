@@ -113,7 +113,7 @@ except om.UnknownAccount:
 # --- a send inside the roster ----------------------------------------------------------
 reset()
 g = om.authorize(None, ["ana@ejemplo.test"], ["dueno@dominio.test"], ["Ana@Ejemplo.test", "x@fuera.test"], by="web:t",
-                 owner_email="Dueno@Dominio.test")
+                 owner_email="Dueno@Dominio.test", allow_outside=True)
 check("authorize: repeats removed across To/Cc/Bcc", g.to == ("ana@ejemplo.test",) and g.cc == ("dueno@dominio.test",)
       and g.bcc == ("x@fuera.test",))
 r = om.send(g, SUBJECT, BODY)
@@ -177,6 +177,11 @@ twin = om.Grant(g._token, g.account, g.to, g.cc, g.bcc, g.by, g.owner_email, g._
 r = om.send(twin, SUBJECT, BODY)
 check("look-alike grant with the right token refused", r.code == "not_authorized" and not calls(), r)
 
+g = om.authorize(None, ["x@fuera.test"], [], [], by="t")
+object.__setattr__(g, "allow_outside", True)
+r = om.send(g, SUBJECT, BODY)
+check("grant forced to allow outside refused", r.code == "not_authorized" and not calls(), r)
+
 forged = om.Grant("0" * 64, "main", ("x@fuera.test",), (), (), "t", None, 9e12)
 r = om.send(forged, SUBJECT, BODY)
 check("made-up grant refused", r.code == "not_authorized" and not calls(), r)
@@ -193,6 +198,35 @@ for t in threads:
     t.join()
 check("race: eight senders, one send", sum(r.ok for r in results) == 1 and len(calls()) == 1,
       [r.code for r in results])
+
+# --- the password decision (Q5) ---------------------------------------------------------
+reset()
+r = om.send(om.authorize(None, ["x@fuera.test"], [], [], by="t"), SUBJECT, BODY)
+check("outside without allow_outside: refused before SMTP", r.code == "not_authorized" and not calls()
+      and r.outside_roster == ["x@fuera.test"], r)
+
+reset()
+original = ROSTER.read_text()
+g = om.authorize(None, ["ana@ejemplo.test"], [], [], by="t")
+ROSTER.write_text(original.replace("| Ana | Ana@Ejemplo.TEST | Human |\n", ""))
+r = om.send(g, SUBJECT, BODY)
+ROSTER.write_text(original)
+check("inside at authorize, outside at send, no password: refused before SMTP",
+      r.code == "not_authorized" and not calls(), r)
+
+reset()
+ROSTER.write_text(original + "| Nuevo | nuevo@fuera.test | Human |\n")
+g = om.authorize(None, ["nuevo@fuera.test"], [], [], by="t", allow_outside=True)
+ROSTER.write_text(original)
+r = om.send(g, SUBJECT, BODY)
+check("outside at send with the password: sent", r.ok and r.outside_roster == ["nuevo@fuera.test"], r)
+
+reset()
+ROSTER.write_text(original + "| X | x@fuera.test | Human |\n")
+g = om.authorize(None, ["x@fuera.test"], [], [], by="t")
+r = om.send(g, SUBJECT, BODY)
+ROSTER.write_text(original)
+check("outside at authorize, inside at send: sent", r.ok and r.outside_roster == [], r)
 
 # --- additional account ------------------------------------------------------------------
 reset()
@@ -219,8 +253,50 @@ om.SENT_COPY = saved
 check("Sent copy failure: still sent", r.ok and r.sent_copy == "failed", r)
 
 reset()
-r = om.send(om.authorize(None, ["x@fuera.test"], [], [], by="t", owner_email="nadie@fuera.test"), SUBJECT, BODY)
+r = om.send(om.authorize(None, ["x@fuera.test"], [], [], by="t", owner_email="nadie@fuera.test",
+                         allow_outside=True), SUBJECT, BODY)
 check("notice refused by send.sh: message still sent, notice failed", r.ok and r.notice == "failed", r)
+
+reset()
+real_ntf = om.tempfile.NamedTemporaryFile
+
+
+def broken(*a, **k):
+    raise OSError("no temp space")
+
+
+before = len((STATE / om.SENDS_LOG).read_text().splitlines())
+om.tempfile.NamedTemporaryFile = broken
+try:
+    r = om.send(om.authorize(None, ["x@fuera.test"], [], [], by="t", owner_email="dueno@dominio.test",
+                             allow_outside=True), SUBJECT, BODY)
+    raised = None
+except Exception as exc:  # noqa: BLE001
+    raised = exc
+om.tempfile.NamedTemporaryFile = real_ntf
+check("notice cannot make its temp file: no exception, sent, notice failed",
+      raised is None and r.ok and r.notice == "failed" and len(calls()) == 1, raised or r)
+check("...and the send is still recorded",
+      len((STATE / om.SENDS_LOG).read_text().splitlines()) == before + 1)
+
+real_unlink = om.Path.unlink
+
+
+def bad_unlink(self, *a, **k):
+    if self.name.endswith(".txt"):
+        raise OSError("cannot remove")
+    return real_unlink(self, *a, **k)
+
+
+om.Path.unlink = bad_unlink
+try:
+    r = om.send(om.authorize(None, ["x@fuera.test"], [], [], by="t", owner_email="dueno@dominio.test",
+                             allow_outside=True), SUBJECT, BODY)
+    raised = None
+except Exception as exc:  # noqa: BLE001
+    raised = exc
+om.Path.unlink = real_unlink
+check("notice temp file cannot be removed: no exception, sent", raised is None and r.ok, raised or r)
 
 blocked = TMP / "blocked"
 blocked.write_text("a file where the state folder should be")

@@ -98,12 +98,14 @@ class Grant:
     `send()`. It cannot be copied, pickled or turned into JSON, and `send()`
     accepts only the very object `authorize()` registered.
     """
-    __slots__ = ("_token", "account", "to", "cc", "bcc", "by", "owner_email", "operation", "_expires")
+    __slots__ = ("_token", "account", "to", "cc", "bcc", "by", "owner_email", "allow_outside", "operation",
+                 "_expires")
 
-    def __init__(self, token, account, to, cc, bcc, by, owner_email, expires):
+    def __init__(self, token, account, to, cc, bcc, by, owner_email, expires, allow_outside=False):
         for name, value in (("_token", token), ("account", account), ("to", tuple(to)), ("cc", tuple(cc)),
                             ("bcc", tuple(bcc)), ("by", by), ("owner_email", owner_email),
-                            ("operation", OPERATION), ("_expires", expires)):
+                            ("allow_outside", bool(allow_outside)), ("operation", OPERATION),
+                            ("_expires", expires)):
             object.__setattr__(self, name, value)
 
     def __setattr__(self, name, value):
@@ -221,12 +223,16 @@ _live: dict[str, Grant] = {}
 
 
 def authorize(account: str | None, to, cc, bcc, *, by: str, owner_email: str | None = None,
-              now: float | None = None) -> Grant:
+              allow_outside: bool = False, now: float | None = None) -> Grant:
     """
-    Call only after the web checked the owner's password (when `outside_roster()`
-    is not empty) or the session (when it is), in the same request and process
-    that will call `send()`. One use, GRANT_TTL seconds on the monotonic clock.
-    `owner_email` is where the notice goes; it is bound to the grant too.
+    Call in the same request and process that will call `send()`. One use,
+    GRANT_TTL seconds on the monotonic clock. `owner_email` is where the notice
+    goes; it is bound to the grant too.
+
+    `allow_outside=True` only after the web checked the owner's password (Q5).
+    Without it, `send()` refuses with `not_authorized`, before SMTP, if anyone is
+    outside the roster when it sends, even someone who was inside when the page
+    asked: the roster can change between the two calls.
     Raises InvalidAddress or UnknownAccount.
     """
     to_c, cc_c, bcc_c = _split(to, cc, bcc)
@@ -234,7 +240,7 @@ def authorize(account: str | None, to, cc, bcc, *, by: str, owner_email: str | N
     owner = canonical(owner_email) if owner_email else None
     now = time.monotonic() if now is None else now
     grant = Grant(secrets.token_hex(32), "main" if _is_main(account) else account, to_c, cc_c, bcc_c,
-                  by, owner, now + GRANT_TTL)
+                  by, owner, now + GRANT_TTL, allow_outside)
     with _lock:
         for token in [t for t, (_, g) in _live.items() if g._expires < now]:
             del _live[token]
@@ -244,7 +250,7 @@ def authorize(account: str | None, to, cc, bcc, *, by: str, owner_email: str | N
 
 def _fingerprint(grant: Grant) -> tuple:
     return (grant.operation, grant.account, grant.to, grant.cc, grant.bcc, grant.by, grant.owner_email,
-            grant._expires)
+            grant.allow_outside, grant._expires)
 
 
 def _consume(grant, now: float) -> str | None:
@@ -374,17 +380,24 @@ def _notice(owner_email: str, account: str, outside: list[str], msgid: str) -> s
             + ("" if _is_main(account) else f" of the account {account}") + ":\n\n"
             + "".join(f"  {a}\n" for a in outside)
             + f"\nMessage-ID: {msgid}\n\nIf you did not send it, change the PaynaniWeb password.\n")
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as fh:
-        fh.write(body)
-        bodyfile = fh.name
+    # The message has already gone: nothing here may raise, or the caller would
+    # see a failed send and might send it again.
+    bodyfile = None
     try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as fh:
+            bodyfile = fh.name
+            fh.write(body)
         done = subprocess.run(["bash", str(SEND_SH), owner_email, "[PaynaniWeb] Sent outside the roster", bodyfile],
                               capture_output=True, text=True, timeout=TIMEOUT)
         return "sent" if done.returncode == 0 else "failed"
-    except (OSError, subprocess.TimeoutExpired):
+    except Exception:  # noqa: BLE001
         return "failed"
     finally:
-        Path(bodyfile).unlink(missing_ok=True)
+        if bodyfile:
+            try:
+                Path(bodyfile).unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def send(grant: Grant, subject: str, body: str, *, state_dir: Path | None = None,
@@ -419,6 +432,9 @@ def send(grant: Grant, subject: str, body: str, *, state_dir: Path | None = None
         return finish(Result(False, "unknown_account", detail=str(exc)))
     except InvalidAddress as exc:
         return finish(Result(False, "invalid_address", detail=str(exc)))
+    if outside and not grant.allow_outside:
+        return finish(Result(False, "not_authorized", outside_roster=outside,
+                             detail="recipients outside the roster need the owner's password"))
     if signature and not os.access(signature, os.R_OK):
         return finish(Result(False, "send_failed", outside_roster=outside, detail="signature file is not readable"))
 
