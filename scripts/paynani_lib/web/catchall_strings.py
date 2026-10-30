@@ -139,6 +139,77 @@ STRINGS = {
     },
 }
 
+# PRD #576 (tarea 2): una sección por canal. Reemplaza los textos que decían que un
+# solo Catch-All cambiaba los dos canales.
+for _language, _words in {
+    'es-MX': {
+        'lead': "Cada canal tiene su propio Catch-All. Con uno activo, los mensajes de ese canal de números que no están en el roster le llegan a tu agente con su texto. Activar o apagar uno no cambia el otro. El agente sigue solo las instrucciones de ese canal y nunca le contesta al número.",
+        'section.sms': "SMS",
+        'section.whatsapp': "WhatsApp",
+        'opens.sms': "Abre los SMS de números fuera del roster.",
+        'opens.whatsapp': "Abre los WhatsApp de números fuera del roster.",
+        'legacy': "Este canal todavía usa rules/catch-all.md, el archivo de antes, compartido con el otro canal. Al guardar aquí, cada canal pasa a tener su propio archivo y el otro se queda como está.",
+        'ok_on': "Guardado. El Catch-All de {channel} está activo.",
+        'ok_off': "Guardado. El Catch-All de {channel} está apagado.",
+        'err.reserved': "Un contacto del roster usa como nombre de reglas uno reservado para el Catch-All (catch-all, catch-all-sms, catch-all-whatsapp o catch-all-telegram). Renombra esas reglas primero.",
+        'err.invalid_file': "{file} tiene la cabecera rota. Guardar aquí lo vuelve a escribir, ya corregido.",
+        'err.unreadable': "No se pudo leer el Catch-All de este canal.",
+    },
+    'en-US': {
+        'lead': "Each channel has its own Catch-All. With one on, that channel's messages from numbers that are not on the roster reach your agent with their text. Turning one on or off does not change the other. The agent follows only that channel's instructions and never replies to the number.",
+        'section.sms': "SMS",
+        'section.whatsapp': "WhatsApp",
+        'opens.sms': "Opens SMS from numbers that are not on the roster.",
+        'opens.whatsapp': "Opens WhatsApp messages from numbers that are not on the roster.",
+        'legacy': "This channel still uses rules/catch-all.md, the old file shared with the other channel. Saving here gives each channel its own file and leaves the other one as it is.",
+        'ok_on': "Saved. The {channel} Catch-All is on.",
+        'ok_off': "Saved. The {channel} Catch-All is off.",
+        'err.reserved': "A roster contact uses a rules name reserved for the Catch-All (catch-all, catch-all-sms, catch-all-whatsapp or catch-all-telegram). Rename those rules first.",
+        'err.invalid_file': "{file} has a broken header. Saving here writes it again, fixed.",
+        'err.unreadable': "This channel's Catch-All could not be read.",
+    },
+    'es-ES': {
+        'lead': "Cada canal tiene su propio Catch-All. Con uno activo, los mensajes de ese canal de números que no están en el roster le llegan a tu agente con su texto. Activar o apagar uno no cambia el otro. El agente sigue solo las instrucciones de ese canal y nunca le contesta al número.",
+        'section.sms': "SMS",
+        'section.whatsapp': "WhatsApp",
+        'opens.sms': "Abre los SMS de números fuera del roster.",
+        'opens.whatsapp': "Abre los WhatsApp de números fuera del roster.",
+        'legacy': "Este canal todavía usa rules/catch-all.md, el archivo de antes, compartido con el otro canal. Al guardar aquí, cada canal pasa a tener su propio archivo y el otro se queda como está.",
+        'ok_on': "Guardado. El Catch-All de {channel} está activo.",
+        'ok_off': "Guardado. El Catch-All de {channel} está desactivado.",
+        'err.reserved': "Un contacto del roster usa como nombre de reglas uno reservado para el Catch-All (catch-all, catch-all-sms, catch-all-whatsapp o catch-all-telegram). Cambia primero el nombre de esas reglas.",
+        'err.invalid_file': "{file} tiene la cabecera rota. Al guardar aquí se vuelve a escribir, ya corregido.",
+        'err.unreadable': "No se ha podido leer el Catch-All de este canal.",
+    },
+    'fr-FR': {
+        'lead': "Chaque canal a son propre Catch-All. Quand l’un est activé, les messages de ce canal venant de numéros absents du roster arrivent à votre agent avec leur texte. Activer ou désactiver l’un ne change pas l’autre. L’agent suit uniquement les instructions de ce canal et ne répond jamais au numéro.",
+        'section.sms': "SMS",
+        'section.whatsapp': "WhatsApp",
+        'opens.sms': "Ouvre les SMS des numéros absents du roster.",
+        'opens.whatsapp': "Ouvre les messages WhatsApp des numéros absents du roster.",
+        'legacy': "Ce canal utilise encore rules/catch-all.md, l’ancien fichier partagé avec l’autre canal. Enregistrer ici donne à chaque canal son propre fichier et laisse l’autre tel quel.",
+        'ok_on': "Enregistré. Le Catch-All {channel} est activé.",
+        'ok_off': "Enregistré. Le Catch-All {channel} est désactivé.",
+        'err.reserved': "Un contact du roster utilise un nom de règles réservé au Catch-All (catch-all, catch-all-sms, catch-all-whatsapp ou catch-all-telegram). Renommez d’abord ces règles.",
+        'err.invalid_file': "L’en-tête de {file} est cassé. Enregistrer ici le réécrit, corrigé.",
+        'err.unreadable': "Impossible de lire le Catch-All de ce canal.",
+    },
+    'pt-BR': {
+        'lead': "Cada canal tem seu próprio Catch-All. Com um ativo, as mensagens desse canal de números fora do roster chegam ao seu agente com o texto. Ativar ou desativar um não muda o outro. O agente segue só as instruções desse canal e nunca responde ao número.",
+        'section.sms': "SMS",
+        'section.whatsapp': "WhatsApp",
+        'opens.sms': "Abre os SMS de números fora do roster.",
+        'opens.whatsapp': "Abre as mensagens de WhatsApp de números fora do roster.",
+        'legacy': "Este canal ainda usa rules/catch-all.md, o arquivo antigo compartilhado com o outro canal. Salvar aqui dá a cada canal seu próprio arquivo e deixa o outro como está.",
+        'ok_on': "Salvo. O Catch-All de {channel} está ativo.",
+        'ok_off': "Salvo. O Catch-All de {channel} está desativado.",
+        'err.reserved': "Um contato do roster usa um nome de regras reservado para o Catch-All (catch-all, catch-all-sms, catch-all-whatsapp ou catch-all-telegram). Renomeie essas regras primeiro.",
+        'err.invalid_file': "O cabeçalho de {file} está quebrado. Salvar aqui o reescreve, corrigido.",
+        'err.unreadable': "Não foi possível ler o Catch-All deste canal.",
+    },
+}.items():
+    STRINGS[_language].update(_words)
+
 for language, words in STRINGS.items():
     assert words.keys() == STRINGS["es-MX"].keys(), language
     CATALOGUES[language].update({"web.catchall." + key: value for key, value in words.items()})

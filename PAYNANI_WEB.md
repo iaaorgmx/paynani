@@ -116,26 +116,34 @@ dirección de la web en `orders.jsonl`; la pasarela la manda sólo a una app que
 anunció `accepts_owner_out` (SMS_GATEWAY.md §2 y §4). El agente se entera por una
 línea `sms-human` con «Tú (PaynaniWeb)».
 
-### El Catch-All de SMS
+### El Catch-All de cada canal
 
 «Catch-All», junto a «Bajas de la API» en «Mensajes» (`/messages/catch-all`), decide
-qué pasa con los SMS de números que no están en el roster (PRD #535). Apagado, como
-hasta ahora, al agente le llega sólo «mensaje de un número fuera del roster», sin el
-texto. Activo, le llegan con su texto y el agente sigue sólo las instrucciones de
-esta pantalla. Nunca le contesta al número.
+qué pasa con los mensajes de números que no están en el roster (PRD #535). Tiene una
+sección por canal, SMS y WhatsApp (PRD #576), y cada una se activa y se guarda por
+separado: cambiar una no toca la otra. Apagado, como hasta ahora, al agente le llega
+sólo «mensaje de un número fuera del roster», sin el texto. Activo, le llegan los
+mensajes de ese canal con su texto y el agente sigue sólo las instrucciones de esa
+sección. Nunca le contesta al número. Telegram no aparece mientras paynani no tenga
+ese canal.
 
-- **La casilla y las instrucciones** se guardan en `rules/catch-all.md` con
-  `catchall.save`, el mismo mensaje que usan PaynaniApp y la API (`SaveCatchAll`).
-- **La contraseña** de la web se pide para activarlo y para cambiar las
+- **La casilla y las instrucciones** de cada sección se guardan en
+  `rules/catch-all-sms.md` o `rules/catch-all-whatsapp.md` con `catchall.save` y su
+  `channel`, el mismo mensaje que usan PaynaniApp y la API (`SaveCatchAll`).
+- **Mientras un canal no tenga su archivo**, la sección muestra lo que hay en
+  `rules/catch-all.md`, el archivo único de antes, y lo dice. El primer guardado le
+  da a cada canal su archivo, con lo que tenía el viejo, y quita el viejo.
+- **La contraseña** de la web se pide para activar un canal y para cambiar sus
   instrucciones mientras está activo, con el mismo bloqueo de intentos que la
   entrada. Apagarlo no la pide.
 - **Activo sin instrucciones** (vacío, o sólo espacios) no se guarda, ni más de
-  32 KB. Si alguien más lo cambió mientras lo editabas, la página lo dice y muestra
-  la versión actual.
+  32 KB. Si alguien más cambió ese canal mientras lo editabas, la página lo dice y
+  muestra la versión actual.
 - **Los códigos de verificación** (WhatsApp, Telegram, bancos) también le llegan al
   agente cuando está activo. La pantalla lo advierte, y las instrucciones pueden
   decirle que los ignore.
-- Cada cambio te llega por correo, con desde dónde se hizo y sin las instrucciones.
+- Cada cambio te llega por correo, con el canal, desde dónde se hizo y sin las
+  instrucciones.
 
 ### Recibido y enviado, como un webmail
 
