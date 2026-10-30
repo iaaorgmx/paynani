@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import accounts, envfile, himalaya_config, listener_control, validate
-from .accounts_cli import _REPO_ROOT, _without_himalaya_section, _write_himalaya, himalaya_config_path
+from .accounts_cli import _REPO_ROOT, _write_himalaya, himalaya_config_path
 from .probe import probe_imap, probe_smtp
 
 FIELDS = envfile.ENV_FIELDS
@@ -71,7 +71,7 @@ class Result:
     ok: bool
     code: str            # "checked" | "updated" | "unchanged" | "unknown_field" | "invalid"
                          # | "is_additional_account" | "probe_failed" | "busy" | "recovery_failed"
-                         # | "write_failed" | "restart_failed" | "not_ready"
+                         # | "write_failed" | "restart_failed" | "not_ready" | "commit_failed"
     changed: list = field(default_factory=list)
     field_errors: dict = field(default_factory=dict)
     probe: list = field(default_factory=list)
@@ -194,16 +194,21 @@ def _server(value: str, host: str, port) -> str:
 def rewrite_main_block(text: str, merged: dict) -> str | None:
     """
     The config with [accounts.paynani] pointing at the merged settings, or None
-    if those tables are not there or are missing a value that names the mailbox
-    (email, either server, either login): then the caller writes the tables anew.
-    Edits only those values and display-name, which follows AGENT_EMAIL_FROM_NAME:
-    set, it is written (added after email if missing); empty, the line goes.
-    Other lines in those tables (folder aliases, password.cmd, a signature) and
-    every other account survive.
+    if there is no [accounts.paynani*] table at all. Only the values that name
+    the mailbox are touched: email, the two servers, the two logins, and
+    display-name, which follows AGENT_EMAIL_FROM_NAME (set: written; empty: the
+    line goes). A value that is missing is added inside its table, and a missing
+    table is added at the end; nothing else is removed. Every other line in those
+    tables (folder aliases, a signature, password.cmd) and every other account
+    survives, including on a block someone left incomplete.
     """
     prefix = f"accounts.{HIMALAYA_NAME}"
-    servers = {"imap": (merged[IMAP_HOST], merged[IMAP_PORT]), "smtp": (merged[SMTP_HOST], merged[SMTP_PORT])}
-    seen, table, out = set(), None, []
+    if not any(t == prefix or t.startswith(prefix + ".") for t in _tables(text)):
+        return None
+    email, name = merged[ACCOUNT], merged.get(FROM_NAME, "")
+    servers = {"imap": ("imaps", merged[IMAP_HOST], merged[IMAP_PORT]),
+               "smtp": ("smtps", merged[SMTP_HOST], merged[SMTP_PORT])}
+    table, out = None, []
     for line in text.splitlines(keepends=True):
         bare = line.rstrip("\r\n")
         ending = line[len(bare):]
@@ -218,14 +223,8 @@ def rewrite_main_block(text: str, merged: dict) -> str | None:
             continue
         indent, key, eq, value = kv.groups()
         new = None
-        name = merged.get(FROM_NAME, "")
         if table == prefix and key == "email":
-            new = merged[ACCOUNT]
-            seen.add("email")
-            out.append(f"{indent}{key}{eq}{himalaya_config.toml_string(new)}{ending}")
-            if name and "display-name" not in _keys_of(text, prefix):
-                out.append(f"{indent}display-name = {himalaya_config.toml_string(name)}{ending or chr(10)}")
-            continue
+            new = email
         elif table == prefix and key == "display-name":
             if not name:
                 continue
@@ -235,14 +234,69 @@ def rewrite_main_block(text: str, merged: dict) -> str | None:
                 current = json.loads(value)
             except ValueError:
                 current = value.strip('"')
-            new = _server(current, *servers[table.rsplit(".", 1)[1]])
-            seen.add(table.rsplit(".", 1)[1] + ".server")
+            _, host, port = servers[table.rsplit(".", 1)[1]]
+            new = _server(current, host, port)
         elif key == "authcid" and table in (f"{prefix}.imap.sasl.plain", f"{prefix}.smtp.sasl.plain"):
-            new = merged[ACCOUNT]
-            seen.add(table.split(".")[2] + ".authcid")
+            new = email
         out.append(f"{indent}{key}{eq}{himalaya_config.toml_string(new)}{ending}" if new is not None else line)
-    required = {"email", "imap.server", "smtp.server", "imap.authcid", "smtp.authcid"}
-    return "".join(out) if required <= seen else None
+    return _add_missing("".join(out), merged)
+
+
+def _required(merged: dict) -> list:
+    """(table, key, value) for every value [accounts.paynani] needs, in the order account_block writes them."""
+    prefix = f"accounts.{HIMALAYA_NAME}"
+    email, name = merged[ACCOUNT], merged.get(FROM_NAME, "")
+    secret = himalaya_config.secret_command(_REPO_ROOT / "scripts" / "env_secret.py", envfile.env_path(), PASSWORD)
+    rows = [(prefix, "email", email)]
+    if name:
+        rows.append((prefix, "display-name", name))
+    for protocol, scheme, host, port in (("imap", "imaps", merged[IMAP_HOST], merged[IMAP_PORT]),
+                                         ("smtp", "smtps", merged[SMTP_HOST], merged[SMTP_PORT])):
+        rows += [(f"{prefix}.{protocol}", "server", f"{scheme}://{host}:{port}"),
+                 (f"{prefix}.{protocol}.sasl.plain", "authcid", email),
+                 (f"{prefix}.{protocol}.sasl.plain", "password.cmd", secret)]
+    return rows
+
+
+def _add_missing(text: str, merged: dict) -> str:
+    """Put each required value that is not there into its table, or the table at the end if it is missing."""
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    appended: dict = {}
+    for table, key, value in _required(merged):
+        if key in _keys_of("".join(lines), table):
+            continue
+        row = f"{key} = {himalaya_config.toml_string(value)}\n"
+        at = _header_index(lines, table)
+        if at is None:
+            appended.setdefault(table, []).append(row)
+            continue
+        after = at + 1
+        if key == "display-name":
+            # Right after email, where account_block and a hand-written block put it.
+            for i in range(at + 1, len(lines)):
+                if re.match(r"^\s*\[", lines[i]):
+                    break
+                if re.match(r"^\s*email\s*=", lines[i]):
+                    after = i + 1
+                    break
+        lines.insert(after, row)
+    for table, rows in appended.items():
+        lines += ["\n", f"[{table}]\n"] + rows
+    return "".join(lines)
+
+
+def _tables(text: str) -> list:
+    return [m.group(1).strip() for m in re.finditer(r"^\s*\[([^\]]+)\]\s*$", text, re.M)]
+
+
+def _header_index(lines: list, table_name: str) -> int | None:
+    for i, line in enumerate(lines):
+        header = re.match(r"^\s*\[([^\]]+)\]\s*$", line.rstrip("\r\n"))
+        if header and header.group(1).strip() == table_name:
+            return i
+    return None
 
 
 def _keys_of(text: str, table_name: str) -> set:
@@ -273,12 +327,11 @@ def _main_block(merged: dict) -> str:
 
 
 def _with_main_block(text: str, merged: dict) -> str:
-    """text with [accounts.paynani] pointing at merged: edited in place, or written anew if incomplete."""
+    """text with [accounts.paynani] pointing at merged: edited and completed in place, or added if absent."""
     rewritten = rewrite_main_block(text, merged)
     if rewritten is not None:
         return rewritten
-    rest = _without_himalaya_section(text, HIMALAYA_NAME)
-    return (rest.rstrip("\n") + "\n\n" if rest.strip() else "") + _main_block(merged)
+    return (text.rstrip("\n") + "\n\n" if text.strip() else "") + _main_block(merged)
 
 
 # --- the transaction: a protected snapshot on disk ----------------------------------
@@ -389,7 +442,18 @@ class _Snapshot:
     def commit(self) -> None:
         """Record that the change took; raises OSError if that cannot be made durable."""
         self.data["phase"] = self.phase = "committed"
-        _write_private(_txn_path(), json.dumps(self.data))
+        try:
+            _write_private(_txn_path(), json.dumps(self.data))
+        except OSError:
+            # The rename may have landed without its directory sync. Put "prepared"
+            # back, as far as the disk lets us, so a later recover() undoes rather
+            # than keeps a change this call is about to undo.
+            self.data["phase"] = self.phase = "prepared"
+            try:
+                _write_private(_txn_path(), json.dumps(self.data))
+            except OSError:
+                pass
+            raise
 
     def restore(self) -> bool:
         ok = True
@@ -589,7 +653,7 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
         return undo("write_failed", "could not write the himalaya configuration or the listener state")
 
     if not reconnect:
-        return _committed(snapshot, by, changed, Result(True, "updated", changed))
+        return _committed(snapshot, by, changed, Result(True, "updated", changed), undo)
 
     restart = listener_control.restart()
     if not restart.ok:
@@ -602,22 +666,23 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
         return undo("not_ready", reason, restart=restart, ready=status.state)
 
     return _committed(snapshot, by, changed,
-                      Result(True, "updated", changed, probe=checked.probe, restart=restart, ready=status.state))
+                      Result(True, "updated", changed, probe=checked.probe, restart=restart, ready=status.state), undo)
 
 
-def _committed(snapshot: _Snapshot, by: str, changed: list, result: Result) -> Result:
+def _committed(snapshot: _Snapshot, by: str, changed: list, result: Result, undo) -> Result:
     """
-    The change took. Record that durably before deleting the snapshot, so a crash
-    in between is cleaned up by recover() and not undone. If neither the record
-    nor the delete works, the change still stands, and the result says the
-    snapshot is left behind as committed or prepared.
+    The change took. Record "committed" durably before deleting the snapshot, so
+    a crash in between is cleaned up by recover() and not undone. If that record
+    cannot be made durable, the change is not reported as done: the snapshot is
+    still "prepared", so it is undone like any other failure, and the result
+    says whether the old settings were proven back.
     """
     try:
         snapshot.commit()
     except OSError:
-        if not _Snapshot.discard():
-            result.detail = "the change took, but its snapshot could not be marked or removed"
-    else:
-        _Snapshot.discard()
+        return undo("commit_failed", "the change could not be recorded as done, so it was undone",
+                    restart=result.restart, ready=result.ready)
+    if not _Snapshot.discard():
+        result.detail = "the change took; its committed snapshot is left behind and will be cleaned up"
     _audit(by, changed, "updated", "none")
     return result

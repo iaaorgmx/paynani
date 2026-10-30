@@ -573,5 +573,115 @@ with tempfile.TemporaryDirectory() as td:
     finally:
         restore(saved)
 
+# --- Ximena's second review (219a120) --------------------------------------------------------
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    real_commit = ma._Snapshot.commit
+
+    def no_commit(self):
+        raise OSError(5, "Input/output error")
+    ma._Snapshot.commit = no_commit
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        check("a committed mark that cannot be made durable is not reported as done",
+              not r.ok and r.code == "commit_failed", r)
+        check("it is undone and proven back, like any other failure",
+              r.rollback == "ok" and files_as_before(env, cfg, state)
+              and fake.waits[-1][0] == "viejo@example.org"
+              and not (state / "main_account.txn" / "snapshot.json").exists(), (r, fake.waits))
+        check("the failed commit is audited", audit(state)[-1]["result"] == "commit_failed", audit(state))
+    finally:
+        ma._Snapshot.commit = real_commit
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td, fake=Fake(back_on_old=False))
+    real_commit = ma._Snapshot.commit
+    ma._Snapshot.commit = lambda self: (_ for _ in ()).throw(OSError(5, "Input/output error"))
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        snap = state / "main_account.txn" / "snapshot.json"
+        check("a failed commit whose rollback is not proven keeps the prepared snapshot",
+              not r.ok and r.code == "commit_failed" and r.rollback == "failed" and snap.exists()
+              and json.loads(snap.read_text())["phase"] == "prepared", r)
+    finally:
+        ma._Snapshot.commit = real_commit
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    real_fsync = ma._fsync_dir
+    seen = {"committed": False}
+    real_commit = ma._Snapshot.commit
+
+    def commit_then_flaky(self):
+        real_commit(self)
+        seen["committed"] = True
+
+    def fsync(path):
+        if seen["committed"]:
+            raise OSError(5, "Input/output error")
+        return real_fsync(path)
+    ma._Snapshot.commit, ma._fsync_dir = commit_then_flaky, fsync
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        check("a cleanup whose unlink works but whose directory sync fails still reports the change",
+              r.ok and r.code == "updated" and not (state / "main_account.txn" / "snapshot.json").exists(), r)
+        ma._Snapshot.commit, ma._fsync_dir = real_commit, real_fsync
+        # The unlink did not survive the crash: the committed snapshot comes back.
+        snap_dir = state / "main_account.txn"
+        (snap_dir / "snapshot.json").write_text(json.dumps({
+            "phase": "committed", "env_path": str(env), "himalaya_path": str(cfg),
+            "state_path": str(state / "idle.json"), "env": OLD_ENV, "himalaya": OLD_HIMALAYA,
+            "state": json.dumps(OLD_STATE), "reconnect": True, "address": "viejo@example.org"}))
+        rec = ma.recover(timeout_s=1)
+        check("a committed snapshot that comes back is only cleaned up, and the change stays",
+              rec.found and rec.ok and "AGENT_EMAIL_ACCOUNT=nuevo@example.net" in env.read_text()
+              and not (snap_dir / "snapshot.json").exists(), rec)
+    finally:
+        ma._Snapshot.commit, ma._fsync_dir = real_commit, real_fsync
+        restore(saved)
+
+CUSTOM = ('[accounts.paynani]\n'
+          'email = "viejo@example.org"\n'
+          'default = true\n'
+          'signature = "Custom signature"\n'
+          'downloads-dir = "~/paynani-downloads"\n'
+          '\n'
+          '[accounts.paynani.folder.aliases]\n'
+          'sent = "Sent Items"\n'
+          '\n'
+          '[accounts.paynani.imap]\n'
+          'server = "imaps://imap.example.org:993"\n'
+          '[accounts.paynani.imap.sasl.plain]\n'
+          'authcid = "viejo@example.org"\n'
+          'password.cmd = "python3 env_secret.py .env AGENT_EMAIL_PASSWORD"\n'
+          '\n'
+          '[accounts.paynani.smtp]\n'
+          'encryption = "tls"\n'
+          '\n'
+          '[accounts.paynani-ventas]\n'
+          'email = "ventas@example.org"\n')
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td, himalaya=CUSTOM)
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        h = cfg.read_text()
+        check("repairing an incomplete main block keeps its signature, aliases and custom keys",
+              r.ok and 'signature = "Custom signature"' in h and '[accounts.paynani.folder.aliases]\nsent = "Sent Items"' in h
+              and 'downloads-dir = "~/paynani-downloads"' in h and 'encryption = "tls"' in h, h)
+        check("the missing server goes inside the existing smtp table",
+              '[accounts.paynani.smtp]\nserver = "smtps://smtp.example.net:465"\nencryption = "tls"' in h, h)
+        check("a missing sasl table is added whole, with the password command and no password",
+              '[accounts.paynani.smtp.sasl.plain]\nauthcid = "nuevo@example.net"\npassword.cmd = ' in h
+              and "new-secret" not in h, h)
+        check("display-name is added after email, and nothing is duplicated",
+              'email = "nuevo@example.net"\ndisplay-name = "Agente"\n' in h and h.count("[accounts.paynani]") == 1
+              and h.count("[accounts.paynani.smtp]") == 1, h)
+        check("the other account is still there", '[accounts.paynani-ventas]\nemail = "ventas@example.org"' in h, h)
+    finally:
+        restore(saved)
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
