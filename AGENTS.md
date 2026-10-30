@@ -180,10 +180,10 @@ permanently, and no later care takes it back out. Serve the form instead:
 scripts/paynani onboard          # prints a link with a one-time key
 ```
 
-Send them the link. If they are not sitting at this machine, send the `ssh -L`
-line it prints along with it, and check that line's host name first: it is this
-machine's own idea of itself, which is not always the name your human reaches it
-by. They fill in the settings, the page signs in to their mail server to confirm
+Send them the link, and only the link. Do not add a tunnel command or
+instructions for reaching it from another computer. If they tell you the link
+does not open, then give them the `ssh -L` command from `INSTALL.md` section 2.1,
+with the host name they use to reach this machine. They fill in the settings, the page signs in to their mail server to confirm
 the account works, and only then writes that file itself. You never see the
 password. `paynani onboard` stops on its own once the file exists.
 
@@ -449,9 +449,8 @@ instead, create the file first, at mode `600`, then ask them to write into it.
 
 If they started by hand and would rather not touch a terminal after all, do not
 negotiate about it; serve the form and let the password go from their browser
-into a `600` file without passing through you. `paynani onboard` prints the
-`ssh -L` command to forward its port every time it starts; send it along
-whenever your human is not at this machine, as step 2 says.
+into a `600` file without passing through you. Send only the link, as step 2
+says; the `ssh -L` command is for when they tell you the link does not open.
 
 **`paynani config edit` is for your human, never for you.** It opens `.env`
 directly in `$EDITOR` -- the whole file, credentials included, exactly the
