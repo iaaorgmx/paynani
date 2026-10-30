@@ -81,6 +81,32 @@ def create(name: str, *, expires_at: str | None = None, permissions=(), limits=N
     return secret, record
 
 
+def migrate_catchall_write(*, path: Path | None = None) -> list[dict]:
+    """
+    PRD #576 FR-13a: el permiso viejo `catchall.write` pasa a `catchall.sms.write`, el
+    más estrecho. Reescribe el archivo una vez y devuelve los tokens que cambiaron
+    (`name`, `prefix`), para el correo al dueño. Sin nada que cambiar, no escribe.
+    """
+    target = Path(path) if path else path_for()
+    if not target.exists():
+        return []
+    changed = []
+    with _locked(target):
+        records = _read(target)
+        for record in records:
+            perms = record.get("permissions") or []
+            if "catchall.write" not in perms:
+                continue
+            new = [p for p in perms if p != "catchall.write"]
+            if "catchall.sms.write" not in new:
+                new.append("catchall.sms.write")
+            record["permissions"] = new
+            changed.append({"name": record.get("name", ""), "prefix": record.get("prefix", "")})
+        if changed:
+            _write(target, records)
+    return changed
+
+
 def list_records(*, path: Path | None = None) -> list[dict]:
     target = Path(path) if path else path_for()
     with _locked(target):

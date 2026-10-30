@@ -55,7 +55,7 @@ roster = clone / "roster.md"
 roster.write_text(ROSTER, encoding="utf-8")
 state = clone / "state"
 state.mkdir()
-catch_file = clone / "rules" / "catch-all.md"
+catch_file = clone / "rules" / "catch-all-sms.md"
 mail = []
 
 # --- RosterService (FR-0a, FR-0b) ----------------------------------------------------
@@ -91,19 +91,19 @@ check("activarlo desde la web", ("result", True, "active"),
       (res["type"], res["data"]["enabled"], res["data"]["status"]))
 etag = res["data"]["etag"]
 check("FR-9: el archivo tiene la cabecera de rules.py y las instrucciones", (True, True, INSTRUCTIONS.strip()),
-      (rules_mod.catch_all_notice(clone) == {"file": "rules/catch-all.md", "status": "active"},
+      (rules_mod.catch_all_notice("sms", clone) == {"file": "rules/catch-all-sms.md", "status": "active"},
        "updated_by: PaynaniWeb 203.0.113.9" in catch_file.read_text(encoding="utf-8"),
-       rules_mod.catch_all_instructions(clone).strip()))
+       rules_mod.catch_all_instructions("sms", clone).strip()))
 res = call("catchall.get")
 check("catchall.get: activo, quién lo cambió y el etag", (True, "PaynaniWeb 203.0.113.9", etag, True),
       (res["data"]["enabled"], res["data"]["updated_by"], res["data"]["etag"], bool(res["data"]["updated_at"])))
 res = call("catchall.save", enabled=False, text=INSTRUCTIONS, etag="viejo")
 check("etag viejo: conflict, y el archivo no cambia", ("error", "conflict", True),
-      (res["type"], res.get("code"), rules_mod.catch_all_notice(clone) is not None))
+      (res["type"], res.get("code"), rules_mod.catch_all_notice("sms", clone) is not None))
 
 log = [json.loads(line) for line in (state / roster_api.CHANGES_LOG).read_text(encoding="utf-8").splitlines()]
 changes = [e for e in log if e.get("action") == "catch_all"]
-check("FR-0b: el cambio queda en roster_changes.jsonl", (1, "rules/catch-all.md", True),
+check("FR-0b: el cambio queda en roster_changes.jsonl", (1, "rules/catch-all-sms.md", True),
       (len(changes), changes[0]["rules"]["file"], changes[0]["rules"]["enabled"]))
 check("el log no lleva las instrucciones", False, "Telegram" in json.dumps(log))
 check("FR-0b: el correo al dueño dice qué cambió y desde dónde, sin las instrucciones",
@@ -116,7 +116,7 @@ check("el aviso salió (línea notify del log)", True,
 res = call("catchall.save", device="d_fb89b8", enabled=False, text=INSTRUCTIONS, etag=etag)
 check("apagarlo desde el teléfono", ("result", False, "off", "phone d_fb89b8"),
       (res["type"], res["data"]["enabled"], res["data"]["status"], res["data"]["updated_by"]))
-check("apagado: el aviso al agente ya no lo usa", None, rules_mod.catch_all_notice(clone))
+check("apagado: el aviso al agente ya no lo usa", None, rules_mod.catch_all_notice("sms", clone))
 etag = res["data"]["etag"]
 res = call("catchall.save", device="api:pk_ABCDEFG:198.51.100.7", enabled=True, text=INSTRUCTIONS, etag=etag)
 check("por la API: updated_by nombra el prefijo del token, nunca el token", "API token pk_ABCDEFG",
@@ -144,7 +144,7 @@ ana = next(m for m in listing["members"] if m["name"] == "Ana")
 res = call("rules.save", account=None, row=ana["row"], roster_etag=listing["etag"], etag=etag,
            text="---\nversion: 1\nenabled: false\n---\n\nOtra cosa.\n")
 check("las reglas de ese contacto no pueden escribir rules/catch-all.md", ("error", "reserved", True),
-      (res["type"], res.get("reason"), rules_mod.catch_all_notice(clone) is not None))
+      (res["type"], res.get("reason"), rules_mod.catch_all_notice("sms", clone) is not None))
 roster.write_text(ROSTER, encoding="utf-8")
 
 # --- la marca en el hilo (FR-P4) -----------------------------------------------------
@@ -195,17 +195,17 @@ status, body = api(reader, "GetCatchAll")
 check("FR-P1: GetCatchAll con read", (200, "success", True), (status, body["result"], body.get("enabled")))
 etag = body.get("etag", "")
 status, body = api(reader, "SaveCatchAll", enabled=False, text="", etag=etag)
-check("FR-P2: SaveCatchAll sin catchall.write: forbidden", (403, "forbidden", "catchall.write"),
+check("#576 FR-13: SaveCatchAll sin catchall.sms.write: forbidden", (403, "forbidden", "catchall.sms.write"),
       (status, body.get("code"), body.get("permission")))
 status, body = api(roster_writer, "SaveCatchAll", enabled=False, text="", etag=etag)
-check("FR-P2: roster.write no alcanza", (403, "catchall.write"), (status, body.get("permission")))
+check("FR-P2: roster.write no alcanza", (403, "catchall.sms.write"), (status, body.get("permission")))
 status, body = api(catcher, "SaveCatchAll", enabled="true", text=INSTRUCTIONS, etag=etag)
 check("enabled como texto: 400 invalid_parameter", (400, "invalid_parameter", "enabled"),
       (status, body.get("code"), body.get("field")))
 status, body = api(catcher, "SaveCatchAll", enabled=True, text="", etag=etag)
 check("FR-5 por la API: activo sin instrucciones, 400", (400, "invalid"), (status, body.get("code")))
 status, body = api(catcher, "SaveCatchAll", enabled=False, text=INSTRUCTIONS, etag=etag)
-check("FR-P2: con catchall.write se guarda", (200, "success", False, "off"),
+check("#576 FR-13a: un token con el viejo catchall.write guarda el de SMS", (200, "success", False, "off"),
       (status, body["result"], body.get("enabled"), body.get("status")))
 check("updated_by nombra el prefijo del token", f"API token {catcher_rec['prefix']}", body.get("updated_by"))
 status, again = api(catcher, "SaveCatchAll", enabled=True, text=INSTRUCTIONS, etag=etag)
@@ -215,11 +215,16 @@ check("el dueño recibió el correo del cambio por la API", True,
 httpd.shutdown()
 
 # --- «API Tokens» (FR-P3) ------------------------------------------------------------
-check("FR-P3: catchall.write es una casilla de la pantalla", True, "catchall.write" in token_pages.PERMISSIONS)
-check("ningún token creado antes lo recibe (sólo el que lo pidió)", ["catchall"],
-      [r["name"] for r in json.loads(store_path.read_text()) if "catchall.write" in r.get("permissions", [])])
+check("#576 FR-13b: un permiso por canal en la pantalla, sin el viejo", (True, True, False),
+      tuple(p in token_pages.PERMISSIONS for p in ("catchall.sms.write", "catchall.whatsapp.write", "catchall.write")))
+tokens = json.loads(store_path.read_text())
+check("#576 FR-13a: al arrancar la web, catchall.write pasó a catchall.sms.write (sólo el que lo tenía)",
+      (["catchall"], []),
+      ([r["name"] for r in tokens if "catchall.sms.write" in r.get("permissions", [])],
+       [r["name"] for r in tokens if "catchall.write" in r.get("permissions", [])]))
 missing = [lang for lang in ("es-MX", "en-US", "es-ES", "fr-FR", "pt-BR")
-           if "catchall.write" not in i18n.CATALOGUES[lang].get("web.tokens.catchall_hint", "")]
+           if not all(p in i18n.CATALOGUES[lang].get("web.tokens.catchall_hint", "")
+                      for p in ("catchall.sms.write", "catchall.whatsapp.write"))]
 check("la explicación del permiso está en los cinco idiomas", [], missing)
 
 print(f"\n{passed} passed, {failed} failed")

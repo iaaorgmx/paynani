@@ -248,7 +248,7 @@ class WhatsAppService:
         from paynani_lib import rules as rules_mod
 
         try:
-            return rules_mod.catch_all_notice(self.rules_root)
+            return rules_mod.catch_all_notice("whatsapp", self.rules_root)  # sólo el de WhatsApp (PRD #576 FR-6)
         except Exception:  # noqa: BLE001 - sin Catch-All, el mensaje igual entra
             return None
 

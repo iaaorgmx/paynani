@@ -1144,28 +1144,35 @@ Iguales a `rules.get` y `rules.save`, sin `account`, `row` ni `roster_etag`, sob
 primer `rules.save_default` lo crea. La cabecera es la misma; en `default.md` la
 política `reply` es la de todos los contactos que no tengan la suya.
 
-### `catchall.get` y `catchall.save`: el Catch-All de SMS (PRD #535)
+### `catchall.get` y `catchall.save`: el Catch-All de cada canal (PRD #535, #576)
 
-Como las reglas generales, sin `account`, `row` ni `roster_etag`, sobre
-`rules/catch-all.md`. Los usan la web, PaynaniApp (si `catchall.get` está en
-`welcome.accepts`) y la API (`GetCatchAll`, `SaveCatchAll`).
+Como las reglas generales, sin `account`, `row` ni `roster_etag`. Llevan `channel`
+(`sms` o `whatsapp`); sin `channel` es `sms`, para PaynaniApp 0.10.0. Cada canal
+tiene su archivo, `rules/catch-all-sms.md` y `rules/catch-all-whatsapp.md`. Mientras
+un canal no tenga el suyo y exista el único de antes, `rules/catch-all.md`, se lee
+ese. El primer `catchall.save` crea el archivo de cada canal que falte con lo que
+tenía el viejo, escribe el cambio y quita el viejo (queda su copia en
+`state/history/`). Si algo falla antes, no cambia nada. Los usan la web, PaynaniApp
+(si `catchall.get` está en `welcome.accepts`) y la API (`GetCatchAll`,
+`SaveCatchAll`).
 
-- `catchall.get` responde `exists`, `enabled`, `text` (las instrucciones),
+- `catchall.get` responde `channel`, `file` (el archivo que se leyó), `exists`, `enabled`, `text` (las instrucciones),
   `status` (`off`, `active` o `invalid`), `updated_at`, `updated_by` y `etag`. Sin
   archivo, `exists: false` y `etag: ""`. Si el archivo no valida, `status: invalid`
   y `text` trae el archivo entero, para que se pueda corregir y guardar encima.
 - `catchall.save` recibe `enabled` (booleano), `text` y `etag`, y responde lo mismo
   que `catchall.get` con el `etag` nuevo. Valida igual que `rules.save` (32 KB como
   máximo) y responde `invalid` con `field: text` si va `enabled: true` con el texto
-  vacío o sólo con espacios. Si un contacto de `roster.md` ya usa `catch-all` en la
-  columna Rules, responde `invalid` con `reason: reserved_in_use`: hay que renombrar
+  vacío o sólo con espacios. Si un contacto de `roster.md` ya usa `catch-all`,
+  `catch-all-sms`, `catch-all-whatsapp` o `catch-all-telegram` en la columna Rules, responde `invalid` con `reason: reserved_in_use`: hay que renombrar
   esas reglas primero. `updated_by` dice `PaynaniWeb <dirección>`, `phone <device_id>`
   o `API token <prefijo>`.
 - `rules.save` no escribe a nombre de un contacto un id reservado (`default`,
-  `catch-all`): responde `invalid` con `reason: reserved`.
+  `catch-all`, `catch-all-sms`, `catch-all-whatsapp`, `catch-all-telegram`): responde `invalid` con `reason: reserved`.
 
 Cada `catchall.save` queda en el log de cambios y le llega por correo al humano,
-como los demás cambios de esta sección, sin las instrucciones.
+como los demás cambios de esta sección, sin las instrucciones. El correo dice qué
+canal cambió y, la primera vez, que el archivo único se separó por canal.
 
 ### Errores de esta sección
 

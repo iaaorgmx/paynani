@@ -52,7 +52,8 @@ The owner chose the token's permissions when creating it:
 | `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListWhatsAppConversations`, `GetWhatsAppThread`, `ListRoster`, `GetRules`, `GetDefaultRules`, `GetCatchAll` |
 | `roster.write` | `SaveRosterContact`, `DeleteRosterContact`, `SaveRules`, `SaveDefaultRules` |
 | `accounts.write` | `AddAccount`, `RemoveAccount` |
-| `catchall.write` | `SaveCatchAll` |
+| `catchall.sms.write` | `SaveCatchAll` with `channel: sms` |
+| `catchall.whatsapp.write` | `SaveCatchAll` with `channel: whatsapp` |
 | `sms.send` | `SendSms`, `GetSmsStatus` |
 
 `GetTokenInfo` and `GetUsage` work with any permission. An action without its
@@ -117,16 +118,23 @@ and retry.
 
 ### Catch-All
 
-With the Catch-All on, an SMS from a number that is not on the roster reaches the
-local agent with its text, and the agent follows only the owner's Catch-All
-instructions. The agent never replies to that number. `catchall.write` is its own
-permission, not part of `roster.write`: turning the Catch-All on lets the agent read
-SMS from anyone. Every change emails the owner, naming this token.
+Each channel has its own Catch-All, `sms` or `whatsapp`, turned on and off
+separately. With a channel's Catch-All on, a message on that channel from a number
+that is not on the roster reaches the local agent with its text, and the agent
+follows only that channel's instructions. The agent never replies to that number.
+Changing a channel needs that channel's permission, `catchall.sms.write` or
+`catchall.whatsapp.write`, which are not part of `roster.write`: turning a Catch-All
+on lets the agent read that channel's messages from anyone. A token that had the old
+`catchall.write` now has only `catchall.sms.write`. Every change emails the owner,
+naming this token and the channel.
+
+`channel` is `sms` or `whatsapp`. Without it both actions use `sms`; that default is
+deprecated and only kept for older clients, so always send `channel`.
 
 | Action | Parameters | Returns |
 |---|---|---|
-| `GetCatchAll` | | `enabled`, `text` (the instructions), `status` (`off`, `active` or `invalid`), `updated_at`, `updated_by`, `etag` |
-| `SaveCatchAll` | `enabled` (`true`/`false`), `text` (up to 32 KB), `etag` | The same as `GetCatchAll`, with the new `etag`. `enabled: true` with empty `text` answers `invalid` |
+| `GetCatchAll` | `channel` | `channel`, `file`, `enabled`, `text` (the instructions), `status` (`off`, `active` or `invalid`), `updated_at`, `updated_by`, `etag` |
+| `SaveCatchAll` | `channel`, `enabled` (`true`/`false`), `text` (up to 32 KB), `etag` | The same as `GetCatchAll`, with the new `etag`. `enabled: true` with empty `text` answers `invalid`; a token without that channel's permission gets `forbidden` |
 
 ### Mail accounts
 

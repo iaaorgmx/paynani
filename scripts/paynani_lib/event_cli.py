@@ -393,9 +393,9 @@ def _show_sms(record, args) -> int:
         # #544: con el Catch-All apagado (o roto) el sobre tampoco repite el extracto;
         # `catch_all_now` dice por qué. Se lee una vez, igual que el --body de abajo.
         from paynani_lib import rules as rules_mod
-        now = rules_mod.catch_all_notice(roster_file().parent)
+        now = rules_mod.catch_all_notice("sms", roster_file().parent)
         if not now or now.get("status") != "active":
-            output["notification_text"] = event_mod.redact_catch_all(output.get("notification_text", ""))
+            output["notification_text"] = event_mod.redact_catch_all(output.get("notification_text", ""), {"sms"})
             output["catch_all_now"] = "invalid" if now else "off"
     output["lifecycle"] = ledger.history(state_dir() / "lifecycle.jsonl", args.event_id)
     print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
@@ -416,7 +416,7 @@ def _show_sms(record, args) -> int:
             print("body refused: the gateway did not record a roster match", file=sys.stderr)
             return 2
         # rules/ junto al roster, como la pasarela y la web (rules_root=roster.parent).
-        instructions = rules_mod.catch_all_instructions(roster_file().parent)
+        instructions = rules_mod.catch_all_instructions("sms", roster_file().parent)
         if instructions is None:
             print("body refused: catch-all is off now", file=sys.stderr)
             return 2
@@ -430,7 +430,7 @@ def _show_sms(record, args) -> int:
         return 1
     text = str(saved.get("text", ""))
     if instructions is not None:
-        print("\n--- catch-all instructions (rules/catch-all.md, from the owner) ---")
+        print(f"\n--- catch-all instructions (rules/{rules_mod.catch_all_source('sms', roster_file().parent)}.md, from the owner) ---")
         print(instructions, end="" if instructions.endswith("\n") else "\n")
     print("\n--- verified body ---")
     print(text, end="" if text.endswith("\n") else "\n")
@@ -468,9 +468,9 @@ def _show_whatsapp(record, args) -> int:
         }
     catch_now = None
     if (record.get("catch_all") or {}).get("status") == "active":
-        catch_now = rules_mod.catch_all_notice(roster_file().parent)
+        catch_now = rules_mod.catch_all_notice("whatsapp", roster_file().parent)
         if not catch_now or catch_now.get("status") != "active":
-            output["notification_text"] = event_mod.redact_catch_all(output.get("notification_text", ""))
+            output["notification_text"] = event_mod.redact_catch_all(output.get("notification_text", ""), {"whatsapp"})
             output["catch_all_now"] = "invalid" if catch_now else "off"
     output["lifecycle"] = ledger.history(state_dir() / "lifecycle.jsonl", args.event_id)
     print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
@@ -484,7 +484,7 @@ def _show_whatsapp(record, args) -> int:
         if (record.get("catch_all") or {}).get("status") != "active":
             print("body refused: the service did not record a roster match", file=sys.stderr)
             return 2
-        instructions = rules_mod.catch_all_instructions(roster_file().parent)
+        instructions = rules_mod.catch_all_instructions("whatsapp", roster_file().parent)
         if instructions is None:
             print("body refused: catch-all is off now", file=sys.stderr)
             return 2
@@ -498,7 +498,7 @@ def _show_whatsapp(record, args) -> int:
         return 1
     text = str(saved.get("text") or "")
     if instructions is not None:
-        print("\n--- catch-all instructions (rules/catch-all.md, from the owner) ---")
+        print(f"\n--- catch-all instructions (rules/{rules_mod.catch_all_source('whatsapp', roster_file().parent)}.md, from the owner) ---")
         print(instructions, end="" if instructions.endswith("\n") else "\n")
     print("\n--- verified body ---")
     print(text, end="" if text.endswith("\n") else "\n")

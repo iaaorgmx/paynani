@@ -1764,11 +1764,34 @@ class Server(ThreadingHTTPServer):
         self.server_port = port
 
 
+def _migrate_token_permissions(ctx: Context) -> None:
+    """
+    PRD #576 FR-13a: los tokens con `catchall.write` quedan con `catchall.sms.write`, y
+    el dueño recibe un correo con cuáles cambiaron. Un error aquí no impide arrancar:
+    la API ya lee el permiso viejo como el de SMS.
+    """
+    try:
+        changed = api_tokens.migrate_catchall_write(path=api_tokens.path_for(ctx.user_path()))
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"paynani-web: no se pudieron revisar los permisos de los tokens ({type(exc).__name__})\n")
+        return
+    if not changed:
+        return
+    names = "\n".join(f"  {c['name']} ({c['prefix']}…)" for c in changed)
+    body = ("El Catch-All ahora tiene un permiso por canal. Estos tokens de la API tenían "
+            "catchall.write y ahora tienen sólo catchall.sms.write: pueden cambiar el Catch-All "
+            "de SMS, pero no el de WhatsApp.\n\n" + names + "\n\n"
+            "Si alguno debe poder cambiar el Catch-All de WhatsApp, crea un token con "
+            "catchall.whatsapp.write en la pantalla «API Tokens» de PaynaniWeb.\n")
+    ctx.notifier.owner(ctx.user(), "paynani: permisos del Catch-All por canal en tus tokens", body)
+
+
 def serve(host: str = "127.0.0.1", port: int = 8771, user_file: Path | None = None,
           ctx: Context | None = None) -> Server:
     if host not in LOOPBACK_HOSTS:
         raise ValueError("PaynaniWeb only listens on loopback; it is reached through the SMS gateway")
     ctx = ctx or Context(user_file)
+    _migrate_token_permissions(ctx)
     server = Server((host, port), make_handler(ctx))
     server.ctx = ctx
     return server

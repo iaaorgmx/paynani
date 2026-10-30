@@ -824,11 +824,11 @@ class Gateway:
         return rules_mod.notice(member["rules"] if member else None, self.roster_service.rules_root)
 
     def _catch_all_note(self) -> dict | None:
-        """`rules/catch-all.md` para un SMS de un número fuera del roster (PRD #535), o None."""
+        """El Catch-All de SMS para un SMS de un número fuera del roster (PRD #535, #576), o None."""
         from paynani_lib import rules as rules_mod
 
         try:
-            return rules_mod.catch_all_notice(self.roster_service.rules_root)
+            return rules_mod.catch_all_notice("sms", self.roster_service.rules_root)
         except Exception as exc:  # noqa: BLE001 - un error aquí no puede perder el SMS
             log(f"no se pudo leer el Catch-All ({type(exc).__name__}); el SMS sigue sin él")
             return None

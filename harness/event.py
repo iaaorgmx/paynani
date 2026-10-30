@@ -577,22 +577,34 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
 # Un aviso del Catch-All tal como lo escribe sms_event: la etiqueta dentro del primer
 # corchete, quien escribió, el extracto y el comando al final de la línea. El extracto
 # no tiene saltos de línea (safe_excerpt), así que `.*` llega hasta el último corchete.
+# El archivo es el del canal (`catch-all-sms.md`, `catch-all-whatsapp.md`, PRD #576) o
+# el único de antes (`catch-all.md`).
 _CATCH_ALL_LINE = re.compile(
-    r"\[(sms|whatsapp) ([^\]\n]*?)catch-all: rules/catch-all\.md([^\]\n]*)\] (.*?): .* "
+    r"\[(sms|whatsapp) ([^\]\n]*?)catch-all: rules/catch-all(?:-[a-z]+)?\.md([^\]\n]*)\] (.*?): .* "
     r"(\[[^\]\n]*paynani event show [^\]\n]+\])$", re.M)
 
 
-def redact_catch_all(text):
+def has_catch_all(text, channel=None):
+    """True si el texto trae algún aviso del Catch-All (de ese canal, si se dice cuál)."""
+    return any(channel in (None, m.group(1)) for m in _CATCH_ALL_LINE.finditer(str(text or "")))
+
+
+def redact_catch_all(text, channels=None):
     """
     El texto con cada aviso del Catch-All sin su extracto (#544).
 
     Para cuando el Catch-All ya no está activo: `event show --body` se niega, y el
     sobre y los avisos que se repiten al iniciar una sesión tampoco vuelven a
-    mostrar lo que decía el SMS. Queda quién escribió y el comando, con
-    `catch-all apagado` en lugar del archivo.
+    mostrar lo que decía el mensaje. Queda quién escribió y el comando, con
+    `catch-all apagado` en lugar del archivo. Con `channels` (`{"sms"}`,
+    `{"whatsapp"}`) sólo se tocan los avisos de esos canales (PRD #576 FR-7).
     """
-    return _CATCH_ALL_LINE.sub(
-        r"[\1 \2catch-all apagado\3] \4: mensaje de un número fuera del roster \5", str(text or ""))
+    def repl(m):
+        if channels is not None and m.group(1) not in channels:
+            return m.group(0)
+        return f"[{m.group(1)} {m.group(2)}catch-all apagado{m.group(3)}] {m.group(4)}: " \
+               f"mensaje de un número fuera del roster {m.group(5)}"
+    return _CATCH_ALL_LINE.sub(repl, str(text or ""))
 
 
 def _rules_tag(rules):

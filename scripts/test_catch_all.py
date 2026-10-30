@@ -72,19 +72,19 @@ BROKEN = "---\nversion: uno\nenabled: true\n"
 
 # --- rules.py -------------------------------------------------------------------------
 check("catch-all es un id reservado", True, "catch-all" in rules_mod.RESERVED_IDS)
-check("sin archivo: no hay Catch-All", None, rules_mod.catch_all_notice(tmp))
+check("sin archivo: no hay Catch-All", None, rules_mod.catch_all_notice("sms", tmp))
 catch_file.write_text(OFF, encoding="utf-8")
 check("enabled: false: no hay Catch-All", (None, None),
-      (rules_mod.catch_all_notice(tmp), rules_mod.catch_all_instructions(tmp)))
+      (rules_mod.catch_all_notice("sms", tmp), rules_mod.catch_all_instructions("sms", tmp)))
 catch_file.write_text(ACTIVE, encoding="utf-8")
-check("activo: ruta y estado", {"file": "rules/catch-all.md", "status": "active"}, rules_mod.catch_all_notice(tmp))
+check("activo: ruta y estado", {"file": "rules/catch-all.md", "status": "active"}, rules_mod.catch_all_notice("sms", tmp))
 check("activo: las instrucciones son el cuerpo", True,
-      "Avisa a Julián" in (rules_mod.catch_all_instructions(tmp) or ""))
+      "Avisa a Julián" in (rules_mod.catch_all_instructions("sms", tmp) or ""))
 catch_file.write_text(EMPTY, encoding="utf-8")
 check("encendido sin instrucciones: inválido", ("invalid", None),
-      ((rules_mod.catch_all_notice(tmp) or {}).get("status"), rules_mod.catch_all_instructions(tmp)))
+      ((rules_mod.catch_all_notice("sms", tmp) or {}).get("status"), rules_mod.catch_all_instructions("sms", tmp)))
 catch_file.write_text(BROKEN, encoding="utf-8")
-check("encabezado roto: inválido", "invalid", (rules_mod.catch_all_notice(tmp) or {}).get("status"))
+check("encabezado roto: inválido", "invalid", (rules_mod.catch_all_notice("sms", tmp) or {}).get("status"))
 check("las etiquetas", ("catch-all: rules/catch-all.md", "catch-all inválido"),
       (rules_mod.catch_all_tag({"file": "rules/catch-all.md", "status": "active"}),
        rules_mod.catch_all_tag({"file": "rules/catch-all.md", "status": "invalid"})))
@@ -104,12 +104,12 @@ catch_file.write_text(ACTIVE, encoding="utf-8")
 Path.read_text = failing_read(PermissionError(13, "Permission denied"))
 try:
     check("existe pero sin permiso de lectura: inválido, sin instrucciones", ("invalid", None),
-          ((rules_mod.catch_all_notice(tmp) or {}).get("status"), rules_mod.catch_all_instructions(tmp)))
+          ((rules_mod.catch_all_notice("sms", tmp) or {}).get("status"), rules_mod.catch_all_instructions("sms", tmp)))
 finally:
     Path.read_text = real_read
 catch_file.write_bytes(b"---\nversion: 1\nenabled: true\n---\n\n\xff\xfe roto\n")
 check("UTF-8 roto: inválido, sin instrucciones", ("invalid", None),
-      ((rules_mod.catch_all_notice(tmp) or {}).get("status"), rules_mod.catch_all_instructions(tmp)))
+      ((rules_mod.catch_all_notice("sms", tmp) or {}).get("status"), rules_mod.catch_all_instructions("sms", tmp)))
 # Revisión de Ximena en #538 (FR-19): una sola lectura. Si el archivo cambia de activo
 # a apagado entre dos lecturas, nunca salen las instrucciones del ya apagado.
 reads = iter([ACTIVE, OFF.replace("Avisa", "VIEJAS: avisa")])
@@ -123,7 +123,7 @@ def flipping_read(self, *a, **kw):
 
 Path.read_text = flipping_read
 try:
-    got = rules_mod.catch_all_instructions(tmp)
+    got = rules_mod.catch_all_instructions("sms", tmp)
 finally:
     Path.read_text = real_read
 check("una sola lectura: las instrucciones son las de la lectura activa", (True, False),
@@ -131,7 +131,7 @@ check("una sola lectura: las instrucciones son las de la lectura activa", (True,
 reads = iter([OFF, ACTIVE])
 Path.read_text = flipping_read
 try:
-    got = rules_mod.catch_all_instructions(tmp)
+    got = rules_mod.catch_all_instructions("sms", tmp)
 finally:
     Path.read_text = real_read
 check("y si la lectura lo encuentra apagado, None aunque luego se encienda", None, got)
@@ -320,9 +320,9 @@ check("el replay de avisos sin cerrar incluye el SMS del Catch-All", [envelope_a
 check("y su línea dice catch-all", True, session_start.unattended_line(*pending[0]).endswith("(catch-all)"))
 # #544: apagado, el aviso sin cerrar ya no se repite como trabajo, y lo que se repita
 # del spool o del journal sale sin el extracto.
-check("#544: catch_all_active_now con el archivo activo", True, session_start.catch_all_active_now())
+check("#544: catch_all_active_now con el archivo activo", True, session_start.catch_all_active_now("sms"))
 catch_file.write_text(OFF, encoding="utf-8")
-check("#544: apagado, catch_all_active_now es False", False, session_start.catch_all_active_now())
+check("#544: apagado, catch_all_active_now es False", False, session_start.catch_all_active_now("sms"))
 check("#544: apagado, el aviso sin cerrar ya no se repite", [],
       session_start.unattended_roster(lifecycle, now=time.time()))
 replayed = "Mail that arrived:\n" + envelope_active["notification_text"] + "\n[mail 09:00, roster] Ana: hola [x]"
