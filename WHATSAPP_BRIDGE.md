@@ -214,8 +214,8 @@ responde `result` igual: no es un error.
   Si la descarga falla: `"skipped": "download_failed"`.
 - El puente **no** sabe del roster. El servicio decide quién está en el roster y aplica
   FR-16a: el texto y el archivo de un número fuera del roster nunca salen por
-  ningún lado salvo con el Catch-All activo. El puente igual descarga el archivo para
-  que no se pierda si el Catch-All está activo; el servicio borra el archivo de
+  ningún lado salvo con el Catch-All de WhatsApp activo. El puente igual descarga el archivo para
+  que no se pierda si el Catch-All de WhatsApp está activo; el servicio borra el archivo de
   `media/` en cuanto decide que no se puede mostrar.
 
 ### `call`: una llamada de WhatsApp
@@ -533,7 +533,8 @@ PaynaniWeb lo usa para mostrar en «WhatsApp messages» la foto de un mensaje re
 
 - **Se decide en cada pedido, con FR-16a.** La foto sale sólo si el texto del mensaje
   también se mostraría: un número del roster, o un mensaje que llegó con el Catch-All
-  activo mientras el Catch-All **siga** activo y válido. Apagarlo, o sacar al contacto
+  de WhatsApp activo mientras ese Catch-All **siga** activo y válido (el de SMS no
+  cuenta, PRD #576 FR-7). Apagarlo, o sacar al contacto
   del roster, deja de servir la foto también a una URL que ya estaba abierta.
 - **La ruta guardada no se confía.** El servicio abre sólo un archivo con nombre de
   `media/` (sha256 y extensión) directamente dentro de `state/whatsapp/media/`, sin

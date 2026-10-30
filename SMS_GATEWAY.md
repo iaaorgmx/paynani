@@ -644,11 +644,13 @@ evento, así que en `notification_text`:
 - si `roster_match` es `false`, **no va el texto**, sólo el remitente y «mensaje de
   un número fuera del roster». `paynani event show --body` se niega a mostrarlo, igual
   que hoy con el correo de un remitente no reconocido.
-- **el Catch-All** (PRD #535) es la excepción, y la decide el dueño: con
-  `rules/catch-all.md` en `enabled: true` y con instrucciones, un SMS de un número
-  fuera del roster que no es respuesta a una conversación de la API llega con el
-  extracto y `catch-all: rules/catch-all.md` dentro del primer corchete:
-  `[sms 03:09, catch-all: rules/catch-all.md] +525599990000: <extracto>`. Nunca dice
+- **el Catch-All de SMS** (PRD #535, uno por canal desde el PRD #576) es la
+  excepción, y la decide el dueño: con `rules/catch-all-sms.md` en `enabled: true` y
+  con instrucciones, un SMS de un número fuera del roster que no es respuesta a una
+  conversación de la API llega con el extracto y el archivo dentro del primer
+  corchete: `[sms 03:09, catch-all: rules/catch-all-sms.md] +1XXXXXXXXXX: <extracto>`.
+  Mientras el SMS no tenga su archivo se lee el único de antes, `rules/catch-all.md`,
+  y la etiqueta lo nombra. El de WhatsApp no cuenta aquí. Nunca dice
   `roster`. El sobre lleva `catch_all: {file, status}`, nunca las instrucciones.
   `paynani event show --body` muestra primero las instrucciones del dueño y luego el
   texto, pero sólo si el SMS llegó con el Catch-All activo **y** sigue activo al
@@ -1357,7 +1359,7 @@ Requieren `whatsapp.admin`.
   `audio`, `document`…) y la app lo muestra como en el aviso (`[foto]`).
 - **Fuera del roster** (FR-16a): `hidden: true`, y ni `last_excerpt` ni `last_kind`
   ni nada del mensaje. Sólo se ve el número y la hora. La excepción es un mensaje que
-  llegó con el Catch-All activo, mientras el Catch-All **siga** activo y válido.
+  llegó con el Catch-All de WhatsApp activo, mientras ese Catch-All **siga** activo y válido.
 - `can_reply` es `true` sólo si el número está en el roster y ya escribió por WhatsApp
   después de vincular (FR-20, Q8=B). No hay forma de empezar un hilo nuevo desde la
   app (FR-25, Q189=A).
@@ -1387,7 +1389,7 @@ Requieren `whatsapp.admin`.
   "filename": null, "seconds": null}`, sin ruta ni contenido: esta versión no manda
   los archivos a la app. La app muestra el tipo, como en el aviso.
 - **Fuera del roster** (FR-16a): `messages` trae la hora y la dirección de cada mensaje
-  con `hidden: true`, sin `text` ni `media`, salvo la excepción del Catch-All.
+  con `hidden: true`, sin `text` ni `media`, salvo la excepción del Catch-All de WhatsApp.
 - Un número sin hilo responde `not_found`.
 
 ### `whatsapp.send`: contestar en un hilo
