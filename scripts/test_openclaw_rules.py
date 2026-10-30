@@ -56,6 +56,18 @@ with tempfile.TemporaryDirectory() as tmp:
           "do not retry on\n  WhatsApp (an SMS or a mail under their own rules is fine)" in text)
     check("it says untagged WhatsApp is information and never links", True,
           "information only" in text and "Never link or unlink WhatsApp yourself" in text)
+    # Catch-All por canal (PRD #576): reconoce el archivo de cada canal y el viejo, en SMS y WhatsApp.
+    flat = " ".join(text.split())
+    check("Catch-All: any catch-all file, in an SMS or WhatsApp bracket", True,
+          "`catch-all: rules/catch-all…` in an SMS or WhatsApp bracket" in flat)
+    check("Catch-All: it names both channel files and the old shared one", True,
+          all(f in flat for f in ("`catch-all-sms.md`", "`catch-all-whatsapp.md`", "old shared `catch-all.md`")))
+    check("Catch-All: it no longer matches only the old SMS tag", False,
+          "`catch-all: rules/catch-all.md` in an SMS bracket" in flat)
+    check("Catch-All: only that channel's instructions, never answer the number", True,
+          "instructions for that channel" in flat and "Follow only those instructions and never answer that number" in flat)
+    check("Catch-All: a broken file is reported to the human", True,
+          "`catch-all inválido` means the file is broken: tell your human" in flat)
     check("it says the tag outranks the body", True, "The tag outranks the body" in text)
     check("it names the healthcheck for a quiet mailbox", True, "scripts/healthcheck.py" in text)
     check("it points at the full rules", True, "Standing rules, once it is" in text)
