@@ -395,13 +395,22 @@ def _abort_path() -> Path:
 
 
 def _names(path: Path, txn: str) -> bool:
-    """path is a regular file whose JSON names txn."""
-    if not txn or path.is_symlink():
-        return False
+    """
+    Whether the marker at path names txn. Absent is False. A marker that is there
+    but cannot be verified (a symlink, unreadable, not the JSON this module
+    writes) raises _Unreadable: it is neither "names it" nor "does not".
+    """
+    if path.is_symlink():
+        raise _Unreadable(f"{path} is a symlink")
     try:
-        return json.loads(path.read_text(encoding="utf-8")).get("txn") == txn
-    except (OSError, ValueError, AttributeError):
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         return False
+    except (OSError, ValueError) as exc:
+        raise _Unreadable(f"{path} cannot be read ({type(exc).__name__})") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("txn"), str):
+        raise _Unreadable(f"{path} is not a marker")
+    return bool(txn) and data["txn"] == txn
 
 
 class _Unreadable(Exception):
@@ -460,7 +469,8 @@ class _Snapshot:
         """
         True only if this snapshot's commit marker is there and names it, and no
         abort marker names it: an abort marker is written when a failed commit's
-        marker could not be removed, and it wins.
+        marker could not be removed, and it wins. Raises _Unreadable if either
+        marker is there but cannot be verified: recovery fails closed on that.
         """
         return _names(_commit_path(), self.txn) and not _names(_abort_path(), self.txn)
 
@@ -588,7 +598,13 @@ def _recover(timeout_s: float) -> Recovery:
         return Recovery(True, False, detail=f"{exc}; it was kept, and nothing will change until someone looks at it")
     if snapshot is None:
         return Recovery(False)
-    if snapshot.committed:
+    try:
+        committed = snapshot.committed
+    except _Unreadable as exc:
+        _audit("recover", [], "marker_unreadable", "failed")
+        return Recovery(True, False, detail=f"{exc}; the snapshot and markers were kept, "
+                                            "and nothing will change until someone looks at them")
+    if committed:
         _Snapshot.discard()
         _audit("recover", [], "committed_cleanup", "none")
         return Recovery(True, True, detail="a change that had already taken was only cleaned up")

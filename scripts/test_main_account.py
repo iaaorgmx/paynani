@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
 import pathlib
 import sys
 import tempfile
@@ -793,6 +794,66 @@ with tempfile.TemporaryDirectory() as td:
         rec = ma.recover(timeout_s=1)
         check("a marker that names another txn does not make a snapshot committed",
               rec.found and rec.ok and rec.restored and files_as_before(env, cfg, state), rec)
+    finally:
+        restore(saved)
+
+# --- Ximena's fifth review (a031c57): markers that cannot be verified ------------------------
+def committed_pair(td):
+    """A change applied, then a snapshot of the old state with a matching commit marker, as a crash leaves them."""
+    sc = scenario(td)
+    env, cfg, state = sc[0], sc[1], sc[2]
+    r = ma.update(NEW, by="web", timeout_s=1)
+    txn = state / "main_account.txn"
+    (txn / "snapshot.json").write_text(json.dumps({
+        "txn": "abc123", "env_path": str(env), "himalaya_path": str(cfg), "state_path": str(state / "idle.json"),
+        "env": OLD_ENV, "himalaya": OLD_HIMALAYA, "state": json.dumps(OLD_STATE),
+        "reconnect": True, "address": "viejo@example.org"}))
+    (txn / "committed.json").write_text(json.dumps({"txn": "abc123"}))
+    return sc, txn
+
+
+for label, make in (("truncated", lambda p: p.write_text('{"txn": "abc')),
+                    ("not a marker", lambda p: p.write_text('["abc123"]')),
+                    ("a symlink", lambda p: p.symlink_to(p.parent / "committed.json")),
+                    ("unreadable", lambda p: (p.write_text(json.dumps({"txn": "abc123"})), p.chmod(0)))):
+    with tempfile.TemporaryDirectory() as td:
+        (env, cfg, state, roster, fake, saved), txn = committed_pair(td)
+        try:
+            make(txn / "aborted.json")
+            if label == "unreadable" and os.access(txn / "aborted.json", os.R_OK):
+                print("skip an unreadable abort marker: this user can read a 0000 file")
+                continue
+            rec = ma.recover(timeout_s=1)
+            check(f"an abort marker that is {label}, next to a matching commit marker, fails closed",
+                  rec.found and not rec.ok and (txn / "snapshot.json").exists()
+                  and audit(state)[-1]["result"] == "marker_unreadable", rec)
+            check(f"with an abort marker that is {label}, nothing is taken as committed or changed",
+                  "AGENT_EMAIL_ACCOUNT=nuevo@example.net" in env.read_text(), env.read_text())
+            r2 = ma.update({"AGENT_EMAIL_FROM_NAME": "Otro"}, by="web", timeout_s=1)
+            check(f"with an abort marker that is {label}, the next change does not run",
+                  not r2.ok and r2.code == "recovery_failed", r2)
+        finally:
+            (txn / "aborted.json").chmod(0o600) if (txn / "aborted.json").exists() and not (txn / "aborted.json").is_symlink() else None
+            restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    (env, cfg, state, roster, fake, saved), txn = committed_pair(td)
+    try:
+        (txn / "committed.json").write_text('{"txn"')
+        rec = ma.recover(timeout_s=1)
+        check("a commit marker that is there but truncated fails closed too",
+              rec.found and not rec.ok and (txn / "snapshot.json").exists(), rec)
+    finally:
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    (env, cfg, state, roster, fake, saved), txn = committed_pair(td)
+    try:
+        (txn / "aborted.json").write_text(json.dumps({"txn": "another"}))
+        rec = ma.recover(timeout_s=1)
+        check("an abort marker for another txn does not overrule this commit",
+              rec.found and rec.ok and "AGENT_EMAIL_ACCOUNT=nuevo@example.net" in env.read_text()
+              and not (txn / "snapshot.json").exists(), rec)
     finally:
         restore(saved)
 
