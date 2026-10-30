@@ -32,7 +32,7 @@ if str(_HARNESS) not in sys.path:
 
 from paths import state_dir  # noqa: E402
 
-from . import account_service  # noqa: E402
+from . import account_service, accounts  # noqa: E402
 
 MAIN_UNIT = "paynani-idle.service"
 MAIN_LABEL = "com.paynani.idle"
@@ -80,6 +80,21 @@ def _platform() -> str:
     return "unknown"
 
 
+def _configured(account: str) -> None:
+    """
+    An additional account has to be in accounts.json and enabled: a well-formed
+    id alone would let the caller start any instance of the paynani-idle@ template.
+    Raises account_service.AccountServiceError otherwise.
+    """
+    account_service.validate_id(account)
+    try:
+        entry = accounts.get(account)
+    except (accounts.AccountsError, OSError) as exc:
+        raise account_service.AccountServiceError(str(exc)) from exc
+    if not entry.get("enabled", True):
+        raise account_service.AccountServiceError(f"account {account!r} is disabled")
+
+
 def state_path(account: str | None = None) -> Path:
     """idle.json of the main listener, or of an additional account's."""
     if account is None:
@@ -113,13 +128,15 @@ def _command(account: str | None) -> list[str] | None:
 def restart(account: str | None = None) -> Restart:
     """
     Ask for the restart and return without waiting for the listener to come
-    back. requested_at is taken after the service manager has stopped the old
-    process (`systemctl restart` and `kickstart -k` both stop first), so any
-    heartbeat at or after it comes from the new one.
+    back. requested_at is taken before the service manager runs: the new process
+    can be in the mailbox, heartbeat written, before `systemctl restart` or
+    `kickstart -k` returns. The old one can also write a heartbeat in that
+    second, so pass previous_pid to status() and wait(): together they mean
+    "a heartbeat from a new process, after the request".
     """
     try:
         if account is not None:
-            account_service.validate_id(account)
+            _configured(account)
     except account_service.AccountServiceError as exc:
         return Restart(False, "unknown_account", "", None, str(exc))
     previous = _read_state(account)
@@ -129,13 +146,13 @@ def restart(account: str | None = None) -> Restart:
     if argv is None:
         return Restart(False, "no_service_manager", "", previous_pid,
                        f"cannot restart services on {sys.platform}")
+    requested_at = _now()
     try:
         result = _run(argv)
     except FileNotFoundError:
         return Restart(False, "no_service_manager", "", previous_pid, f"{argv[0]} is not installed")
     except (OSError, subprocess.SubprocessError) as exc:
         return Restart(False, "failed", "", previous_pid, str(exc))
-    requested_at = _now()
     if result.returncode != 0:
         lines = (result.stderr or result.stdout or "").strip().splitlines()
         return Restart(False, "failed", requested_at, previous_pid,
@@ -153,6 +170,8 @@ def status(account: str | None = None, *, since: str | None = None, expect: str 
     Without since: "connected" if the heartbeat is recent, "stale" if not.
     """
     try:
+        if account is not None:
+            _configured(account)
         data = _read_state(account)
     except account_service.AccountServiceError as exc:
         return Status("unknown", detail=str(exc))

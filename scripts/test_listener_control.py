@@ -58,9 +58,11 @@ class Runs:
 
 with tempfile.TemporaryDirectory() as td:
     state = pathlib.Path(td) / "state"
-    saved = (lc.state_dir, lc._run, lc._platform)
+    saved = (lc.state_dir, lc._run, lc._platform, lc.accounts.load)
     try:
         lc.state_dir = lambda: state
+        configured = [{"id": "ventas", "enabled": True}, {"id": "archivo", "enabled": False}]
+        lc.accounts.load = lambda path=None: configured
 
         # --- restart: only the listener, by a fixed name -------------------------------
         lc._platform = lambda: "linux"
@@ -82,7 +84,7 @@ with tempfile.TemporaryDirectory() as td:
 
         runs = Runs()
         lc._run = runs
-        for bad in ("../ventas", "main", "ventas; rm -rf ~", ""):
+        for bad in ("../ventas", "main", "ventas; rm -rf ~", "", "not-configured", "archivo"):
             r = lc.restart(bad)
             check(f"an account id like {bad!r} is refused before running anything",
                   not r.ok and r.code == "unknown_account" and runs.calls == [], (r, runs.calls))
@@ -154,6 +156,26 @@ with tempfile.TemporaryDirectory() as td:
         check("an old heartbeat is stale", lc.status().state == "stale")
         write_state(state / "accounts" / "ventas" / "idle.json", pid=2, heartbeat_at=stamp(-30))
         check("an additional account reads its own idle.json", lc.status("ventas").state == "connected")
+        check("status of an account that is not in accounts.json is unknown",
+              lc.status("not-configured").state == "unknown")
+        check("status of a disabled account is unknown", lc.status("archivo", since=stamp()).state == "unknown")
+
+        # --- the new process can be back before the restart command returns ------------
+        write_state(state / "idle.json", pid=100, heartbeat_at=stamp(-120), account="agente@example.org")
+
+        class FastStart:
+            """systemctl that returns a second after the new listener wrote its heartbeat."""
+
+            def __call__(self, argv):
+                time.sleep(1.1)
+                write_state(state / "idle.json", pid=200, heartbeat_at=stamp(), account="agente@example.org")
+                time.sleep(1.1)
+                return subprocess.CompletedProcess(argv, 0, "", "")
+        lc._run = FastStart()
+        r = lc.restart()
+        s = lc.status(since=r.requested_at, expect="agente@example.org", previous_pid=r.previous_pid)
+        check("a heartbeat written before systemctl returns still counts as back",
+              r.ok and s.state == "connected" and s.pid == 200, (r, s))
 
         # --- wait ------------------------------------------------------------------------
         write_state(state / "idle.json", pid=1, heartbeat_at=stamp(-300))
@@ -166,7 +188,7 @@ with tempfile.TemporaryDirectory() as td:
         s = lc.wait(stamp(-1), timeout_s=3, sleep=lambda _: None, clock=lambda: 0.0)
         check("wait returns as soon as the listener is back", s.state == "connected", s)
     finally:
-        lc.state_dir, lc._run, lc._platform = saved
+        lc.state_dir, lc._run, lc._platform, lc.accounts.load = saved
 
 
 # --- the listener side -------------------------------------------------------------------
