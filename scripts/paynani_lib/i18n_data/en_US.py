@@ -137,6 +137,7 @@ STRINGS = {
     'p.is_imap': 'The server identified itself as an IMAP server.',
     'p.auth_rejected': 'The server rejected that address and password.',
     'p.auth_rejected_d': 'Many providers want an app password here instead of the one you type on their website. If yours offers two-step verification, that is almost certainly the case.',
+    'p.password_not_ascii': "The password has a character this server's login cannot send (an accented letter or an ñ, for example). App passwords use only plain letters and digits.",
     'p.signed_in': 'Signed in successfully.',
     'p.signed_in_smtp': 'Signed in successfully, so the agent will be able to reply.',
     'p.idle_yes': 'The server supports IDLE, so new mail arrives within about a second.',

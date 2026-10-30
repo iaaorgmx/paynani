@@ -137,6 +137,7 @@ STRINGS = {
     'p.is_imap': 'O servidor se identificou como um servidor IMAP.',
     'p.auth_rejected': 'O servidor recusou esse endereço e senha.',
     'p.auth_rejected_d': 'Muitos provedores pedem aqui uma senha de app em vez da que você digita no site deles. Se o seu oferece verificação em duas etapas, quase certamente é o caso.',
+    'p.password_not_ascii': 'A senha tem um caractere que o login deste servidor não consegue enviar (uma letra acentuada, por exemplo). Senhas de app usam só letras sem acento e números.',
     'p.signed_in': 'Sessão iniciada com sucesso.',
     'p.signed_in_smtp': 'Sessão iniciada com sucesso, então o agente vai conseguir responder.',
     'p.idle_yes': 'O servidor suporta IDLE, então o e-mail novo chega em mais ou menos um segundo.',
