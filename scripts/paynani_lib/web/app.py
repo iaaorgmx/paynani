@@ -853,12 +853,13 @@ def make_handler(ctx: Context):
                 chunk, nxt = mail.page_of(rows, offset)
                 head = mail_pages.account_head(account_id, removable=not match["agent"],
                                                ok=self.query.get("ok", [""])[0])
-                sent = self.query.get("enviado", [""])[0]
                 try:
                     outside_n = int(self.query.get("fuera", ["0"])[0])
                 except ValueError:
                     outside_n = 0
-                head = compose_pages.notice(sent, outside_n) + head
+                head = compose_pages.notice(self.query.get("enviado", [""])[0] == "1", outside_n,
+                                            copy_failed=self.query.get("copia", [""])[0] == "failed",
+                                            notice_failed=self.query.get("aviso", [""])[0] == "failed") + head
                 self._page(200, title=match["email"], icon_name="mail",
                            body=head + mail_pages.list_body(account_id, chunk, len(rows), offset, nxt), wide=True, **kw)
                 return
@@ -1200,6 +1201,9 @@ def make_handler(ctx: Context):
                 self._compose(match, values=values, error=compose_pages.error_text(exc.code, detail=exc.detail),
                               code=status)
                 return
+            # Q5: con alguien fuera del roster, la contraseña. La decisión va sellada en el
+            # permiso (allow_outside): si el roster cambia antes de mandar, N1 no manda.
+            allow_outside = False
             if outside:
                 password = post.get("password", "")[:users.MAX_PASSWORD]
                 problem = (self._check_current(password) if password
@@ -1207,12 +1211,22 @@ def make_handler(ctx: Context):
                 if problem:
                     self._compose(match, values=values, error=problem, code=403 if password else 400)
                     return
+                allow_outside = True
             try:
                 # El permiso de un solo uso del núcleo (#591 N1), ligado a la cuenta y a
                 # estos destinatarios; se pide sólo después de la contraseña.
                 grant = self.CTX.mailer.authorize(account_id, to, cc, bcc, by=f"web:{self.ip}",
-                                                  owner_email=str(self.user.get("email") or ""))
-                res = self.CTX.mailer.send(grant, values["subject"].strip(), values["text"])
+                                                  owner_email=str(self.user.get("email") or ""),
+                                                  allow_outside=allow_outside)
+                try:
+                    res = self.CTX.mailer.send(grant, values["subject"].strip(), values["text"])
+                except mail_compose.Refused:
+                    raise
+                except Exception as exc:  # noqa: BLE001 -- puede haber salido: no se invita a reenviar
+                    sys.stderr.write(f"paynani-web: el envío del dueño terminó con {type(exc).__name__}\n")
+                    self._compose(match, values=values, code=502,
+                                  error=compose_pages.error_text("unknown_outcome"))
+                    return
             except mail_compose.Refused as exc:
                 self._compose(match, values=values, error=compose_pages.error_text(exc.code, detail=exc.detail),
                               code=503 if exc.code == "not_available" else 400)
@@ -1222,16 +1236,15 @@ def make_handler(ctx: Context):
                 self._compose(match, values=values, code=502 if res.get("code") == "send_failed" else 400,
                               error=compose_pages.error_text(str(res.get("code")), detail=str(res.get("detail") or "")))
                 return
+            # Cada estado por separado: cuántos fuera, la copia en Enviados y el aviso al dueño
+            # (revisión de Ximena, #594). Las direcciones no van en la URL: sólo cuántas.
             shown = res.get("outside_roster") or outside
+            query = f"enviado=1&fuera={len(shown)}"
             if res.get("sent_copy") == "failed":
-                flag = "sent_no_copy"
-            elif shown:
-                flag = "sent_outside"
-            else:
-                flag = "sent"
-            # Las direcciones no van en la URL (quedarían en el historial y en logs): sólo cuántas.
-            extra = f"&fuera={len(shown)}" if flag == "sent_outside" else ""
-            self._redirect(f"/email/{_quote(account_id, safe='')}?enviado={flag}{extra}")
+                query += "&copia=failed"
+            if res.get("notice") == "failed":
+                query += "&aviso=failed"
+            self._redirect(f"/email/{_quote(account_id, safe='')}?{query}")
 
         # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
         # Toda respuesta de aquí sale con Cache-Control: no-store (guard.SECURITY_HEADERS):

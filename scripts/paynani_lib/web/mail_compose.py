@@ -92,9 +92,11 @@ class Mailer:
 
     - `outside_roster(account_id, addresses)`: las que no están en el roster de esa
       cuenta. Con eso la web decide si pide la contraseña (Q5).
-    - `authorize(account_id, to, cc, bcc, by, owner_email)`: la web la llama después de
-      validar la contraseña (o la sesión, si nadie está fuera), en la misma petición; da
-      un permiso de un solo uso ligado a esa cuenta, esos destinatarios y el dueño.
+    - `authorize(account_id, to, cc, bcc, by, owner_email, allow_outside)`: la web la llama
+      en la misma petición; da un permiso de un solo uso ligado a esa cuenta, esos
+      destinatarios y el dueño. `allow_outside` es verdadero sólo si la web revisó la
+      contraseña (Q5). Si al mandar alguien quedó fuera del roster y el permiso no lo
+      autorizó, `send()` responde `not_authorized` sin mandar (revisión de Ximena, #594).
     - `send(grant, subject, body)`: consume el permiso y manda. Devuelve un dict con
       `ok`, `code`, `message_id`, `sent_copy`, `outside_roster`, `notice` y `detail`,
       como el `Result` de N1."""
@@ -103,7 +105,7 @@ class Mailer:
         raise Refused("not_available")
 
     def authorize(self, account_id: str, to: list[str], cc: list[str], bcc: list[str], *, by: str,
-                  owner_email: str):
+                  owner_email: str, allow_outside: bool):
         raise Refused("not_available")
 
     def send(self, grant, subject: str, body: str) -> dict:
@@ -138,9 +140,9 @@ class CoreMailer(Mailer):
     def outside_roster(self, account_id, addresses):
         return list(self._call(lambda c: c.outside_roster, self._account(account_id), addresses))
 
-    def authorize(self, account_id, to, cc, bcc, *, by, owner_email):
+    def authorize(self, account_id, to, cc, bcc, *, by, owner_email, allow_outside):
         return self._call(lambda c: c.authorize, self._account(account_id), to, cc, bcc, by=by,
-                          owner_email=owner_email)
+                          owner_email=owner_email, allow_outside=bool(allow_outside))
 
     def send(self, grant, subject, body):
         res = self._call(lambda c: c.send, grant, subject, body)
@@ -159,16 +161,23 @@ class Fake(Mailer):
         self.asked: list[tuple[str, list[str]]] = []
         self.grants: dict[int, dict] = {}
         self.fail = fail
+        # Las pruebas lo usan para cambiar el roster entre authorize() y send().
+        self.after_authorize = None
+        # Lo que N1 devuelve después de mandar: la copia en Enviados y el aviso al dueño.
+        self.sent_copy = "saved"
+        self.notice = None
 
     def outside_roster(self, account_id, addresses):
         self.asked.append((account_id, list(addresses)))
         known = set(self.book.get(account_id, []))
         return [a for a in addresses if a.lower() not in known]
 
-    def authorize(self, account_id, to, cc, bcc, *, by, owner_email):
+    def authorize(self, account_id, to, cc, bcc, *, by, owner_email, allow_outside):
         grant = len(self.grants) + 1
         self.grants[grant] = {"account_id": account_id, "to": list(to), "cc": list(cc), "bcc": list(bcc), "by": by,
-                              "owner_email": owner_email}
+                              "owner_email": owner_email, "allow_outside": bool(allow_outside)}
+        if self.after_authorize:
+            self.after_authorize()
         return grant
 
     def send(self, grant, subject, body):
@@ -177,10 +186,14 @@ class Fake(Mailer):
             return {"ok": False, "code": "invalid_grant", "message_id": "", "sent_copy": "", "outside_roster": [],
                     "notice": "skipped", "detail": "grant used or unknown"}
         out = self.outside_roster(order["account_id"], list(dict.fromkeys(order["to"] + order["cc"] + order["bcc"])))
+        if out and not order["allow_outside"]:
+            return {"ok": False, "code": "not_authorized", "message_id": "", "sent_copy": "", "outside_roster": out,
+                    "notice": "skipped", "detail": "outside the roster without the password"}
         if self.fail:
             return {"ok": False, "code": self.fail, "message_id": "", "sent_copy": "", "outside_roster": out,
                     "notice": "skipped", "detail": "smtp said no"}
         msgid = f"<web-{len(self.sent) + 1}@example.com>"
         self.sent.append(dict(order, subject=subject, body=body, message_id=msgid))
-        return {"ok": True, "code": "sent", "message_id": msgid, "sent_copy": "saved", "outside_roster": out,
-                "notice": "sent" if out else "skipped", "detail": ""}
+        notice = self.notice or ("sent" if out else "skipped")
+        return {"ok": True, "code": "sent", "message_id": msgid, "sent_copy": self.sent_copy, "outside_roster": out,
+                "notice": notice, "detail": ""}

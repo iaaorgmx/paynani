@@ -133,14 +133,15 @@ csrf = csrf_of(req("GET", "/email/main/nuevo", cookie=cookie)[2])
 # ---- Dentro del roster: sin contraseña ---------------------------------------------------
 status, hdrs, _ = req("POST", "/email/main/enviar", form={
     "csrf": csrf, "to": "Ana@Example.com", "cc": "", "bcc": "", "subject": "Hola", "text": "¿Cómo vas?"}, cookie=cookie)
-check("al roster no pide contraseña y vuelve a la lista con el aviso", (303, "/email/main?enviado=sent"),
+check("al roster no pide contraseña y vuelve a la lista con el aviso", (303, "/email/main?enviado=1&fuera=0"),
       (status, hdrs.get("location")))
 check("se pidió al núcleo con la cuenta, las direcciones normalizadas, quién y el correo del dueño",
       ("main", ["ana@example.com"], "¿Cómo vas?", "web:203.0.113.5", "julian@example.com"),
       (mailer.sent[-1]["account_id"], mailer.sent[-1]["to"], mailer.sent[-1]["body"], mailer.sent[-1]["by"],
        mailer.sent[-1]["owner_email"]))
 check("cada envío usa su propio permiso de un solo uso, y se consume", {}, mailer.grants)
-status, _, page = req("GET", "/email/main?enviado=sent&lang=es-MX", cookie=cookie)
+check("Q5: sin nadie fuera, el permiso no autoriza fuera del roster", False, mailer.sent[-1]["allow_outside"])
+status, _, page = req("GET", "/email/main?enviado=1&fuera=0&lang=es-MX", cookie=cookie)
 check("la lista dice que se envió", True, th("web.compose.sent_ok") in page)
 
 # ---- Fuera del roster: la contraseña (Q5) -------------------------------------------------
@@ -156,10 +157,11 @@ status, _, page = req("POST", "/email/main/enviar", form=dict(form, password="ma
 check("Q5: con la contraseña equivocada tampoco", (403, before), (status, len(mailer.sent)))
 status, hdrs, _ = req("POST", "/email/main/enviar", form=dict(form, password=PASSWORD), cookie=cookie)
 check("Q5: con la contraseña sale; el aviso dice cuántos estaban fuera, sin las direcciones",
-      (303, "/email/main?enviado=sent_outside&fuera=2"), (status, hdrs.get("location")))
+      (303, "/email/main?enviado=1&fuera=2"), (status, hdrs.get("location")))
+check("Q5: con la contraseña revisada, el permiso sí autoriza fuera del roster", True, mailer.sent[-1]["allow_outside"])
 check("Q6=B: Para, CC y CCO llegan separados al núcleo", (["ana@example.com"], ["externo@otro.mx"], ["oculto@otro.mx"]),
       (mailer.sent[-1]["to"], mailer.sent[-1]["cc"], mailer.sent[-1]["bcc"]))
-status, _, page = req("GET", "/email/main?enviado=sent_outside&fuera=2&lang=es-MX", cookie=cookie)
+status, _, page = req("GET", "/email/main?enviado=1&fuera=2&lang=es-MX", cookie=cookie)
 check("la lista dice cuántos estaban fuera del roster", True, th("web.compose.sent_outside", n=2) in page)
 
 # El roster es el de esa cuenta: Ana está en el de main, no en el de ventas.
@@ -213,6 +215,41 @@ check("tras varios fallos, ni la buena contraseña manda fuera del roster (bloqu
       (403, before), (status, len(mailer.sent)))
 IP[0] = "203.0.113.5"
 
+# ---- Q5 sellada en el permiso: el roster cambia entre la consulta y el envío (revisión de #594) ----
+mailer.after_authorize = lambda: mailer.book["main"].remove("ana@example.com")
+before = len(mailer.sent)
+status, _, page = req("POST", "/email/main/enviar", form={"csrf": csrf, "to": "ana@example.com", "subject": "x",
+                                                          "text": "y"}, cookie=cookie)
+check("Q5: si alguien queda fuera del roster después de consultar, no sale sin contraseña", (400, before, True),
+      (status, len(mailer.sent), th("web.compose.err.not_authorized").split(".")[0] in page))
+check("y no se reintenta: sólo hubo un permiso y se consumió", {}, mailer.grants)
+mailer.after_authorize = None
+mailer.book["main"].append("ana@example.com")
+
+# ---- Estados independientes después de mandar (revisión de #594) ----------------------------------
+mailer.sent_copy, mailer.notice = "failed", "failed"
+status, hdrs, _ = req("POST", "/email/main/enviar", form=dict(form, password=PASSWORD), cookie=cookie)
+check("fuera del roster, sin copia y sin aviso: la URL lleva los tres estados y ninguna dirección",
+      (303, "/email/main?enviado=1&fuera=2&copia=failed&aviso=failed", False),
+      (status, hdrs.get("location"), "@" in (hdrs.get("location") or "")))
+status, _, page = req("GET", hdrs.get("location") + "&lang=es-MX", cookie=cookie)
+check("la lista dice las tres cosas a la vez", (True, True, True),
+      (th("web.compose.sent_outside", n=2) in page, th("web.compose.sent_no_copy") in page,
+       th("web.compose.notice_failed") in page))
+mailer.sent_copy, mailer.notice = "saved", "failed"
+status, hdrs, _ = req("POST", "/email/main/enviar", form=dict(form, password=PASSWORD), cookie=cookie)
+check("fuera del roster y sin aviso, con copia", "/email/main?enviado=1&fuera=2&aviso=failed", hdrs.get("location"))
+mailer.sent_copy, mailer.notice = "saved", None
+
+# Una excepción inesperada del núcleo después de mandar: no se invita a reenviar.
+real_send = mailer.send
+mailer.send = lambda grant, subject, body: (_ for _ in ()).throw(OSError("unlink failed"))
+status, _, page = req("POST", "/email/main/enviar", form={"csrf": csrf, "to": "ana@example.com", "subject": "x",
+                                                          "text": "y"}, cookie=cookie)
+check("si el núcleo falla sin Result, la página dice que no se sabe si salió (no invita a reenviar)", (502, True),
+      (status, th("web.compose.err.unknown_outcome").split(".")[0] in page))
+mailer.send = real_send
+
 # ---- El núcleo dice que no -----------------------------------------------------------------------
 mailer.fail = "send_failed"
 status, _, page = req("POST", "/email/main/enviar", form={"csrf": csrf, "to": "ana@example.com", "subject": "x",
@@ -253,8 +290,8 @@ def _outside(account, addresses):
 
 
 fake_core.outside_roster = _outside
-fake_core.authorize = lambda account, to, cc, bcc, *, by, owner_email: calls.append(
-    ("authorize", account, to, cc, bcc, by, owner_email)) or "GRANT"
+fake_core.authorize = lambda account, to, cc, bcc, *, by, owner_email, allow_outside: calls.append(
+    ("authorize", account, to, cc, bcc, by, owner_email, allow_outside)) or "GRANT"
 fake_core.send = lambda grant, subject, body: calls.append(("send", grant, subject, body)) or _Result(
     ok=True, code="sent", message_id="<m@x>", sent_copy="saved", outside_roster=["x@y.mx"], notice="sent", detail="")
 sys.modules["paynani_lib.owner_mail"] = fake_core
@@ -264,10 +301,11 @@ real = mail_compose.CoreMailer()
 check("CoreMailer: main va como None a N1, una cuenta adicional con su id",
       (["x@y.mx"], ("outside_roster", None, ["ana@example.com", "x@y.mx"])),
       (real.outside_roster("main", ["ana@example.com", "x@y.mx"]), calls[-1]))
-grant = real.authorize("ventas", ["a@b.mx"], [], ["c@d.mx"], by="web:1.2.3.4", owner_email="julian@example.com")
+grant = real.authorize("ventas", ["a@b.mx"], [], ["c@d.mx"], by="web:1.2.3.4", owner_email="julian@example.com",
+                       allow_outside=True)
 res = real.send(grant, "Asunto", "Texto")
-check("CoreMailer: authorize con by y owner_email, luego send con el permiso, sin contraseñas",
-      [("authorize", "ventas", ["a@b.mx"], [], ["c@d.mx"], "web:1.2.3.4", "julian@example.com"),
+check("CoreMailer: authorize con by, owner_email y allow_outside, luego send con el permiso, sin contraseñas",
+      [("authorize", "ventas", ["a@b.mx"], [], ["c@d.mx"], "web:1.2.3.4", "julian@example.com", True),
        ("send", "GRANT", "Asunto", "Texto")], calls[-2:])
 check("CoreMailer: el Result de N1 como dict", ("sent", "<m@x>", "saved", "sent"),
       (res["code"], res["message_id"], res["sent_copy"], res["notice"]))
@@ -280,7 +318,7 @@ del sys.modules["paynani_lib.owner_mail"]
 del paynani_lib.owner_mail
 
 # Un permiso que ya se usó: not_authorized, sin reintentar.
-used = mailer.authorize("main", ["ana@example.com"], [], [], by="t", owner_email="j@x.mx")
+used = mailer.authorize("main", ["ana@example.com"], [], [], by="t", owner_email="j@x.mx", allow_outside=False)
 mailer.send(used, "a", "b")
 again = mailer.send(used, "a", "b")
 check("un permiso de un solo uso no sirve dos veces", (False, "invalid_grant"), (again["ok"], again["code"]))

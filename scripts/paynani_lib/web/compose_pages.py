@@ -26,15 +26,19 @@ def new_button(account_id: str) -> str:
     return (f'<a class="secundario" href="/email/{urlquote(account_id)}/nuevo">{_th("new")}</a>')
 
 
-def notice(code: str, outside_n: int = 0) -> str:
-    """El aviso al volver a la lista después de mandar."""
-    if code == "sent":
-        return f'<p class="aviso-ok" role="status">{_th("sent_ok")}</p>\n'
-    if code == "sent_outside":
-        return f'<p class="aviso-ok" role="status">{_th("sent_outside", n=outside_n)}</p>\n'
-    if code == "sent_no_copy":
-        return f'<p class="aviso-caja" role="status">{_th("sent_no_copy")}</p>\n'
-    return ""
+def notice(sent: bool, outside_n: int = 0, *, copy_failed: bool = False, notice_failed: bool = False) -> str:
+    """El aviso al volver a la lista después de mandar. Cada estado por separado: que se
+    envió, cuántos estaban fuera del roster, si no se guardó la copia en Enviados y si no
+    salió el aviso al dueño (revisión de Ximena, #594)."""
+    if not sent:
+        return ""
+    out = [f'<p class="aviso-ok" role="status">'
+           f'{_th("sent_outside", n=outside_n) if outside_n > 0 else _th("sent_ok")}</p>']
+    if copy_failed:
+        out.append(f'<p class="aviso-caja" role="status">{_th("sent_no_copy")}</p>')
+    if notice_failed:
+        out.append(f'<p class="aviso-caja" role="status">{_th("notice_failed")}</p>')
+    return "\n".join(out) + "\n"
 
 
 def error_text(code: str, *, detail: str = "", outside: list[str] | None = None) -> str:
