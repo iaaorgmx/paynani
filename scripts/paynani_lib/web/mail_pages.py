@@ -31,8 +31,10 @@ def account_head(account_id: str, *, removable: bool, ok: str = "") -> str:
         cls = "aviso-ok" if ok != "added_noservice" else "aviso-caja"
         out += f'<p class="{cls}" role="status">{th("web.acct.ok." + ok)}</p>\n'
     # «Nuevo correo» (#590 cambio 2), como «Catch-All» en «Mensajes».
-    from . import compose_pages
-    out += f'<p class="acciones">{compose_pages.new_button(account_id)}</p>\n'
+    from . import compose_pages, config_pages
+    # «Configuración» (#590 cambio 3) sólo en la cuenta principal.
+    settings = f" {config_pages.link()}" if account_id == "main" else ""
+    out += f'<p class="acciones">{compose_pages.new_button(account_id)}{settings}</p>\n'
     if removable:
         out += (f'<p class="acciones-cuenta"><a class="peligro-enlace" href="/cuentas/{urlquote(account_id)}/quitar">'
                 f'{th("web.acct.remove_nav")}</a></p>\n')

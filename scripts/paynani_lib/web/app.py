@@ -32,9 +32,9 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
-from . import catchall_strings, compose_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import catchall_strings, compose_strings, config_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (accounts_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
-               thread, users, whatsapp_pages, whatsapp_source, compose_pages, mail_compose)
+               thread, users, whatsapp_pages, whatsapp_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 FAVICON = Path(__file__).resolve().parents[3] / "brand" / "favicon.svg"
@@ -263,7 +263,7 @@ class Context:
                  env_path: Path | None = None, imap_connect=None, imap_uidvalidity=None,
                  state_dir: Path | None = None, roster_path: Path | None = None, roster_notifier=None,
                  whatsapp_source: whatsapp_source.Source | None = None, whatsapp_root: Path | None = None,
-                 mailer: mail_compose.Mailer | None = None):
+                 mailer: mail_compose.Mailer | None = None, updater: account_config.Updater | None = None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -310,6 +310,8 @@ class Context:
         # «Nuevo correo» (#590 cambio 2): el envío del dueño del núcleo (#591 N1), o el
         # que pasen las pruebas.
         self.mailer = mailer or mail_compose.CoreMailer()
+        # «Configuración» de la cuenta principal (#590 cambio 3): N2/N3 del núcleo (#591).
+        self.updater = updater or account_config.CoreUpdater()
         self._whatsapp_root = whatsapp_root
         # La vinculación por QR o código de cada sesión del navegador: el link_id vive
         # sólo aquí, en memoria, nunca en una cookie, una URL ni la página (§11).
@@ -835,6 +837,9 @@ def make_handler(ctx: Context):
             account_id, _, view = rest.partition("/")
             accounts, _ = self.CTX.mail_accounts()
             match = next((a for a in accounts if a["id"] == account_id), None)
+            if match is not None and match["id"] == "main" and view == "configuracion":
+                self._config()
+                return
             if match is not None and view == "nuevo":
                 self._compose(match)
                 return
@@ -1245,6 +1250,63 @@ def make_handler(ctx: Context):
             if res.get("notice") == "failed":
                 query += "&aviso=failed"
             self._redirect(f"/email/{_quote(account_id, safe='')}?{query}")
+
+        # ---- Configuración de la cuenta principal (#590 cambio 3) ------------------
+        def _config_values(self) -> dict:
+            import idle_listener
+            try:
+                return account_config.current(idle_listener.load_env(self.CTX.env_path()))
+            except OSError:
+                return account_config.current({})
+
+        def _config(self, *, values: dict | None = None, notice: str = "", error: str = "", probe=None,
+                    code: int = 200):
+            """GET /email/main/configuracion: los datos actuales, sin la contraseña."""
+            self._page(code, title=i18n.t("web.cfg.title"), icon_name="mail", back="/email/main",
+                       body=config_pages.body(values if values is not None else self._config_values(),
+                                              self.session["csrf"], notice=notice, error=error, probe=probe),
+                       active="email", active_account="main")
+
+        def _config_post(self, post: dict):
+            """
+            POST /email/main/configuracion: CSRF y Origin como todo POST, y la contraseña de
+            la web con el bloqueo de la entrada (Q10) antes de pedirle nada al núcleo. El
+            núcleo prueba, guarda .env y Himalaya juntos y reinicia el listener (#591).
+            Después, un correo al dueño con lo que cambió, sin la contraseña del buzón.
+            """
+            before = self._config_values()
+            form = {name: post.get(name, "")[:320] for _, name in account_config.FIELDS}
+            form["new_password"] = post.get("new_password", "")[:1024]
+            shown_values = {k: v for k, v in form.items() if k != "new_password"}
+            try:
+                changes = account_config.changes(before, form)
+            except account_config.Refused as exc:
+                self._config(values=shown_values, error=config_pages.error_text(exc.code, exc.detail), code=400)
+                return
+            password = post.get("password", "")[:users.MAX_PASSWORD]
+            problem = self._check_current(password) if password else i18n.t("web.cfg.err.password")
+            if problem:
+                self._config(values=shown_values, error=problem, code=403 if password else 400)
+                return
+            if not changes:
+                self._config(notice=i18n.t("web.cfg.nothing"))
+                return
+            try:
+                res = self.CTX.updater.update(changes, by=f"web:{self.ip}")
+            except account_config.Refused as exc:
+                self._config(values=shown_values, error=config_pages.error_text(exc.code, exc.detail),
+                             code=503 if exc.code == "not_available" else 400)
+                return
+            if not res.get("ok"):
+                self._config(values=shown_values, probe=res.get("probe"),
+                             error=config_pages.error_text(str(res.get("code")), str(res.get("detail") or "")),
+                             code=400 if res.get("code") == "probe_failed" else 502)
+                return
+            fields = ", ".join(i18n.t("web.cfg." + n) for n in account_config.shown(changes))
+            self.CTX.notifier.owner(self.user, i18n.t("web.cfg.mail_subject"),
+                                    i18n.t("web.cfg.mail_body", ip=self.ip, fields=fields))
+            self._config(notice=i18n.t("web.cfg.ok" if res.get("restart") == "back" else "web.cfg.ok_timeout"),
+                         probe=res.get("probe"))
 
         # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
         # Toda respuesta de aquí sale con Cache-Control: no-store (guard.SECURITY_HEADERS):
@@ -1852,6 +1914,9 @@ def make_handler(ctx: Context):
                 return
             if self.route == "/cuentas/nueva" or (self.route.startswith("/cuentas/") and self.route.endswith("/quitar")):
                 self._accounts_post(post)
+                return
+            if self.route == "/email/main/configuracion":
+                self._config_post(post)
                 return
             if self.route.startswith("/email/") and self.route.endswith("/enviar"):
                 self._compose_post(post)

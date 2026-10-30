@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""
+Tests de «Configuración» de la cuenta principal en PaynaniWeb (#590 cambio 3): el botón
+sólo en la lista de la cuenta principal, los datos actuales sin la contraseña, la
+contraseña de la web con el bloqueo de la entrada antes de pedirle nada al núcleo (Q10),
+sólo lo que cambió va al núcleo, la prueba contra el servidor se muestra, y el aviso al
+dueño dice qué cambió sin la contraseña del buzón.
+
+Un PaynaniWeb real en un puerto libre con `account_config.Fake`; nada sale de la máquina.
+"""
+from __future__ import annotations
+
+import http.client
+import json
+import re
+import sys
+import tempfile
+import threading
+from pathlib import Path
+from urllib.parse import urlencode
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "harness"))
+
+from paynani_lib import i18n  # noqa: E402
+from paynani_lib.web import account_config, app, auth, notify, users  # noqa: E402
+
+passed = failed = 0
+
+
+def check(label, expected, actual=True):
+    global passed, failed
+    if expected == actual:
+        passed += 1
+        print(f"ok   {label}")
+    else:
+        failed += 1
+        print(f"FAIL {label}\n     expected {expected!r}\n     got      {actual!r}")
+
+
+PASSWORD = "una-contraseña-larga"
+MAILBOX_SECRET = "s3cr3to-del-buzon"
+tmp = Path(tempfile.mkdtemp())
+clone = tmp / "clone"
+(clone / "state").mkdir(parents=True)
+(clone / "roster.md").write_text("| Name | Email |\n|---|---|\n| Julián Flores | julian@example.com |\n", encoding="utf-8")
+accounts_file = clone / "accounts.json"
+accounts_file.write_text(json.dumps({"accounts": [{
+    "id": "ventas", "email": "ventas@example.com", "imap": {"host": "imap.example.com", "port": 993},
+    "smtp": {"host": "smtp.example.com", "port": 465}, "password_env": "PAYNANI_ACCOUNT_VENTAS_PASSWORD"}]}),
+    encoding="utf-8")
+env_path = clone / ".env"
+env_path.write_text(
+    "AGENT_EMAIL_ACCOUNT=agente@example.com\n"
+    f"AGENT_EMAIL_PASSWORD={MAILBOX_SECRET}\n"
+    "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST=imap.example.com\nAGENT_EMAIL_INCOMING_SERVER_IMAP_PORT=993\n"
+    "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST=smtp.example.com\nAGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT=465\n"
+    "AGENT_EMAIL_FROM_NAME=Agente\n", encoding="utf-8")
+user_file = clone / "web" / "user.json"
+users.create("julian@example.com", "Julián Flores", PASSWORD, user_file)
+mail = []
+updater = account_config.Fake()
+ctx = app.Context(user_file, notifier=notify.Notifier(send=lambda to, s, b: mail.append((to, s, b)), log=lambda l: None),
+                  agent_email="agente@example.com", accounts_file=accounts_file, state_dir=clone / "state",
+                  roster_path=clone / "roster.md", env_path=env_path, updater=updater)
+httpd = app.serve("127.0.0.1", 0, ctx=ctx)
+port = httpd.server_address[1]
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+HOST = "agente.ngrok.app"
+IP = ["203.0.113.5"]
+
+
+def req(method, path, *, form=None, cookie="", origin=True):
+    h = {"Host": HOST, "X-Forwarded-For": IP[0]}
+    if cookie:
+        h["Cookie"] = cookie
+    body = None
+    if form is not None:
+        body = urlencode(form)
+        h["Content-Type"] = "application/x-www-form-urlencoded"
+        if origin:
+            h["Origin"] = f"https://{HOST}"
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+    conn.request(method, path, body=body, headers=h)
+    r = conn.getresponse()
+    data = r.read().decode("utf-8", "replace")
+    out = {k.lower(): v for k, v in r.getheaders()}
+    out["set-cookie-all"] = r.headers.get_all("Set-Cookie") or []
+    conn.close()
+    return r.status, out, data
+
+
+def login():
+    _, hdrs, _ = req("POST", "/login", form={"email": "julian@example.com", "password": PASSWORD})
+    return next(c for c in hdrs["set-cookie-all"] if c.startswith(auth.SESSION_COOKIE)).split(";", 1)[0]
+
+
+th = i18n.th
+cookie = login()
+CURRENT = {"email": "agente@example.com", "from_name": "Agente", "imap_host": "imap.example.com", "imap_port": "993",
+           "smtp_host": "smtp.example.com", "smtp_port": "465"}
+
+status, _, page = req("GET", "/email/main?lang=es-MX", cookie=cookie)
+check("«Configuración» en la lista de la cuenta principal", (200, True), (status, 'href="/email/main/configuracion"' in page))
+status, _, page = req("GET", "/email/ventas?lang=es-MX", cookie=cookie)
+check("y no en la de una cuenta adicional", False, 'href="/email/main/configuracion"' in page)
+status, _, _ = req("GET", "/email/ventas/configuracion", cookie=cookie)
+check("/email/ventas/configuracion no existe", 404, status)
+
+status, hdrs, page = req("GET", "/email/main/configuracion?lang=es-MX", cookie=cookie)
+check("la pantalla abre con los datos actuales", (200, True, True, True),
+      (status, 'value="agente@example.com"' in page, 'value="imap.example.com"' in page, 'value="465"' in page))
+check("la contraseña del buzón nunca se muestra", False, MAILBOX_SECRET in page)
+check("sin atributos style", [], re.findall(r'\sstyle="', page))
+check("no-store", True, "no-store" in hdrs.get("cache-control", ""))
+csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+
+# Q10: contraseña antes de pedirle nada al núcleo.
+form = dict(CURRENT, csrf=csrf, imap_host="mail.nuevo.mx", new_password="", password="")
+status, _, page = req("POST", "/email/main/configuracion", form=form, cookie=cookie)
+check("Q10: sin la contraseña de la web no llega al núcleo", (400, [], True),
+      (status, updater.calls, th("web.cfg.err.password") in page))
+check("y lo que escribió sigue en el formulario", True, 'value="mail.nuevo.mx"' in page)
+status, _, _ = req("POST", "/email/main/configuracion", form=dict(form, password="mala"), cookie=cookie)
+check("Q10: con la contraseña equivocada tampoco", (403, []), (status, updater.calls))
+status, _, _ = req("POST", "/email/main/configuracion", form=dict(form, csrf="malo", password=PASSWORD), cookie=cookie)
+check("sin CSRF, 403", (403, []), (status, updater.calls))
+status, _, _ = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie, origin=False)
+check("sin Origin, 403", (403, []), (status, updater.calls))
+
+# Sólo lo que cambió va al núcleo; la contraseña del buzón sólo si se escribió.
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("con la contraseña, al núcleo va sólo lo que cambió", (200, {"AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST": "mail.nuevo.mx"}),
+      (status, updater.calls[-1][0]))
+check("con quién lo pidió", "web:203.0.113.5", updater.calls[-1][1])
+check("la página dice que se guardó y muestra la prueba", (True, True),
+      (th("web.cfg.ok") in page, "IMAP login" in page))
+ctx.notifier.wait()
+check("Q10: el dueño recibe un aviso con lo que cambió", ("julian@example.com", i18n.t("web.cfg.mail_subject"), True),
+      (mail[-1][0], mail[-1][1], i18n.t("web.cfg.imap_host") in mail[-1][2]))
+
+req("POST", "/email/main/configuracion", form=dict(form, imap_host="imap.example.com", new_password=MAILBOX_SECRET + "2",
+                                                   password=PASSWORD), cookie=cookie)
+check("una contraseña nueva del buzón va al núcleo", {"AGENT_EMAIL_PASSWORD": MAILBOX_SECRET + "2"}, updater.calls[-1][0])
+ctx.notifier.wait()
+check("y el aviso dice que cambió, sin ponerla", (True, False),
+      (i18n.t("web.cfg.new_password") in mail[-1][2], MAILBOX_SECRET in mail[-1][2]))
+
+before = len(updater.calls)
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, imap_host="imap.example.com",
+                                                                    password=PASSWORD), cookie=cookie)
+check("sin cambios no se llama al núcleo y lo dice", (200, before, True),
+      (status, len(updater.calls), th("web.cfg.nothing") in page))
+
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, from_name="Agente\r\nX=1", password=PASSWORD),
+                      cookie=cookie)
+check("un salto de línea en un campo no pasa (no agrega claves al .env)", (400, before), (status, len(updater.calls)))
+
+# El núcleo dice que no.
+updater.result = {"ok": False, "code": "probe_failed", "detail": "",
+                  "probe": {"imap": [{"ok": False, "text": "IMAP login", "detail": "authentication failed"}]}}
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("si la prueba falla no se guarda y muestra el paso que falló", (400, True, True),
+      (status, th("web.cfg.err.probe_failed") in page, "authentication failed" in page))
+updater.result = {"ok": False, "code": "rolled_back", "detail": "", "probe": {}}
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("si el listener no volvió, dice que se restauró lo anterior", (502, True), (status, th("web.cfg.err.rolled_back") in page))
+updater.result = {"ok": True, "code": "saved", "detail": "", "probe": {}, "restart": "timeout"}
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("guardado pero sin latido: lo dice", (200, True), (status, th("web.cfg.ok_timeout") in page))
+updater.result = None
+
+try:
+    account_config.CoreUpdater().update({"AGENT_EMAIL_FROM_NAME": "x"}, by="t")
+    check("CoreUpdater sin N2: no escribe nada", "not_available", "wrote")
+except account_config.Refused as exc:
+    check("CoreUpdater sin N2: dice not_available y no escribe nada", "not_available", exc.code)
+check("el .env no lo tocó la web", True, f"AGENT_EMAIL_PASSWORD={MAILBOX_SECRET}\n" in env_path.read_text(encoding="utf-8")
+      and "mail.nuevo.mx" not in env_path.read_text(encoding="utf-8"))
+
+# El bloqueo de la entrada.
+IP[0] = "198.51.100.60"
+cookie2 = login()
+csrf2 = re.search(r'name="csrf" value="([^"]+)"', req("GET", "/email/main/configuracion", cookie=cookie2)[2]).group(1)
+for _ in range(7):
+    req("POST", "/email/main/configuracion", form=dict(form, csrf=csrf2, password="mala"), cookie=cookie2)
+before = len(updater.calls)
+status, _, _ = req("POST", "/email/main/configuracion", form=dict(form, csrf=csrf2, password=PASSWORD), cookie=cookie2)
+check("tras varios fallos, ni la buena guarda (bloqueo de la entrada)", (403, before), (status, len(updater.calls)))
+IP[0] = "203.0.113.5"
+
+keys = [k for k in i18n.CATALOGUES["es-MX"] if k.startswith("web.cfg.")]
+missing = {lang: [k for k in keys if k not in i18n.CATALOGUES[lang]] for lang in ("en-US", "es-ES", "fr-FR", "pt-BR")}
+check("las cadenas web.cfg.* en los cinco idiomas", {lang: [] for lang in missing}, missing)
+
+httpd.shutdown()
+print(f"\n{passed} passed, {failed} failed")
+sys.exit(1 if failed else 0)
