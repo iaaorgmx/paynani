@@ -470,7 +470,9 @@ with tempfile.TemporaryDirectory() as td:
             pass
         ma._Snapshot.discard = real_discard
         snap = json.loads((state / "main_account.txn" / "snapshot.json").read_text())
-        check("a crash after readiness, before cleanup, leaves a committed snapshot", snap["phase"] == "committed", snap["phase"])
+        marker = json.loads((state / "main_account.txn" / "committed.json").read_text())
+        check("a crash after readiness, before cleanup, leaves the snapshot and its commit marker",
+              marker["txn"] == snap["txn"] and "phase" not in snap, (snap.keys(), marker))
         rec = ma.recover(timeout_s=1)
         check("recover() keeps a committed change and only cleans up",
               rec.found and rec.ok and "AGENT_EMAIL_ACCOUNT=nuevo@example.net" in env.read_text()
@@ -601,9 +603,9 @@ with tempfile.TemporaryDirectory() as td:
     try:
         r = ma.update(NEW, by="web", timeout_s=1)
         snap = state / "main_account.txn" / "snapshot.json"
-        check("a failed commit whose rollback is not proven keeps the prepared snapshot",
+        check("a failed commit whose rollback is not proven keeps the prepared snapshot, with no marker",
               not r.ok and r.code == "commit_failed" and r.rollback == "failed" and snap.exists()
-              and json.loads(snap.read_text())["phase"] == "prepared", r)
+              and not (state / "main_account.txn" / "committed.json").exists(), r)
     finally:
         ma._Snapshot.commit = real_commit
         restore(saved)
@@ -631,13 +633,14 @@ with tempfile.TemporaryDirectory() as td:
         # The unlink did not survive the crash: the committed snapshot comes back.
         snap_dir = state / "main_account.txn"
         (snap_dir / "snapshot.json").write_text(json.dumps({
-            "phase": "committed", "env_path": str(env), "himalaya_path": str(cfg),
+            "txn": "abc123", "env_path": str(env), "himalaya_path": str(cfg),
             "state_path": str(state / "idle.json"), "env": OLD_ENV, "himalaya": OLD_HIMALAYA,
             "state": json.dumps(OLD_STATE), "reconnect": True, "address": "viejo@example.org"}))
+        (snap_dir / "committed.json").write_text(json.dumps({"txn": "abc123"}))
         rec = ma.recover(timeout_s=1)
         check("a committed snapshot that comes back is only cleaned up, and the change stays",
               rec.found and rec.ok and "AGENT_EMAIL_ACCOUNT=nuevo@example.net" in env.read_text()
-              and not (snap_dir / "snapshot.json").exists(), rec)
+              and not (snap_dir / "snapshot.json").exists() and not (snap_dir / "committed.json").exists(), rec)
     finally:
         ma._Snapshot.commit, ma._fsync_dir = real_commit, real_fsync
         restore(saved)
@@ -680,6 +683,72 @@ with tempfile.TemporaryDirectory() as td:
               'email = "nuevo@example.net"\ndisplay-name = "Agente"\n' in h and h.count("[accounts.paynani]") == 1
               and h.count("[accounts.paynani.smtp]") == 1, h)
         check("the other account is still there", '[accounts.paynani-ventas]\nemail = "ventas@example.org"' in h, h)
+    finally:
+        restore(saved)
+
+# --- Ximena's third review (3a40b0f) ---------------------------------------------------------
+with tempfile.TemporaryDirectory() as td:
+    # The marker's rename lands, its directory sync fails, and the old listener does not come back.
+    env, cfg, state, roster, fake, saved = scenario(td, fake=Fake(back_on_old=False))
+    real_write = ma._write_private
+
+    def lands_then_fails(path, text):
+        real_write(path, text)
+        if path.name == "committed.json":
+            raise OSError(5, "Input/output error")
+    ma._write_private = lands_then_fails
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        txn = state / "main_account.txn"
+        check("a commit marker whose sync fails is taken away before the rollback",
+              not r.ok and r.code == "commit_failed" and r.rollback == "failed"
+              and (txn / "snapshot.json").exists() and not (txn / "committed.json").exists(), r)
+        ma._write_private = real_write
+        later = ma.recover(timeout_s=1)
+        check("a later recovery does not take that change as committed: it undoes it",
+              later.found and not later.ok and later.restored and audit(state)[-1]["result"] == "recover_failed"
+              and "AGENT_EMAIL_ACCOUNT=viejo@example.org" in env.read_text(), later)
+    finally:
+        ma._write_private = real_write
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    # Same, and the marker cannot even be removed: the snapshot still never says "committed".
+    env, cfg, state, roster, fake, saved = scenario(td, fake=Fake(back_on_old=False))
+    real_write, real_drop = ma._write_private, ma._Snapshot.drop_marker
+
+    def lands_then_fails(path, text):
+        real_write(path, text)
+        if path.name == "committed.json":
+            raise OSError(5, "Input/output error")
+    ma._write_private = lands_then_fails
+    ma._Snapshot.drop_marker = staticmethod(lambda: False)
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        snap = json.loads((state / "main_account.txn" / "snapshot.json").read_text())
+        check("when the marker cannot be removed the result says so, and the snapshot itself has no phase",
+              not r.ok and "commit marker could not be removed" in r.detail and "phase" not in snap, (r, snap))
+    finally:
+        ma._write_private, ma._Snapshot.drop_marker = real_write, real_drop
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    try:
+        txn = state / "main_account.txn"
+        txn.mkdir(mode=0o700)
+        (txn / "committed.json").write_text(json.dumps({"txn": "old"}))
+        r = ma.update(NEW, by="web", timeout_s=1)
+        check("a stray marker with no snapshot does not get in the way and is cleaned up",
+              r.ok and not (txn / "committed.json").exists(), r)
+        (txn / "snapshot.json").write_text(json.dumps({
+            "txn": "new", "env_path": str(env), "himalaya_path": str(cfg), "state_path": str(state / "idle.json"),
+            "env": OLD_ENV, "himalaya": OLD_HIMALAYA, "state": json.dumps(OLD_STATE),
+            "reconnect": True, "address": "viejo@example.org"}))
+        (txn / "committed.json").write_text(json.dumps({"txn": "another"}))
+        rec = ma.recover(timeout_s=1)
+        check("a marker that names another txn does not make a snapshot committed",
+              rec.found and rec.ok and rec.restored and files_as_before(env, cfg, state), rec)
     finally:
         restore(saved)
 

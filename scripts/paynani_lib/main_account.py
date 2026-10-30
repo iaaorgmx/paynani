@@ -41,6 +41,7 @@ import contextlib
 import fcntl
 import imaplib
 import os
+import secrets
 import json
 import re
 import ssl
@@ -338,6 +339,7 @@ def _with_main_block(text: str, merged: dict) -> str:
 
 TXN_DIR = "main_account.txn"
 TXN_FILE = "snapshot.json"
+COMMIT_FILE = "committed.json"
 
 
 def _read(path: Path) -> str | None:
@@ -383,6 +385,10 @@ def _txn_path() -> Path:
     return listener_control.state_dir() / TXN_DIR / TXN_FILE
 
 
+def _commit_path() -> Path:
+    return listener_control.state_dir() / TXN_DIR / COMMIT_FILE
+
+
 class _Unreadable(Exception):
     """A snapshot is there but cannot be trusted: a symlink, or not the JSON this module writes."""
 
@@ -390,16 +396,23 @@ class _Unreadable(Exception):
 class _Snapshot:
     """
     What the three files held before the change, on disk from before the first
-    write until the change is committed or undone, with the phase it reached:
-    "prepared" (undo it) or "committed" (keep it, only clean up). It holds the
-    old .env, password included, so it lives in a 0700 directory as a 0600 file,
-    is synced before anything is written, is never followed through a symlink,
-    and is deleted as soon as it is not needed.
+    write until the change is committed or undone. It holds the old .env,
+    password included, so it lives in a 0700 directory as a 0600 file, is synced
+    before anything is written, is never followed through a symlink, and is
+    deleted as soon as it is not needed.
+
+    snapshot.json is written once and never rewritten: on its own it always means
+    "prepared", undo it. A change counts as committed only if committed.json, a
+    separate file naming this snapshot's txn, is there next to it. A failed
+    attempt to write that marker cannot leave the snapshot saying "committed".
+    Cleanup deletes the snapshot first and the marker second, so a crash between
+    the two leaves a stray marker (ignored) and never a lone prepared snapshot of
+    a change that took.
     """
 
     def __init__(self, data: dict):
         self.data = data
-        self.phase = data.get("phase", "prepared")
+        self.txn = data.get("txn", "")
         self.env_path = Path(data["env_path"])
         self.himalaya_path = Path(data["himalaya_path"])
         self.state_path = Path(data["state_path"])
@@ -411,7 +424,7 @@ class _Snapshot:
     def take(cls, *, reconnect: bool, address: str) -> "_Snapshot":
         """Raises OSError if the snapshot cannot be made durable; nothing has been written then."""
         himalaya_path, state_path = himalaya_config_path(), listener_control.state_path()
-        data = {"phase": "prepared", "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        data = {"txn": secrets.token_hex(8), "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "env_path": str(envfile.env_path()), "himalaya_path": str(himalaya_path),
                 "state_path": str(state_path), "env": _read(envfile.env_path()),
                 "himalaya": _read(himalaya_path), "state": _read(state_path),
@@ -422,8 +435,20 @@ class _Snapshot:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         directory.chmod(0o700)
         _fsync_dir(directory.parent)
+        _commit_path().unlink(missing_ok=True)   # a stray marker from an earlier cleanup
         _write_private(_txn_path(), json.dumps(data))
         return cls(data)
+
+    @property
+    def committed(self) -> bool:
+        """True only if this snapshot's commit marker is there and names it."""
+        path = _commit_path()
+        if path.is_symlink():
+            return False
+        try:
+            return bool(self.txn) and json.loads(path.read_text(encoding="utf-8")).get("txn") == self.txn
+        except (OSError, ValueError, AttributeError):
+            return False
 
     @classmethod
     def pending(cls) -> "_Snapshot | None":
@@ -440,20 +465,30 @@ class _Snapshot:
             raise _Unreadable(f"{path} cannot be read ({type(exc).__name__})") from exc
 
     def commit(self) -> None:
-        """Record that the change took; raises OSError if that cannot be made durable."""
-        self.data["phase"] = self.phase = "committed"
+        """
+        Write the commit marker, synced; raises OSError if that cannot be made
+        durable. The marker's rename may have landed before the failing directory
+        sync, so it is taken away again before the caller undoes the change.
+        """
         try:
-            _write_private(_txn_path(), json.dumps(self.data))
+            _write_private(_commit_path(), json.dumps({"txn": self.txn}))
         except OSError:
-            # The rename may have landed without its directory sync. Put "prepared"
-            # back, as far as the disk lets us, so a later recover() undoes rather
-            # than keeps a change this call is about to undo.
-            self.data["phase"] = self.phase = "prepared"
-            try:
-                _write_private(_txn_path(), json.dumps(self.data))
-            except OSError:
-                pass
+            self.drop_marker()
             raise
+
+    @staticmethod
+    def drop_marker() -> bool:
+        """Remove the commit marker; False if it is still there."""
+        path = _commit_path()
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            return not path.exists()
+        try:
+            _fsync_dir(path.parent)
+        except OSError:
+            pass
+        return True
 
     def restore(self) -> bool:
         ok = True
@@ -482,7 +517,10 @@ class _Snapshot:
 
     @staticmethod
     def discard() -> bool:
-        """Delete it. A failed directory sync is tolerated: a committed snapshot that comes back is only cleaned up."""
+        """
+        Delete the snapshot, then the marker. A failed directory sync is tolerated:
+        a snapshot that comes back with its marker is only cleaned up again.
+        """
         path = _txn_path()
         try:
             path.unlink(missing_ok=True)
@@ -492,6 +530,7 @@ class _Snapshot:
             _fsync_dir(path.parent)
         except OSError:
             pass
+        _Snapshot.drop_marker()
         return True
 
 
@@ -526,7 +565,7 @@ def _recover(timeout_s: float) -> Recovery:
         return Recovery(True, False, detail=f"{exc}; it was kept, and nothing will change until someone looks at it")
     if snapshot is None:
         return Recovery(False)
-    if snapshot.phase == "committed":
+    if snapshot.committed:
         _Snapshot.discard()
         _audit("recover", [], "committed_cleanup", "none")
         return Recovery(True, True, detail="a change that had already taken was only cleaned up")
@@ -631,6 +670,8 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
 
     def undo(code: str, detail: str, restart=None, ready="") -> Result:
         """Put the old settings back and prove the listener is on them; the snapshot stays until then."""
+        if not _Snapshot.drop_marker():
+            detail += "; the commit marker could not be removed"
         restored = snapshot.restore()
         back_ok = restored and (not reconnect
                                 or _back_on(candidate.stored.get(ACCOUNT, ""), timeout_s) == "connected")
