@@ -2,36 +2,23 @@
 «Configuración» de la cuenta principal en PaynaniWeb (#590 cambio 3): qué se muestra y
 la puerta por la que se guarda.
 
-Guardar es del núcleo (#591 N2 y N3): probar IMAP y SMTP con los datos combinados,
-escribir juntos el `.env` y la cuenta `paynani` de Himalaya (que guarda su propia copia
-del servidor, del puerto y del nombre), con respaldo y vuelta atrás, y reiniciar el
-listener esperando su latido. Aquí está la interfaz que usa la pantalla (`Updater`),
-la de la instalación (`CoreUpdater`, que se conecta cuando N2 entre a main) y un
-`Fake` para las pruebas.
+Guardar es del núcleo (#591 N2, `paynani_lib.main_account.update`): prueba IMAP y SMTP
+con los datos combinados, escribe juntos el `.env` y la cuenta `paynani` de Himalaya,
+reinicia el listener con N3 y deshace todo si no vuelve. Aquí está la interfaz que usa
+la pantalla (`Updater`), la de la instalación (`CoreUpdater`) y un `Fake` para las
+pruebas.
 
-La contraseña del buzón nunca se muestra ni vuelve a la página: el campo está vacío y
-vacío quiere decir «no cambia».
+Los nombres de los campos son los del núcleo (`envfile.ENV_FIELDS`, que es
+`main_account.FIELDS`): la web no tiene otra lista. La contraseña del buzón nunca se
+muestra ni vuelve a la página: el campo está vacío y vacío quiere decir «no cambia».
 """
 from __future__ import annotations
 
-FIELDS = (
-    ("AGENT_EMAIL_ACCOUNT", "email"),
-    ("AGENT_EMAIL_FROM_NAME", "from_name"),
-    ("AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST", "imap_host"),
-    ("AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT", "imap_port"),
-    ("AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST", "smtp_host"),
-    ("AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT", "smtp_port"),
-)
+from .. import envfile
+
 PASSWORD_KEY = "AGENT_EMAIL_PASSWORD"
-# Lo que se lee del .env con los nombres viejos o los de PAYNANI_*, como send.sh.
-ALIASES = {
-    "AGENT_EMAIL_ACCOUNT": ("PAYNANI_EMAIL",),
-    "AGENT_EMAIL_FROM_NAME": ("PAYNANI_FROM_NAME",),
-    "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST": ("PAYNANI_IMAP_HOST",),
-    "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT": ("PAYNANI_IMAP_PORT",),
-    "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST": ("PAYNANI_SMTP_HOST",),
-    "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT": ("PAYNANI_SMTP_PORT",),
-}
+# Los que se muestran y se pueden cambiar en el formulario, en el orden del núcleo.
+SHOWN = [k for k in envfile.ENV_FIELDS if k != PASSWORD_KEY]
 
 
 class Refused(Exception):
@@ -42,25 +29,19 @@ class Refused(Exception):
 
 
 def current(env: dict) -> dict:
-    """Los datos que se muestran, sin la contraseña: `{campo: valor}`."""
-    out = {}
-    for key, name in FIELDS:
-        value = env.get(key, "")
-        for alias in ALIASES.get(key, ()):
-            value = value or env.get(alias, "")
-        out[name] = str(value or "").strip()
-    return out
+    """Los datos que se muestran, sin la contraseña: `{clave: valor}`."""
+    return {k: str(env.get(k, "") or "").strip() for k in SHOWN}
 
 
 def changes(before: dict, form: dict) -> dict:
     """Las claves del `.env` que cambian. La contraseña sólo si se escribió una nueva.
     Un salto de línea no se acepta en ningún campo: no puede agregar otra clave."""
     out = {}
-    for key, name in FIELDS:
-        value = str(form.get(name, "")).strip()
+    for key in SHOWN:
+        value = str(form.get(key, "")).strip()
         if "\r" in value or "\n" in value:
-            raise Refused("invalid", name)
-        if value != before.get(name, ""):
+            raise Refused("invalid", key)
+        if value != before.get(key, ""):
             out[key] = value
     new_password = str(form.get("new_password", ""))
     if "\r" in new_password or "\n" in new_password:
@@ -70,25 +51,30 @@ def changes(before: dict, form: dict) -> dict:
     return out
 
 
-def shown(changed: dict) -> list[str]:
-    """Para el aviso y la página: los nombres de lo que cambió, nunca la contraseña."""
-    names = dict(FIELDS)
-    return [names.get(k, "new_password") for k in changed]
-
-
 class Updater:
-    """La puerta del núcleo (#591 N2/N3). `update(changes, by)` devuelve un dict con
-    `ok`, `code`, `changed` (nombres de claves), `probe` (pasos de IMAP y SMTP:
-    `{"imap": [...], "smtp": [...]}`, cada paso `{ok, text, detail}`), `restart`
-    (`back`, `timeout` o `skipped`) y `detail`, sin valores ni secretos."""
+    """La puerta del núcleo (#591 N2). `update(changes, by)` devuelve un dict como el
+    `Result` de N2: `ok`, `code`, `changed` (nombres de claves), `field_errors`,
+    `probe` (pasos `{protocol, ok, text, detail}`), `ready`, `rollback` y `detail`, sin
+    valores ni secretos."""
 
     def update(self, changes: dict, *, by: str) -> dict:
         raise Refused("not_available")
 
 
 class CoreUpdater(Updater):
-    """La de la instalación. Se conecta a la función de N2 (#591) cuando entre a main;
-    mientras tanto no escribe nada y la pantalla lo dice."""
+    """La de la instalación: `paynani_lib.main_account.update` (#591 N2). Mientras N2 no
+    esté en main no escribe nada, y la pantalla dice que todavía no se puede."""
+
+    def update(self, changes, *, by):
+        try:
+            from .. import main_account
+        except ImportError:
+            raise Refused("not_available") from None
+        res = main_account.update(changes, by=by)
+        return {"ok": bool(res.ok), "code": str(res.code), "changed": list(res.changed or []),
+                "field_errors": dict(res.field_errors or {}), "probe": list(res.probe or []),
+                "ready": str(res.ready or ""), "rollback": str(res.rollback or "none"),
+                "recovered": bool(getattr(res, "recovered", False)), "detail": str(res.detail or "")}
 
 
 class Fake(Updater):
@@ -101,8 +87,9 @@ class Fake(Updater):
     def update(self, changes, *, by):
         self.calls.append((dict(changes), by))
         if self.result is not None:
-            return dict(self.result, changed=list(changes))
-        return {"ok": True, "code": "saved", "changed": list(changes),
-                "probe": {"imap": [{"ok": True, "text": "IMAP login", "detail": ""}],
-                          "smtp": [{"ok": True, "text": "SMTP login", "detail": ""}]},
-                "restart": "back", "detail": ""}
+            return dict({"changed": list(changes), "field_errors": {}, "probe": [], "ready": "",
+                         "rollback": "none", "detail": ""}, **self.result)
+        return {"ok": True, "code": "updated", "changed": list(changes), "field_errors": {},
+                "probe": [{"protocol": "imap", "ok": True, "text": "IMAP login", "detail": ""},
+                          {"protocol": "smtp", "ok": True, "text": "SMTP login", "detail": ""}],
+                "ready": "connected", "rollback": "none", "detail": ""}

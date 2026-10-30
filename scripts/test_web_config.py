@@ -98,8 +98,10 @@ def login():
 
 th = i18n.th
 cookie = login()
-CURRENT = {"email": "agente@example.com", "from_name": "Agente", "imap_host": "imap.example.com", "imap_port": "993",
-           "smtp_host": "smtp.example.com", "smtp_port": "465"}
+CURRENT = {"AGENT_EMAIL_ACCOUNT": "agente@example.com", "AGENT_EMAIL_FROM_NAME": "Agente",
+           "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST": "imap.example.com", "AGENT_EMAIL_INCOMING_SERVER_IMAP_PORT": "993",
+           "AGENT_EMAIL_OUTGOING_SERVER_SMTP_HOST": "smtp.example.com", "AGENT_EMAIL_OUTGOING_SERVER_SMTP_PORT": "465"}
+IMAP = "AGENT_EMAIL_INCOMING_SERVER_IMAP_HOST"
 
 status, _, page = req("GET", "/email/main?lang=es-MX", cookie=cookie)
 check("«Configuración» en la lista de la cuenta principal", (200, True), (status, 'href="/email/main/configuracion"' in page))
@@ -117,7 +119,7 @@ check("no-store", True, "no-store" in hdrs.get("cache-control", ""))
 csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
 
 # Q10: contraseña antes de pedirle nada al núcleo.
-form = dict(CURRENT, csrf=csrf, imap_host="mail.nuevo.mx", new_password="", password="")
+form = dict(CURRENT, csrf=csrf, **{IMAP: "mail.nuevo.mx"}, new_password="", password="")
 status, _, page = req("POST", "/email/main/configuracion", form=form, cookie=cookie)
 check("Q10: sin la contraseña de la web no llega al núcleo", (400, [], True),
       (status, updater.calls, th("web.cfg.err.password") in page))
@@ -140,7 +142,7 @@ ctx.notifier.wait()
 check("Q10: el dueño recibe un aviso con lo que cambió", ("julian@example.com", i18n.t("web.cfg.mail_subject"), True),
       (mail[-1][0], mail[-1][1], i18n.t("web.cfg.imap_host") in mail[-1][2]))
 
-req("POST", "/email/main/configuracion", form=dict(form, imap_host="imap.example.com", new_password=MAILBOX_SECRET + "2",
+req("POST", "/email/main/configuracion", form=dict(form, **{IMAP: "imap.example.com"}, new_password=MAILBOX_SECRET + "2",
                                                    password=PASSWORD), cookie=cookie)
 check("una contraseña nueva del buzón va al núcleo", {"AGENT_EMAIL_PASSWORD": MAILBOX_SECRET + "2"}, updater.calls[-1][0])
 ctx.notifier.wait()
@@ -148,27 +150,44 @@ check("y el aviso dice que cambió, sin ponerla", (True, False),
       (i18n.t("web.cfg.new_password") in mail[-1][2], MAILBOX_SECRET in mail[-1][2]))
 
 before = len(updater.calls)
-status, _, page = req("POST", "/email/main/configuracion", form=dict(form, imap_host="imap.example.com",
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, **{IMAP: "imap.example.com"},
                                                                     password=PASSWORD), cookie=cookie)
 check("sin cambios no se llama al núcleo y lo dice", (200, before, True),
       (status, len(updater.calls), th("web.cfg.nothing") in page))
 
-status, _, page = req("POST", "/email/main/configuracion", form=dict(form, from_name="Agente\r\nX=1", password=PASSWORD),
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, AGENT_EMAIL_FROM_NAME="Agente\r\nX=1", password=PASSWORD),
                       cookie=cookie)
 check("un salto de línea en un campo no pasa (no agrega claves al .env)", (400, before), (status, len(updater.calls)))
 
 # El núcleo dice que no.
-updater.result = {"ok": False, "code": "probe_failed", "detail": "",
-                  "probe": {"imap": [{"ok": False, "text": "IMAP login", "detail": "authentication failed"}]}}
+updater.result = {"ok": False, "code": "probe_failed",
+                  "probe": [{"protocol": "imap", "ok": False, "text": "IMAP login", "detail": "authentication failed"}]}
 status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
 check("si la prueba falla no se guarda y muestra el paso que falló", (400, True, True),
       (status, th("web.cfg.err.probe_failed") in page, "authentication failed" in page))
-updater.result = {"ok": False, "code": "rolled_back", "detail": "", "probe": {}}
+updater.result = {"ok": False, "code": "not_ready", "rollback": "ok"}
 status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
 check("si el listener no volvió, dice que se restauró lo anterior", (502, True), (status, th("web.cfg.err.rolled_back") in page))
-updater.result = {"ok": True, "code": "saved", "detail": "", "probe": {}, "restart": "timeout"}
+updater.result = {"ok": False, "code": "restart_failed", "rollback": "failed"}
 status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
-check("guardado pero sin latido: lo dice", (200, True), (status, th("web.cfg.ok_timeout") in page))
+check("si tampoco pudo volver a lo anterior, lo dice", (502, True), (status, th("web.cfg.err.rollback_failed") in page))
+updater.result = {"ok": False, "code": "busy"}
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("si hay otro cambio en curso (busy): 409 y lo dice", (409, True), (status, th("web.cfg.err.busy") in page))
+updater.result = {"ok": False, "code": "invalid", "field_errors": {IMAP: "not a host name"}}
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("los errores por campo del núcleo se muestran con su etiqueta", (400, True, True),
+      (status, "not a host name" in page, i18n.t("web.cfg.imap_host") in page))
+updater.result = {"ok": True, "code": "updated", "ready": "waiting"}
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("guardado pero el listener todavía no confirma: lo dice", (200, True), (status, th("web.cfg.ok_waiting") in page))
+updater.result = {"ok": True, "code": "updated", "ready": "connected", "recovered": True}
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("si N2 deshizo antes un cambio a medias, lo dice junto con el resultado", (200, True, True),
+      (status, th("web.cfg.recovered") in page, th("web.cfg.ok") in page))
+updater.result = {"ok": True, "code": "unchanged"}
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("unchanged del núcleo: dice que no cambió nada", (200, True), (status, th("web.cfg.nothing") in page))
 updater.result = None
 
 try:
@@ -178,6 +197,33 @@ except account_config.Refused as exc:
     check("CoreUpdater sin N2: dice not_available y no escribe nada", "not_available", exc.code)
 check("el .env no lo tocó la web", True, f"AGENT_EMAIL_PASSWORD={MAILBOX_SECRET}\n" in env_path.read_text(encoding="utf-8")
       and "mail.nuevo.mx" not in env_path.read_text(encoding="utf-8"))
+
+# El adaptador real con un main_account de prueba que tiene la interfaz final de N2 (#591).
+import types  # noqa: E402
+
+seen = []
+
+
+class _R:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+fake_core = types.ModuleType("paynani_lib.main_account")
+fake_core.update = lambda changes, *, by: seen.append((changes, by)) or _R(
+    ok=True, code="updated", changed=list(changes), field_errors={}, ready="connected", rollback="none", detail="",
+    probe=[{"protocol": "imap", "ok": True, "text": "login", "detail": ""}], restart=None)
+sys.modules["paynani_lib.main_account"] = fake_core
+import paynani_lib  # noqa: E402
+paynani_lib.main_account = fake_core
+res = account_config.CoreUpdater().update({IMAP: "mail.nuevo.mx"}, by="web:1.2.3.4")
+check("CoreUpdater: llama a main_account.update con los cambios y quién, y devuelve el Result como dict",
+      ([({IMAP: "mail.nuevo.mx"}, "web:1.2.3.4")], "updated", [IMAP], "connected", "none"),
+      (seen, res["code"], res["changed"], res["ready"], res["rollback"]))
+del sys.modules["paynani_lib.main_account"]
+del paynani_lib.main_account
+check("los campos son los del núcleo (envfile.ENV_FIELDS), sin otra lista", True,
+      set(account_config.SHOWN) | {"AGENT_EMAIL_PASSWORD"} == set(__import__("paynani_lib.envfile", fromlist=["x"]).ENV_FIELDS))
 
 # El bloqueo de la entrada.
 IP[0] = "198.51.100.60"

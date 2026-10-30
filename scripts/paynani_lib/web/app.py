@@ -1260,11 +1260,12 @@ def make_handler(ctx: Context):
                 return account_config.current({})
 
         def _config(self, *, values: dict | None = None, notice: str = "", error: str = "", probe=None,
-                    code: int = 200):
+                    field_errors=None, code: int = 200):
             """GET /email/main/configuracion: los datos actuales, sin la contraseña."""
             self._page(code, title=i18n.t("web.cfg.title"), icon_name="mail", back="/email/main",
                        body=config_pages.body(values if values is not None else self._config_values(),
-                                              self.session["csrf"], notice=notice, error=error, probe=probe),
+                                              self.session["csrf"], notice=notice, error=error, probe=probe,
+                                              field_errors=field_errors),
                        active="email", active_account="main")
 
         def _config_post(self, post: dict):
@@ -1275,7 +1276,7 @@ def make_handler(ctx: Context):
             Después, un correo al dueño con lo que cambió, sin la contraseña del buzón.
             """
             before = self._config_values()
-            form = {name: post.get(name, "")[:320] for _, name in account_config.FIELDS}
+            form = {key: post.get(key, "")[:320] for key in account_config.SHOWN}
             form["new_password"] = post.get("new_password", "")[:1024]
             shown_values = {k: v for k, v in form.items() if k != "new_password"}
             try:
@@ -1297,15 +1298,25 @@ def make_handler(ctx: Context):
                 self._config(values=shown_values, error=config_pages.error_text(exc.code, exc.detail),
                              code=503 if exc.code == "not_available" else 400)
                 return
-            if not res.get("ok"):
-                self._config(values=shown_values, probe=res.get("probe"),
-                             error=config_pages.error_text(str(res.get("code")), str(res.get("detail") or "")),
-                             code=400 if res.get("code") == "probe_failed" else 502)
+            code = str(res.get("code"))
+            # N2 deshizo primero un cambio anterior que había quedado a medias (una caída).
+            recovered = i18n.t("web.cfg.recovered") + " " if res.get("recovered") else ""
+            if code == "unchanged":
+                self._config(notice=i18n.t("web.cfg.nothing"))
                 return
-            fields = ", ".join(i18n.t("web.cfg." + n) for n in account_config.shown(changes))
+            if not res.get("ok"):
+                # write_failed, restart_failed y not_ready: N2 deshizo el cambio; `rollback`
+                # dice si volvió a lo anterior (ok) o no (failed).
+                key = ("rolled_back" if res.get("rollback") == "ok" else "rollback_failed"
+                       if res.get("rollback") == "failed" else code)
+                status = 400 if code in ("invalid", "probe_failed", "unknown_field") else 409 if code == "busy" else 502
+                self._config(values=shown_values, probe=res.get("probe"), field_errors=res.get("field_errors"),
+                             error=config_pages.error_text(key, str(res.get("detail") or "")), code=status)
+                return
+            fields = ", ".join(config_pages.label(k) for k in (res.get("changed") or list(changes)))
             self.CTX.notifier.owner(self.user, i18n.t("web.cfg.mail_subject"),
                                     i18n.t("web.cfg.mail_body", ip=self.ip, fields=fields))
-            self._config(notice=i18n.t("web.cfg.ok" if res.get("restart") == "back" else "web.cfg.ok_timeout"),
+            self._config(notice=recovered + i18n.t("web.cfg.ok_waiting" if res.get("ready") == "waiting" else "web.cfg.ok"),
                          probe=res.get("probe"))
 
         # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
