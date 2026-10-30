@@ -34,6 +34,8 @@ STRINGS = {
         "err.busy": "Hay otro cambio de la cuenta en curso. Espera a que termine e inténtalo otra vez.",
         "err.rollback_failed": "No se guardó, y tampoco se pudo volver a la configuración anterior. Revisa paynani doctor cuanto antes.",
         "err.unknown_field": "Ese campo no se puede cambiar desde aquí.",
+        "err.stale": "La configuración cambió mientras editabas. Esta es la actual; revisa y vuelve a guardar.",
+        "err.unknown_outcome": "No se sabe si el cambio se guardó. No lo repitas a ciegas: revisa paynani doctor y recarga esta página para ver lo que quedó.",
         "err.other": "No se guardó: {code}",
     },
     "en-US": {
@@ -68,6 +70,8 @@ STRINGS = {
         "err.busy": "Another account change is in progress. Wait for it to finish and try again.",
         "err.rollback_failed": "Not saved, and the previous settings could not be restored either. Check paynani doctor as soon as possible.",
         "err.unknown_field": "That field cannot be changed here.",
+        "err.stale": "The settings changed while you were editing. These are the current ones; check and save again.",
+        "err.unknown_outcome": "It is not known whether the change was saved. Do not repeat it blindly: check paynani doctor and reload this page to see what is in place.",
         "err.other": "Not saved: {code}",
     },
     "es-ES": {
@@ -102,6 +106,8 @@ STRINGS = {
         "err.busy": "Hay otro cambio de la cuenta en curso. Espera a que termine e inténtalo de nuevo.",
         "err.rollback_failed": "No se ha guardado, y tampoco se ha podido volver a la configuración anterior. Revisa paynani doctor cuanto antes.",
         "err.unknown_field": "Ese campo no se puede cambiar desde aquí.",
+        "err.stale": "La configuración ha cambiado mientras editabas. Esta es la actual; revísala y vuelve a guardar.",
+        "err.unknown_outcome": "No se sabe si el cambio se ha guardado. No lo repitas a ciegas: revisa paynani doctor y recarga esta página para ver lo que ha quedado.",
         "err.other": "No se ha guardado: {code}",
     },
     "fr-FR": {
@@ -136,6 +142,8 @@ STRINGS = {
         "err.busy": "Une autre modification du compte est en cours. Attendez qu’elle se termine et réessayez.",
         "err.rollback_failed": "Non enregistré, et les paramètres précédents n’ont pas pu être restaurés non plus. Vérifiez paynani doctor au plus vite.",
         "err.unknown_field": "Ce champ ne peut pas être modifié ici.",
+        "err.stale": "Les paramètres ont changé pendant votre édition. Voici les actuels ; vérifiez et enregistrez à nouveau.",
+        "err.unknown_outcome": "On ne sait pas si la modification a été enregistrée. Ne la répétez pas à l’aveugle : vérifiez paynani doctor et rechargez cette page pour voir ce qui est en place.",
         "err.other": "Non enregistré : {code}",
     },
     "pt-BR": {
@@ -170,6 +178,8 @@ STRINGS = {
         "err.busy": "Há outra mudança da conta em andamento. Espere terminar e tente de novo.",
         "err.rollback_failed": "Não salvo, e também não foi possível voltar à configuração anterior. Verifique o paynani doctor o quanto antes.",
         "err.unknown_field": "Esse campo não pode ser mudado aqui.",
+        "err.stale": "A configuração mudou enquanto você editava. Esta é a atual; confira e salve de novo.",
+        "err.unknown_outcome": "Não se sabe se a mudança foi salva. Não repita às cegas: verifique o paynani doctor e recarregue esta página para ver o que ficou.",
         "err.other": "Não salvo: {code}",
     },
 }

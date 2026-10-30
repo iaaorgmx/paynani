@@ -1262,10 +1262,13 @@ def make_handler(ctx: Context):
         def _config(self, *, values: dict | None = None, notice: str = "", error: str = "", probe=None,
                     field_errors=None, code: int = 200):
             """GET /email/main/configuracion: los datos actuales, sin la contraseña."""
+            # La huella es siempre la de lo guardado ahora, aunque el formulario muestre lo
+            # que el dueño escribió: así un 409 se resuelve recargando, no reenviando.
+            now = self._config_values()
             self._page(code, title=i18n.t("web.cfg.title"), icon_name="mail", back="/email/main",
-                       body=config_pages.body(values if values is not None else self._config_values(),
-                                              self.session["csrf"], notice=notice, error=error, probe=probe,
-                                              field_errors=field_errors),
+                       body=config_pages.body(values if values is not None else now,
+                                              self.session["csrf"], rev=account_config.revision(now), notice=notice,
+                                              error=error, probe=probe, field_errors=field_errors),
                        active="email", active_account="main")
 
         def _config_post(self, post: dict):
@@ -1277,6 +1280,11 @@ def make_handler(ctx: Context):
             """
             before = self._config_values()
             form = {key: post.get(key, "")[:320] for key in account_config.SHOWN}
+            if post.get("rev", "") != account_config.revision(before):
+                # La página se abrió antes de otro cambio: sus campos sin editar traerían
+                # valores viejos. No se manda nada; se muestra lo actual.
+                self._config(error=i18n.t("web.cfg.err.stale"), code=409)
+                return
             form["new_password"] = post.get("new_password", "")[:1024]
             shown_values = {k: v for k, v in form.items() if k != "new_password"}
             try:
@@ -1297,6 +1305,10 @@ def make_handler(ctx: Context):
             except account_config.Refused as exc:
                 self._config(values=shown_values, error=config_pages.error_text(exc.code, exc.detail),
                              code=503 if exc.code == "not_available" else 400)
+                return
+            except Exception as exc:  # noqa: BLE001 -- pudo haber escrito: no se invita a reintentar a ciegas
+                sys.stderr.write(f"paynani-web: el cambio de la cuenta principal terminó con {type(exc).__name__}\n")
+                self._config(error=i18n.t("web.cfg.err.unknown_outcome"), code=502)
                 return
             code = str(res.get("code"))
             # N2 deshizo primero un cambio anterior que había quedado a medias (una caída).

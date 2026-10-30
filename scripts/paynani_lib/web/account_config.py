@@ -33,6 +33,15 @@ def current(env: dict) -> dict:
     return {k: str(env.get(k, "") or "").strip() for k in SHOWN}
 
 
+def revision(values: dict) -> str:
+    """Una huella de los datos que vio la página (sin la contraseña). Si al guardar ya no
+    coincide, alguien los cambió mientras se editaba: 409, y no se manda nada viejo
+    (revisión de Ximena en #597)."""
+    import hashlib
+    import json
+    return hashlib.sha256(json.dumps(values, sort_keys=True).encode("utf-8")).hexdigest()[:32]
+
+
 def changes(before: dict, form: dict) -> dict:
     """Las claves del `.env` que cambian. La contraseña sólo si se escribió una nueva.
     Un salto de línea no se acepta en ningún campo: no puede agregar otra clave."""

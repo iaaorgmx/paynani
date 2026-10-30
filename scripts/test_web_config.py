@@ -117,9 +117,10 @@ check("la contraseña del buzón nunca se muestra", False, MAILBOX_SECRET in pag
 check("sin atributos style", [], re.findall(r'\sstyle="', page))
 check("no-store", True, "no-store" in hdrs.get("cache-control", ""))
 csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+rev = re.search(r'name="rev" value="([^"]+)"', page).group(1)
 
 # Q10: contraseña antes de pedirle nada al núcleo.
-form = dict(CURRENT, csrf=csrf, **{IMAP: "mail.nuevo.mx"}, new_password="", password="")
+form = dict(CURRENT, csrf=csrf, rev=rev, **{IMAP: "mail.nuevo.mx"}, new_password="", password="")
 status, _, page = req("POST", "/email/main/configuracion", form=form, cookie=cookie)
 check("Q10: sin la contraseña de la web no llega al núcleo", (400, [], True),
       (status, updater.calls, th("web.cfg.err.password") in page))
@@ -190,6 +191,31 @@ status, _, page = req("POST", "/email/main/configuracion", form=dict(form, passw
 check("unchanged del núcleo: dice que no cambió nada", (200, True), (status, th("web.cfg.nothing") in page))
 updater.result = None
 
+# Una página abierta antes de otro cambio no manda valores viejos (revisión de #597).
+env_before = env_path.read_text(encoding="utf-8")
+env_path.write_text(env_before.replace("imap.example.com", "imap.otro.mx"), encoding="utf-8")
+before = len(updater.calls)
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, **{IMAP: "imap.example.com"},
+                                                                    AGENT_EMAIL_FROM_NAME="Otro nombre",
+                                                                    password=PASSWORD), cookie=cookie)
+check("página obsoleta: 409, no llega nada al núcleo y muestra lo actual", (409, before, True, True),
+      (status, len(updater.calls), th("web.cfg.err.stale") in page, 'value="imap.otro.mx"' in page))
+new_rev = re.search(r'name="rev" value="([^"]+)"', page).group(1)
+status, _, _ = req("POST", "/email/main/configuracion", form=dict(form, rev=new_rev, **{IMAP: "imap.otro.mx"},
+                                                                 AGENT_EMAIL_FROM_NAME="Otro nombre",
+                                                                 password=PASSWORD), cookie=cookie)
+check("con la página recargada, sólo va el nombre (no el host viejo)", (200, {"AGENT_EMAIL_FROM_NAME": "Otro nombre"}),
+      (status, updater.calls[-1][0]))
+env_path.write_text(env_before, encoding="utf-8")
+
+# Una excepción ordinaria del núcleo: resultado desconocido, sin invitar a reintentar.
+real_update = updater.update
+updater.update = lambda changes, *, by: (_ for _ in ()).throw(RuntimeError("boom"))
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("si el núcleo termina con una excepción, la página dice que no se sabe y no invita a reintentar", (502, True),
+      (status, th("web.cfg.err.unknown_outcome").split(".")[0] in page))
+updater.update = real_update
+
 try:
     account_config.CoreUpdater().update({"AGENT_EMAIL_FROM_NAME": "x"}, by="t")
     check("CoreUpdater sin N2: no escribe nada", "not_available", "wrote")
@@ -228,11 +254,12 @@ check("los campos son los del núcleo (envfile.ENV_FIELDS), sin otra lista", Tru
 # El bloqueo de la entrada.
 IP[0] = "198.51.100.60"
 cookie2 = login()
-csrf2 = re.search(r'name="csrf" value="([^"]+)"', req("GET", "/email/main/configuracion", cookie=cookie2)[2]).group(1)
+page2 = req("GET", "/email/main/configuracion", cookie=cookie2)[2]
+csrf2 = re.search(r'name="csrf" value="([^"]+)"', page2).group(1)
 for _ in range(7):
-    req("POST", "/email/main/configuracion", form=dict(form, csrf=csrf2, password="mala"), cookie=cookie2)
+    req("POST", "/email/main/configuracion", form=dict(form, csrf=csrf2, rev=re.search(r'name="rev" value="([^"]+)"', page2).group(1), password="mala"), cookie=cookie2)
 before = len(updater.calls)
-status, _, _ = req("POST", "/email/main/configuracion", form=dict(form, csrf=csrf2, password=PASSWORD), cookie=cookie2)
+status, _, _ = req("POST", "/email/main/configuracion", form=dict(form, csrf=csrf2, rev=re.search(r'name="rev" value="([^"]+)"', page2).group(1), password=PASSWORD), cookie=cookie2)
 check("tras varios fallos, ni la buena guarda (bloqueo de la entrada)", (403, before), (status, len(updater.calls)))
 IP[0] = "203.0.113.5"
 

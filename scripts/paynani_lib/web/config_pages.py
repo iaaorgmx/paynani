@@ -65,7 +65,7 @@ def _field_errors(errors: dict | None) -> str:
     return f'<ul class="errores-campo">{items}</ul>'
 
 
-def body(values: dict, csrf: str, *, notice: str = "", error: str = "", probe: list | None = None,
+def body(values: dict, csrf: str, *, rev: str = "", notice: str = "", error: str = "", probe: list | None = None,
          field_errors: dict | None = None) -> str:
     out = [f'<p class="volver"><a href="/email/main">← {_th("back")}</a></p>',
            f'<p class="lead">{_th("lead")}</p>',
@@ -82,6 +82,7 @@ def body(values: dict, csrf: str, *, notice: str = "", error: str = "", probe: l
 
     out.append(f"""<form method="post" action="/email/main/configuracion" class="formulario">
   <input type="hidden" name="csrf" value="{e(csrf)}">
+  <input type="hidden" name="rev" value="{e(rev)}">
   {field("AGENT_EMAIL_ACCOUNT", "email", " required")}
   <p class="hint">{_th("switch")}</p>
   {field("AGENT_EMAIL_FROM_NAME")}
