@@ -96,8 +96,8 @@ configurarla.
 
 Your agent will show you a link to the form for setting up the email account.
 
-If your agent runs on a machine you can't reach directly from your browser, it
-gives you the `ssh -L` command to reach the form along with the link.
+If the link does not open because your agent runs on another machine, tell it
+so and it will give you the command to reach the form.
 
 If your agent runs in OpenCode, or in another harness that does not tell it
 when you save the form, it will ask you to write «listo» after saving. Write it

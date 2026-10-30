@@ -102,9 +102,8 @@ configurarla.
 Votre agent vous montrera un lien vers le formulaire de configuration du compte
 de messagerie.
 
-Si votre agent tourne sur une machine que vous ne pouvez pas joindre directement
-depuis le navigateur, il vous donne, avec le lien, la commande `ssh -L` pour
-accéder au formulaire.
+Si le lien ne s'ouvre pas parce que votre agent tourne sur une autre machine,
+dites-le-lui et il vous donnera la commande pour accéder au formulaire.
 
 Si votre agent tourne dans OpenCode, ou dans un autre harness qui ne le
 prévient pas quand vous enregistrez le formulaire, il vous demandera d'écrire
