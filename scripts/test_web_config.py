@@ -216,11 +216,16 @@ check("si el núcleo termina con una excepción, la página dice que no se sabe 
       (status, th("web.cfg.err.unknown_outcome").split(".")[0] in page))
 updater.update = real_update
 
-try:
-    account_config.CoreUpdater().update({"AGENT_EMAIL_FROM_NAME": "x"}, by="t")
-    check("CoreUpdater sin N2: no escribe nada", "not_available", "wrote")
-except account_config.Refused as exc:
-    check("CoreUpdater sin N2: dice not_available y no escribe nada", "not_available", exc.code)
+# N2 ya está en main. Esta prueba NUNCA llama al main_account real: escribiría el .env
+# y la cuenta de Himalaya de la instalación donde corre. Sólo compara su firma.
+import dataclasses  # noqa: E402
+import inspect  # noqa: E402
+from paynani_lib import main_account as real_n2  # noqa: E402
+check("main_account real: update(changes, *, by, ...) y el Result con lo que lee CoreUpdater",
+      (["changes", "by"], True),
+      ([n for n in inspect.signature(real_n2.update).parameters][:2],
+       {"ok", "code", "changed", "field_errors", "probe", "ready", "rollback", "recovered", "detail"}
+       <= {f.name for f in dataclasses.fields(real_n2.Result)}))
 check("el .env no lo tocó la web", True, f"AGENT_EMAIL_PASSWORD={MAILBOX_SECRET}\n" in env_path.read_text(encoding="utf-8")
       and "mail.nuevo.mx" not in env_path.read_text(encoding="utf-8"))
 
