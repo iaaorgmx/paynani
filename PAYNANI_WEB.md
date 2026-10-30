@@ -71,8 +71,9 @@ con PaynaniWeb y todavía no hay usuario.
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. |
 
-Cuentas de correo solo muestra: cerrar o responder un aviso sigue siendo trabajo
-del agente. Mensajes además envía SMS del dueño (PRD #489).
+Cuentas de correo no cierra ni responde avisos: eso sigue siendo trabajo del agente.
+Desde «Nuevo correo» el dueño sí manda sus propios correos (#590, ver abajo).
+Mensajes además envía SMS del dueño (PRD #489).
 
 El menú lateral, la barra de arriba y el título se quedan fijos al hacer scroll,
 como en el /dash de ServiceButton (PRD #537). El botón junto al logotipo colapsa el

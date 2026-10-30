@@ -23,13 +23,16 @@ def _state(state: str) -> str:
 
 
 def account_head(account_id: str, *, removable: bool, ok: str = "") -> str:
-    """El aviso de lo que acaba de pasar (agregada, quitada) y «Quitar esta cuenta»
-    para una cuenta adicional (FR-16)."""
+    """El aviso de lo que acaba de pasar (agregada, quitada), «Nuevo correo» (#590) y
+    «Quitar esta cuenta» para una cuenta adicional (FR-16)."""
     th = i18n.th
     out = ""
     if ok in ("added", "added_noservice", "removed"):
         cls = "aviso-ok" if ok != "added_noservice" else "aviso-caja"
         out += f'<p class="{cls}" role="status">{th("web.acct.ok." + ok)}</p>\n'
+    # «Nuevo correo» (#590 cambio 2), como «Catch-All» en «Mensajes».
+    from . import compose_pages
+    out += f'<p class="acciones">{compose_pages.new_button(account_id)}</p>\n'
     if removable:
         out += (f'<p class="acciones-cuenta"><a class="peligro-enlace" href="/cuentas/{urlquote(account_id)}/quitar">'
                 f'{th("web.acct.remove_nav")}</a></p>\n')
