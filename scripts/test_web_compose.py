@@ -258,13 +258,17 @@ check("si el núcleo no pudo mandar, la página lo dice y conserva el texto", (5
       (status, "smtp said no" in page, 'value="x"' in page))
 mailer.fail = ""
 
-# Sin N1 todavía, la de la instalación no manda nada.
-real = mail_compose.CoreMailer()
-try:
-    real.outside_roster("main", ["ana@example.com"])
-    check("CoreMailer sin N1: no hace nada", "not_available", "sent")
-except mail_compose.Refused as exc:
-    check("CoreMailer sin N1: dice not_available y no manda nada", "not_available", exc.code)
+# N1 ya está en main: la firma real de owner_mail es la que llama CoreMailer.
+import inspect  # noqa: E402
+from paynani_lib import owner_mail as real_core  # noqa: E402
+check("owner_mail real: authorize(account, to, cc, bcc, *, by, owner_email, allow_outside) y send(grant, subject, body)",
+      (["account", "to", "cc", "bcc", "by", "owner_email", "allow_outside"], ["grant", "subject", "body"]),
+      ([n for n in inspect.signature(real_core.authorize).parameters][:7],
+       [n for n in inspect.signature(real_core.send).parameters][:3]))
+check("owner_mail real: outside_roster(account, addresses) y las excepciones que traduce CoreMailer", (
+      ["account", "addresses"], True, True),
+      ([n for n in inspect.signature(real_core.outside_roster).parameters],
+       issubclass(real_core.InvalidAddress, Exception), issubclass(real_core.UnknownAccount, Exception)))
 
 # El adaptador real con un owner_mail de prueba que tiene la interfaz final de N1 (#591).
 import types  # noqa: E402
