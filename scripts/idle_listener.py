@@ -554,9 +554,18 @@ def connect(env):
         conn.login(user, password)
     except imaplib.IMAP4.error as exc:
         # Bad credentials never succeed on retry. Fail loudly rather than spin.
-        log(f"login rejected by {host} for {user}: {exc}")
-        raise SystemExit(1)
+        message = f"login rejected by {host} for {user}: {exc}"
+        log(message)
+        raise LoginRejected(message)
     return conn
+
+
+class LoginRejected(SystemExit):
+    """The server refused the credentials: exit 1, as before, with the reason."""
+
+    def __init__(self, message):
+        super().__init__(1)
+        self.message = message
 
 
 def load_state(path):
@@ -598,9 +607,12 @@ def record_imap_reconnect(telemetry, now=None):
     return telemetry
 
 
-def save_state(path, mailbox, validity, last_uid, telemetry=None):
+def save_state(path, mailbox, validity, last_uid, telemetry=None, account=None):
     state = {
         "mailbox": mailbox,
+        # Whose mailbox the cursor belongs to: a cursor saved for another address
+        # is not reused (#591), and PaynaniWeb checks it after a restart.
+        "account": account,
         "uidvalidity": validity,
         "last_uid": last_uid,
         "heartbeat_at": timestamp(),
@@ -612,6 +624,8 @@ def save_state(path, mailbox, validity, last_uid, telemetry=None):
     }
     if telemetry:
         state.update({k: v for k, v in telemetry.items() if v is not None})
+    if account is None:
+        del state["account"]
     if str(path) == "none":
         return state
     try:
@@ -622,6 +636,26 @@ def save_state(path, mailbox, validity, last_uid, telemetry=None):
     except OSError as exc:
         log(f"could not persist state to {path}: {exc}")
     return state
+
+
+def record_login_rejected(path, message):
+    """
+    Leave the rejection in the state file before exiting, without touching the
+    heartbeat: PaynaniWeb waits for a heartbeat after a restart (#591) and has to
+    tell "not yet" from "the password was refused".
+    """
+    if str(path) == "none":
+        return
+    state = load_state(path)
+    state["imap_last_login_error_at"] = timestamp()
+    state["imap_last_login_error"] = message
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(state))
+        os.replace(tmp, path)
+    except OSError as exc:
+        log(f"could not persist state to {path}: {exc}")
 
 
 def uidvalidity(conn, mailbox):
@@ -763,7 +797,12 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path, env=None
     }
     # What the journal has been told about the listener's own health.
     faults = FaultLog(journal_path, account, grace=FAULT_GRACE)
-    last_uid = state.get("last_uid") if state.get("mailbox") == mailbox else None
+    # A cursor is only good for the mailbox and the address it was saved for. A
+    # state file from before #591 has no address and is kept, as it always was.
+    same_account = state.get("account") in (None, "", account)
+    last_uid = state.get("last_uid") if state.get("mailbox") == mailbox and same_account else None
+    if state.get("mailbox") == mailbox and not same_account:
+        log(f"state is for {state.get('account')}, not {account}; starting from the newest message")
 
     while not _stop:
         conn = None
@@ -786,13 +825,13 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path, env=None
 
             if last_uid is None:
                 last_uid = newest_uid(conn)
-                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry, account=account)
                 log(f"listening on {mailbox}, baseline uid {last_uid}")
             else:
                 # Write immediately on a resumed process. Upgrade verification
                 # must distinguish the new listener from the old one without
                 # waiting for the next five-minute IDLE heartbeat.
-                state = save_state(state_path, mailbox, validity, last_uid)
+                state = save_state(state_path, mailbox, validity, last_uid, account=account)
                 log(f"listening on {mailbox}, resuming from uid {last_uid}")
 
             # Anything that landed while this process was not running: a reboot, a
@@ -807,7 +846,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path, env=None
                 # Only now. The record is on disk and flushed, so acknowledging
                 # this UID cannot outlive the thing it is acknowledging.
                 last_uid = uid
-                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry, account=account)
 
             # Settles anything owed from an earlier outage before saying it is over.
             faults.recovered()
@@ -817,12 +856,12 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path, env=None
             faults.burst(telemetry.get("imap_last_disconnect_error"),
                          telemetry.get("imap_last_recovered_at"),
                          telemetry["imap_current_backoff_seconds"])
-            state = save_state(state_path, mailbox, validity, last_uid, telemetry)
+            state = save_state(state_path, mailbox, validity, last_uid, telemetry, account=account)
             backoff = BACKOFF_MIN
 
             while not _stop:
                 idle(conn, IDLE_REFRESH)
-                state = save_state(state_path, mailbox, validity, last_uid, telemetry)
+                state = save_state(state_path, mailbox, validity, last_uid, telemetry, account=account)
                 # Check unconditionally, not only when IDLE reported a change:
                 # mail landing between DONE and the next IDLE produces no EXISTS we
                 # can see, and would sit unnoticed until the *next* message arrived.
@@ -836,10 +875,13 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path, env=None
                     found = True
                     # Persist per message, not per batch: a crash mid-batch must
                     # not replay what was already reported.
-                    state = save_state(state_path, mailbox, validity, last_uid, telemetry)
+                    state = save_state(state_path, mailbox, validity, last_uid, telemetry, account=account)
                 if found and once:
                     return 0
 
+        except LoginRejected as exc:
+            record_login_rejected(state_path, exc.message)
+            raise
         except NotQueued as exc:
             if _stop:
                 break
@@ -863,7 +905,7 @@ def run(env_path, mailbox, once, state_path, roster_path, journal_path, env=None
             record_imap_reconnect(telemetry, telemetry["imap_last_disconnect_at"])
             telemetry["imap_current_backoff_seconds"] = backoff
             try:
-                save_state(state_path, mailbox, state.get("uidvalidity"), last_uid, telemetry)
+                save_state(state_path, mailbox, state.get("uidvalidity"), last_uid, telemetry, account=account)
             except UnboundLocalError:
                 pass
             faults.fault(message)
