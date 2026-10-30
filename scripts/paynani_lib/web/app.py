@@ -1328,8 +1328,11 @@ def make_handler(ctx: Context):
             fields = ", ".join(config_pages.label(k) for k in (res.get("changed") or list(changes)))
             self.CTX.notifier.owner(self.user, i18n.t("web.cfg.mail_subject"),
                                     i18n.t("web.cfg.mail_body", ip=self.ip, fields=fields))
-            self._config(notice=recovered + i18n.t("web.cfg.ok_waiting" if res.get("ready") == "waiting" else "web.cfg.ok"),
-                         probe=res.get("probe"))
+            # ready: "connected" (se reinició y volvió), "waiting" (todavía no confirma) o ""
+            # (no hubo reinicio: sólo cambió el nombre que se muestra).
+            ready = res.get("ready")
+            key = "web.cfg.ok" if ready == "connected" else "web.cfg.ok_waiting" if ready == "waiting" else "web.cfg.ok_no_restart"
+            self._config(notice=recovered + i18n.t(key), probe=res.get("probe"))
 
         # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
         # Toda respuesta de aquí sale con Cache-Control: no-store (guard.SECURITY_HEADERS):

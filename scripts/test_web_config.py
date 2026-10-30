@@ -186,6 +186,10 @@ updater.result = {"ok": True, "code": "updated", "ready": "connected", "recovere
 status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
 check("si N2 deshizo antes un cambio a medias, lo dice junto con el resultado", (200, True, True),
       (status, th("web.cfg.recovered") in page, th("web.cfg.ok") in page))
+updater.result = {"ok": True, "code": "updated", "ready": ""}
+status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
+check("sólo el nombre (sin reinicio): no dice que el listener se reinició", (200, True, False),
+      (status, th("web.cfg.ok_no_restart") in page, th("web.cfg.ok") in page))
 updater.result = {"ok": True, "code": "unchanged"}
 status, _, page = req("POST", "/email/main/configuracion", form=dict(form, password=PASSWORD), cookie=cookie)
 check("unchanged del núcleo: dice que no cambió nada", (200, True), (status, th("web.cfg.nothing") in page))
