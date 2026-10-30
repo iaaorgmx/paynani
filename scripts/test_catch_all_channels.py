@@ -200,6 +200,34 @@ check("FR-5: falla a la mitad: error, el viejo intacto, sin archivos nuevos", ("
 check("FR-4: tras la falla los dos canales siguen leyendo el viejo", ("rules/catch-all.md",) * 2,
       (rules_mod.catch_all_notice("sms", root)["file"], rules_mod.catch_all_notice("whatsapp", root)["file"]))
 
+# Falla al quitar el viejo (revisión de #585): se deshace todo y es un error.
+real_unlink = Path.unlink
+
+
+def refuse_legacy(self, *a, **k):
+    if self.name == "catch-all.md":
+        raise PermissionError("sin permiso")
+    return real_unlink(self, *a, **k)
+
+
+for label, sms_before in (("sin archivo del canal", None), ("con el del canal ya presente", OFF)):
+    root = install()
+    put(root, "catch-all", ON)
+    if sms_before is not None:
+        put(root, "catch-all-sms", sms_before)
+    svc, call, mail = service_for(root)
+    got = call("catchall.get", channel="sms")["data"]
+    Path.unlink = refuse_legacy
+    try:
+        res = call("catchall.save", channel="sms", enabled=True, text="Nuevo.\n", etag=got["etag"])
+    finally:
+        Path.unlink = real_unlink
+    changes_log = root / "state" / roster_api.CHANGES_LOG
+    check(f"FR-5 ({label}): no se pudo quitar el viejo: write_failed y todo como antes",
+          ("error", "write_failed", ON, sms_before, None, 0, False),
+          (res["type"], res.get("code"), text_of(root, "catch-all"), text_of(root, "catch-all-sms"),
+           text_of(root, "catch-all-whatsapp"), len(mail), changes_log.exists()))
+
 # Archivos nuevos ya presentes: la migración no los pisa.
 root = install()
 put(root, "catch-all", ON)

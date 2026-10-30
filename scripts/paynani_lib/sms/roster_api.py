@@ -454,8 +454,8 @@ class RosterService:
         Escribe el Catch-All del canal. Si todavía está `rules/catch-all.md` (FR-5):
         crea antes el archivo de cada canal que no tenga uno, con el texto del viejo tal
         cual (mismo `enabled`, mismas instrucciones), escribe el del canal y al final
-        quita el viejo, con su copia en state/history/. Si algo falla antes de quitarlo,
-        se borran los archivos que se crearon y el viejo se queda: nada cambia.
+        quita el viejo, con su copia en state/history/. Si algo falla, también al quitar
+        el viejo, se deshace lo escrito y el viejo se queda: nada cambia y es un error.
         `(resultado de apply_file, archivos creados por la migración, si se migró)`.
         """
         if not isinstance(etag, str):
@@ -483,6 +483,8 @@ class RosterService:
                 roster_edit.history_copy(legacy, old, self.state_dir / "history",
                                          f"rules__{rules_mod.LEGACY_CATCH_ALL_ID}")
                 created: list[Path] = []
+                before = roster_edit.read_bytes(target)
+                written = False
                 try:
                     for other in rules_mod.CATCH_ALL_CHANNELS:
                         path = self._rules_path(rules_mod.catch_all_id(other))
@@ -497,23 +499,43 @@ class RosterService:
                                 os.fsync(fh.fileno())
                     done = roster_edit.apply_file(target, expected, new_text, state_dir=self.state_dir,
                                                   label=label)
-                except BaseException:
-                    for path in created:
-                        try:
-                            path.unlink()
-                        except OSError:
-                            pass
-                    raise
-                try:
+                    written = True
+                    # El viejo se quita al final. Si no se puede, se deshace todo: el viejo
+                    # se queda y el guardado devuelve error (FR-5, revisión de #585).
                     legacy.unlink()
-                except OSError as exc:
-                    # Todos los canales ya tienen su archivo, así que el viejo ya no se lee.
-                    self.log(f"roster: no se pudo quitar rules/catch-all.md ({type(exc).__name__}); "
-                             "ya no se usa")
+                except BaseException:
+                    self._catchall_undo(target, before if written else None, written, created)
+                    raise
         except (TimeoutError, OSError) as exc:
             raise EditError("write_failed", detail=f"no se pudo separar el Catch-All: {type(exc).__name__}") from exc
         self.log("roster: Catch-All separado por canal; antes estaba en rules/catch-all.md")
         return done, [f"rules/{p.name}" for p in created], True
+
+    def _catchall_undo(self, target: Path, before: bytes | None, written: bool, created: list[Path]) -> None:
+        """
+        Deshace una migración que falló: quita los archivos que creó y, si ya escribió
+        el del canal, lo deja como estaba (o lo quita, si no existía). Un error aquí se
+        registra; el viejo sigue ahí y se sigue leyendo para cada canal sin archivo.
+        """
+        undo = list(created)
+        if written and before is None:
+            undo.append(target)
+        for path in undo:
+            try:
+                path.unlink()
+            except OSError as exc:
+                self.log(f"roster: no se pudo deshacer {path.name} ({type(exc).__name__})")
+        if written and before is not None:
+            try:
+                fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+                with os.fdopen(fd, "wb") as fh:
+                    os.fchmod(fh.fileno(), 0o600)
+                    fh.write(before)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp, target)
+            except OSError as exc:
+                self.log(f"roster: no se pudo devolver {target.name} a como estaba ({type(exc).__name__})")
 
     @staticmethod
     def _rules_summary(rules_id: str, parsed: dict, text: str) -> dict:
