@@ -353,5 +353,101 @@ with tempfile.TemporaryDirectory() as td:
     finally:
         restore(saved)
 
+# --- a change cut off by a crash ---------------------------------------------------------------
+class Crash(BaseException):
+    """What a kill looks like from inside: nothing after it runs, no except OSError catches it."""
+
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    real_write = ma._write_himalaya
+    seen = {}
+
+    def crash(path, text):
+        snap = state / "main_account.txn" / "snapshot.json"
+        seen["mode"] = (snap.stat().st_mode & 0o777, (snap.parent.stat().st_mode & 0o777))
+        raise Crash()
+    ma._write_himalaya = crash
+    try:
+        try:
+            ma.update(NEW, by="web", timeout_s=1)
+        except Crash:
+            pass
+        ma._write_himalaya = real_write
+        snap = state / "main_account.txn" / "snapshot.json"
+        check("the snapshot is 0600 in a 0700 directory while the change runs", seen.get("mode") == (0o600, 0o700), seen)
+        check("a crash between the .env and himalaya writes leaves them apart, and the snapshot behind",
+              "nuevo@example.net" in env.read_text() and cfg.read_text() == OLD_HIMALAYA and snap.exists())
+        rec = ma.recover(timeout_s=1)
+        check("recover() undoes the interrupted change", rec.found and rec.restored and files_as_before(env, cfg, state), rec)
+        check("recover() restarts the listener and waits for the old address",
+              rec.ready == "connected" and fake.waits[-1][0] == "viejo@example.org", (rec, fake.waits))
+        check("recover() removes the snapshot", not snap.exists())
+        check("the recovery is audited without values", audit(state)[-1]["result"] == "recovered"
+              and "viejo@example.org" not in json.dumps(audit(state)), audit(state))
+        check("recover() with nothing pending finds nothing", not ma.recover(timeout_s=1).found)
+    finally:
+        ma._write_himalaya = real_write
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    real_write = ma._write_himalaya
+    ma._write_himalaya = lambda path, text: (_ for _ in ()).throw(Crash())
+    try:
+        try:
+            ma.update(NEW, by="web", timeout_s=1)
+        except Crash:
+            pass
+        ma._write_himalaya = real_write
+        r = ma.update({"AGENT_EMAIL_FROM_NAME": "Agente Nuevo"}, by="web", timeout_s=1)
+        check("the next update() undoes the interrupted change first, then applies its own",
+              r.ok and r.recovered and "AGENT_EMAIL_ACCOUNT=viejo@example.org" in env.read_text()
+              and "AGENT_EMAIL_FROM_NAME=Agente Nuevo" in env.read_text(), (r, env.read_text()))
+    finally:
+        ma._write_himalaya = real_write
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    try:
+        r = ma.update(NEW, by="web", timeout_s=1)
+        check("a committed change leaves no snapshot", r.ok and not (state / "main_account.txn" / "snapshot.json").exists())
+    finally:
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td, fake=Fake(back_on_new=False))
+    try:
+        ma.update(NEW, by="web", timeout_s=1)
+        check("a rolled-back change leaves no snapshot", not (state / "main_account.txn" / "snapshot.json").exists())
+    finally:
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    try:
+        (state / "main_account.txn").mkdir(mode=0o700)
+        (state / "main_account.txn" / "snapshot.json").write_text("{not json")
+        rec = ma.recover(timeout_s=1)
+        check("an unreadable snapshot is dropped, not trusted", not rec.found
+              and not (state / "main_account.txn" / "snapshot.json").exists()
+              and audit(state)[-1]["result"] == "snapshot_unreadable" and files_as_before(env, cfg, state))
+    finally:
+        restore(saved)
+
+with tempfile.TemporaryDirectory() as td:
+    env, cfg, state, roster, fake, saved = scenario(td)
+    try:
+        elsewhere = pathlib.Path(td) / "elsewhere"
+        elsewhere.mkdir()
+        (state / "main_account.txn").symlink_to(elsewhere)
+        r = ma.update(NEW, by="web", timeout_s=1)
+        check("a snapshot directory that is a symlink stops the change before writing",
+              not r.ok and r.code == "write_failed" and files_as_before(env, cfg, state)
+              and not any(elsewhere.iterdir()), r)
+    finally:
+        restore(saved)
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

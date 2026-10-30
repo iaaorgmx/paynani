@@ -12,8 +12,10 @@ Under one lock, from the first read to the last rollback:
 
 1. merge the changes over .env into a candidate, validate it, and probe IMAP and
    SMTP with it (no mail is sent); nothing is written if that fails;
-2. keep in memory what .env, the himalaya config and the listener's idle.json
-   hold now;
+2. keep what .env, the himalaya config and the listener's idle.json hold now
+   in a 0600 snapshot under state/ (0700), until the change is committed or
+   undone; a change cut off by a crash is undone by the next update() or by
+   recover();
 3. write .env (envfile's atomic, line-preserving write) and only the values of
    [accounts.paynani] that name the mailbox; the password is never copied there;
 4. if the address changed, point the listener's cursor at the UIDNEXT the probe
@@ -24,6 +26,10 @@ Under one lock, from the first read to the last rollback:
 6. if a write, the restart or the wait fails, put the three files back, restart,
    and wait for the old address; Result.rollback says whether that worked.
 
+The lock is an flock on a file in the state directory, so it holds across the
+web's workers and any other process; update() validates and probes again under
+it rather than trusting an earlier check().
+
 roster.md is not touched: the roster belongs to the agent, not to a mailbox.
 Result, the audit line and every message carry field names, never a password,
 an address or any other value.
@@ -31,8 +37,10 @@ an address or any other value.
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import imaplib
+import os
 import json
 import re
 import ssl
@@ -71,6 +79,7 @@ class Result:
     ready: str = ""
     rollback: str = "none"   # "none" | "ok" | "failed"
     detail: str = ""
+    recovered: bool = False  # an earlier change cut off by a crash was undone first
 
 
 @dataclass
@@ -233,7 +242,11 @@ def _main_block(merged: dict) -> str:
         secret, default=True)
 
 
-# --- the files, kept in memory only --------------------------------------------------
+# --- the transaction: a protected snapshot on disk ----------------------------------
+
+TXN_DIR = "main_account.txn"
+TXN_FILE = "snapshot.json"
+
 
 def _read(path: Path) -> str | None:
     try:
@@ -243,26 +256,103 @@ def _read(path: Path) -> str | None:
         return None
 
 
+def _fsync_dir(path: Path) -> None:
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def _write_private(path: Path, text: str) -> None:
+    """0600, written beside the target and renamed over it, synced, never following a link."""
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+    _fsync_dir(path.parent)
+
+
 def _write_state(path: Path, text: str) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
 
 
-class _Snapshot:
-    """What the three files hold before anything is written. Never written to disk."""
+def _txn_path() -> Path:
+    return listener_control.state_dir() / TXN_DIR / TXN_FILE
 
-    def __init__(self):
-        self.himalaya_path = himalaya_config_path()
-        self.state_path = listener_control.state_path()
-        self.env = _read(envfile.env_path())
-        self.himalaya = _read(self.himalaya_path)
-        self.state = _read(self.state_path)
+
+class _Snapshot:
+    """
+    What the three files hold before anything is written, kept on disk until the
+    change is committed or undone, so a crash between the .env and himalaya
+    writes is undone by the next update() or recover(). It holds the old .env,
+    password included, so it lives in a 0700 directory as a 0600 file, is never
+    followed through a symlink, and is deleted as soon as it is not needed.
+    """
+
+    def __init__(self, data: dict):
+        self.env_path = Path(data["env_path"])
+        self.himalaya_path = Path(data["himalaya_path"])
+        self.state_path = Path(data["state_path"])
+        self.env, self.himalaya, self.state = data["env"], data["himalaya"], data["state"]
+        self.reconnect = data.get("reconnect", True)
+        self.address = data.get("address", "")
+
+    @classmethod
+    def take(cls, *, reconnect: bool, address: str) -> "_Snapshot":
+        himalaya_path, state_path = himalaya_config_path(), listener_control.state_path()
+        data = {"started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "env_path": str(envfile.env_path()), "himalaya_path": str(himalaya_path),
+                "state_path": str(state_path), "env": _read(envfile.env_path()),
+                "himalaya": _read(himalaya_path), "state": _read(state_path),
+                "reconnect": reconnect, "address": address}
+        directory = _txn_path().parent
+        if directory.is_symlink():
+            raise OSError(f"{directory} is a symlink")
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        directory.chmod(0o700)
+        _write_private(_txn_path(), json.dumps(data))
+        return cls(data)
+
+    @classmethod
+    def pending(cls) -> "_Snapshot | None":
+        path = _txn_path()
+        if path.is_symlink() or path.parent.is_symlink():
+            return None
+        try:
+            return cls(json.loads(path.read_text(encoding="utf-8")))
+        except FileNotFoundError:
+            return None
+        except (ValueError, KeyError):
+            # Unreadable: nothing can be restored from it, and keeping it would
+            # block every change. The audit line says it happened.
+            path.unlink(missing_ok=True)
+            _audit("recover", [], "snapshot_unreadable", "failed")
+            return None
 
     def restore(self) -> bool:
         ok = True
         if self.env is not None:
-            ok = envfile.write_env(self.env)[0] and ok
+            saved = envfile.env_path
+            envfile.env_path = lambda: self.env_path
+            try:
+                ok = envfile.write_env(self.env)[0] and ok
+            finally:
+                envfile.env_path = saved
         try:
             if self.himalaya is None:
                 self.himalaya_path.unlink(missing_ok=True)
@@ -278,6 +368,49 @@ class _Snapshot:
         except OSError:
             ok = False
         return ok
+
+    @staticmethod
+    def discard() -> None:
+        path = _txn_path()
+        path.unlink(missing_ok=True)
+        _fsync_dir(path.parent)
+
+
+@dataclass
+class Recovery:
+    found: bool
+    restored: bool = False
+    ready: str = ""
+    detail: str = ""
+
+
+def _recover(timeout_s: float) -> Recovery:
+    snapshot = _Snapshot.pending()
+    if snapshot is None:
+        return Recovery(False)
+    restored = snapshot.restore()
+    ready = ""
+    if restored:
+        _Snapshot.discard()
+        if snapshot.reconnect:
+            back = listener_control.restart()
+            ready = listener_control.wait(back.requested_at, timeout_s=timeout_s, expect=snapshot.address or None,
+                                          previous_pid=back.previous_pid).state if back.ok else "waiting"
+    _audit("recover", [], "recovered" if restored else "recover_failed", "ok" if restored else "failed")
+    return Recovery(True, restored, ready,
+                    "an interrupted change was undone" if restored else "an interrupted change could not be undone")
+
+
+def recover(timeout_s: float = WAIT_S) -> Recovery:
+    """
+    Undo a change that was cut off (a crash, a kill) before it was committed or
+    rolled back. update() does this first on its own; PaynaniWeb can also call it
+    when it starts. Busy while an update() runs: that one owns the snapshot.
+    """
+    with _locked() as held:
+        if not held:
+            return Recovery(False, detail="a change to the main account is running")
+        return _recover(timeout_s)
 
 
 def _set_cursor(path: Path, address: str, cursor: dict) -> None:
@@ -306,16 +439,33 @@ def _audit(by: str, fields: list, code: str, rollback: str) -> None:
 
 # --- update -------------------------------------------------------------------------
 
-def update(changes: dict, *, by: str, timeout_s: float = WAIT_S) -> Result:
-    """One change at a time: a second call while one is running gets "busy"."""
+@contextlib.contextmanager
+def _locked():
+    """An flock on a file in the state directory: one change at a time, across processes."""
     lock_path = listener_control.state_dir() / "main_account.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with open(lock_path, "w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
+            yield False
+            return
+        yield True
+
+
+def update(changes: dict, *, by: str, timeout_s: float = WAIT_S) -> Result:
+    """
+    One change at a time: a second call while one is running gets "busy". It
+    validates and probes again under the lock; a check() from before proves
+    nothing about what is on disk now.
+    """
+    with _locked() as held:
+        if not held:
             return Result(False, "busy", detail="another change to the main account is running")
-        return _update(changes, by=by, timeout_s=timeout_s)
+        recovered = _recover(timeout_s)
+        result = _update(changes, by=by, timeout_s=timeout_s)
+        result.recovered = recovered.found
+        return result
 
 
 def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
@@ -327,10 +477,17 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
         return checked
     merged, changed = candidate.merged, candidate.changed
     reconnect = any(k in CONNECTION for k in changed)
-    snapshot = _Snapshot()
+    try:
+        snapshot = _Snapshot.take(reconnect=reconnect, address=candidate.stored.get(ACCOUNT, ""))
+    except OSError:
+        _audit(by, changed, "write_failed", "none")
+        return Result(False, "write_failed", changed, probe=checked.probe,
+                      detail="could not keep a copy of the current settings, so nothing was changed")
 
     def undo(code: str, detail: str, restart=None, ready="") -> Result:
         restored = snapshot.restore()
+        if restored:
+            _Snapshot.discard()
         back_ok = True
         if reconnect:
             back = listener_control.restart()
@@ -344,8 +501,7 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
 
     ok, _ = envfile.write_env(envfile.render_env(merged))
     if not ok:
-        _audit(by, changed, "write_failed", "none")
-        return Result(False, "write_failed", changed, probe=checked.probe, detail="could not write .env")
+        return undo("write_failed", "could not write .env")
 
     text = snapshot.himalaya or ""
     rewritten = rewrite_main_block(text, merged)
@@ -359,6 +515,7 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
         return undo("write_failed", "could not write the himalaya configuration or the listener state")
 
     if not reconnect:
+        _Snapshot.discard()
         _audit(by, changed, "updated", "none")
         return Result(True, "updated", changed)
 
@@ -372,5 +529,6 @@ def _update(changes: dict, *, by: str, timeout_s: float) -> Result:
             "the listener did not come back on the new settings in time"
         return undo("not_ready", reason, restart=restart, ready=status.state)
 
+    _Snapshot.discard()
     _audit(by, changed, "updated", "none")
     return Result(True, "updated", changed, probe=checked.probe, restart=restart, ready=status.state)
