@@ -175,7 +175,8 @@ def _preview(row: dict) -> str:
 def list_body(threads: list[dict], next_before: str | None) -> str:
     """La lista de conversaciones (FR-24), del más reciente al más viejo. Sin «nuevo»."""
     th = i18n.th
-    head = f'<p class="acciones"><a class="secundario" href="/whatsapp">{_th("account_link")}</a></p>'
+    head = (f'<p class="acciones"><a class="secundario" href="/whatsapp">{_th("account_link")}</a> '
+            f'<a class="secundario" href="/whatsapp/catch-all">{th("web.catchall.link")}</a></p>')
     if not threads:
         return head + f'\n<p class="lead">{_th("empty")}</p>\n'
     out = [head, f'<p class="quiet resumen">{_th("count", n=len(threads))}</p>',

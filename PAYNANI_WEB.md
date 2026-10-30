@@ -118,19 +118,23 @@ línea `sms-human` con «Tú (PaynaniWeb)».
 
 ### El Catch-All de cada canal
 
-«Catch-All», junto a «Bajas de la API» en «Mensajes» (`/messages/catch-all`), decide
-qué pasa con los mensajes de números que no están en el roster (PRD #535). Tiene una
-sección por canal, SMS y WhatsApp (PRD #576), y cada una se activa y se guarda por
-separado: cambiar una no toca la otra. Apagado, como hasta ahora, al agente le llega
-sólo «mensaje de un número fuera del roster», sin el texto. Activo, le llegan los
-mensajes de ese canal con su texto y el agente sigue sólo las instrucciones de esa
-sección. Nunca le contesta al número. Telegram no aparece mientras paynani no tenga
-ese canal.
+Cada canal tiene su página «Catch-All», que decide qué pasa con los mensajes de
+números que no están en el roster (PRD #535, PRD #576). La de SMS está en
+«Mensajes», junto a «Bajas de la API» (`/messages/catch-all`). La de WhatsApp está en
+«Mensajes de WhatsApp», junto a «Cuenta de WhatsApp» (`/whatsapp/catch-all`), y sólo
+existe con WhatsApp activado (#588). Cada una se activa y se guarda por separado:
+cambiar una no toca la otra, y cada página dice dónde está la otra. Apagado, como
+hasta ahora, al agente le llega sólo «mensaje de un número fuera del roster», sin el
+texto. Activo, le llegan los mensajes de ese canal con su texto y el agente sigue
+sólo las instrucciones de ese canal. Nunca le contesta al número. Telegram no tiene
+página mientras paynani no tenga ese canal.
 
-- **La casilla y las instrucciones** de cada sección se guardan en
+- **La casilla y las instrucciones** de cada página se guardan en
   `rules/catch-all-sms.md` o `rules/catch-all-whatsapp.md` con `catchall.save` y su
-  `channel`, el mismo mensaje que usan PaynaniApp y la API (`SaveCatchAll`).
-- **Mientras un canal no tenga su archivo**, la sección muestra lo que hay en
+  `channel`, el mismo mensaje que usan PaynaniApp y la API (`SaveCatchAll`). El
+  canal sale de la página: si un formulario viejo manda otro `channel`, no se guarda
+  nada y la página lo dice.
+- **Mientras un canal no tenga su archivo**, su página muestra lo que hay en
   `rules/catch-all.md`, el archivo único de antes, y lo dice. El primer guardado le
   da a cada canal su archivo, con lo que tenía el viejo, y quita el viejo.
 - **La contraseña** de la web se pide para activar un canal y para cambiar sus

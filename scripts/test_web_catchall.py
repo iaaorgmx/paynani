@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 
 from paynani_lib import i18n  # noqa: E402
 from paynani_lib import rules as rules_mod  # noqa: E402
-from paynani_lib.web import app, auth, notify, users  # noqa: E402
+from paynani_lib.web import app, auth, notify, users, whatsapp_source  # noqa: E402
 
 passed = failed = 0
 
@@ -56,7 +56,8 @@ users.create("julian@example.com", "Julián Flores", PASSWORD, user_file)
 mail = []
 ctx = app.Context(user_file, notifier=notify.Notifier(send=lambda *a: None, log=lambda line: None),
                   agent_email="agente@example.com", accounts_file=clone / "no-accounts.json",
-                  state_dir=state, roster_path=roster, roster_notifier=lambda to, s, b: mail.append((to, s, b)))
+                  state_dir=state, roster_path=roster, roster_notifier=lambda to, s, b: mail.append((to, s, b)),
+                  whatsapp_source=whatsapp_source.Demo(state="unlinked"), whatsapp_root=clone)
 httpd = app.serve("127.0.0.1", 0, ctx=ctx)
 port = httpd.server_address[1]
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -128,7 +129,7 @@ check("FR-4: con la contraseña equivocada no se guarda", (403, False), (status,
 status, hdrs, _ = req("POST", "/messages/catch-all",
                       form={"csrf": csrf, "etag": etag, "enabled": "1", "text": "Avísame por Telegram.",
                             "password": PASSWORD}, cookie=cookie)
-check("FR-4: con la contraseña se activa", (303, "/messages/catch-all?ok=on&channel=sms#catchall-sms"),
+check("FR-4: con la contraseña se activa", (303, "/messages/catch-all?ok=on"),
       (status, hdrs.get("location")))
 check("FR-9: rules/catch-all-sms.md activo, escrito desde PaynaniWeb", (True, True),
       (rules_mod.catch_all_notice("sms", clone) == {"file": "rules/catch-all-sms.md", "status": "active"},
@@ -153,7 +154,7 @@ status, _, page = req("GET", "/messages/catch-all", cookie=cookie)
 csrf, etag = form_of(page)
 status, hdrs, _ = req("POST", "/messages/catch-all",
                       form={"csrf": csrf, "etag": etag, "text": "Avísame por Telegram."}, cookie=cookie)
-check("FR-4: apagarlo no pide la contraseña", (303, "/messages/catch-all?ok=off&channel=sms#catchall-sms", None),
+check("FR-4: apagarlo no pide la contraseña", (303, "/messages/catch-all?ok=off", None),
       (status, hdrs.get("location"), rules_mod.catch_all_notice("sms", clone)))
 
 # Conflict: alguien más lo cambió con el etag que tenía esta página.
@@ -242,42 +243,78 @@ for lang in ("en-US", "fr-FR", "pt-BR"):
           i18n.CATALOGUES[lang]["web.catchall.codes"].replace("’", "&#x27;").split(" ")[0] in page)
 
 
-# --- PRD #576 FR-9, FR-10: una sección por canal ------------------------------------------
+# --- PRD #576 FR-9, FR-10 y #588: una página por canal -------------------------------------
 catch_file.write_text("---\nversion: 1\nenabled: false\n---\nApagado.\n", encoding="utf-8")
 status, _, page = req("GET", "/messages/catch-all?lang=es-MX", cookie=cookie)
-check("FR-9: una sección por canal, sin Telegram", (True, True, False, 2),
+check("#588: /messages/catch-all muestra solo SMS, sin WhatsApp ni Telegram", (True, False, False, 1),
       ('id="catchall-sms"' in page, 'id="catchall-whatsapp"' in page, 'id="catchall-telegram"' in page,
        page.count('name="channel"')))
-check("FR-10: cada sección dice qué abre", (True, True),
-      (th("web.catchall.opens.sms") in page, th("web.catchall.opens.whatsapp") in page))
+check("FR-10: dice qué abre y dónde está el de WhatsApp", (True, True, False),
+      (th("web.catchall.opens.sms") in page, th("web.catchall.elsewhere.sms") in page,
+       th("web.catchall.opens.whatsapp") in page))
 check("el texto ya no dice que un cambio aplica a los dos canales", False,
       "cambia los dos canales" in page)
-wa_etag = re.findall(r'name="etag" value="([^"]*)"', page)[1]
-csrf = form_of(page)[0]
-status, _, page = req("POST", "/messages/catch-all",
-                      form={"csrf": csrf, "channel": "whatsapp", "etag": wa_etag, "enabled": "1", "text": "Guarda."},
+csrf, sms_etag = form_of(page)
+
+# Sin WhatsApp configurado no hay página ni liga.
+status, _, _ = req("GET", "/whatsapp/catch-all", cookie=cookie)
+check("#588: sin WhatsApp configurado, GET /whatsapp/catch-all es 404", 404, status)
+status, _, _ = req("POST", "/whatsapp/catch-all",
+                   form={"csrf": csrf, "channel": "whatsapp", "etag": "", "enabled": "1", "text": "Guarda.",
+                         "password": PASSWORD}, cookie=cookie)
+check("#588: sin WhatsApp configurado, POST /whatsapp/catch-all es 404 y no guarda", (404, False),
+      (status, rules_mod.catch_all_active("whatsapp", clone)))
+(clone / "whatsapp.env").write_text("WHATSAPP_ENABLED=1\n", encoding="utf-8")
+
+status, _, page = req("GET", "/whatsapp/messages?lang=es-MX", cookie=cookie)
+check("#588: «Mensajes de WhatsApp» tiene la liga al Catch-All junto a la de la cuenta", (200, True, True),
+      (status, 'href="/whatsapp/catch-all"' in page, 'href="/whatsapp"' in page))
+status, _, page = req("GET", "/whatsapp/catch-all?lang=es-MX", cookie=cookie)
+check("#588: /whatsapp/catch-all muestra solo WhatsApp y vuelve a «Mensajes de WhatsApp»",
+      (200, True, False, 1, True, True),
+      (status, 'id="catchall-whatsapp"' in page, 'id="catchall-sms"' in page, page.count('name="channel"'),
+       'href="/whatsapp/messages"' in page, th("web.catchall.elsewhere.whatsapp") in page))
+check("#588: el formulario de WhatsApp se manda a su propia página", True,
+      'action="/whatsapp/catch-all"' in page)
+wa_csrf, wa_etag = form_of(page)
+status, _, page = req("POST", "/whatsapp/catch-all",
+                      form={"csrf": wa_csrf, "channel": "whatsapp", "etag": wa_etag, "enabled": "1", "text": "Guarda."},
                       cookie=cookie)
-check("FR-9: WhatsApp también pide la contraseña, y el error sale en su sección", (403, True),
-      (status, page.index('role="alert"') > page.index('id="catchall-whatsapp"')))
-status, hdrs, _ = req("POST", "/messages/catch-all",
-                      form={"csrf": csrf, "channel": "whatsapp", "etag": wa_etag, "enabled": "1", "text": "Guarda.",
-                            "password": PASSWORD}, cookie=cookie)
-check("FR-9: activar WhatsApp no toca SMS", (303, "/messages/catch-all?ok=on&channel=whatsapp#catchall-whatsapp",
-                                            True, None),
+check("FR-9: WhatsApp también pide la contraseña", (403, True),
+      (status, 'id="catchall-whatsapp"' in page and 'role="alert"' in page))
+status, hdrs, _ = req("POST", "/whatsapp/catch-all",
+                      form={"csrf": wa_csrf, "channel": "whatsapp", "etag": wa_etag, "enabled": "1",
+                            "text": "Guarda.", "password": PASSWORD}, cookie=cookie)
+check("FR-9: activar WhatsApp no toca SMS y vuelve a su página", (303, "/whatsapp/catch-all?ok=on", True, None),
       (status, hdrs.get("location"), rules_mod.catch_all_active("whatsapp", clone),
        rules_mod.catch_all_notice("sms", clone)))
-status, _, page = req("GET", "/messages/catch-all?ok=on&channel=whatsapp&lang=es-MX", cookie=cookie)
-check("el aviso de guardado nombra WhatsApp y sale en su sección", (True, True),
-      (th("web.catchall.ok_on", channel="WhatsApp") in page,
-       page.index('role="status"') > page.index('id="catchall-whatsapp"')))
+status, _, page = req("GET", "/whatsapp/catch-all?ok=on&lang=es-MX", cookie=cookie)
+check("el aviso de guardado nombra WhatsApp", True, th("web.catchall.ok_on", channel="WhatsApp") in page)
+
+# Una página vieja (de antes de #588) que manda channel=whatsapp a /messages/catch-all no guarda nada.
+before = catch_file.read_text(encoding="utf-8")
+status, _, page = req("POST", "/messages/catch-all",
+                      form={"csrf": csrf, "channel": "whatsapp", "etag": wa_etag, "text": ""}, cookie=cookie)
+check("#588: channel de otra página no guarda nada", (400, True, before, True),
+      (status, th("web.catchall.err.wrong_page") in page, catch_file.read_text(encoding="utf-8"),
+       rules_mod.catch_all_active("whatsapp", clone)))
+status, _, page = req("GET", "/messages/catch-all?lang=es-MX", cookie=cookie)
 sms_etag = form_of(page)[1]
 status, hdrs, _ = req("POST", "/messages/catch-all",
                       form={"csrf": csrf, "channel": "sms", "etag": sms_etag, "text": "Apagado."}, cookie=cookie)
-check("apagar SMS deja WhatsApp activo", (303, True), (status, rules_mod.catch_all_active("whatsapp", clone)))
+check("apagar SMS deja WhatsApp activo y vuelve a /messages/catch-all",
+      (303, "/messages/catch-all?ok=off", True),
+      (status, hdrs.get("location"), rules_mod.catch_all_active("whatsapp", clone)))
+status, _, page = req("GET", "/messages/catch-all?lang=es-MX", cookie=cookie)
+sms_etag = form_of(page)[1]
 status, _, _ = req("POST", "/messages/catch-all",
-                   form={"csrf": csrf, "channel": "telegram", "etag": sms_etag, "text": ""}, cookie=cookie)
-check("un canal desconocido cae en SMS, nunca en otro", (True, True),
-      (rules_mod.catch_all_active("whatsapp", clone), status in (303, 409)))
+                   form={"csrf": csrf, "etag": sms_etag, "text": "Apagado."}, cookie=cookie)
+check("sin `channel` en el formulario, la ruta decide (SMS)", (303, True),
+      (status, rules_mod.catch_all_active("whatsapp", clone)))
+for lang in ("en-US", "es-ES", "fr-FR", "pt-BR"):
+    check(f"{lang}: textos de #588", True,
+          all(k in i18n.CATALOGUES[lang] for k in ("web.catchall.elsewhere.sms", "web.catchall.elsewhere.whatsapp",
+                                                  "web.catchall.err.wrong_page")))
 
 httpd.shutdown()
 print(f"\n{passed} passed, {failed} failed")
