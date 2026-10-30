@@ -137,6 +137,7 @@ STRINGS = {
     'p.is_imap': "Le serveur s'est identifié comme un serveur IMAP.",
     'p.auth_rejected': 'Le serveur a refusé cette adresse et ce mot de passe.',
     'p.auth_rejected_d': "Beaucoup de fournisseurs veulent ici un mot de passe d'application plutôt que celui que vous tapez sur leur site. Si le vôtre propose la validation en deux étapes, c'est presque certainement le cas.",
+    'p.password_not_ascii': "Le mot de passe contient un caractère que la connexion à ce serveur ne peut pas envoyer (une lettre accentuée, par exemple). Les mots de passe d'application n'utilisent que des lettres sans accent et des chiffres.",
     'p.signed_in': 'Connexion réussie.',
     'p.signed_in_smtp': "Connexion réussie, l'agent pourra donc répondre.",
     'p.idle_yes': 'Le serveur prend en charge IDLE, le courrier nouveau arrive donc en une seconde environ.',

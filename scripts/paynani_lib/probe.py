@@ -86,6 +86,15 @@ def probe_imap(host: str, port: int, user: str, password: str) -> dict:
         except Exception:  # noqa: BLE001
             pass
         return {"ok": False, "steps": steps}
+    except UnicodeEncodeError:
+        # imaplib sends the login as ASCII. The exception text names the
+        # character and its position in the password, so it is never shown.
+        steps.append(step(False, t("p.auth_rejected"), t("p.password_not_ascii")))
+        try:
+            conn.logout()
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "steps": steps}
     except Exception as exc:  # noqa: BLE001
         # Everything else -- a dropped socket, a TLS renegotiation failure,
         # a timeout mid-exchange -- is a connection problem, not a rejected
@@ -199,6 +208,11 @@ def _probe_smtp_mode(host: str, port: int, user: str, password: str, implicit: b
             return {"ok": False, "authenticated": False, "steps": steps}
         except smtplib.SMTPResponseException:
             steps.append(step(False, t("p.address_rejected")))
+            return {"ok": False, "authenticated": False, "steps": steps}
+        except UnicodeEncodeError:
+            # smtplib encodes AUTH PLAIN as ASCII; the exception text would
+            # quote part of the password, so only the translated reason goes out.
+            steps.append(step(False, t("p.send_auth_bad"), t("p.password_not_ascii")))
             return {"ok": False, "authenticated": False, "steps": steps}
 
         steps.append(step(True, t("p.signed_in_smtp")))
