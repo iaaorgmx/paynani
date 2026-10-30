@@ -82,9 +82,8 @@ configurarla.
 Tu agente te mostrará un enlace al formulario para configurar la cuenta de
 correo.
 
-Si tu agente corre en una máquina a la que no llegas directo desde el
-navegador, junto con el enlace te pasa el comando `ssh -L` para llegar al
-formulario.
+Si el enlace no abre porque tu agente corre en otra máquina, díselo y te dará
+el comando para llegar al formulario.
 
 Si tu agente corre en OpenCode, o en otro harness que no le avisa cuando
 guardas el formulario, te va a pedir que le escribas «listo» después de

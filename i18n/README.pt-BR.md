@@ -99,8 +99,8 @@ configurarla.
 O seu agente vai mostrar um link para o formulário de configuração da conta de
 e-mail.
 
-Se o seu agente roda numa máquina que você não alcança direto pelo navegador,
-junto com o link ele te passa o comando `ssh -L` para chegar ao formulário.
+Se o link não abrir porque o seu agente roda em outra máquina, avise-o e ele te
+passa o comando para chegar ao formulário.
 
 Se o seu agente roda no OpenCode, ou em outro harness que não o avisa quando
 você salva o formulário, ele vai pedir que você escreva «listo» depois de

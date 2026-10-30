@@ -488,6 +488,21 @@ the chat on its own. On the hand-written route, create the file first, at mode
 `600`, and have your human write into it directly. A credential in a transcript
 is a standing liability; transcripts get stored, exported and reviewed.
 
+### 2.1 If the form link does not open
+
+Send your human only the link that `scripts/paynani onboard` prints. The form
+listens on `127.0.0.1` of this machine, so a browser on another computer cannot
+open it. Only when they tell you so, give them this command to run on their own
+computer, then the same link again:
+
+```bash
+ssh -L 8765:127.0.0.1:8765 <user>@<host>
+```
+
+`<user>` is the account paynani runs as here. `<host>` is the name or address
+they use to ssh to this machine, which is not always what `hostname` says. If
+`onboard` printed another port, use it on both sides.
+
 ---
 
 ## 3. Credentials
