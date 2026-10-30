@@ -499,6 +499,13 @@ body.web-shell {
 .web-shell .libreta-lista button:hover, .web-shell .libreta-lista button:focus-visible { border-color: var(--accent); }
 .web-shell .formulario.correo-nuevo textarea { font-family: inherit; font-size: 1rem; min-height: 12rem; }
 
+/* Configuración de la cuenta principal (#590 cambio 3): la prueba contra el servidor. */
+.web-shell .prueba { margin: 1rem 0; }
+.web-shell .prueba h3 { margin: 0 0 .4rem; font-size: 1rem; }
+.web-shell .pasos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; font-size: .9rem; }
+.web-shell .pasos .paso-ok b { color: var(--ok-ink); }
+.web-shell .pasos .paso-mal b { color: var(--bad-ink); }
+
 /* PRD #537 FR-8: sin animación para quien la pidió quitar. */
 @media (prefers-reduced-motion: reduce) {
   body.web-shell, .web-shell .lateral { transition: none !important; }

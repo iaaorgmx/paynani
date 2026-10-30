@@ -32,9 +32,9 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
-from . import catchall_strings, compose_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import catchall_strings, compose_strings, config_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (accounts_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
-               thread, users, whatsapp_pages, whatsapp_source, compose_pages, mail_compose)
+               thread, users, whatsapp_pages, whatsapp_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 FAVICON = Path(__file__).resolve().parents[3] / "brand" / "favicon.svg"
@@ -263,7 +263,7 @@ class Context:
                  env_path: Path | None = None, imap_connect=None, imap_uidvalidity=None,
                  state_dir: Path | None = None, roster_path: Path | None = None, roster_notifier=None,
                  whatsapp_source: whatsapp_source.Source | None = None, whatsapp_root: Path | None = None,
-                 mailer: mail_compose.Mailer | None = None):
+                 mailer: mail_compose.Mailer | None = None, updater: account_config.Updater | None = None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -310,6 +310,8 @@ class Context:
         # «Nuevo correo» (#590 cambio 2): el envío del dueño del núcleo (#591 N1), o el
         # que pasen las pruebas.
         self.mailer = mailer or mail_compose.CoreMailer()
+        # «Configuración» de la cuenta principal (#590 cambio 3): N2/N3 del núcleo (#591).
+        self.updater = updater or account_config.CoreUpdater()
         self._whatsapp_root = whatsapp_root
         # La vinculación por QR o código de cada sesión del navegador: el link_id vive
         # sólo aquí, en memoria, nunca en una cookie, una URL ni la página (§11).
@@ -835,6 +837,9 @@ def make_handler(ctx: Context):
             account_id, _, view = rest.partition("/")
             accounts, _ = self.CTX.mail_accounts()
             match = next((a for a in accounts if a["id"] == account_id), None)
+            if match is not None and match["id"] == "main" and view == "configuracion":
+                self._config()
+                return
             if match is not None and view == "nuevo":
                 self._compose(match)
                 return
@@ -1245,6 +1250,89 @@ def make_handler(ctx: Context):
             if res.get("notice") == "failed":
                 query += "&aviso=failed"
             self._redirect(f"/email/{_quote(account_id, safe='')}?{query}")
+
+        # ---- Configuración de la cuenta principal (#590 cambio 3) ------------------
+        def _config_values(self) -> dict:
+            import idle_listener
+            try:
+                return account_config.current(idle_listener.load_env(self.CTX.env_path()))
+            except OSError:
+                return account_config.current({})
+
+        def _config(self, *, values: dict | None = None, notice: str = "", error: str = "", probe=None,
+                    field_errors=None, code: int = 200):
+            """GET /email/main/configuracion: los datos actuales, sin la contraseña."""
+            # La huella es siempre la de lo guardado ahora, aunque el formulario muestre lo
+            # que el dueño escribió: así un 409 se resuelve recargando, no reenviando.
+            now = self._config_values()
+            self._page(code, title=i18n.t("web.cfg.title"), icon_name="mail", back="/email/main",
+                       body=config_pages.body(values if values is not None else now,
+                                              self.session["csrf"], rev=account_config.revision(now), notice=notice,
+                                              error=error, probe=probe, field_errors=field_errors),
+                       active="email", active_account="main")
+
+        def _config_post(self, post: dict):
+            """
+            POST /email/main/configuracion: CSRF y Origin como todo POST, y la contraseña de
+            la web con el bloqueo de la entrada (Q10) antes de pedirle nada al núcleo. El
+            núcleo prueba, guarda .env y Himalaya juntos y reinicia el listener (#591).
+            Después, un correo al dueño con lo que cambió, sin la contraseña del buzón.
+            """
+            before = self._config_values()
+            form = {key: post.get(key, "")[:320] for key in account_config.SHOWN}
+            if post.get("rev", "") != account_config.revision(before):
+                # La página se abrió antes de otro cambio: sus campos sin editar traerían
+                # valores viejos. No se manda nada; se muestra lo actual.
+                self._config(error=i18n.t("web.cfg.err.stale"), code=409)
+                return
+            form["new_password"] = post.get("new_password", "")[:1024]
+            shown_values = {k: v for k, v in form.items() if k != "new_password"}
+            try:
+                changes = account_config.changes(before, form)
+            except account_config.Refused as exc:
+                self._config(values=shown_values, error=config_pages.error_text(exc.code, exc.detail), code=400)
+                return
+            password = post.get("password", "")[:users.MAX_PASSWORD]
+            problem = self._check_current(password) if password else i18n.t("web.cfg.err.password")
+            if problem:
+                self._config(values=shown_values, error=problem, code=403 if password else 400)
+                return
+            if not changes:
+                self._config(notice=i18n.t("web.cfg.nothing"))
+                return
+            try:
+                res = self.CTX.updater.update(changes, by=f"web:{self.ip}")
+            except account_config.Refused as exc:
+                self._config(values=shown_values, error=config_pages.error_text(exc.code, exc.detail),
+                             code=503 if exc.code == "not_available" else 400)
+                return
+            except Exception as exc:  # noqa: BLE001 -- pudo haber escrito: no se invita a reintentar a ciegas
+                sys.stderr.write(f"paynani-web: el cambio de la cuenta principal terminó con {type(exc).__name__}\n")
+                self._config(error=i18n.t("web.cfg.err.unknown_outcome"), code=502)
+                return
+            code = str(res.get("code"))
+            # N2 deshizo primero un cambio anterior que había quedado a medias (una caída).
+            recovered = i18n.t("web.cfg.recovered") + " " if res.get("recovered") else ""
+            if code == "unchanged":
+                self._config(notice=i18n.t("web.cfg.nothing"))
+                return
+            if not res.get("ok"):
+                # write_failed, restart_failed y not_ready: N2 deshizo el cambio; `rollback`
+                # dice si volvió a lo anterior (ok) o no (failed).
+                key = ("rolled_back" if res.get("rollback") == "ok" else "rollback_failed"
+                       if res.get("rollback") == "failed" else code)
+                status = 400 if code in ("invalid", "probe_failed", "unknown_field") else 409 if code == "busy" else 502
+                self._config(values=shown_values, probe=res.get("probe"), field_errors=res.get("field_errors"),
+                             error=config_pages.error_text(key, str(res.get("detail") or "")), code=status)
+                return
+            fields = ", ".join(config_pages.label(k) for k in (res.get("changed") or list(changes)))
+            self.CTX.notifier.owner(self.user, i18n.t("web.cfg.mail_subject"),
+                                    i18n.t("web.cfg.mail_body", ip=self.ip, fields=fields))
+            # ready: "connected" (se reinició y volvió), "waiting" (todavía no confirma) o ""
+            # (no hubo reinicio: sólo cambió el nombre que se muestra).
+            ready = res.get("ready")
+            key = "web.cfg.ok" if ready == "connected" else "web.cfg.ok_waiting" if ready == "waiting" else "web.cfg.ok_no_restart"
+            self._config(notice=recovered + i18n.t(key), probe=res.get("probe"))
 
         # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
         # Toda respuesta de aquí sale con Cache-Control: no-store (guard.SECURITY_HEADERS):
@@ -1852,6 +1940,9 @@ def make_handler(ctx: Context):
                 return
             if self.route == "/cuentas/nueva" or (self.route.startswith("/cuentas/") and self.route.endswith("/quitar")):
                 self._accounts_post(post)
+                return
+            if self.route == "/email/main/configuracion":
+                self._config_post(post)
                 return
             if self.route.startswith("/email/") and self.route.endswith("/enviar"):
                 self._compose_post(post)
