@@ -717,7 +717,7 @@ def make_handler(ctx: Context):
             if self.route == "/messages/bajas":
                 self._sms_optout()
                 return
-            if self.route == "/messages/catch-all":
+            if self.route in ("/messages/catch-all", "/whatsapp/catch-all"):
                 self._catchall()
                 return
             if self.route == "/messages/estados":
@@ -924,49 +924,58 @@ def make_handler(ctx: Context):
                        active="messages", icon_name="inbox")
 
         # ---- Catch-All (PRD #535 FR-1 a FR-8; una sección por canal, PRD #576) ----
-        def _catchall_channel(self, raw: str) -> str:
-            return raw if raw in messages_pages.CATCHALL_CHANNELS else "sms"
+        def _catchall_channel(self) -> str:
+            """El canal de la página: /messages/catch-all es SMS y /whatsapp/catch-all WhatsApp (#588)."""
+            return "whatsapp" if self.route == "/whatsapp/catch-all" else "sms"
 
-        def _catchall(self, notice: str = "", error: str = "", values: dict | None = None, code: int = 200,
-                      channel: str = ""):
-            """GET /messages/catch-all: el Catch-All de cada canal por catchall.get, como PaynaniApp."""
-            states = {}
-            for ch in messages_pages.CATCHALL_CHANNELS:
-                res = self._rq("catchall.get", channel=ch)
-                if res.get("type") != "result":
-                    states[ch] = {}
-                    if not error:
-                        channel, error, code = ch, i18n.t("web.catchall.err.unreadable"), 500
-                    continue
-                states[ch] = res["data"]
-                if not channel and states[ch].get("status") == "invalid" and not notice and not error:
-                    channel, error = ch, i18n.t("web.catchall.err.invalid_file", file=states[ch].get("file", ""))
+        def _catchall(self, notice: str = "", error: str = "", values: dict | None = None, code: int = 200):
+            """GET /messages/catch-all y /whatsapp/catch-all: el Catch-All de ese canal por catchall.get."""
+            channel = self._catchall_channel()
+            if channel == "whatsapp" and not self.CTX.whatsapp_configured():
+                self._wa_page(404, whatsapp_pages.not_configured_body())
+                return
+            res = self._rq("catchall.get", channel=channel)
+            if res.get("type") != "result":
+                state = {}
+                if not error:
+                    error, code = i18n.t("web.catchall.err.unreadable"), 500
+            else:
+                state = res["data"]
+                if state.get("status") == "invalid" and not notice and not error:
+                    error = i18n.t("web.catchall.err.invalid_file", file=state.get("file", ""))
             if not notice and not error:
                 done = self.query.get("ok", [""])[0]
-                which = self._catchall_channel(self.query.get("channel", [""])[0])
                 if done in ("on", "off"):
-                    channel = which
-                    notice = i18n.t(f"web.catchall.ok_{done}", channel=i18n.t(f"web.catchall.section.{which}"))
-            self._page(code, title=i18n.t("web.catchall.title"), back="/messages",
-                       body=messages_pages.catchall_body(states, self.session["csrf"], channel=channel,
+                    notice = i18n.t(f"web.catchall.ok_{done}", channel=i18n.t(f"web.catchall.section.{channel}"))
+            back, active, icon = (("/whatsapp/messages", "whatsapp", "chat") if channel == "whatsapp"
+                                  else ("/messages", "messages", "inbox"))
+            self._page(code, title=i18n.t("web.catchall.title"), back=back,
+                       body=messages_pages.catchall_body(state, self.session["csrf"], channel=channel,
                                                          notice=notice, error=error, values=values),
-                       active="messages", icon_name="inbox")
+                       active=active, icon_name=icon)
 
         def _catchall_post(self, post: dict):
             """
-            POST /messages/catch-all: `channel`, `enabled`, `text`, `etag` y `password`.
-            CSRF y Origin, como todo POST. Activarlo, o cambiar las instrucciones con él
-            activo, pide la contraseña con el mismo bloqueo que la entrada (FR-4);
-            apagarlo no. Sólo cambia el canal de esa sección (#576 FR-9).
+            POST /messages/catch-all (SMS) y /whatsapp/catch-all (WhatsApp): `enabled`,
+            `text`, `etag` y `password`. CSRF y Origin, como todo POST. Activarlo, o cambiar
+            las instrucciones con él activo, pide la contraseña con el mismo bloqueo que la
+            entrada (FR-4); apagarlo no. El canal sale de la ruta (#588); si el formulario
+            dice otro canal (una página vieja de antes de #588), no guarda nada.
             """
-            channel = self._catchall_channel(post.get("channel", ""))
+            channel = self._catchall_channel()
+            if channel == "whatsapp" and not self.CTX.whatsapp_configured():
+                self._wa_page(404, whatsapp_pages.not_configured_body())
+                return
             enabled = post.get("enabled") == "1"
             text = post.get("text", "").replace("\r\n", "\n")
             values = {"enabled": enabled, "text": text}
 
             def again(**kw):
-                self._catchall(values=kw.pop("values", values), channel=channel, **kw)
+                self._catchall(values=kw.pop("values", values), **kw)
 
+            if post.get("channel", channel) != channel:
+                again(error=i18n.t("web.catchall.err.wrong_page"), values=None, code=400)
+                return
             current = self._rq("catchall.get", channel=channel)
             if current.get("type") != "result":
                 again(error=i18n.t("web.catchall.err.unreadable"), code=500)
@@ -986,8 +995,7 @@ def make_handler(ctx: Context):
                     return
             res = self._rq("catchall.save", channel=channel, enabled=enabled, text=text, etag=post.get("etag", ""))
             if res.get("type") == "result":
-                self._redirect(f"/messages/catch-all?ok={'on' if enabled else 'off'}&channel={channel}"
-                               f"#catchall-{channel}")
+                self._redirect(f"{messages_pages.CATCHALL_PAGES[channel][0]}?ok={'on' if enabled else 'off'}")
                 return
             code = res.get("code")
             if code == "conflict":
@@ -1671,7 +1679,8 @@ def make_handler(ctx: Context):
                 length = int(self.headers.get("Content-Length", "0") or "0")
             except ValueError:
                 length = -1
-            limit = CATCHALL_BODY_BYTES if urlparse(self.path).path == "/messages/catch-all" else MAX_BODY_BYTES
+            limit = (CATCHALL_BODY_BYTES if urlparse(self.path).path in ("/messages/catch-all", "/whatsapp/catch-all")
+                     else MAX_BODY_BYTES)
             if length < 0 or length > limit:
                 if urlparse(self.path).path == "/api/agent":
                     self._api_reply(413, secrets.token_hex(8), code="body_too_large",
@@ -1716,7 +1725,7 @@ def make_handler(ctx: Context):
             if self.route == "/messages/bajas":
                 self._sms_optout_post(post)
                 return
-            if self.route == "/messages/catch-all":
+            if self.route in ("/messages/catch-all", "/whatsapp/catch-all"):
                 self._catchall_post(post)
                 return
             if self.route in ("/whatsapp/link", "/whatsapp/link/cancel", "/whatsapp/unlink", "/whatsapp/messages/enviar"):
