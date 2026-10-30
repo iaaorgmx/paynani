@@ -43,10 +43,17 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 from paynani_lib.roster_edit import EditError  # noqa: E402
 
 DEFAULT_ID = "default"
-# El Catch-All (PRD #535): las instrucciones para los SMS de números fuera del roster.
-# Mismo formato que las reglas, pero nunca de un contacto: el nombre queda reservado.
-CATCH_ALL_ID = "catch-all"
-RESERVED_IDS = (DEFAULT_ID, CATCH_ALL_ID)
+# El Catch-All (PRD #535): las instrucciones para los mensajes de números fuera del
+# roster. Mismo formato que las reglas, pero nunca de un contacto: los nombres quedan
+# reservados. Desde el PRD #576 hay uno por canal (`catch-all-sms`, `catch-all-whatsapp`);
+# `catch-all` es el archivo único de antes, que se sigue leyendo hasta el primer
+# guardado (FR-4, FR-5). Telegram sólo tiene el nombre reservado (FR-3).
+LEGACY_CATCH_ALL_ID = "catch-all"
+CATCH_ALL_ID = LEGACY_CATCH_ALL_ID  # compatibilidad con quien importaba el nombre viejo
+CATCH_ALL_CHANNELS = ("sms", "whatsapp")
+_RESERVED_CHANNELS = CATCH_ALL_CHANNELS + ("telegram",)
+CATCH_ALL_IDS = (LEGACY_CATCH_ALL_ID,) + tuple(f"catch-all-{c}" for c in _RESERVED_CHANNELS)
+RESERVED_IDS = (DEFAULT_ID,) + CATCH_ALL_IDS
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 MAX_BYTES = 32 * 1024
 VERSION = 1
@@ -302,23 +309,49 @@ def tag(note: dict | None) -> str:
     return f"{label}: {note['file']}"
 
 
-# --- Catch-All (PRD #535) -------------------------------------------------------------
+# --- Catch-All (PRD #535, uno por canal desde el PRD #576) -------------------------------
 
-def _catch_all_snapshot(root: Path | None = None) -> tuple[dict | None, str | None]:
+def catch_all_id(channel: str) -> str:
+    """`catch-all-sms` o `catch-all-whatsapp`. Un canal que paynani no tiene es un error."""
+    if channel not in CATCH_ALL_CHANNELS:
+        raise ValueError(f"canal sin Catch-All: {channel!r}")
+    return f"catch-all-{channel}"
+
+
+def catch_all_source(channel: str, root: Path | None = None) -> str:
     """
-    Una sola lectura de rules/catch-all.md: (nota, instrucciones). Las dos salen de
+    El id del archivo que manda para ese canal: el suyo si existe; si no, el viejo
+    `catch-all` mientras exista (FR-4). Si no hay ninguno, el del canal.
+    """
+    own = catch_all_id(channel)
+    if path_for(own, root).exists() or not path_for(LEGACY_CATCH_ALL_ID, root).exists():
+        return own
+    return LEGACY_CATCH_ALL_ID
+
+
+def _catch_all_snapshot(channel: str, root: Path | None = None) -> tuple[dict | None, str | None]:
+    """
+    Una sola lectura del Catch-All del canal: (nota, instrucciones). Las dos salen de
     la misma lectura, así que un cambio a medias entre dos lecturas no puede dar las
-    instrucciones de un archivo que ya está apagado (FR-19).
+    instrucciones de un archivo que ya está apagado (#535 FR-19). Cada canal se lee
+    solo: un archivo roto de un canal no toca al otro (#576 FR-2).
     """
-    note = {"file": f"rules/{CATCH_ALL_ID}.md", "status": "invalid"}
-    try:
-        text = path_for(CATCH_ALL_ID, root).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return None, None  # sin archivo todo funciona como antes (FR-11)
-    except (OSError, UnicodeDecodeError):
-        # Existe pero no se puede leer (permisos, E/S, UTF-8 roto): no es «apagado»,
-        # es un error que el agente tiene que ver.
-        return note, None
+    name = None
+    text = None
+    for candidate in (catch_all_id(channel), LEGACY_CATCH_ALL_ID):
+        try:
+            text = path_for(candidate, root).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except (OSError, UnicodeDecodeError):
+            # Existe pero no se puede leer (permisos, E/S, UTF-8 roto): no es «apagado»,
+            # es un error que el agente tiene que ver.
+            return {"file": f"rules/{candidate}.md", "status": "invalid"}, None
+        name = candidate
+        break
+    if name is None:
+        return None, None  # sin archivo todo funciona como antes (#535 FR-11)
+    note = {"file": f"rules/{name}.md", "status": "invalid"}
     try:
         parsed = parse(text)
     except EditError:
@@ -326,30 +359,35 @@ def _catch_all_snapshot(root: Path | None = None) -> tuple[dict | None, str | No
     if not parsed["enabled"]:
         return None, None
     if not parsed["body"].strip():
-        # Activo sin instrucciones no se puede guardar (FR-5); escrito a mano así, el
-        # agente no sabría qué hacer: cuenta como inválido.
+        # Activo sin instrucciones no se puede guardar (#535 FR-5); escrito a mano así,
+        # el agente no sabría qué hacer: cuenta como inválido.
         return note, None
     return {"file": note["file"], "status": "active"}, parsed["body"]
 
 
-def catch_all_notice(root: Path | None = None) -> dict | None:
+def catch_all_notice(channel: str, root: Path | None = None) -> dict | None:
     """
-    El Catch-All para el aviso de un SMS de un número fuera del roster (FR-12 a FR-15):
-    `{"file": "rules/catch-all.md", "status": "active"}` si el archivo existe, es
-    válido y tiene `enabled: true`; `"invalid"` si existe pero no se puede leer o no
-    pasa la validación (para que un error se note); None si no existe o está
-    apagado. Sin archivo todo funciona como antes (FR-11).
+    El Catch-All del canal (`sms` o `whatsapp`) para el aviso de un mensaje de un
+    número fuera del roster: `{"file": "rules/catch-all-sms.md", "status": "active"}`
+    si su archivo (o el viejo `catch-all.md`, mientras el canal no tenga el suyo)
+    existe, es válido y tiene `enabled: true`; `"invalid"` si existe pero no se puede
+    leer o no pasa la validación; None si no existe o está apagado.
     """
-    return _catch_all_snapshot(root)[0]
+    return _catch_all_snapshot(channel, root)[0]
 
 
-def catch_all_instructions(root: Path | None = None) -> str | None:
-    """Las instrucciones vigentes del Catch-All si está activo y es válido; si no, None (FR-19)."""
-    return _catch_all_snapshot(root)[1]
+def catch_all_instructions(channel: str, root: Path | None = None) -> str | None:
+    """Las instrucciones vigentes del Catch-All del canal si está activo y es válido; si no, None."""
+    return _catch_all_snapshot(channel, root)[1]
+
+
+def catch_all_active(channel: str, root: Path | None = None) -> bool:
+    note = catch_all_notice(channel, root)
+    return bool(note) and note.get("status") == "active"
 
 
 def catch_all_tag(note: dict | None) -> str:
-    """La parte del corchete: `catch-all: rules/catch-all.md` o `catch-all inválido`. Nunca dice «roster»."""
+    """La parte del corchete: `catch-all: rules/catch-all-sms.md` o `catch-all inválido`. Nunca dice «roster»."""
     if not note:
         return ""
     return f"catch-all: {note['file']}" if note["status"] == "active" else "catch-all inválido"

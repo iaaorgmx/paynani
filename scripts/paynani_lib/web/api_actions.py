@@ -21,9 +21,11 @@ from . import mail, thread
 READ = "read"
 ROSTER_WRITE = "roster.write"
 ACCOUNTS_WRITE = "accounts.write"
-# PRD #535 FR-P2: activar el Catch-All deja que el agente lea los SMS de números fuera
-# del roster, así que no va dentro de roster.write.
-CATCHALL_WRITE = "catchall.write"
+# PRD #535 FR-P2: activar el Catch-All deja que el agente lea mensajes de números fuera
+# del roster, así que no va dentro de roster.write. Desde el PRD #576 hay un permiso por
+# canal (FR-13); el viejo `catchall.write` vale sólo para SMS, el más estrecho (FR-13a).
+CATCHALL_WRITE = {"sms": "catchall.sms.write", "whatsapp": "catchall.whatsapp.write"}
+LEGACY_CATCHALL_WRITE = "catchall.write"
 SMS_SEND = "sms.send"
 
 PAGE = 50
@@ -341,15 +343,38 @@ def save_default_rules(call: Call) -> dict:
 
 # ---- Catch-All (PRD #535 FR-P1, FR-P2) ----------------------------------------------
 
+def _catch_all_channel(call: Call) -> str:
+    """`sms` o `whatsapp`. Sin `channel`, `sms` (obsoleto, para PaynaniApp 0.10.0; FR-12)."""
+    channel = call.params.get("channel")
+    if channel is None or channel == "":
+        return "sms"
+    if channel not in CATCHALL_WRITE:
+        raise ApiError(400, "invalid_parameter", "channel must be sms or whatsapp.", field="channel")
+    return channel
+
+
+def granted_permissions(record: dict) -> set:
+    """Los permisos del token, con `catchall.write` leído como `catchall.sms.write` (FR-13a)."""
+    granted = set(record.get("permissions") or [])
+    if LEGACY_CATCHALL_WRITE in granted:
+        granted.discard(LEGACY_CATCHALL_WRITE)
+        granted.add(CATCHALL_WRITE["sms"])
+    return granted
+
+
 def get_catch_all(call: Call) -> dict:
-    return call.roster("catchall.get")
+    return call.roster("catchall.get", channel=_catch_all_channel(call))
 
 
 def save_catch_all(call: Call) -> dict:
+    channel = _catch_all_channel(call)
+    permission = CATCHALL_WRITE[channel]
+    if permission not in granted_permissions(call.record):
+        raise ApiError(403, "forbidden", f"This token lacks the {permission} permission.", permission=permission)
     enabled = call.params.get("enabled")
     if not isinstance(enabled, bool):
         raise ApiError(400, "invalid_parameter", "enabled must be true or false.", field="enabled")
-    return call.roster("catchall.save", enabled=enabled,
+    return call.roster("catchall.save", channel=channel, enabled=enabled,
                        text=call.text("text", limit=40000).replace("\r\n", "\n"), etag=call.text("etag"))
 
 
@@ -657,7 +682,8 @@ ACTIONS = {
     "GetDefaultRules": (READ, get_default_rules),
     "SaveDefaultRules": (ROSTER_WRITE, save_default_rules),
     "GetCatchAll": (READ, get_catch_all),
-    "SaveCatchAll": (CATCHALL_WRITE, save_catch_all),
+    # El permiso depende de `channel`: lo comprueba save_catch_all (FR-13).
+    "SaveCatchAll": (None, save_catch_all),
     "AddAccount": (ACCOUNTS_WRITE, add_account),
     "RemoveAccount": (ACCOUNTS_WRITE, remove_account),
     "SendSms": (SMS_SEND, send_sms),
@@ -672,7 +698,7 @@ def run(ctx, record: dict, ip: str, params: dict, request_id: str = "") -> dict:
     if not isinstance(action, str) or action not in ACTIONS:
         raise ApiError(400, "invalid_action", "Unknown API action.")
     permission, handler = ACTIONS[action]
-    granted = record.get("permissions") or []
+    granted = granted_permissions(record)
     if permission is not None and permission not in granted:
         raise ApiError(403, "forbidden", f"This token lacks the {permission} permission.", permission=permission)
     return handler(Call(ctx, record, ip, params, request_id))

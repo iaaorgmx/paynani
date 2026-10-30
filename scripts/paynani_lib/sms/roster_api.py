@@ -17,6 +17,7 @@ import calendar
 import collections
 import hashlib
 import json
+import os
 import re
 import secrets
 import subprocess
@@ -103,6 +104,8 @@ class RosterService:
         self.log = log or (lambda line: None)
         self.replays: collections.OrderedDict = collections.OrderedDict()
         self.lock = threading.Lock()
+        # Un guardado del Catch-All a la vez: la migración toca varios archivos (#576 FR-5).
+        self.catchall_lock = threading.Lock()
         self.notify_threads: list[threading.Thread] = []
 
     # --- cuentas -----------------------------------------------------------
@@ -380,15 +383,31 @@ class RosterService:
                       action="rules_default", rules=self._rules_summary(rules_mod.DEFAULT_ID, parsed, new_text))
         return {"rules": rules_mod.DEFAULT_ID, "etag": done["etag"], "effective": rules_mod.effective(new_text, None)}
 
-    # --- Catch-All (PRD #535 FR-0a, FR-0b) ------------------------------------
+    # --- Catch-All (PRD #535 FR-0a, FR-0b; uno por canal, PRD #576) ---------
+    @staticmethod
+    def _channel(msg: dict) -> str:
+        """`sms` o `whatsapp`. Sin `channel`, `sms`: así sigue PaynaniApp 0.10.0 (FR-12)."""
+        channel = msg.get("channel")
+        if channel is None or channel == "":
+            return "sms"
+        if channel not in rules_mod.CATCH_ALL_CHANNELS:
+            raise EditError("invalid", field="channel",
+                            detail=f"channel es {' o '.join(rules_mod.CATCH_ALL_CHANNELS)}")
+        return channel
+
     def catchall_get(self, msg: dict, device_id: str) -> dict:
         """
-        rules/catch-all.md para la pantalla: la casilla (`enabled`), las instrucciones,
-        quién lo cambió y el `etag` para guardar. `status` es `off`, `active` o
-        `invalid`; uno inválido trae el archivo entero en `text`, para corregirlo.
+        El Catch-All de un canal para la pantalla: la casilla (`enabled`), las
+        instrucciones, quién lo cambió y el `etag` para guardar. `status` es `off`,
+        `active` o `invalid`; uno inválido trae el archivo entero en `text`, para
+        corregirlo. `file` dice qué archivo se leyó: el del canal, o
+        `rules/catch-all.md` mientras el canal no tenga el suyo (FR-4).
         """
-        text = self._rules_text(rules_mod.CATCH_ALL_ID)
-        out = {"file": f"rules/{rules_mod.CATCH_ALL_ID}.md", "exists": text is not None,
+        channel = self._channel(msg)
+        source = rules_mod.catch_all_source(channel, self.rules_root)
+        text = self._rules_text(source)
+        out = {"channel": channel, "channels": list(rules_mod.CATCH_ALL_CHANNELS),
+               "file": f"rules/{source}.md", "exists": text is not None,
                "etag": roster_edit.etag_of(text.encode("utf-8")) if text is not None else "",
                "enabled": False, "text": "", "updated_at": "", "updated_by": "", "status": "off"}
         if text is None:
@@ -402,28 +421,121 @@ class RosterService:
                 "updated_at": parsed["updated_at"], "updated_by": parsed["updated_by"]}
 
     def catchall_save(self, msg: dict, device_id: str) -> dict:
+        channel = self._channel(msg)
         enabled, body = msg.get("enabled"), msg.get("text")
         if not isinstance(enabled, bool):
             raise EditError("invalid", field="enabled", detail="enabled es true o false")
         if not isinstance(body, str):
             raise EditError("invalid", field="text", detail="text es texto")
         if enabled and not body.strip():
-            # FR-5: activo sin instrucciones el agente no sabría qué hacer.
+            # #535 FR-5: activo sin instrucciones el agente no sabría qué hacer.
             raise EditError("invalid", field="text", reason="empty",
                             detail="para activar el Catch-All hacen falta instrucciones")
-        if rules_mod.CATCH_ALL_ID in self._all_rules_ids():
-            # FR-10: un contacto que ya usa ese nombre leería las instrucciones del Catch-All.
+        taken = sorted(set(rules_mod.CATCH_ALL_IDS) & self._all_rules_ids())
+        if taken:
+            # #535 FR-10, #576 FR-3: un contacto que ya usa uno de esos nombres leería
+            # las instrucciones del Catch-All.
             raise EditError("invalid", field="rules", reason="reserved_in_use",
-                            detail="un contacto del roster usa rules/catch-all.md; renombra sus reglas primero")
+                            detail=f"un contacto del roster usa rules/{taken[0]}.md; renombra sus reglas primero")
         header = f"---\nversion: {rules_mod.VERSION}\nenabled: {'true' if enabled else 'false'}\n---\n"
         parsed = rules_mod.parse(header + body)  # el mismo tope de 32 KB y la misma validación (FR-6, FR-9)
         new_text = rules_mod.render(parsed, updated_at=_now_iso(), updated_by=who_changed(device_id))
-        target = self._rules_path(rules_mod.CATCH_ALL_ID)
-        done = roster_edit.apply_file(target, msg.get("etag"), new_text, state_dir=self.state_dir,
-                                      label=f"rules__{rules_mod.CATCH_ALL_ID}")
-        self._changed(device_id, msg["type"], None, f"rules/{rules_mod.CATCH_ALL_ID}.md", None, "Catch-All", done,
-                      action="catch_all", rules=self._rules_summary(rules_mod.CATCH_ALL_ID, parsed, new_text))
-        return {**self.catchall_get({}, device_id), "etag": done["etag"]}
+        cid = rules_mod.catch_all_id(channel)
+        with self.catchall_lock:
+            done, migrated, legacy_removed = self._catchall_write(channel, msg.get("etag"), new_text)
+        summary = {**self._rules_summary(cid, parsed, new_text), "channel": channel,
+                   "migrated": migrated, "legacy_removed": legacy_removed}
+        self._changed(device_id, msg["type"], None, f"rules/{cid}.md", None, f"Catch-All de {_CHANNEL_NAMES[channel]}",
+                      done, action="catch_all", rules=summary)
+        return {**self.catchall_get({"channel": channel}, device_id), "etag": done["etag"]}
+
+    def _catchall_write(self, channel: str, etag, new_text: str) -> tuple[dict, list[str], bool]:
+        """
+        Escribe el Catch-All del canal. Si todavía está `rules/catch-all.md` (FR-5):
+        crea antes el archivo de cada canal que no tenga uno, con el texto del viejo tal
+        cual (mismo `enabled`, mismas instrucciones), escribe el del canal y al final
+        quita el viejo, con su copia en state/history/. Si algo falla, también al quitar
+        el viejo, se deshace lo escrito y el viejo se queda: nada cambia y es un error.
+        `(resultado de apply_file, archivos creados por la migración, si se migró)`.
+        """
+        if not isinstance(etag, str):
+            raise EditError("missing_field", field="etag", detail="falta etag")
+        target = self._rules_path(rules_mod.catch_all_id(channel))
+        legacy = self._rules_path(rules_mod.LEGACY_CATCH_ALL_ID)
+        label = f"rules__{rules_mod.catch_all_id(channel)}"
+        if not legacy.exists():
+            done = roster_edit.apply_file(target, etag, new_text, state_dir=self.state_dir, label=label)
+            return done, [], False
+        try:
+            with roster_edit.locked(legacy, self.state_dir):
+                old = roster_edit.read_bytes(legacy)
+                if old is None:  # otro proceso lo acaba de migrar
+                    return roster_edit.apply_file(target, etag, new_text, state_dir=self.state_dir,
+                                                  label=label), [], False
+                expected = etag
+                if not target.exists():
+                    # La pantalla mostró el viejo (FR-4): el etag es el de ese archivo.
+                    current = roster_edit.etag_of(old)
+                    if etag != current:
+                        raise EditError("conflict", detail="el archivo cambió", etag=current)
+                    expected = ""
+                # La copia va primero: si no se puede hacer, no se toca nada.
+                roster_edit.history_copy(legacy, old, self.state_dir / "history",
+                                         f"rules__{rules_mod.LEGACY_CATCH_ALL_ID}")
+                created: list[Path] = []
+                before = roster_edit.read_bytes(target)
+                written = False
+                try:
+                    for other in rules_mod.CATCH_ALL_CHANNELS:
+                        path = self._rules_path(rules_mod.catch_all_id(other))
+                        if other == channel or path.exists():
+                            continue
+                        with roster_edit.locked(path, self.state_dir):
+                            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                            created.append(path)
+                            with os.fdopen(fd, "wb") as fh:
+                                fh.write(old)
+                                fh.flush()
+                                os.fsync(fh.fileno())
+                    done = roster_edit.apply_file(target, expected, new_text, state_dir=self.state_dir,
+                                                  label=label)
+                    written = True
+                    # El viejo se quita al final. Si no se puede, se deshace todo: el viejo
+                    # se queda y el guardado devuelve error (FR-5, revisión de #585).
+                    legacy.unlink()
+                except BaseException:
+                    self._catchall_undo(target, before if written else None, written, created)
+                    raise
+        except (TimeoutError, OSError) as exc:
+            raise EditError("write_failed", detail=f"no se pudo separar el Catch-All: {type(exc).__name__}") from exc
+        self.log("roster: Catch-All separado por canal; antes estaba en rules/catch-all.md")
+        return done, [f"rules/{p.name}" for p in created], True
+
+    def _catchall_undo(self, target: Path, before: bytes | None, written: bool, created: list[Path]) -> None:
+        """
+        Deshace una migración que falló: quita los archivos que creó y, si ya escribió
+        el del canal, lo deja como estaba (o lo quita, si no existía). Un error aquí se
+        registra; el viejo sigue ahí y se sigue leyendo para cada canal sin archivo.
+        """
+        undo = list(created)
+        if written and before is None:
+            undo.append(target)
+        for path in undo:
+            try:
+                path.unlink()
+            except OSError as exc:
+                self.log(f"roster: no se pudo deshacer {path.name} ({type(exc).__name__})")
+        if written and before is not None:
+            try:
+                fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+                with os.fdopen(fd, "wb") as fh:
+                    os.fchmod(fh.fileno(), 0o600)
+                    fh.write(before)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp, target)
+            except OSError as exc:
+                self.log(f"roster: no se pudo devolver {target.name} a como estaba ({type(exc).__name__})")
 
     @staticmethod
     def _rules_summary(rules_id: str, parsed: dict, text: str) -> dict:
@@ -601,6 +713,9 @@ def who_changed(device_id: str) -> str:
     return f"phone {device_id}"
 
 
+_CHANNEL_NAMES = {"sms": "SMS", "whatsapp": "WhatsApp"}
+
+
 def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
     """El asunto y el cuerpo del correo al humano: qué cambió y desde dónde, el
     teléfono (Q5) o PaynaniWeb y su dirección (#434 FR-9)."""
@@ -622,15 +737,26 @@ def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
                   else "Si no fuiste tú, revisa el roster y revoca el teléfono con `paynani sms revoke`.")
     if entry["action"] == "catch_all":
         info = entry["rules"]
+        channel = info.get("channel", "sms")
+        name = _CHANNEL_NAMES.get(channel, channel)
         lines = [origin, "",
-                 f"Cambió el Catch-All de SMS, en {info['file']}.", "",
-                 f"  Activo: {'sí' if info['enabled'] else 'no'}", f"  Tamaño: {info['bytes']:,} bytes", "",
-                 "Con el Catch-All activo, tu agente lee los SMS de números que no están en el roster "
-                 "y sigue esas instrucciones.", "",
-                 f"Copia anterior: {entry['backup'] or '(el archivo no existía)'}", "",
-                 "Las instrucciones no van en este correo: están en ese archivo de la instalación.",
-                 revoke.replace("revisa el roster", "revisa el archivo")]
-        return f"paynani: cambio del Catch-All de SMS desde {app}", "\n".join(lines) + "\n"
+                 f"Cambió el Catch-All de {name}, en {info['file']}.", "",
+                 f"  Activo: {'sí' if info['enabled'] else 'no'}", f"  Tamaño: {info['bytes']:,} bytes", ""]
+        if info.get("legacy_removed"):
+            # FR-5: la primera vez el archivo único se separa en uno por canal.
+            lines += ["Era el primer guardado desde que hay un Catch-All por canal: el archivo único "
+                      "rules/catch-all.md se separó en uno por canal y se quitó (su copia está en "
+                      "state/history/)."]
+            if info.get("migrated"):
+                lines += ["Estos archivos se crearon con lo que tenía rules/catch-all.md, así que esos "
+                          "canales siguen como estaban:", *[f"  {f}" for f in info["migrated"]]]
+            lines += [""]
+        lines += [f"Con el Catch-All de {name} activo, tu agente lee los mensajes de {name} de números que "
+                  "no están en el roster y sigue esas instrucciones. Los otros canales no cambiaron.", "",
+                  f"Copia anterior: {entry['backup'] or '(el archivo no existía)'}", "",
+                  "Las instrucciones no van en este correo: están en ese archivo de la instalación.",
+                  revoke.replace("revisa el roster", "revisa el archivo")]
+        return f"paynani: cambio del Catch-All de {name} desde {app}", "\n".join(lines) + "\n"
     if entry["action"] in ("rules", "rules_default"):
         info = entry["rules"]
         whose = "las reglas generales" if entry["action"] == "rules_default" else \

@@ -45,13 +45,16 @@ contraseña, y un token revocado no se puede reactivar.
 | `read` | `ListAccounts`, `ListMail`, `GetMailThread`, `ListSmsConversations`, `GetSmsThread`, `ListSmsReplies`, `ListWhatsAppConversations`, `GetWhatsAppThread`, `ListRoster`, `GetRules`, `GetDefaultRules`, `GetCatchAll` |
 | `roster.write` | `SaveRosterContact`, `DeleteRosterContact`, `SaveRules`, `SaveDefaultRules` |
 | `accounts.write` | `AddAccount`, `RemoveAccount` |
-| `catchall.write` | `SaveCatchAll` |
+| `catchall.sms.write` | `SaveCatchAll` con `channel: sms` |
+| `catchall.whatsapp.write` | `SaveCatchAll` con `channel: whatsapp` |
 | `sms.send` | `SendSms`, `GetSmsStatus` |
 
 `GetTokenInfo` y `GetUsage` funcionan con cualquier permiso. Una acción sin su
-permiso responde `forbidden`. `catchall.write` va aparte de `roster.write` porque
-encender el Catch-All deja que tu agente lea los SMS de números fuera del roster;
-ningún token creado antes lo tiene. El perfil y la contraseña de la web no están en la
+permiso responde `forbidden`. Los permisos del Catch-All van aparte de
+`roster.write`, uno por canal, porque encender el Catch-All de un canal deja que tu
+agente lea los mensajes de ese canal de números fuera del roster. Un token que tenía
+el permiso viejo `catchall.write` ahora sólo tiene `catchall.sms.write`; para el de
+WhatsApp hay que darle `catchall.whatsapp.write`. El perfil y la contraseña de la web no están en la
 API.
 
 ## Las acciones
@@ -72,7 +75,7 @@ API.
 | `GetSmsStatus` | El estado de una orden del token |
 | `ListRoster`, `SaveRosterContact`, `DeleteRosterContact` | El roster por cuenta, con el mismo servicio que la web y PaynaniApp |
 | `GetRules`, `SaveRules`, `GetDefaultRules`, `SaveDefaultRules` | Instrucciones por contacto y generales |
-| `GetCatchAll`, `SaveCatchAll` | El Catch-All de SMS (`rules/catch-all.md`): si está activo y sus instrucciones; cada cambio te llega por correo |
+| `GetCatchAll`, `SaveCatchAll` | El Catch-All de un canal (`channel`: `sms` o `whatsapp`; sin `channel`, `sms`, obsoleto): si está activo y sus instrucciones; cada cambio te llega por correo |
 | `AddAccount`, `RemoveAccount` | Como «Agregar cuenta» y «Quitar esta cuenta», con la prueba de IMAP y SMTP |
 
 Cuando la API agrega o quita una cuenta, te llega el mismo correo que cuando lo

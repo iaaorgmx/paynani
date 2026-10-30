@@ -50,7 +50,7 @@ roster = clone / "roster.md"
 roster.write_text(ROSTER, encoding="utf-8")
 state = clone / "state"
 state.mkdir()
-catch_file = clone / "rules" / "catch-all.md"
+catch_file = clone / "rules" / "catch-all-sms.md"
 user_file = clone / "web" / "user.json"
 users.create("julian@example.com", "Julián Flores", PASSWORD, user_file)
 mail = []
@@ -129,8 +129,8 @@ status, hdrs, _ = req("POST", "/messages/catch-all",
                       form={"csrf": csrf, "etag": etag, "enabled": "1", "text": "Avísame por Telegram.",
                             "password": PASSWORD}, cookie=cookie)
 check("FR-4: con la contraseña se activa", (303, "/messages/catch-all?ok=on"), (status, hdrs.get("location")))
-check("FR-9: rules/catch-all.md activo, escrito desde PaynaniWeb", (True, True),
-      (rules_mod.catch_all_notice(clone) == {"file": "rules/catch-all.md", "status": "active"},
+check("FR-9: rules/catch-all-sms.md activo, escrito desde PaynaniWeb", (True, True),
+      (rules_mod.catch_all_notice("sms", clone) == {"file": "rules/catch-all-sms.md", "status": "active"},
        "updated_by: PaynaniWeb 203.0.113.5" in catch_file.read_text(encoding="utf-8")))
 check("FR-0b: el dueño recibió el correo, sin las instrucciones", (True, False),
       (any("Catch-All" in s for _, s, _ in mail), any("Telegram" in b for _, _, b in mail)))
@@ -152,7 +152,7 @@ csrf, etag = form_of(page)
 status, hdrs, _ = req("POST", "/messages/catch-all",
                       form={"csrf": csrf, "etag": etag, "text": "Avísame por Telegram."}, cookie=cookie)
 check("FR-4: apagarlo no pide la contraseña", (303, "/messages/catch-all?ok=off", None),
-      (status, hdrs.get("location"), rules_mod.catch_all_notice(clone)))
+      (status, hdrs.get("location"), rules_mod.catch_all_notice("sms", clone)))
 
 # Conflict: alguien más lo cambió con el etag que tenía esta página.
 status, hdrs, _ = req("POST", "/messages/catch-all",
