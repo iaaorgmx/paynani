@@ -363,6 +363,16 @@ def _sent_log(state_dir: Path, to, cc, bcc, subject, copy_state, msgid, account)
         print(f"warning: sent, but could not record it in {state_dir / 'sent.log'}", file=sys.stderr)
 
 
+def _remove(path) -> None:
+    """Delete a temp file; a failure to delete is never an error."""
+    if not path:
+        return
+    try:
+        Path(path).unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _record(state_dir: Path, entry: dict) -> bool:
     try:
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -393,11 +403,7 @@ def _notice(owner_email: str, account: str, outside: list[str], msgid: str) -> s
     except Exception:  # noqa: BLE001
         return "failed"
     finally:
-        if bodyfile:
-            try:
-                Path(bodyfile).unlink(missing_ok=True)
-            except OSError:
-                pass
+        _remove(bodyfile)
 
 
 def send(grant: Grant, subject: str, body: str, *, state_dir: Path | None = None,
@@ -442,29 +448,39 @@ def send(grant: Grant, subject: str, body: str, *, state_dir: Path | None = None
     cmd = ["himalaya", "-a", himalaya, "smtp", "send", "--mail-from", from_addr]
     for address in everyone:
         cmd += ["--rcpt-to", address]
-    fd, message_file = tempfile.mkstemp(prefix="paynani-owner-send.")
+    message_file = None
     try:
+        fd, message_file = tempfile.mkstemp(prefix="paynani-owner-send.")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(message)
-        try:
-            with open(message_file, "rb") as fh:
-                done = subprocess.run(cmd, stdin=fh, capture_output=True, timeout=TIMEOUT)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return finish(Result(False, "send_failed", outside_roster=outside, detail=type(exc).__name__))
-        if done.returncode != 0:
-            last = next((l for l in reversed(done.stderr.decode("utf-8", "replace").splitlines()) if l.strip()), "")
-            return finish(Result(False, "send_failed", outside_roster=outside,
-                                 detail=last[:300] or f"himalaya exit {done.returncode}"))
-        try:
-            copy = subprocess.run([sys.executable, str(SENT_COPY), himalaya, message_file],
-                                  capture_output=True, text=True, timeout=TIMEOUT).stdout.split(" ", 1)[0].strip()
-        except (OSError, subprocess.TimeoutExpired):
-            copy = "failed"
-    finally:
-        Path(message_file).unlink(missing_ok=True)
-    copy = copy if copy in ("saved", "skipped", "failed") else "failed"
-    _sent_log(state_dir, grant.to, grant.cc, grant.bcc, subject, copy, msgid, grant.account)
-    result = Result(True, "sent", message_id=msgid, sent_copy=copy, outside_roster=outside)
+        with open(message_file, "rb") as fh:
+            done = subprocess.run(cmd, stdin=fh, capture_output=True, timeout=TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _remove(message_file)
+        return finish(Result(False, "send_failed", outside_roster=outside, detail=type(exc).__name__))
+    if done.returncode != 0:
+        _remove(message_file)
+        last = next((l for l in reversed(done.stderr.decode("utf-8", "replace").splitlines()) if l.strip()), "")
+        return finish(Result(False, "send_failed", outside_roster=outside,
+                             detail=last[:300] or f"himalaya exit {done.returncode}"))
+
+    # Delivered. From here on nothing may raise: the caller would take it for a
+    # failed send and might send it again. Every step below is best effort.
+    result = Result(True, "sent", message_id=msgid, sent_copy="failed", outside_roster=outside)
+    try:
+        copy = subprocess.run([sys.executable, str(SENT_COPY), himalaya, message_file],
+                              capture_output=True, text=True, timeout=TIMEOUT).stdout.split(" ", 1)[0].strip()
+        result.sent_copy = copy if copy in ("saved", "skipped", "failed") else "failed"
+    except Exception:  # noqa: BLE001
+        pass
+    _remove(message_file)
+    try:
+        _sent_log(state_dir, grant.to, grant.cc, grant.bcc, subject, result.sent_copy, msgid, grant.account)
+    except Exception:  # noqa: BLE001
+        pass
     if outside and grant.owner_email:
         result.notice = _notice(grant.owner_email, grant.account, outside, msgid)
-    return finish(result)
+    try:
+        return finish(result)
+    except Exception:  # noqa: BLE001
+        return result

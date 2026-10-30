@@ -298,6 +298,51 @@ except Exception as exc:  # noqa: BLE001
 om.Path.unlink = real_unlink
 check("notice temp file cannot be removed: no exception, sent", raised is None and r.ok, raised or r)
 
+reset()
+
+
+def bad_main_unlink(self, *a, **k):
+    if self.name.startswith("paynani-owner-send."):
+        raise OSError("cannot remove")
+    return real_unlink(self, *a, **k)
+
+
+before = len((STATE / om.SENDS_LOG).read_text().splitlines())
+om.Path.unlink = bad_main_unlink
+try:
+    r = om.send(om.authorize(None, ["ana@ejemplo.test"], [], [], by="t"), SUBJECT, BODY)
+    raised = None
+except Exception as exc:  # noqa: BLE001
+    raised = exc
+om.Path.unlink = real_unlink
+check("message temp file cannot be removed after SMTP: no exception, ok, one SMTP call, recorded",
+      raised is None and r.ok and len(calls()) == 1
+      and len((STATE / om.SENDS_LOG).read_text().splitlines()) == before + 1, raised or r)
+
+reset()
+real_sent_log = om._sent_log
+om._sent_log = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+try:
+    r = om.send(om.authorize(None, ["ana@ejemplo.test"], [], [], by="t"), SUBJECT, BODY)
+    raised = None
+except Exception as exc:  # noqa: BLE001
+    raised = exc
+om._sent_log = real_sent_log
+check("sent.log write raises after SMTP: no exception, ok", raised is None and r.ok and len(calls()) == 1,
+      raised or r)
+
+reset()
+real_tmp = om.tempfile.mkstemp
+om.tempfile.mkstemp = lambda *a, **k: (_ for _ in ()).throw(OSError("no temp space"))
+try:
+    r = om.send(om.authorize(None, ["ana@ejemplo.test"], [], [], by="t"), SUBJECT, BODY)
+    raised = None
+except Exception as exc:  # noqa: BLE001
+    raised = exc
+om.tempfile.mkstemp = real_tmp
+check("message temp file cannot be made: send_failed, nothing sent", raised is None and r.code == "send_failed"
+      and not calls(), raised or r)
+
 blocked = TMP / "blocked"
 blocked.write_text("a file where the state folder should be")
 r = om.send(om.authorize(None, ["ana@ejemplo.test"], [], [], by="t"), SUBJECT, BODY, state_dir=blocked)
