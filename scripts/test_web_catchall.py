@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Tests de la pantalla «Catch-All» de PaynaniWeb (PRD #535 FR-1 a FR-8): el enlace en
-«Mensajes», la página con la advertencia de los códigos, la contraseña para activarlo
+«Mensajes de texto», la página con la advertencia de los códigos, la contraseña para activarlo
 o cambiar las instrucciones con él activo (y no para apagarlo), el bloqueo de
 intentos, el conflict, activo sin instrucciones, el nombre reservado, CSRF y los
 cinco idiomas. Un PaynaniWeb real en un puerto libre; nada sale de la máquina.
@@ -95,7 +95,7 @@ cookie = next(c for c in hdrs["set-cookie-all"] if c.startswith(auth.SESSION_COO
 th = i18n.th
 
 status, _, page = req("GET", "/messages?lang=es-MX", cookie=cookie)
-check("FR-1: «Mensajes» enlaza a /messages/catch-all junto a las bajas", (True, True),
+check("FR-1: «Mensajes de texto» enlaza a /messages/catch-all junto a las bajas", (True, True),
       ('href="/messages/catch-all"' in page, 'href="/messages/bajas"' in page))
 status, _, page = req("GET", "/messages/catch-all?lang=es-MX", cookie=cookie)
 check("la página abre", 200, status)

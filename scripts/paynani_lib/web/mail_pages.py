@@ -30,7 +30,7 @@ def account_head(account_id: str, *, removable: bool, ok: str = "") -> str:
     if ok in ("added", "added_noservice", "removed"):
         cls = "aviso-ok" if ok != "added_noservice" else "aviso-caja"
         out += f'<p class="{cls}" role="status">{th("web.acct.ok." + ok)}</p>\n'
-    # «Nuevo correo» (#590 cambio 2), como «Catch-All» en «Mensajes».
+    # «Nuevo correo» (#590 cambio 2), como «Catch-All» en «Mensajes de texto».
     from . import compose_pages, config_pages
     # «Configuración» (#590 cambio 3) sólo en la cuenta principal.
     settings = f" {config_pages.link()}" if account_id == "main" else ""

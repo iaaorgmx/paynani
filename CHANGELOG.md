@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: «Messages» ahora se llama «Text Messages» (#633).** El cambio aplica en todos los lugares donde «Messages» nombra la pantalla de SMS (Q273=A):
+  - el menú;
+  - el título;
+  - «Back to…»;
+  - los avisos del Catch-All de WhatsApp y de Telegram.
+
+  Por idioma (Q274=A): en-US «Text Messages», es-MX y es-ES «Mensajes de texto», fr-FR «SMS» y pt-BR «Mensagens de texto». La columna «Messages» (el número de mensajes) no cambia. PaynaniApp hace lo mismo en su propio issue.
+
 - **PaynaniWeb: página «Acerca de» (#636), como el About de PaynaniApp.** Va en el menú, debajo de «API Tokens». Muestra:
   - la versión con su commit, con un botón «Copiar» (`assets/about.js`) (Q275=A);
   - el aviso de código abierto bajo la licencia MIT;

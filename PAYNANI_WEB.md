@@ -67,8 +67,8 @@ con PaynaniWeb y todavía no hay usuario.
 | **Inicio** | El Dashboard: si todo funciona, qué pasó hoy, qué necesita atención y lo último que ocurrió (PRD #602, ver abajo). |
 | **Cuentas de correo** | Una entrada por cuenta: la del agente y las de `accounts.json`. Lista sus últimos correos, de 50 en 50, con el estado del aviso y la marca del roster. Abrir uno lo pide a IMAP en ese momento, como texto, y no lo guarda. |
 | **Agregar y quitar cuentas** | «+ Agregar cuenta» prueba el acceso IMAP y SMTP antes de guardar y escribe como `paynani account add`. «Quitar esta cuenta» deja de vigilarla como `paynani account remove`, sin borrar su buzón ni su roster. Las dos piden la contraseña de la web. |
-| **Mensajes** | Las conversaciones SMS de la pasarela, de 50 en 50: lo que llegó, lo que mandó el agente con su estado, lo que contestó el dueño desde PaynaniApp o desde la web, y las llamadas perdidas y contestadas. «Nuevo SMS» y el cuadro de responder envían por el teléfono emparejado (ver abajo). |
-| **Mensajes de WhatsApp** | Sólo con WhatsApp activado (`whatsapp.env` con `WHATSAPP_ENABLED=1`). Las conversaciones de WhatsApp, como «Mensajes» las de SMS, sin mensaje nuevo: sólo se contesta donde el contacto ya escribió. «Cuenta de WhatsApp» (`/whatsapp`) vincula, cancela y desvincula (ver abajo). |
+| **Mensajes de texto** | En inglés «Text Messages» (#633; antes «Mensajes»). Las conversaciones SMS de la pasarela, de 50 en 50: lo que llegó, lo que mandó el agente con su estado, lo que contestó el dueño desde PaynaniApp o desde la web, y las llamadas perdidas y contestadas. «Nuevo SMS» y el cuadro de responder envían por el teléfono emparejado (ver abajo). |
+| **Mensajes de WhatsApp** | Sólo con WhatsApp activado (`whatsapp.env` con `WHATSAPP_ENABLED=1`). Las conversaciones de WhatsApp, como «Mensajes de texto» las de SMS, sin mensaje nuevo: sólo se contesta donde el contacto ya escribió. «Cuenta de WhatsApp» (`/whatsapp`) vincula, cancela y desvincula (ver abajo). |
 | **Mensajes de Telegram** | Siempre (#635); sin bot configurado lleva a «Cuenta de Telegram». Las conversaciones con el bot de Telegram, sin mensaje nuevo: sólo se contesta donde la persona ya escribió. «Cuenta de Telegram» (`/telegram`) hace la configuración inicial, muestra el estado y cambia el token (ver abajo). |
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. Se abre con el ícono que está junto a tu nombre en el menú lateral, como en el /dash de ServiceButton (#626). Ya no hay avatar arriba a la derecha: «Cerrar sesión» está en el menú lateral. |
@@ -84,7 +84,7 @@ menú y ☰, en la barra, lo vuelve a abrir; el navegador lo recuerda en la cook
 `paynani_web_nav`. En el celular el menú empieza escondido y ☰ lo abre encima de la
 página; se cierra tocando fuera, con Esc o al elegir una entrada.
 
-### Enviar SMS desde «Mensajes»
+### Enviar SMS desde «Mensajes de texto»
 
 El dueño escribe como si lo hiciera desde PaynaniApp, y el SMS sale por el teléfono
 emparejado (PRD #489).
@@ -124,7 +124,7 @@ línea `sms-human` con «Tú (PaynaniWeb)».
 
 Cada canal tiene su página «Catch-All», que decide qué pasa con los mensajes de
 números que no están en el roster (PRD #535, PRD #576). La de SMS está en
-«Mensajes», junto a «Bajas de la API» (`/messages/catch-all`). La de WhatsApp está en
+«Mensajes de texto», junto a «Bajas de la API» (`/messages/catch-all`). La de WhatsApp está en
 «Mensajes de WhatsApp», junto a «Cuenta de WhatsApp» (`/whatsapp/catch-all`), y sólo
 existe con WhatsApp activado (#588). Cada una se activa y se guarda por separado:
 cambiar una no toca la otra, y cada página dice dónde está la otra. Apagado, como
