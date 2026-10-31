@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseLine, isDirectChat, normalizeJid, pnJidToE164, e164ToJid, cleanFilename,
-  extForMime, classify, receiptStatus, callOutcome, sendContent, makeLogger, quietConsole, resolveJid,
+  extForMime, classify, receiptStatus, callOutcome, sendContent, makeLogger, quietConsole, resolveJid, credsLinked,
 } from '../lib.js';
 
 test('parseLine: JSON, no JSON, sin type, demasiado largo', () => {
@@ -124,4 +124,18 @@ test('resolveJid: número, LID con alterno (mensaje o callerPn de llamada), LID 
   assert.deepEqual(await resolveJid(broken, LID, ''), { e164: null, jid: LID, lid: LID });
   assert.deepEqual(await resolveJid(map('otro@lid'), LID, ''), { e164: null, jid: LID, lid: LID });
   assert.deepEqual(await resolveJid(null, LID, ''), { e164: null, jid: LID, lid: LID });
+});
+
+test('credsLinked: QR y código vinculados; código pendiente y vacío no (#604)', () => {
+  const account = { details: 'x', accountSignature: 'y' };
+  // QR: Baileys nunca pone registered en true
+  assert.equal(credsLinked({ me: { id: '15550001111:3@s.whatsapp.net' }, account, registered: false }), true);
+  // código: pair-success + link_code_companion_reg
+  assert.equal(credsLinked({ me: { id: '15550001111:3@s.whatsapp.net' }, account, registered: true }), true);
+  // código pedido, el teléfono todavía no acepta: me.id sin account
+  assert.equal(credsLinked({ me: { id: '15550001111@s.whatsapp.net', name: '~' }, registered: false }), false);
+  assert.equal(credsLinked({ registered: false }), false);
+  assert.equal(credsLinked({ account }), false);
+  assert.equal(credsLinked(null), false);
+  assert.equal(credsLinked(undefined), false);
 });

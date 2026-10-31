@@ -12,7 +12,7 @@ import {
   PROTOCOL, ID_RE, E164_RE, MAX_TEXT, MAX_FILE_BYTES, CODE_TTL_MS,
   parseLine, refOf, isDirectChat, isLidJid, isPnJid, normalizeJid, pnJidToE164,
   e164ToJid, extForMime, classify, unwrap, makeLogger, receiptStatus, callOutcome,
-  sendContent, quietConsole, resolveJid,
+  sendContent, quietConsole, resolveJid, credsLinked,
 } from './lib.js';
 
 process.umask(0o077);
@@ -72,7 +72,7 @@ function checkAuthDir(dir) {
 function hasCreds() {
   try {
     const creds = JSON.parse(fs.readFileSync(path.join(cfg.auth_dir, 'creds.json'), 'utf8'));
-    return Boolean(creds?.me?.id) && creds.registered !== false;
+    return credsLinked(creds);
   } catch {
     return false;
   }
