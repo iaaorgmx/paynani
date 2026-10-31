@@ -237,14 +237,19 @@ check("contestar → el hilo con ok=sent", (303, True),
       (status, hdrs.get("location", "").endswith("&ok=sent#responder")))
 status, _, page = req("GET", f"/telegram/messages/ver?t={roster_thread['thread']}&lang=es-MX", cookie=cookie)
 mine = page[page.index("Los esperamos.") - 400:page.index("Los esperamos.")]
-check("#615: lo que mandó esta web (by=web) se dibuja como del dueño, no del agente (revisión de Ximena)",
+check("#615: lo que mandó esta web vuelve como by=owner y se dibuja como del dueño",
       (True, True), ('class="sms sms-human"' in mine, th("web.tg.by_owner") in mine))
-julian = next(t for t in demo.threads if t["name"] == "Julián Flores")
-status, _, page = req("GET", f"/telegram/messages/ver?t={julian['thread']}&lang=es-MX", cookie=cookie)
-from_app = page[page.index("Sí, sale a las 9.") - 400:page.index("Sí, sale a las 9.")]
-check("#615: lo que mandó PaynaniApp (by=phone:<device_id>) también es del dueño",
-      (True, True), ('class="sms sms-human"' in from_app, th("web.tg.by_owner") in from_app))
-check("y el device_id no se muestra", False, "d_demo01" in page)
+synthetic = {"thread": "t_" + "0" * 32, "name": "Ana", "in_roster": True, "can_reply": True, "messages": [
+    {"ref": "tgo:a", "dir": "out", "at": "2026-11-02T19:00:00Z", "kind": "text", "text": "desde-web", "by": "web"},
+    {"ref": "tgo:b", "dir": "out", "at": "2026-11-02T19:01:00Z", "kind": "text", "text": "desde-app", "by": "phone:d_x1"},
+    {"ref": "tgo:c", "dir": "out", "at": "2026-11-02T19:02:00Z", "kind": "text", "text": "desde-agente", "by": "agent"}]}
+html = telegram_pages.thread_body(synthetic, "")
+def bubble(text):
+    return html[html.rindex("<li", 0, html.index(text)):html.index(text)]
+check("#615: si llegaran sin convertir, by=web y by=phone:* también son del dueño (revisión de Ximena)",
+      ["sms-human", "sms-human", "sms-agent"],
+      [("sms-human" if "sms-human" in bubble(t) else "sms-agent") for t in ("desde-web", "desde-app", "desde-agente")])
+check("y el device_id no se muestra", False, "d_x1" in html)
 check("sender(): web y phone:* → dueño; agent y terminal → agente; api; otro → \"\"",
       ["owner", "owner", "owner", "agent", "agent", "api", ""],
       [telegram_pages.sender(b) for b in ("web", "phone:d_x", "owner", "agent", "terminal", "api", "raro")])
