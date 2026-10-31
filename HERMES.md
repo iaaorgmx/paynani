@@ -27,12 +27,13 @@ a mail client. [`examples/hermes-routes.yaml`](examples/hermes-routes.yaml) is
 a JSON-compatible YAML example, checked by
 `scripts/test_hermes_examples.py`; it is never installed automatically.
 
-## Texts and WhatsApp
+## Texts, WhatsApp and Telegram
 
-With the SMS gateway or WhatsApp installed (`INSTALL.md` 5.1 and 5.4), the same
-two routes carry those events too, as long as their `events` lists include them
-(see "Event lists" under section 1). A text arrives as `sms.received` and a WhatsApp
-message as `whatsapp.received` with `channel: whatsapp`; calls are `call.missed` or
+With the SMS gateway, WhatsApp or Telegram installed (`INSTALL.md` 5.1, 5.4 and
+5.5), the same two routes carry those events too, as long as their `events` lists
+include them (see "Event lists" under section 1). A text arrives as
+`sms.received` and a WhatsApp message as `whatsapp.received` with
+`channel: whatsapp`; calls are `call.missed` or
 `call.answered`, with `channel: whatsapp` when they came by WhatsApp. They carry
 `roster_match` like mail, and, like mail, no body: the agent reads it with
 `scripts/paynani event show <event_id> --body`, which applies the roster and
@@ -42,6 +43,16 @@ Catch-All rules again. A roster agent answers a WhatsApp message with
 rules are the same as in `AGENTS.md` ("WhatsApp follows the same rule as text
 messages"), and the route must not grant tools that would let a message link or
 unlink the account.
+
+A Telegram message arrives as `telegram.received`, and an edit of one as
+`telegram.edited`, both with `channel: telegram` and no Telegram ids. The roster
+agent reads it the same way and answers with
+`scripts/paynani telegram send <contact> --stream`, piping the reply in as
+Hermes writes it so the person sees it appear (`<contact>` is the roster name
+or e-mail). For a long task it can first show
+`scripts/paynani telegram draft <contact> "…"`. It never writes first (exit 2
+`not_started`: that person has not opened a chat with the bot) and never runs `paynani telegram setup`, `token`, `disable` or `enable`.
+`AGENTS.md` has the full rules ("Telegram works like WhatsApp").
 
 ## 1. Configure the Hermes routes
 
@@ -66,15 +77,21 @@ where it is, so one ignored event holds back everything after it, mail
 included (#582). That is why both lists are exact:
 
 - `paynani-notify` takes every event type paynani writes: mail, `listener.error`,
-  the SMS gateway (`sms.*`), WhatsApp (`whatsapp.received`, `whatsapp.health`), Telegram (`telegram.received`,
-  `telegram.edited`, `telegram.health`)
-  and calls (`call.missed`, `call.answered`).
+  the SMS gateway (`sms.*`), WhatsApp (`whatsapp.received`, `whatsapp.health`),
+  Telegram (`telegram.received`, `telegram.edited`, `telegram.health`) and calls
+  (`call.missed`, `call.answered`).
 - `paynani-roster` takes only the types that have a sender and can carry
   `roster_match=true`: `email.received`, `sms.received`, `sms.human_sent`,
-  `whatsapp.received`, `call.missed` and `call.answered`.
+  `whatsapp.received`, `telegram.received`, `telegram.edited`, `call.missed` and
+  `call.answered`.
 
 `scripts/test_hermes_examples.py` fails if a new event type in
 `harness/event.py` is missing from the notify list.
+
+**Routes from paynani 0.18.0 or earlier** lack `telegram.received` and
+`telegram.edited` on `paynani-roster`, so the first Telegram message from a
+roster contact would hold the queue. Copy that route's `events` list and `prompt` from
+the example before you install Telegram, and restart the gateway as below.
 
 **Routes from paynani 0.17.1 or earlier** listed only mail. Replace both `events`
 lists and the roster `prompt` with the ones in the example, then run

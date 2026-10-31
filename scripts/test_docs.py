@@ -258,6 +258,14 @@ check("AGENTS.md: WhatsApp outside the roster is information, its text never an 
 check("AGENTS.md: the agent never links or unlinks WhatsApp", True,
       "Never run `paynani whatsapp link` or `unlink` on your own" in agents_text)
 hermes_text = (ROOT / "HERMES.md").read_text()
+agents_tg = agents_text[agents_text.index("**Telegram works like WhatsApp"):agents_text.index("**Say \"no new mail\" only when")]
+check("AGENTS.md: Telegram notice, send --stream, draft, never first, never the token (PRD #609 FR-29)", True,
+      all(m in agents_tg for m in ("`[telegram 19:10:02, roster]", "telegram send <contact> --stream",
+                                   "telegram draft <contact>", "**You never write first on Telegram.**",
+                                   "`not_started`", "`[telegram-health …]`")))
+check("HERMES.md: Telegram goes by the roster route, with send --stream and no first message", True,
+      "`telegram.received`" in hermes_text and "telegram send <contact> --stream" in hermes_text
+      and "Routes from paynani 0.18.0 or earlier" in hermes_text)
 check("HERMES.md: whatsapp.received goes by the same routes, with whatsapp send and no first message", True,
       "`whatsapp.received`" in hermes_text and "whatsapp send" in hermes_text and "`not_started`" in hermes_text)
 

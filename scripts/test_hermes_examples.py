@@ -46,8 +46,11 @@ NOTIFY_EVENTS = ["email.received", "listener.error", "sms.received", "sms.human_
                  "whatsapp.received", "whatsapp.health",
                  "telegram.received", "telegram.edited", "telegram.health",
                  "call.missed", "call.answered"]
+# telegram.received and telegram.edited carry roster_match=true for a roster contact,
+# and the adapter sends those to the roster route (TG-6, #612).
 ROSTER_EVENTS = ["email.received", "sms.received", "sms.human_sent",
-                 "whatsapp.received", "call.missed", "call.answered"]
+                 "whatsapp.received", "telegram.received", "telegram.edited",
+                 "call.missed", "call.answered"]
 check("notify route accepts every event type, roster only the ones with a sender",
       notify.get("events") == NOTIFY_EVENTS and roster.get("events") == ROSTER_EVENTS)
 written = set(re.findall(r'^[A-Z_]+ = "([a-z_]+\.[a-z_.]+)"$',
@@ -71,8 +74,9 @@ check("roster prompt says the webhook includes no body", "no message body" in pr
 check("roster prompt keeps tools constrained", "only the tools" in prompt)
 check("roster prompt names the event type", "{event_type}" in roster.get("prompt", ""))
 raw_prompt = roster.get("prompt", "")
-check("roster prompt reads texts and WhatsApp messages with event show --body",
-      "For sms.received, sms.human_sent and whatsapp.received: read it only with "
+check("roster prompt reads texts, WhatsApp and Telegram messages with event show --body",
+      "For sms.received, sms.human_sent, whatsapp.received, telegram.received and telegram.edited: "
+      "read it only with "
       "scripts/paynani event show {event_id} --body." in raw_prompt)
 # A call has no body: `event show --body` exits 2 for it (test_sms_gateway.py,
 # test_whatsapp_service.py), so the prompt must send calls to plain event show.
@@ -84,6 +88,11 @@ check("roster prompt never pairs a call type with --body in the same sentence",
               for sentence in raw_prompt.split(". ")))
 check("roster prompt forbids writing first and linking WhatsApp",
       "never write first" in prompt and "never run paynani whatsapp link or unlink" in prompt)
+check("roster prompt answers Telegram with send --stream and draft, never first, never the token (FR-29)",
+      "scripts/paynani telegram send <contact> --stream" in raw_prompt
+      and "scripts/paynani telegram draft <contact>" in raw_prompt
+      and "never write first on telegram" in prompt
+      and "never run paynani telegram setup, token, disable or enable" in prompt)
 check("neither prompt renders the full raw payload", "{__raw__}" not in notify.get("prompt", "")
       and "{__raw__}" not in roster.get("prompt", ""))
 
