@@ -28,6 +28,36 @@ from paynani_lib.telegram import config  # noqa: E402
 from paynani_lib.telegram.service import StartError, TelegramService  # noqa: E402
 
 
+def notify_owner(username: str) -> None:
+    """FR-10: un correo al dueño (la primera fila Human del roster) con el @usuario nuevo, sin el token."""
+    import subprocess
+    import tempfile
+
+    from paynani_lib import roster_edit
+
+    try:
+        _, members = roster_edit.members(Path(paths.roster()).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return
+    owner = next((m for m in members if m.get("owner") and m.get("email")), None)
+    if not owner:
+        return
+    body = (f"El bot de Telegram de paynani cambió. Ahora recibe @{username}.\n\n"
+            "Si tú no lo cambiaste, revisa «Bot de Telegram» en PaynaniWeb o corre\n"
+            "paynani telegram status en la terminal.\n")
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as fh:
+        fh.write(body)
+        name = fh.name
+    try:
+        subprocess.run([str(ROOT / "scripts" / "send.sh"), owner["email"],
+                        "paynani: cambió el bot de Telegram", name],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
 def log(line: str) -> None:
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} telegram: {line}", flush=True)
 
@@ -40,7 +70,8 @@ async def main_async(args: argparse.Namespace) -> int:
         return 2
     state = Path(args.state) if args.state else Path(paths.state_dir())
     service = TelegramService(state, roster_path=Path(args.roster), token=token,
-                              api_base=config.api_base(), settings=values, log=log)
+                              api_base=config.api_base(), settings=values, log=log,
+                              notify_owner=notify_owner)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

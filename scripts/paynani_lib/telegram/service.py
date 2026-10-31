@@ -58,6 +58,9 @@ OFFLINE_ALERT_S = 600          # TELEGRAM.md §3: `offline` tras 10 minutos sin 
 TOKEN_RETRY_S = 300            # con 401, se vuelve a probar getMe cada 5 minutos
 WEBHOOK_RETRY_S = 60           # con webhook, se vuelve a mirar cada minuto, sin tocarlo
 GROUP_TYPES = ("group", "supergroup", "channel")
+CHECK_TTL_S = 300              # TELEGRAM.md §4: un `check` vale 5 minutos
+READY_TIMEOUT_S = 60           # FR-10 paso 5: listo en 60 s o rollback
+CHECK_RE = re.compile(r"^c_[0-9a-f]{32}$")
 
 # Tipo de mensaje (TELEGRAM.md §3 `kind`), en el orden en que se reconocen.
 KINDS = (("photo", "image"), ("video", "video"), ("video_note", "video"), ("voice", "voice"),
@@ -96,7 +99,9 @@ class TelegramService:
                  settings: dict[str, str] | None = None, log: Callable[[str], None] = print,
                  poll_timeout: int = POLL_TIMEOUT_S, backoff: tuple[float, float] = (1.0, 60.0),
                  offline_alert_s: float = OFFLINE_ALERT_S, token_retry_s: float = TOKEN_RETRY_S,
-                 webhook_retry_s: float = WEBHOOK_RETRY_S):
+                 webhook_retry_s: float = WEBHOOK_RETRY_S, env_path: Path | None = None,
+                 notify_owner: Callable[[str], None] | None = None,
+                 ready_timeout_s: float = READY_TIMEOUT_S):
         self.state_dir = Path(state_dir)
         self.root = self.state_dir / "telegram"
         self.journal = journal or (self.state_dir / "events.jsonl")
@@ -104,7 +109,15 @@ class TelegramService:
         self.roster_path = Path(roster_path)
         self.settings = settings or {}
         self.log = log
+        self.api_base = api_base
         self.api = tg_api.BotAPI(token, api_base)
+        self._token = token
+        self.env_path = Path(env_path) if env_path else None   # None: config.env_path()
+        self.notify_owner = notify_owner
+        self.ready_timeout_s = ready_timeout_s
+        self._checks: dict[str, dict] = {}
+        self._apply_lock = asyncio.Lock()
+        self._inflight: asyncio.Future | None = None   # el getUpdates en curso (un hilo no se cancela)
         self.poll_timeout = poll_timeout
         self.backoff = backoff
         self.offline_alert_s = offline_alert_s
@@ -131,6 +144,26 @@ class TelegramService:
     def __repr__(self) -> str:
         return "TelegramService(<token>)"
 
+    def _restart_loop(self) -> None:
+        self._task = asyncio.create_task(self._run())
+
+    async def _halt_loop(self) -> None:
+        if self._task and not self._task.done():
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._task
+
+    async def _drain_inflight(self) -> None:
+        """
+        Espera a que termine el getUpdates que quedó en curso con el token anterior. Volver
+        a leer ese token mientras sigue abierto daría 409 contra nosotros mismos (FR-3).
+        """
+        fut = self._inflight
+        if fut is not None and not fut.done():
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(asyncio.shield(fut), self.poll_timeout * 2 + 5)
+        self._inflight = None
+
     # --- ciclo de vida ------------------------------------------------------------
     @property
     def socket_path(self) -> Path:
@@ -150,7 +183,7 @@ class TelegramService:
         except OSError as exc:
             raise StartError(f"no se pudo abrir control.sock ({type(exc).__name__})") from None
         self._write_status()
-        self._task = asyncio.create_task(self._run())
+        self._restart_loop()
 
     async def stop(self) -> None:
         self._stopping.set()
@@ -341,7 +374,9 @@ class TelegramService:
             params = {"offset": self.store.offset() or None, "timeout": self.poll_timeout,
                       "allowed_updates": ALLOWED_UPDATES}
             try:
-                updates = await self._call("getUpdates", params, timeout=self.poll_timeout * 2)
+                self._inflight = asyncio.ensure_future(
+                    self._call("getUpdates", params, timeout=self.poll_timeout * 2))
+                updates = await asyncio.shield(self._inflight)
             except tg_api.Unauthorized:
                 self._set_state("token_invalid")
                 self._health("token_invalid")
@@ -566,6 +601,123 @@ class TelegramService:
             return True
         return False
 
+    # --- cambio de token (FR-10, TELEGRAM.md §4) ------------------------------------
+    def _prune_checks(self) -> None:
+        now = time.monotonic()
+        for cid in [c for c, v in self._checks.items() if v["expires"] < now]:
+            del self._checks[cid]
+
+    async def token_check(self, token: str) -> dict:
+        """Prueba un token con getMe y getWebhookInfo; lo guarda en memoria 5 minutos."""
+        if not isinstance(token, str) or not config.TOKEN_RE.match(token.strip()):
+            raise Refused("invalid", field="token", reason="format")
+        token = token.strip()
+        candidate = tg_api.BotAPI(token, self.api_base)
+        try:
+            me = await asyncio.to_thread(candidate.call, "getMe", None, timeout=15.0)
+            info = await asyncio.to_thread(candidate.call, "getWebhookInfo", None, timeout=15.0)
+        except tg_api.Unauthorized:
+            raise Refused("invalid", field="token", reason="getMe") from None
+        except (tg_api.ApiError, tg_api.NetworkError):
+            raise Refused("unavailable", detail="Telegram no contestó") from None
+        self._prune_checks()
+        cid = "c_" + secrets.token_hex(16)
+        webhook = bool((info or {}).get("url"))
+        self._checks[cid] = {"token": token, "expires": time.monotonic() + CHECK_TTL_S,
+                             "username": me.get("username"), "webhook": webhook}
+        return {"bot_username": me.get("username"), "same_token": token == self._token,
+                "webhook": webhook, "check": cid}
+
+    async def token_apply(self, check: str, confirm_dedicated, confirm_delete_webhook) -> dict:
+        """FR-10 pasos 2 a 5: aplica el token del `check`, o vuelve al anterior."""
+        self._prune_checks()
+        if not isinstance(check, str) or not CHECK_RE.match(check) or check not in self._checks:
+            raise Refused("not_found")
+        entry = self._checks[check]
+        if confirm_dedicated is not True:
+            raise Refused("invalid", field="confirm_dedicated", reason="required")
+        if entry["webhook"] and confirm_delete_webhook is not True:
+            raise Refused("invalid", field="confirm_delete_webhook", reason="required")
+        if self._apply_lock.locked():
+            raise Refused("conflict", detail="ya hay un cambio de token en curso")
+        async with self._apply_lock:
+            del self._checks[check]
+            if entry["token"] == self._token:
+                return {"result": "unchanged", "bot_username": self.bot_username}
+            return await self._switch(entry["token"], entry["webhook"])
+
+    async def _switch(self, new_token: str, delete_webhook: bool) -> dict:
+        old_token, old_api = self._token, self.api
+        env = self.env_path or config.env_path()
+        old_values = config.read(env)
+        await self._halt_loop()
+        new_api = tg_api.BotAPI(new_token, self.api_base)
+        reason = await self._try_new(new_api, delete_webhook, env, old_values, new_token)
+        if reason is None:
+            self.log(f"token cambiado: ahora @{self.bot_username}")
+            if self.notify_owner:
+                with contextlib.suppress(Exception):
+                    self.notify_owner(self.bot_username or "")
+            self._restart_loop()
+            return {"result": "applied", "bot_username": self.bot_username}
+        # Rollback (FR-10 paso 5): el token anterior y la carpeta de su bot, sin tocar la del nuevo.
+        await self._drain_inflight()
+        if old_values is not None:
+            config.write(old_values, env)
+        self.api, self._token = old_api, old_token
+        self.store, self.account = None, ""
+        self._health_sent = None
+        self.log(f"cambio de token revertido ({reason})")
+        self._set_state("starting")
+        self._restart_loop()
+        return {"result": "rollback", "reason": reason, "bot_username": None}
+
+    async def _try_new(self, api, delete_webhook, env, old_values, new_token) -> str | None:
+        """None si el bot nuevo quedó listo; si no, el motivo del rollback."""
+        try:
+            me = await asyncio.to_thread(api.call, "getMe", None, timeout=15.0)
+            if delete_webhook:
+                await asyncio.to_thread(api.call, "deleteWebhook", {"drop_pending_updates": False}, timeout=15.0)
+        except tg_api.Unauthorized:
+            return "getMe"
+        except (tg_api.ApiError, tg_api.NetworkError):
+            return "not_ready"
+        config.save_backup(env)
+        config.write(config.with_token(old_values, new_token), env)
+        self.api, self._token = api, new_token
+        self.bot_username = me.get("username")
+        self._health_sent = None
+        self._open_bot(int(me["id"]))
+        if not self._reconcile():
+            return "not_ready"
+        deadline = time.monotonic() + self.ready_timeout_s
+        delay = self.backoff[0]
+        while time.monotonic() < deadline:
+            wait = max(1, min(self.poll_timeout, int(deadline - time.monotonic())))
+            params = {"offset": self.store.offset() or None, "timeout": wait,
+                      "allowed_updates": ALLOWED_UPDATES}
+            try:
+                updates = await self._call("getUpdates", params, timeout=wait * 2)
+            except tg_api.Conflict:
+                return "409"
+            except tg_api.Unauthorized:
+                return "getMe"
+            except tg_api.RetryAfter as exc:
+                await self._sleep(min(exc.retry_after or delay, max(0.0, deadline - time.monotonic())))
+                continue
+            except (tg_api.ApiError, tg_api.NetworkError):
+                await self._sleep(min(self._jitter(delay), max(0.0, deadline - time.monotonic())))
+                delay = min(delay * 2, self.backoff[1])
+                continue
+            for update in updates or []:
+                if not await self._handle_update(update):
+                    return "not_ready"
+                self.store.save_offset(int(update["update_id"]) + 1)
+            self.last_poll_at = now_utc()
+            self._set_state("running")
+            return None
+        return "not_ready"
+
     # --- control.sock (FR-6) --------------------------------------------------------
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         self.clients.add(writer)
@@ -585,23 +737,38 @@ class TelegramService:
                 except (ValueError, UnicodeDecodeError):
                     await _write(writer, {"type": "error", "ref": None, "code": "bad_json"})
                     continue
-                await _write(writer, self.handle(msg))
+                await _write(writer, await self.handle(msg))
         except (ConnectionError, asyncio.IncompleteReadError):
             pass
         finally:
             self.clients.discard(writer)
             writer.close()
 
-    def handle(self, msg: dict) -> dict:
+    async def handle(self, msg: dict) -> dict:
         rid = msg.get("id")
         if not isinstance(rid, str) or not REQUEST_ID.match(rid):
             return {"type": "error", "ref": None, "code": "missing_field", "field": "id"}
         by = msg.get("by")
         if not isinstance(by, str) or not BY_RE.match(by):
             return {"type": "error", "ref": rid, "code": "missing_field", "field": "by"}
-        if msg.get("type") == "telegram.status":
-            return {"type": "result", "ref": rid, "ok": True, "data": self.status()}
-        return {"type": "error", "ref": rid, "code": "unknown_type"}
+        kind = msg.get("type")
+        try:
+            if kind == "telegram.status":
+                data = self.status()
+            elif kind == "telegram.token_check":
+                data = await self.token_check(msg.get("token"))
+            elif kind == "telegram.token_apply":
+                data = await self.token_apply(msg.get("check"), msg.get("confirm_dedicated"),
+                                              msg.get("confirm_delete_webhook"))
+            else:
+                return {"type": "error", "ref": rid, "code": "unknown_type"}
+        except Refused as exc:
+            out = {"type": "error", "ref": rid, "code": exc.code}
+            if exc.detail:
+                out["detail"] = exc.detail
+            out.update(exc.extra)
+            return out
+        return {"type": "result", "ref": rid, "ok": True, "data": data}
 
 
 async def _write(writer: asyncio.StreamWriter, obj: dict) -> None:

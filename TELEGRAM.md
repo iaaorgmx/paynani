@@ -352,6 +352,20 @@ paynani telegram token                   # cambio de token, lee de stdin (FR-10)
 paynani telegram disable
 ```
 
+- **El token sólo entra por stdin** (`setup` y `token`), nunca como argumento. En una
+  terminal se pide sin eco.
+- Las confirmaciones de FR-9 y FR-10 se preguntan en `/dev/tty`, porque stdin ya trae el
+  token. Sin terminal, se dan con `--dedicated` (el token es sólo de esta instalación) y
+  `--delete-webhook`. Sin ellas no se escribe ni se cambia nada.
+- `setup` escribe `telegram.env` (`0600`) sin necesitar el servicio. Con Telegram ya
+  configurado se niega y pide `paynani telegram token`, salvo con `--replace`, que es
+  para cambiar de token con el servicio parado.
+- `token` le pide el cambio al servicio (`token_check` y `token_apply`). Antes de escribir
+  el token nuevo guarda el anterior en `telegram.env.bak` (`0600`). Si hay rollback,
+  `telegram.env` vuelve a tener el token anterior.
+- Al aplicar un token nuevo, el dueño (la primera fila `Human` del roster) recibe un correo
+  con el `@usuario` nuevo, sin el token.
+
 Códigos de salida como `paynani whatsapp send`: 2 con el `code` en stderr para
 `not_allowed`, `not_started` y `rate_limited`; 1 si el servicio no corre.
 
