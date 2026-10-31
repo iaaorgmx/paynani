@@ -1983,7 +1983,7 @@ def make_handler(ctx: Context):
 
         # ---- Profile (FR-21) -------------------------------------------------------
         def _profile_page(self, code: int, body: str):
-            self._page(code, title=i18n.t("web.nav.profile"), body=body, icon_name="profile",
+            self._page(code, title=i18n.t("web.nav.profile"), body=body, icon_name="profile", active="profile",
                        back="/" if self.route == "/profile" else "/profile")
 
         def _profile_get(self):

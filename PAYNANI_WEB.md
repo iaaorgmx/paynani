@@ -71,7 +71,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Mensajes de WhatsApp** | Sólo con WhatsApp activado (`whatsapp.env` con `WHATSAPP_ENABLED=1`). Las conversaciones de WhatsApp, como «Mensajes» las de SMS, sin mensaje nuevo: sólo se contesta donde el contacto ya escribió. «Cuenta de WhatsApp» (`/whatsapp`) vincula, cancela y desvincula (ver abajo). |
 | **Mensajes de Telegram** | Sólo con Telegram activado (`telegram.env` con `TELEGRAM_ENABLED=1` y el token). Las conversaciones con el bot de Telegram, sin mensaje nuevo: sólo se contesta donde la persona ya escribió. «Bot de Telegram» (`/telegram`) muestra el estado y cambia el token (ver abajo). |
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
-| **Perfil** | El nombre, el correo y la contraseña del dueño. |
+| **Perfil** | El nombre, el correo y la contraseña del dueño. Se abre con el ícono que está junto a tu nombre en el menú lateral, como en el /dash de ServiceButton (#626). El menú del avatar, arriba a la derecha, queda con tu nombre, tu correo y «Cerrar sesión». |
 
 Cuentas de correo no cierra ni responde avisos: eso sigue siendo trabajo del agente.
 Desde «Nuevo correo» el dueño sí manda sus propios correos (#590, ver abajo).

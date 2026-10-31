@@ -195,8 +195,12 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
             aria-label="{th('web.nav.collapse')}" title="{th('web.nav.collapse')}" hidden>{icon('panel')}</button>
   </div>
   <div class="usuario">
-    <b>{e(name)}</b>
-    <small>paynani</small>
+    <div class="usuario-datos">
+      <b>{e(name)}</b>
+      <small>paynani</small>
+    </div>
+    <a class="perfil{' activo' if active == 'profile' else ''}" href="/profile" aria-label="{th('web.nav.profile')}"
+       title="{th('web.nav.profile')}"{' aria-current="page"' if active == 'profile' else ''}>{icon('profile')}</a>
   </div>
   {nav}
 </aside>
@@ -210,7 +214,6 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
       <div class="avatar-panel">
         <b>{e(name)}</b>
         <small>{e(user.get('email', ''))}</small>
-        <a href="/profile">{icon('profile')}<span>{th('web.nav.profile')}</span></a>
         <form method="post" action="/logout">
           <input type="hidden" name="csrf" value="{e(csrf)}">
           <button type="submit">{icon('logout')}<span>{th('web.logout')}</span></button>
