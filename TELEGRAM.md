@@ -18,6 +18,7 @@ state/telegram/                      0700
   status.json                        0600  último estado (para doctor y el cliente con el servicio caído)
   media/                             0700  archivos recibidos (FR-18), 0600 cada uno
   bots/<bot>/                        0700  estado de un bot (FR-3a); <bot> = sha256(bot_id)[:16]
+    account.json                     0600  alias aleatorio del bot para `account` (sección 3)
     offset.json                      0600  siguiente offset de getUpdates (FR-4)
     journal.jsonl                    0600  update_id, ref, hash, written (FR-5)
     links.json                       0600  @usuario -> id fijado (FR-13)
@@ -33,7 +34,11 @@ state/telegram/                      0700
   `doctor`, en la API ni en las respuestas de `control.sock`, salvo una: la acción
   «Agregar al roster» de PaynaniWeb (FR-15, `telegram.roster_candidate`).
 - **`<bot>` no es el `bot_id`**, es un prefijo de su hash. Así el nombre de la carpeta
-  no dice qué bot es.
+  no dice qué bot es. Como el `bot_id` es un número y se pueden probar candidatos, el
+  `<bot>` tampoco sale de la carpeta `state/telegram/`: no va en eventos, logs,
+  `doctor`, la API ni respuestas de `control.sock`.
+- **`account.json`** guarda `{"alias": "<16 hex aleatorios>"}`, que el servicio crea
+  la primera vez que usa ese bot con `secrets.token_hex(8)`. No se deriva de ningún id.
 
 ## 2. La Bot API
 
@@ -68,7 +73,7 @@ para pruebas, sección 9) usando la biblioteca estándar. Sólo usa estos métod
 ```json
 {"schema_version": 1, "event_type": "telegram.received",
  "event_id": "tg:9f2c4e1a7b3d4c5e8f9a0b1c2d3e4f50",
- "source": "paynani", "channel": "telegram", "account": "tg:<bot>",
+ "source": "paynani", "channel": "telegram", "account": "tg:<alias>",
  "observed_at": "2026-11-02T19:10:02Z", "sent_at": "2026-11-02T19:10:01Z",
  "kind": "text", "sender": {"name": "Ana López", "address": ""},
  "roster_match": true, "authenticated_sender": false,
@@ -79,7 +84,9 @@ para pruebas, sección 9) usando la biblioteca estándar. Sólo usa estos métod
 ```
 
 - **`event_id` es `tg:` + 32 hex aleatorios** (FR-5). No se deriva de ningún id de
-  Telegram. `account` es `tg:<bot>` (sección 1).
+  Telegram. `account` es `tg:` + el alias aleatorio de `account.json` (sección 1),
+  nunca el `<bot>` ni algo derivado del `bot_id`. Un cambio de token (otro bot) trae
+  otro alias.
 - **`sender.address` va vacío.** El contacto se nombra por su fila del roster. Fuera del
   roster, `sender.name` es el nombre que muestra Telegram con «(no verificado)» y
   `address` sigue vacío (FR-17).
@@ -201,7 +208,9 @@ Catch-All de Telegram activo.
   "next_before": null}}
 ```
 
-- Del más viejo al más nuevo dentro de la página. `status` de un mensaje que sale:
+- Del más reciente al más viejo, igual que `whatsapp.thread`. `limit` de 1 a 100 (50
+  por omisión). Para la página siguiente, con mensajes más viejos, se manda `before`
+  con el `next_before` que llegó; `null` es que no hay más. `status` de un mensaje que sale:
   `sending`, `sent` o `failed` (Telegram no da «entregado» ni «leído» a un bot).
 - `edited: true` en un mensaje que la persona editó; `text` es el último.
 - Fuera del roster sin Catch-All activo: `messages` va vacío y `hidden: true`.
@@ -335,7 +344,13 @@ ids y no tiene «Agregar al roster». Si se activa o desactiva Telegram con la a
 conectada, la pasarela cierra con `1012`, como con WhatsApp.
 
 - `telegram.status`, `telegram.threads` y `telegram.thread`: los mismos campos de la
-  sección 4.
+  sección 4, con el mismo orden y la misma paginación.
+- **`kind`** trae uno de los valores de la sección 3: `text`, `image`, `video`,
+  `audio`, `voice`, `document`, `sticker`, `location`, `contact` u `other`. Para un
+  valor que no conozca, la app muestra «[archivo]», como con WhatsApp.
+- **Largo:** el servicio parte un texto de más de 4096 caracteres en varios mensajes
+  (sección 4, `telegram.send`). La app limita su cuadro de responder a 4096 para que lo que escribe el dueño
+  salga en un solo mensaje.
 - `telegram.send`: sólo `thread` y `text`; nunca `contact` ni `file`. `by` lo pone la
   pasarela (`phone:<device_id>`).
 - **Aviso:** `{"type": "telegram.changed", "what": "threads"}` o `"status"`, sin datos,
@@ -354,8 +369,14 @@ conectada, la pasarela cierra con `1012`, como con WhatsApp.
 - «Agregar al roster» (FR-15): botón en el hilo de alguien fuera del roster; pide la
   contraseña de la web y usa `telegram.roster_candidate`. La fila se agrega como
   cualquier otra desde la web.
-- El Catch-All de Telegram es una sección más de la página «Catch-All»
-  (`rules/catch-all-telegram.md`, PRD #576).
+- El Catch-All de Telegram tiene su propia página, como cada canal desde #588:
+  `/telegram/catch-all`, enlazada desde «Mensajes de Telegram» junto a «Bot de
+  Telegram». Guarda `rules/catch-all-telegram.md` con `catchall.save` y
+  `channel: telegram`; `catchall.get`/`catchall.save` aceptan ese canal desde TG-3.
+- Para trabajar sin el servicio, la web usa `telegram_source.py`: `ControlSocket` (el
+  cliente de la sección 4) y un `Demo` en memoria que contesta los mismos JSON, con
+  `PAYNANI_WEB_TELEGRAM=demo`. La prueba contra el servicio real usa `fake_api.py`
+  (sección 9) cuando TG-1 esté fusionado.
 - El Dashboard agrega `paynani-telegram` a Servicios, con el `state` de
   `telegram.status`.
 
