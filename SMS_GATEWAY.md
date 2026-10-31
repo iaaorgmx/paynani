@@ -1209,6 +1209,9 @@ Ningún error cierra la conexión.
 
 ## 12. WhatsApp desde PaynaniApp (PRD #550)
 
+(Telegram usa el mismo modelo, con sus propios tipos `telegram.*` y sin `grants`:
+`TELEGRAM.md` §6.)
+
 Con WhatsApp configurado en la instalación (FR-1), PaynaniApp muestra la sección
 «WhatsApp» con el estado y el código de vinculación (FR-8), y la opción «WhatsApp
 messages» con los hilos (FR-25). Esta sección es el contrato entre la app y la

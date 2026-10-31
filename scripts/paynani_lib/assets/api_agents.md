@@ -54,6 +54,8 @@ The owner chose the token's permissions when creating it:
 | `accounts.write` | `AddAccount`, `RemoveAccount` |
 | `catchall.sms.write` | `SaveCatchAll` with `channel: sms` |
 | `catchall.whatsapp.write` | `SaveCatchAll` with `channel: whatsapp` |
+| `catchall.telegram.write` | `SaveCatchAll` with `channel: telegram` |
+| `telegram.read` | `ListTelegramConversations`, `GetTelegramThread` |
 | `sms.send` | `SendSms`, `GetSmsStatus` |
 
 `GetTokenInfo` and `GetUsage` work with any permission. An action without its
@@ -99,6 +101,21 @@ number outside the roster you get only the time and direction of each message, w
 `hidden: true` and no text or media, unless it arrived with the Catch-All on and the
 Catch-All is still on. The API cannot send WhatsApp messages.
 
+### Telegram (read only)
+
+These need their own permission, `telegram.read`; `read` is not enough.
+
+| Action | Parameters | Returns |
+|---|---|---|
+| `ListTelegramConversations` | `limit` (1 to 100, 50 by default), `before` | `threads`, newest first: `thread` (an opaque `t_…`), `name` (from the roster), `in_roster`, `last_at`, `last_dir`, `last_excerpt`, `last_kind`, `can_reply`, and `hidden: true` for someone outside the roster; `next_before` for the next page, `null` when there is no more |
+| `GetTelegramThread` | `thread`, `limit`, `before` | `thread`, `name`, `in_roster`, `can_reply` and `messages`, newest first, each with `dir`, `at`, `kind`, `text`, `media` (type and size, never the file) and, for what was sent, `by` (`agent`, `owner` or `api`) and `status` |
+
+Only when the owner set up the Telegram bot; otherwise `telegram_unavailable`. From
+someone outside the roster you get only the time and direction of each message, with
+`hidden: true`, unless it arrived with the Telegram Catch-All on and it is still on.
+No Telegram id, `@username` or token ever appears. The API cannot send Telegram
+messages.
+
 ### Roster and rules
 
 `account` is the mail account (`main` or empty: the agent's own). `row` is the
@@ -118,17 +135,17 @@ and retry.
 
 ### Catch-All
 
-Each channel has its own Catch-All, `sms` or `whatsapp`, turned on and off
-separately. With a channel's Catch-All on, a message on that channel from a number
-that is not on the roster reaches the local agent with its text, and the agent
-follows only that channel's instructions. The agent never replies to that number.
-Changing a channel needs that channel's permission, `catchall.sms.write` or
-`catchall.whatsapp.write`, which are not part of `roster.write`: turning a Catch-All
+Each channel has its own Catch-All, `sms`, `whatsapp` or `telegram`, turned on and off
+separately. With a channel's Catch-All on, a message on that channel from someone
+who is not on the roster reaches the local agent with its text, and the agent
+follows only that channel's instructions. The agent never replies to them.
+Changing a channel needs that channel's permission, `catchall.sms.write`,
+`catchall.whatsapp.write` or `catchall.telegram.write`, which are not part of `roster.write`: turning a Catch-All
 on lets the agent read that channel's messages from anyone. A token that had the old
 `catchall.write` now has only `catchall.sms.write`. Every change emails the owner,
 naming this token and the channel.
 
-`channel` is `sms` or `whatsapp`. Without it both actions use `sms`; that default is
+`channel` is `sms`, `whatsapp` or `telegram`. Without it both actions use `sms`; that default is
 deprecated and only kept for older clients, so always send `channel`.
 
 | Action | Parameters | Returns |
@@ -262,4 +279,5 @@ ask a person who opted out to opt back in.
 | `opted_out`, `human_replied`, `no_phone`, `app_outdated` | 403, 409 | See «When the API cannot write to a number» |
 | `busy` | 503 | The roster is being written; retry in a few seconds |
 | `whatsapp_unavailable` | 503 | WhatsApp is not set up on this install, or its service is not answering; retry later |
+| `telegram_unavailable` | 503 | Telegram is not set up on this install, or its service is not answering; retry later |
 | `internal_error` | 500 | Something failed in paynani. Report the `request_id` to the owner |
