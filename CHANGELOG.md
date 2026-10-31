@@ -2,6 +2,17 @@
 
 ## Sin publicar
 
+## 0.18.0 (2026-10-31)
+
+**WhatsApp con el mismo número del SMS (PRD #550), un Catch-All por canal (PRD #576) y
+una PaynaniWeb que ya administra la cuenta principal y abre en un Dashboard (PRD #602).**
+WhatsApp es opcional: no se instala ni se vincula al actualizar. Lo probaron en real
+Ocelotl (Codex), Ximena (OpenClaw) y Atenea (Hermes) en WA-8 (#560); el turno de John
+(OpenClaw) sigue abierto, y su desvinculación por QR la arregla #604 en esta versión.
+Desde PaynaniWeb el dueño ya puede escribir un correo nuevo, cambiar los datos de la
+cuenta principal sin que `.env` y Himalaya se separen (#590, #591), y ver el estado de
+paynani en la página inicial.
+
 - **`upgrade_plan.py`: un cambio en las dependencias del puente de WhatsApp pide el instalador, no un `npm ci` suelto.** Al preparar 0.18.0, el plan desde v0.17.1 imprimía `npm ci --ignore-scripts --prefix scripts/whatsapp_bridge` en todos los hosts, también en los que no tienen WhatsApp. Ese `npm` sale del PATH: en un host sin Node, o con sólo el Node que bajó el instalador en `~/.local/lib/paynani`, el comando falla, y `--apply` se detenía ahí, después de actualizar el código y antes de reiniciar los servicios, así que seguía corriendo el código anterior. Ahora `package.json` y `package-lock.json` piden `install.sh --upgrade`, que ya corre `npm ci --ignore-scripts` con su Node y sólo si es dueño de la unidad de WhatsApp. `UPGRADE.md` dice lo mismo.
 - **PaynaniWeb: la página inicial es un Dashboard con el estado de paynani (PRD #602, de #601).** `/` deja de ser sólo un saludo y muestra:
   - el estado general en verde, amarillo o rojo, con las revisiones de `doctor`: las locales con caché de 60 s y las de red del último `paynani doctor` guardado (#603);
@@ -41,6 +52,61 @@
 - **WhatsApp: el puente de Baileys y el servicio `paynani-whatsapp` (WA-1 #553, PRD #550).** `scripts/whatsapp_bridge/` es el puente en Node, con Baileys fijo en `7.0.0-rc14` y su `package-lock.json` con hashes (FR-3). Las pruebas revisan que ninguna dependencia directa tenga un rango (FR-3a). El puente se conecta sin presencia ni historial (FR-4, FR-4a), sólo deja pasar chats directos (FR-17) y no abre ningún puerto (FR-2). `scripts/whatsapp_service.py` lo arranca como proceso hijo y lo relanza a los 5, 10 y 30 s y luego cada 60 s. Si deja de contestar tres pings, lo reinicia, y avisa cuando pasan 10 minutos sin conexión o WhatsApp cierra la sesión (FR-5). Las llaves quedan en `state/whatsapp/auth/` con 0700/0600, y ni el servicio ni el puente arrancan si están abiertas o si una carpeta de `state/whatsapp/` es un enlace simbólico, para no tocar nada fuera de ahí (FR-10). `upgrade_plan.py` reinicia `paynani-whatsapp` cuando cambia su código, y corre `npm ci --ignore-scripts` antes cuando cambia el lockfile. El QR y el código de vinculación nunca se escriben en disco ni en el log (FR-6a). La plantilla de systemd y la instalación llegan con WA-3. Las pruebas usan un puente falso con el mismo contrato (`fake_bridge.py`), y nada se conecta a WhatsApp.
 - **WhatsApp: el contrato del puente y los mensajes de PaynaniApp (WA-0 #552, PRD #550).** `WHATSAPP_BRIDGE.md` describe cómo se hablan el servicio `paynani-whatsapp` y el puente de Baileys: un JSON por línea por stdin/stdout, sin puerto; arranque, estado, vinculación por QR o código (credenciales de un solo uso que nunca se guardan ni se registran), mensajes directos sin historial ni grupos, archivos, llamadas, envío con su lista `allowed`, acuses, salud, desvincular y cierre. `SMS_GATEWAY.md` §12 agrega para PaynaniApp `whatsapp.status`, `whatsapp.link`, `whatsapp.link_cancel`, `whatsapp.unlink`, `whatsapp.threads`, `whatsapp.thread`, `whatsapp.send` y el aviso `whatsapp.changed`, anunciados en `welcome.accepts`, y `welcome.grants` con la capacidad `whatsapp.admin`, que la pasarela sólo le da al teléfono emparejado. Todavía no hay código: es el contrato que siguen WA-1 a WA-7.
 - **`bootstrap.sh` corre los comandos del dueño desde su `$HOME`** (#562). Un `git` reciente no arranca si no puede leer el directorio donde lo lanzaron. Por eso `git clone` fallaba con `Invalid path ...: Permission denied` cuando root corría `bootstrap.sh` desde `/root` o desde el checkout de CI. Un `--dir` relativo se resuelve contra el directorio de quien llama, como antes.
+
+Lo hicieron Metis, Iris y Andy, con la revisión de Ximena. Sin requisitos nuevos para
+quien no instala WhatsApp. Con PaynaniApp 0.11.0.
+
+### Si actualizas desde 0.17.1
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.18.0
+python3 scripts/upgrade_plan.py --from v0.17.1     # y haz lo que imprima
+```
+
+El plan corre `install.sh --upgrade` y reinicia todos los servicios de paynani, porque
+cambia `VERSION`. En Claude Code y Codex dice además que el hook de sesión cambió: la
+siguiente sesión lo toma, y ahí se vuelve a armar la vigilancia del correo.
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`. `doctor` deja su resultado en `state/doctor.json`,
+que es lo que el Dashboard muestra como revisión de red.
+
+- **OpenClaw:** el plan pide `python3 scripts/openclaw_rules.py --install`. Córrelo: trae
+  el Catch-All por canal y las instrucciones de WhatsApp.
+- **Hermes:** el plan pide copiar las dos listas de eventos y el `prompt` de
+  `examples/hermes-routes.yaml` a `~/.hermes/config.yaml` y correr `hermes gateway
+  restart` (`HERMES.md`, «Event lists»). Sin eso, Hermes ignora los SMS, los WhatsApp y
+  las llamadas, y la cola del despachador se detiene detrás de ellos, con el correo
+  incluido.
+- **Catch-All:** no cambia nada al actualizar. Los dos canales siguen leyendo
+  `rules/catch-all.md` hasta el primer guardado, que lo separa en
+  `rules/catch-all-sms.md` y `rules/catch-all-whatsapp.md` con lo que tenía.
+- **Tokens de la API:** un token con `catchall.write` queda sólo con
+  `catchall.sms.write`. PaynaniWeb lo reescribe al arrancar y le manda al dueño un correo
+  con los tokens que cambiaron.
+- **WhatsApp (opcional):** `scripts/install.sh --with-whatsapp` (`INSTALL.md` 5.4). Lee
+  antes el aviso de riesgo de bloqueo de Meta de esa sección. Después se vincula desde
+  PaynaniWeb, «WhatsApp», con QR o con código. El agente nunca vincula ni desvincula.
+- **PaynaniApp 0.11.0** (opcional): «WhatsApp» y «Mensajes de WhatsApp», el Catch-All por
+  canal y los globos con los colores de PaynaniWeb. Se instala encima, como siempre
+  (`INSTALL.md`, sección del teléfono). PaynaniApp 0.10.0 sigue funcionando con la
+  pasarela nueva.
+
+### Si actualizas desde 0.17.0 o anterior
+
+Un solo salto desde la versión que tienes instalada. Cambia `v0.17.0` por tu versión
+(la que dice `scripts/version.sh` antes de actualizar):
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.18.0
+python3 scripts/upgrade_plan.py --from v0.17.0     # y haz lo que imprima
+```
+
+Después, lo mismo que arriba y lo que pidan las secciones «Si actualizas» de las
+versiones que te saltaste.
 
 ## 0.17.1 (2026-10-26)
 
