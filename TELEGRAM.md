@@ -285,7 +285,8 @@ Catch-All de Telegram activo.
 - Un mensaje por segundo por chat: el servicio espera ese segundo, no lo rechaza. El
   límite del día (`TELEGRAM_SEND_PER_DAY`, 300) cuenta cada mensaje que queda en el
   chat, en toda la instalación, y se reinicia a medianoche UTC. Se reserva antes de
-  mandar y se devuelve lo que no salió: un envío que falla no gasta cupo, y uno que
+  mandar y se devuelve lo que no salió, sólo al día de la reserva (un envío de antes de
+  medianoche que falla después no resta del día nuevo): un envío que falla no gasta cupo, y uno que
   falla a la mitad queda `partial` con `delivered` y `parts` en `outbox.jsonl`. Pasándolo,
   `rate_limited` con los segundos que faltan. Un 429 espera su `retry_after` y se
   reintenta una vez; si vuelve, `rate_limited`.

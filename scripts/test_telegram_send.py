@@ -377,6 +377,23 @@ async def review_619_tests():
         partial = [x for x in s.store.sent() if x.get("status") == "partial"]
         check("#619: el envío queda como partial, con lo que salió", len(partial) == 1
               and partial[0]["delivered"] == 1 and partial[0]["parts"] == 2, str(partial))
+
+        # Medianoche UTC: A reserva el día 1, B el día 2, A devuelve tarde; B sigue contado.
+        real_today = outbound._today
+        day = ["2026-10-31"]
+        outbound._today = lambda: day[0]
+        try:
+            (state / "telegram" / "rate.json").unlink(missing_ok=True)
+            a_day = await s._reserve(1)
+            day[0] = "2026-11-01"
+            b_day = await s._reserve(1)
+            await s._release(1, a_day)
+            check("#619: la devolución de una reserva de ayer no resta del cupo de hoy",
+                  (a_day, b_day, s._sent_today()) == ("2026-10-31", "2026-11-01", 1), str(s._sent_today()))
+            await s._release(1, b_day)
+            check("#619: la devolución del mismo día sí resta", s._sent_today() == 0)
+        finally:
+            outbound._today = real_today
     finally:
         await s.stop()
         api.stop()

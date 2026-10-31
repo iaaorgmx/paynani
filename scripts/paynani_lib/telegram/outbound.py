@@ -82,6 +82,11 @@ def split_text(text: str, size: int = MAX_MESSAGE) -> list[str]:
     return parts
 
 
+def _today() -> str:
+    """El día UTC del cupo (FR-26). Una función aparte para que las pruebas crucen la medianoche."""
+    return time.strftime("%Y-%m-%d", time.gmtime())
+
+
 def _seconds_to_utc_midnight() -> int:
     now = time.time()
     return max(1, int(86400 - (now % 86400)))
@@ -158,25 +163,33 @@ class Outbound:
 
     def _sent_today(self) -> int:
         data = read_json(self._rate_path(), {}) or {}
-        return int(data.get("count", 0)) if data.get("day") == time.strftime("%Y-%m-%d", time.gmtime()) else 0
+        return int(data.get("count", 0)) if data.get("day") == _today() else 0
 
-    async def _reserve(self, n: int) -> None:
-        """Toma `n` de los mensajes del día; si no alcanzan, `rate_limited` y no toma nada."""
+    async def _reserve(self, n: int) -> str:
+        """
+        Toma `n` de los mensajes del día; si no alcanzan, `rate_limited` y no toma nada.
+        Devuelve el día de la reserva, para que `_release` sólo devuelva a ese día.
+        """
         async with self._rate_lock:
-            day = time.strftime("%Y-%m-%d", time.gmtime())
+            day = _today()
             used = self._sent_today()
             limit = config.setting("TELEGRAM_SEND_PER_DAY", self.settings)
             if used + n > limit:
                 raise _refused("rate_limited", f"{limit} mensajes al día", retry_after_s=_seconds_to_utc_midnight())
             write_json(self._rate_path(), {"day": day, "count": used + n})
             self.counters["sent_today"] = used + n
+            return day
 
-    async def _release(self, n: int) -> None:
-        """Devuelve `n` de lo reservado que no quedó en el chat (Ximena, #619)."""
+    async def _release(self, n: int, day: str) -> None:
+        """
+        Devuelve `n` de lo reservado que no quedó en el chat (Ximena, #619), sólo al día
+        de la reserva: una reserva de ayer que falla hoy no resta del cupo de hoy.
+        """
         if n <= 0:
             return
         async with self._rate_lock:
-            day = time.strftime("%Y-%m-%d", time.gmtime())
+            if day != _today():
+                return                             # ese día ya pasó: su cupo ya no cuenta
             used = max(0, self._sent_today() - n)
             write_json(self._rate_path(), {"day": day, "count": used})
             self.counters["sent_today"] = used
@@ -287,7 +300,7 @@ class Outbound:
         caption = text if path and len(text) <= MAX_CAPTION else ""
         chunks = split_text(text) if text and not caption else []
         reserved = len(chunks) + (1 if path else 0)
-        await self._reserve(reserved)              # atómico: dos envíos a la vez no pasan el límite
+        day = await self._reserve(reserved)        # atómico: dos envíos a la vez no pasan el límite
         delivered = 0
         self._stop_typing(thread)
         ref = "tgo:" + secrets.token_hex(16)
@@ -309,7 +322,7 @@ class Outbound:
                     await self._api("sendMessage", {"chat_id": chat, "text": chunk})
                 delivered += 1
         except Exception:
-            await self._release(reserved - delivered)
+            await self._release(reserved - delivered, day)
             self.store.record_sent({"ref": ref, "status": "failed" if not delivered else "partial",
                                     "delivered": delivered, "parts": reserved})
             self._notify("threads")
@@ -429,7 +442,7 @@ class Outbound:
     async def _finish_segment(self, s: dict, segment: str) -> None:
         """Una parte terminada: mensaje normal tras un borrador, o la última edición del mensaje."""
         chat = s["chat"]
-        await self._reserve(1)
+        day = await self._reserve(1)
         state = s["state"]
         try:
             await self._pace(chat, CHAT_EDIT_EVERY_S)
@@ -439,7 +452,7 @@ class Outbound:
             else:
                 await self._api("sendMessage", {"chat_id": chat, "text": segment})
         except Exception:
-            await self._release(1)
+            await self._release(1, day)
             raise
         state["message_id"] = None
         s["segments"] += 1
