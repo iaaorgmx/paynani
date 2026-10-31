@@ -58,7 +58,17 @@ def sha(path: Path) -> str:
         return ""
 
 
-REAL = [Path.home() / ".claude/workspace/.env", Path.home() / ".config/himalaya/config.toml"]
+def real_env() -> Path:
+    """El `.env` de la instalación según `harness/paths.py` (en OpenClaw no es el de
+    Claude Code; revisión de Ximena en #617)."""
+    import paths
+    try:
+        return Path(paths.env_file())
+    except Exception:  # noqa: BLE001 -- sin un .env resoluble, se vigila el de Claude Code
+        return Path.home() / ".claude/workspace/.env"
+
+
+REAL = [real_env(), Path.home() / ".config/himalaya/config.toml"]
 BEFORE = [sha(p) for p in REAL]
 
 # Tokens de prueba con la forma de config.TOKEN_RE; no son de ningún bot.
@@ -200,6 +210,7 @@ finally:
     api.stop()
 log_text = "\n".join(logs)
 check("el log del servicio no trae ningún token", [], [x[:6] for x in TOKENS if x in log_text])
+check("ni ningún check (revisión de Ximena, #617)", False, bool(re.search(r"c_[0-9a-f]{32}", log_text)))
 check("no se escribió telegram.env en el clon", False, (ROOT / "telegram.env").exists())
 check("la configuración real no cambió (.env y Himalaya)", BEFORE, [sha(p) for p in REAL])
 
