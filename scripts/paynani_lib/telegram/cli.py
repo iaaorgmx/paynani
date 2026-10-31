@@ -113,8 +113,12 @@ def run_setup(args) -> int:
         _err("no se escribió nada: confirma que el token es sólo de esta instalación (--dedicated)")
         return 2
     try:
-        setup.save(token, webhook=found["webhook"], env=env)
+        setup.save(token, webhook=found["webhook"], env=env, replace=bool(args.replace))
     except setup.SetupError as exc:
+        if exc.code == setup.ALREADY:
+            _err("otra configuración guardó un token mientras tanto; no se escribió nada. "
+                 "Revisa con: paynani telegram status")
+            return 2
         if exc.code == setup.WEBHOOK:
             _err("no se pudo borrar el webhook; no se escribió nada")
         else:
@@ -137,7 +141,7 @@ def _service_installed() -> bool:
 
 def service_control(action: str) -> str:
     """
-    Arranca (`start`) o detiene (`stop`) el servicio que puso el instalador (`--with-telegram`).
+    Arranca (`start`) o detiene (`stop`) el servicio que puso el instalador (siempre desde 0.20.0, #635).
     `not-installed`, `started`, `stopped` o `failed`. Ni el token ni ids pasan por aquí.
     """
     import os
@@ -179,8 +183,9 @@ def _say_started(result: str) -> int:
     if result == "started":
         print("paynani-telegram arrancó. Revisa con: paynani telegram status")
     elif result == "not-installed":
-        print("El servicio paynani-telegram no está instalado. Instálalo con el instalador y --with-telegram "
-              "(INSTALL.md, «Telegram»); arranca solo con este telegram.env.")
+        print("El servicio paynani-telegram no está instalado. Actualiza la instalación "
+              "(scripts/install.sh --runtime <runtime> --upgrade, INSTALL.md «Telegram»); "
+              "arranca solo con este telegram.env.")
     else:
         _err("no pude arrancar paynani-telegram: arráncalo o reinícialo a mano (INSTALL.md, «Telegram»)")
         return 1

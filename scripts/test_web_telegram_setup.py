@@ -73,6 +73,69 @@ for label, kw, code in (
     except setup.SetupError as exc:
         got = exc.code
     check(f"initial: {label} → {code}, sin telegram.env", (code, False), (got, env.exists()))
+# Dos configuraciones a la vez (Ximena en #639): una gana y la otra es already_configured,
+# en hilos y en procesos. La escritura se hace lenta para que se encimen sí o sí.
+import subprocess  # noqa: E402
+import threading as _th  # noqa: E402
+import time as _time  # noqa: E402
+
+race = d / "race"
+race.mkdir()
+race_env = race / "telegram.env"
+real_write = config.write
+
+
+def slow_write(values, path=None, environ=None):
+    _time.sleep(0.3)
+    return real_write(values, path, environ)
+
+
+config.write = slow_write
+results, gate = [], _th.Barrier(4)
+
+
+def contender():
+    gate.wait()
+    try:
+        setup.initial(TOKEN, "NegocioBot", dedicated=True, env=race_env)
+        results.append("ok")
+    except setup.SetupError as exc:
+        results.append(exc.code)
+
+
+threads = [_th.Thread(target=contender) for _ in range(4)]
+for th in threads:
+    th.start()
+for th in threads:
+    th.join()
+config.write = real_write
+check("4 hilos a la vez: exactamente un ok y tres already_configured",
+      ["already_configured"] * 3 + ["ok"], sorted(results))
+
+race_env.unlink()
+child = (
+    "import sys, time\n"
+    f"sys.path.insert(0, {str(ROOT / 'scripts')!r}); sys.path.insert(0, {str(ROOT / 'harness')!r})\n"
+    "from pathlib import Path\n"
+    "from paynani_lib.telegram import config, setup\n"
+    "real = config.write\n"
+    "config.write = lambda v, p=None, e=None: (time.sleep(0.3), real(v, p, e))[1]\n"
+    "while time.time() < float(sys.argv[1]): time.sleep(0.005)\n"
+    "try:\n"
+    "    setup.initial(sys.argv[2], 'NegocioBot', dedicated=True, env=Path(sys.argv[3])); print('ok')\n"
+    "except setup.SetupError as exc:\n"
+    "    print(exc.code)\n")
+start = str(_time.time() + 1.5)
+procs = [subprocess.Popen([sys.executable, "-c", child, start, TOKEN, str(race_env)], stdout=subprocess.PIPE,
+                          text=True, env=dict(os.environ)) for _ in range(3)]
+outs = sorted(pr.communicate(timeout=60)[0].strip() for pr in procs)
+check("3 procesos a la vez: exactamente un ok y dos already_configured",
+      ["already_configured", "already_configured", "ok"], outs)
+check("el token que quedó es el bueno y 0600", (TOKEN, 0o600),
+      (config.token(config.read(race_env)), stat.S_IMODE(os.stat(race_env).st_mode)))
+check("el candado no deja el token en su archivo", False,
+      TOKEN in (race / ".telegram-setup.lock").read_text(encoding="utf-8", errors="replace"))
+
 check("el usuario se compara sin @ y sin mayúsculas", "NegocioBot", setup.normalize_username(" @NegocioBot "))
 check("un usuario con espacios no es usuario", None, setup.normalize_username("Negocio Bot"))
 

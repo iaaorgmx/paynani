@@ -7,11 +7,20 @@ hace falta y escribe `telegram.env` (0600). `initial()` hace las dos cosas de un
 para la web: compara el usuario del bot con el de `getMe` (Q282 = A) y exige la casilla
 «sólo de esta instalación», que también autoriza borrar el webhook (Q283 = A).
 
+La escritura va bajo un candado entre procesos (`.telegram-setup.lock`, junto a
+telegram.env) y, sin `replace`, vuelve a comprobar dentro que no haya token: de dos
+configuraciones a la vez, una gana y la otra recibe `already_configured` (Ximena en
+#639). `getMe` y `getWebhookInfo` van antes del candado; `deleteWebhook` va dentro,
+después de la segunda comprobación, para no borrar el webhook de un bot que no se guarda.
+
 Nada de aquí imprime ni registra el token. Los errores son `SetupError(code)` con un
 código fijo, sin el token ni partes de él.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
+import os
 import re
 from pathlib import Path
 
@@ -63,21 +72,45 @@ def probe(token: str, base: str | None = None) -> dict:
     return {"bot_username": str((me or {}).get("username") or ""), "webhook": bool((info or {}).get("url"))}
 
 
-def save(token: str, *, webhook: bool, env: Path | None = None, base: str | None = None) -> Path:
-    """Borra el webhook si lo había y escribe telegram.env (0600), con copia del anterior."""
-    env = config.env_path() if env is None else Path(env)
-    if webhook:
-        try:
-            tg_api.BotAPI(token, base or config.api_base()).call("deleteWebhook", {"drop_pending_updates": False})
-        except (tg_api.ApiError, tg_api.NetworkError):
-            raise SetupError(WEBHOOK) from None
-    current = config.read(env)
+@contextlib.contextmanager
+def _locked(env: Path):
+    """Candado exclusivo entre procesos para escribir telegram.env (flock, 0600)."""
     try:
-        if current:
-            config.save_backup(env)
-        config.write(config.with_token(current, token), env)
-    except (OSError, ValueError):
+        fd = os.open(env.parent / ".telegram-setup.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError:
         raise SetupError(WRITE) from None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def save(token: str, *, webhook: bool, env: Path | None = None, base: str | None = None,
+         replace: bool = False) -> Path:
+    """
+    Escribe telegram.env (0600), con copia del anterior, bajo el candado. Sin `replace`,
+    si otro proceso ya puso un token mientras tanto, `already_configured` y nada cambia.
+    El webhook se borra sólo cuando la escritura ya es de este proceso.
+    """
+    env = config.env_path() if env is None else Path(env)
+    with _locked(env):
+        if not replace and already_configured(env):
+            raise SetupError(ALREADY)
+        if webhook:
+            try:
+                tg_api.BotAPI(token, base or config.api_base()).call("deleteWebhook", {"drop_pending_updates": False})
+            except (tg_api.ApiError, tg_api.NetworkError):
+                raise SetupError(WEBHOOK) from None
+        current = config.read(env)
+        try:
+            if current:
+                config.save_backup(env)
+            config.write(config.with_token(current, token), env)
+        except (OSError, ValueError):
+            raise SetupError(WRITE) from None
     return env
 
 
@@ -85,8 +118,9 @@ def initial(token: str, username: str, *, dedicated: bool, env: Path | None = No
             base: str | None = None) -> dict:
     """
     La configuración inicial desde la web (#635), en este orden: que no haya token, el
-    formato, `getMe`, el usuario (Q282), la casilla (Q283) y `save()`. Si algo falla no
-    se escribe nada. `{"bot_username", "webhook_deleted"}`.
+    formato, `getMe`, el usuario (Q282), la casilla (Q283) y `save()`, que vuelve a mirar
+    que no haya token dentro del candado. Si algo falla no se escribe nada.
+    `{"bot_username", "webhook_deleted"}`.
     """
     if already_configured(env):
         raise SetupError(ALREADY)

@@ -412,8 +412,10 @@ paynani telegram enable                  # lo vuelve a encender con el mismo tok
   `telegram.env` vuelve a tener el token anterior.
 - Al aplicar un token nuevo, el dueño (la primera fila `Human` del roster) recibe un correo
   con el `@usuario` nuevo, sin el token.
-- `setup` arranca el servicio si el instalador ya lo puso (`--with-telegram`); si no, dice
-  cómo instalarlo. Sin `telegram.env`, el servicio sale con 0 y se queda detenido.
+- Desde 0.20.0 el instalador pone siempre el servicio, detenido (#635, Q281 = A).
+  `setup`, y la configuración inicial de PaynaniWeb (§7), lo arrancan al escribir el
+  token. En una instalación anterior a 0.20.0 sin el servicio, lo dicen y piden
+  `install.sh --upgrade`. Sin `telegram.env`, el servicio sale con 0 y se queda detenido.
 - `disable` deja `TELEGRAM_ENABLED=0` en `telegram.env` y detiene el servicio; el token se
   queda en el archivo. `enable` lo vuelve a poner en `1` y arranca el servicio. La
   pasarela (§6) y PaynaniWeb (§7) dejan de mostrar Telegram en cuanto lo ven. Ninguno de
