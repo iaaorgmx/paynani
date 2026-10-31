@@ -327,7 +327,8 @@ anuncia ni reenvía este tipo.
   instalación (FR-10 paso 4). `confirm_delete_webhook` es obligatorio si `webhook` era
   `true`.
 - `result`: `applied`, `unchanged` (mismo token) o `rollback` (con `reason`: `409`,
-  `not_ready`, `getMe`). Un `check` vencido o desconocido: `not_found`.
+  `not_ready`, `getMe`, o `write` si no se pudo guardar el respaldo, `telegram.env` o la
+  carpeta del bot). Un `check` vencido o desconocido: `not_found`.
 - La pasarela no anuncia ni reenvía estos tipos (FR-29a: el token no se configura
   desde la app).
 

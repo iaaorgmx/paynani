@@ -201,6 +201,7 @@ def run_token(args) -> int:
         return 0
     reasons = {"409": "otro programa está leyendo ese bot (409)",
                "not_ready": "el bot nuevo no quedó listo en 60 s",
-               "getMe": "Telegram dejó de aceptar el token nuevo"}
+               "getMe": "Telegram dejó de aceptar el token nuevo",
+               "write": "no se pudo guardar telegram.env o su respaldo"}
     _err(f"se regresó al token anterior: {reasons.get(result.get('reason'), result.get('reason'))}")
     return 2

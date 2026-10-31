@@ -129,14 +129,13 @@ async def service_case(label, prepare=None, *, ready_timeout_s=3.0):
     env = state / "telegram.env"
     config.write(config.with_token({}, OLD), env)
     old_api = FakeBotAPI(token=OLD, bot_id=OLD_ID, username="ViejoBot").start()
-    new_api = FakeBotAPI(token=NEW, bot_id=NEW_ID, username="NuevoBot").start()
+    new_api = old_api.add_bot(NEW, NEW_ID, "NuevoBot")
     notified, logs = [], []
     s = TelegramService(state, roster_path=state / "roster.md", token=OLD, api_base=old_api.base_url,
                         env_path=env, notify_owner=notified.append, log=logs.append,
                         poll_timeout=1, backoff=(0.05, 0.2), ready_timeout_s=ready_timeout_s)
     await s.start()
     await until(lambda: s.state == "running")
-    s.api_base = new_api.base_url            # el bot nuevo vive en el otro servidor falso
     if prepare:
         prepare(new_api)
     reply = await s.handle({"type": "telegram.token_check", "id": "q_" + "1" * 32, "by": "web", "token": NEW})
@@ -234,18 +233,64 @@ async def main():
         old_api.stop()
         new_api.stop()
 
+    # no se puede guardar el respaldo o telegram.env (Ximena, #617)
+    for label, target in (("save_backup", "save_backup"), ("write", "write")):
+        real = getattr(config, target)
+        calls = {"n": 0}
+
+        def boom(*a, _real=real, **k):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("disco lleno (simulado)")
+            return _real(*a, **k)
+
+        def prepare(_api, _t=target, _b=boom):
+            setattr(config, _t, _b)
+
+        s, data, result, (old_api, new_api), state, env, notified, _ = await service_case(label, prepare)
+        setattr(config, target, real)
+        check(f"falla {label}: rollback write",
+              result.get("result") == "rollback" and result.get("reason") == "write", str(result))
+        check(f"falla {label}: telegram.env sigue con el token anterior", config.token(config.read(env)) == OLD)
+        ok = await until(lambda: s.state == "running" and s.status()["bot_username"] == "ViejoBot"
+                         and s._task is not None and not s._task.done())
+        check(f"falla {label}: el lector vuelve al bot anterior y corre", ok, s.state)
+        old_api.private_message(7003, f"después de fallar {label}", first_name="Ceci")
+        check(f"falla {label}: y sigue recibiendo del anterior",
+              await until(lambda: any(e.get("event_type") == "telegram.received" for e in events(state))))
+        check(f"falla {label}: el dueño no recibe aviso", notified == [])
+        await s.stop()
+        old_api.stop()
+
+    # una excepción inesperada en handle(): el cliente igual recibe respuesta
+    state = pathlib.Path(tempfile.mkdtemp())
+    (state / "roster.md").write_text("")
+    api = FakeBotAPI(token=OLD, bot_id=OLD_ID, username="ViejoBot").start()
+    s = TelegramService(state, roster_path=state / "roster.md", token=OLD, api_base=api.base_url,
+                        env_path=state / "telegram.env", poll_timeout=1, backoff=(0.05, 0.2))
+    await s.start()
+
+    async def explode(*a, **k):
+        raise RuntimeError("inesperado")
+
+    s.token_check = explode
+    r = await s.handle({"type": "telegram.token_check", "id": "q_" + "d" * 32, "by": "web", "token": OLD})
+    check("excepción inesperada: error unavailable, sin detalles", r == {"type": "error", "ref": "q_" + "d" * 32,
+                                                                        "code": "unavailable"}, str(r))
+    await s.stop()
+    api.stop()
+
     # getMe falla entre check y apply (token revocado)
     state = pathlib.Path(tempfile.mkdtemp())
     (state / "roster.md").write_text("")
     env = state / "telegram.env"
     config.write(config.with_token({}, OLD), env)
     old_api = FakeBotAPI(token=OLD, bot_id=OLD_ID, username="ViejoBot").start()
-    new_api = FakeBotAPI(token=NEW, bot_id=NEW_ID, username="NuevoBot").start()
+    new_api = old_api.add_bot(NEW, NEW_ID, "NuevoBot")
     s = TelegramService(state, roster_path=state / "roster.md", token=OLD, api_base=old_api.base_url,
                         env_path=env, poll_timeout=1, backoff=(0.05, 0.2), ready_timeout_s=3)
     await s.start()
     await until(lambda: s.state == "running")
-    s.api_base = new_api.base_url
     r = await s.handle({"type": "telegram.token_check", "id": "q_" + "b" * 32, "by": "web", "token": NEW})
     new_api.revoke()
     r2 = await s.handle({"type": "telegram.token_apply", "id": "q_" + "c" * 32, "by": "web",

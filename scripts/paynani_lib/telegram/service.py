@@ -652,7 +652,13 @@ class TelegramService:
         old_values = config.read(env)
         await self._halt_loop()
         new_api = tg_api.BotAPI(new_token, self.api_base)
-        reason = await self._try_new(new_api, delete_webhook, env, old_values, new_token)
+        try:
+            reason = await self._try_new(new_api, delete_webhook, env, old_values, new_token)
+        except (OSError, ValueError) as exc:
+            # No se pudo escribir el respaldo, telegram.env o la carpeta del bot (Ximena,
+            # #617): igual que un 409, se vuelve al bot anterior y el lector no queda apagado.
+            self.log(f"no se pudo guardar el token nuevo ({type(exc).__name__})")
+            reason = "write"
         if reason is None:
             self.log(f"token cambiado: ahora @{self.bot_username}")
             if self.notify_owner:
@@ -663,7 +669,12 @@ class TelegramService:
         # Rollback (FR-10 paso 5): el token anterior y la carpeta de su bot, sin tocar la del nuevo.
         await self._drain_inflight()
         if old_values is not None:
-            config.write(old_values, env)
+            try:
+                if config.token(config.read(env)) != config.token(old_values):
+                    config.write(old_values, env)
+            except (OSError, ValueError) as exc:
+                self.log(f"no se pudo restaurar telegram.env ({type(exc).__name__}); "
+                         f"el respaldo está en {config.BACKUP_NAME}")
         self.api, self._token = old_api, old_token
         self.store, self.account = None, ""
         self._health_sent = None
@@ -768,6 +779,9 @@ class TelegramService:
                 out["detail"] = exc.detail
             out.update(exc.extra)
             return out
+        except Exception as exc:  # noqa: BLE001 - el cliente siempre recibe respuesta, sin detalles
+            self.log(f"{kind} falló ({type(exc).__name__})")
+            return {"type": "error", "ref": rid, "code": "unavailable"}
         return {"type": "result", "ref": rid, "ok": True, "data": data}
 
 
