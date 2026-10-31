@@ -317,5 +317,11 @@ async def main():
 
 
 asyncio.run(main())
+
+# telegram.env guarda el token: un `git add -A` en la instalación no debe poder
+# meterlo en un commit (pasó en la prueba real TG-9, sin llegar al remoto).
+import subprocess  # noqa: E402
+ignored = subprocess.run(["git", "check-ignore", "-q", "telegram.env"], cwd=ROOT).returncode
+check(".gitignore cubre telegram.env", ignored == 0)
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

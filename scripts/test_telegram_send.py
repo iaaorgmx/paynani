@@ -275,6 +275,14 @@ async def main_tests():
         rc, out, err = await cli(env, "send", "Ana López", "desde", "la", "terminal")
         check("CLI: paynani telegram send", rc == 0 and "\tsent" in out
               and methods(api, "sendMessage")[before:][0]["text"] == "desde la terminal", err)
+        before_photo = len(methods(api, "sendPhoto"))
+        rc, out, err = await cli(env, "send", "Ana López", "--file", str(state / "telegram" / "outbox" / "menu.jpg"),
+                                 "el", "menú")
+        check("CLI: --file después del contacto y el texto después (hallazgo de TG-9)", rc == 0
+              and methods(api, "sendPhoto")[before_photo:][0].get("caption") == "el menú", out + err)
+        rc, out, err = await cli(env, "send", "Ana López", "hola", "--nada")
+        check("CLI: una opción desconocida después del texto sigue siendo un error", rc == 2
+              and "unrecognized arguments: --nada" in err, out + err)
         rc, out, err = await cli(env, "send", "Ana López", "--stream", stdin="hola por partes")
         check("CLI: send --stream lee stdin", rc == 0 and "\tdraft" in out, out + err)
         rc, out, err = await cli(env, "send", "Beto Ruiz", "hola")

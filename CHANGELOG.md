@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **`paynani telegram send` y `whatsapp send` aceptan `--file` en cualquier lugar (hallazgo de TG-9, #612).** `paynani telegram send ana --file foto.jpg "texto"` fallaba con «unrecognized arguments», porque argparse deja de juntar las palabras del texto en cuanto ve una opción. Ahora lo que sigue a la opción es la continuación del texto. Una opción desconocida sigue siendo un error. `test_telegram_send.py`.
+- **`telegram.env` en `.gitignore` (hallazgo de TG-9, #612).** Guarda el token del bot y no estaba ignorado, a diferencia de `sms.env` y `whatsapp.env`: un `git add -A` en la carpeta de la instalación lo metía en un commit. En la prueba real pasó en un commit local, que se borró sin llegar al remoto. `test_telegram_token.py` lo comprueba.
 - **PaynaniWeb: el acceso a Perfil va junto a tu nombre, en el menú lateral (#626).** Como en el /dash de ServiceButton, un ícono de perfil a la derecha del nombre abre `/profile`, y queda resaltado mientras estás ahí. Lleva `aria-label` y `title` «Perfil» en los cinco idiomas. Sale del menú del avatar (Q265=B), y el avatar de arriba a la derecha se quita (Q267=B): «Cerrar sesión» queda en el menú lateral. Funciona igual en el celular, porque es el mismo menú.
 - **Roster: el campo Telegram en la CLI, PaynaniApp y PaynaniWeb, aunque falte la columna (#628, TG-9).** En la prueba real, guardar el Telegram de una fila fallaba con `no_telegram_column` y no había forma de agregar la columna. Ahora:
   - guardar un Telegram (desde la web, la app, la API o la CLI) en un roster sin la columna la crea al final, vacía en las demás filas, en la misma escritura con copia, relectura y reversión (Q269 = A). Sin un valor de Telegram el archivo no cambia;
