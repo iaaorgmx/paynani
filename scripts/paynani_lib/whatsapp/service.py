@@ -490,6 +490,11 @@ class WhatsAppService:
         except bridge.BridgeError as exc:
             raise Refused(_bridge_code(exc.code), exc.detail or "") from None
         self.store.mark_unlinked()
+        # El puente ya cerró la sesión. `status` no espera a que el puente mande su
+        # siguiente mensaje de estado para decir `unlinked` (#604).
+        if self.sup.state.get("state") != "unlinked":
+            self.sup._set_state({"type": "status", "state": "unlinked", "me": None,
+                                 "since": now_utc(), "reason": "unlink"})
         await self._push_allowed()
         self._notify("status")
         return {"remote": bool(data.get("remote"))}
