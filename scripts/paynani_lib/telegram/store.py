@@ -193,6 +193,39 @@ class BotStore:
         key = data.get("by_thread", {}).get(thread) if THREAD_RE.match(thread or "") else None
         return str((data.get("by_chat", {}).get(key) or {}).get("name") or "") if key else ""
 
+    # --- lo que sale (FR-20 a FR-27) ---
+    def record_sent(self, rec: dict) -> None:
+        """Una línea en outbox.jsonl: el envío nuevo, o un cambio (`status`, …) del mismo `ref`."""
+        append_line(self.root / "outbox.jsonl", rec)
+
+    def sent(self) -> list[dict]:
+        """Cada envío con sus cambios aplicados, en el orden en que se crearon."""
+        out: dict[str, dict] = {}
+        try:
+            fd = os.open(self.root / "outbox.jsonl", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except OSError:
+            return []
+        with os.fdopen(fd, "rb") as fh:
+            for raw in fh:
+                try:
+                    rec = json.loads(raw)
+                except ValueError:
+                    continue
+                ref = rec.get("ref") if isinstance(rec, dict) else None
+                if not isinstance(ref, str):
+                    continue
+                out.setdefault(ref, {}).update(rec)
+        return list(out.values())
+
+    def received(self) -> list[dict]:
+        """Lo recibido y ya escrito como evento, con su referencia."""
+        out = []
+        for ref in self.inbox_refs():
+            data = self.inbox(ref)
+            if data and data.get("journaled"):
+                out.append(dict(data, ref=ref))
+        return out
+
     # --- @usuario fijado a un id (FR-13) ---
     def links(self) -> dict:
         """`{"usernames": {usuario: {"id", "at"}}, "warned": {usuario: [ids avisados]}}`."""

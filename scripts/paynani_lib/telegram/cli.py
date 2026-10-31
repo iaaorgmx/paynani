@@ -1,5 +1,6 @@
 """
-`paynani telegram setup|status|token` (PRD #609 FR-8 a FR-10; TELEGRAM.md §5).
+`paynani telegram setup|status|token|send|draft|thread` (PRD #609 FR-8 a FR-10, FR-20 a
+FR-27; TELEGRAM.md §5).
 
 El token sólo entra por stdin: nunca como argumento, porque un argumento queda en el
 historial del shell y en la lista de procesos (FR-8). Nada de aquí lo imprime.
@@ -205,3 +206,105 @@ def run_token(args) -> int:
                "write": "no se pudo guardar telegram.env o su respaldo"}
     _err(f"se regresó al token anterior: {reasons.get(result.get('reason'), result.get('reason'))}")
     return 2
+
+
+# --- mandar (TG-4: FR-20, FR-22, FR-24, FR-27) ---------------------------------------------
+
+def _refused(reply: dict) -> int:
+    code = reply.get("code", "error")
+    detail = reply.get("detail")
+    extra = f" (espera {reply['retry_after_s']} s)" if reply.get("retry_after_s") else ""
+    _err(f"{code}{': ' + detail if detail else ''}{extra}")
+    return 1 if code == "unavailable" else 2
+
+
+def _ask(args, type_: str, timeout: float = 120, **fields):
+    try:
+        reply = ask(type_, getattr(args, "state", None), timeout=timeout, **fields)
+    except ServiceDown:
+        _err("el servicio paynani-telegram no está corriendo (paynani telegram status)")
+        return None, 1
+    if reply.get("type") == "error":
+        return None, _refused(reply)
+    return reply.get("data") or {}, 0
+
+
+def run_send(args) -> int:
+    if args.stream:
+        if args.text or args.file:
+            _err("--stream lee el texto de stdin: sin texto ni --file")
+            return 2
+        return _run_stream(args)
+    text = " ".join(args.text or [])
+    if not text and not args.file and not sys.stdin.isatty():
+        text = sys.stdin.read()
+    fields = {"contact": args.contact, "text": text}
+    if args.file:
+        fields["file"] = str(Path(args.file).expanduser().absolute())
+    data, rc = _ask(args, "telegram.send", **fields)
+    if rc:
+        return rc
+    print(f"{data.get('ref')}\t{data.get('status')}")
+    return 0
+
+
+def _run_stream(args) -> int:
+    import codecs
+    import os
+
+    data, rc = _ask(args, "telegram.stream_open", contact=args.contact)
+    if rc:
+        return rc
+    sid = data["stream"]
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+    while True:
+        chunk = os.read(sys.stdin.fileno(), 4096)
+        text = decoder.decode(chunk, final=not chunk)
+        if text:
+            _, rc = _ask(args, "telegram.stream_append", stream=sid, text=text)
+            if rc:
+                return rc
+        if not chunk:
+            break
+    data, rc = _ask(args, "telegram.stream_close", stream=sid)
+    if rc:
+        return rc
+    print(f"{data.get('ref')}\t{data.get('status')}\t{data.get('transport')}")
+    return 0
+
+
+def run_draft(args) -> int:
+    data, rc = _ask(args, "telegram.draft", contact=args.contact, text=" ".join(args.text))
+    if rc:
+        return rc
+    print(f"borrador\t{data.get('transport')}")
+    return 0
+
+
+def run_thread(args) -> int:
+    data, rc = _ask(args, "telegram.thread", timeout=30, contact=args.contact, limit=args.limit)
+    if rc:
+        return rc
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return 0
+    print(data.get("name") or "")
+    for m in reversed(data.get("messages") or []):
+        arrow = "←" if m.get("dir") == "in" else "→"
+        extra = f" [{m['status']}]" if m.get("status") else (" (editado)" if m.get("edited") else "")
+        print(f"{m.get('at')} {arrow} {m.get('text') or '[' + str(m.get('kind')) + ']'}{extra}")
+    return 0
+
+
+def run_threads(args) -> int:
+    data, rc = _ask(args, "telegram.threads", timeout=30, limit=args.limit)
+    if rc:
+        return rc
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return 0
+    for t in data.get("threads") or []:
+        arrow = "←" if t.get("last_dir") == "in" else "→"
+        excerpt = t.get("last_excerpt") or ("(oculto: fuera del roster)" if t.get("hidden") else "")
+        print(f"{t.get('last_at')}  {t.get('name')}  {arrow} {excerpt}")
+    return 0

@@ -47,6 +47,7 @@ from . import api as tg_api  # noqa: E402
 from . import config  # noqa: E402
 from . import contacts  # noqa: E402
 from . import media as tg_media  # noqa: E402
+from .outbound import Outbound, _Refused  # noqa: E402
 from .store import BotStore, canonical_hash, new_ref, private_dir, read_json, write_json  # noqa: E402
 
 REQUEST_ID = re.compile(r"^q_[0-9a-f]{32}$")
@@ -101,13 +102,7 @@ class StartError(Exception):
     """El servicio no puede arrancar: candado tomado, control.sock, carpeta insegura."""
 
 
-class Refused(Exception):
-    def __init__(self, code: str, detail: str = "", **extra: Any):
-        super().__init__(code)
-        self.code = code
-        self.detail = detail
-        self.extra = extra
-
+Refused = _Refused   # el mismo en outbound.py y aquí
 
 def now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -122,7 +117,7 @@ def message_kind(message: dict) -> str:
     return "other"
 
 
-class TelegramService:
+class TelegramService(Outbound):
     def __init__(self, state_dir: Path, *, roster_path: Path, token: str,
                  api_base: str = config.DEFAULT_API, journal: Path | None = None,
                  settings: dict[str, str] | None = None, log: Callable[[str], None] = print,
@@ -133,6 +128,7 @@ class TelegramService:
                  mail_owner: Callable[[str, str], None] | None = None,
                  rules_root: Path | None = None,
                  ready_timeout_s: float = READY_TIMEOUT_S):
+        self._out_init()                               # envíos, hilos y watch (outbound.py)
         self.state_dir = Path(state_dir)
         self.root = self.state_dir / "telegram"
         self.journal = journal or (self.state_dir / "events.jsonl")
@@ -220,6 +216,7 @@ class TelegramService:
 
     async def stop(self) -> None:
         self._stopping.set()
+        await self._out_stop()
         if self._task and not self._task.done():
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -279,13 +276,15 @@ class TelegramService:
             self.state, self.reason = state, reason
             self.since = now_utc()
             self.log(f"estado: {state}" + (f" ({reason})" if reason else ""))
+            self._notify("status")
         self._write_status()
 
     def status(self) -> dict:
         self._roll_day()
         out = {"state": self.state, "bot_username": self.bot_username, "since": self.since,
                "last_poll_at": self.last_poll_at,
-               "counters": dict(self.counters, send_limit_day=config.setting("TELEGRAM_SEND_PER_DAY", self.settings))}
+               "counters": dict(self.counters, sent_today=self._sent_today(),
+                                send_limit_day=config.setting("TELEGRAM_SEND_PER_DAY", self.settings))}
         if self.reason:
             out["reason"] = self.reason
         return out
@@ -540,6 +539,9 @@ class TelegramService:
         inbox, envelope = await self._build(ref, digest, message, original)
         self.store.save_inbox(ref, inbox)
         self._write_event(u, ref, inbox, envelope)
+        if inbox["type"] == ev.TELEGRAM_RECEIVED and inbox["in_roster"]:
+            self._start_typing(inbox["thread"], inbox["chat"], ref)   # FR-21
+        self._notify("threads")
         return True
 
     # --- quién escribe (FR-11 a FR-13, FR-17) ---------------------------------------
@@ -941,21 +943,28 @@ class TelegramService:
                 except (ValueError, UnicodeDecodeError):
                     await _write(writer, {"type": "error", "ref": None, "code": "bad_json"})
                     continue
-                await _write(writer, await self.handle(msg))
+                reply = await self.handle(msg)
+                await _write(writer, reply)
+                if msg.get("type") == "telegram.watch" and reply.get("type") == "result":
+                    self.watchers.add(writer)                  # §4: después, telegram.changed
         except (ConnectionError, asyncio.IncompleteReadError):
             pass
         finally:
             self.clients.discard(writer)
+            self.watchers.discard(writer)
             writer.close()
 
     async def handle(self, msg: dict) -> dict:
         rid = msg.get("id")
         if not isinstance(rid, str) or not REQUEST_ID.match(rid):
             return {"type": "error", "ref": None, "code": "missing_field", "field": "id"}
+        kind = msg.get("type")
         by = msg.get("by")
+        if by is None and kind in ("telegram.stream_append", "telegram.stream_close"):
+            by = "terminal"                                # §4: el stream ya dijo quién al abrirse
+            msg = dict(msg, by=by)
         if not isinstance(by, str) or not BY_RE.match(by):
             return {"type": "error", "ref": rid, "code": "missing_field", "field": "by"}
-        kind = msg.get("type")
         try:
             if kind == "telegram.status":
                 data = self.status()
@@ -968,6 +977,11 @@ class TelegramService:
             elif kind == "telegram.token_apply":
                 data = await self.token_apply(msg.get("check"), msg.get("confirm_dedicated"),
                                               msg.get("confirm_delete_webhook"))
+            elif kind in _OUT_TYPES:
+                result = getattr(self, _OUT_TYPES[kind])(msg)
+                data = await result if asyncio.iscoroutine(result) else result
+            elif kind == "telegram.watch":
+                data = {"watching": True, "status": {"state": self.state}}
             else:
                 return {"type": "error", "ref": rid, "code": "unknown_type"}
         except Refused as exc:
@@ -980,6 +994,12 @@ class TelegramService:
             self.log(f"{kind} falló ({type(exc).__name__})")
             return {"type": "error", "ref": rid, "code": "unavailable"}
         return {"type": "result", "ref": rid, "ok": True, "data": data}
+
+
+# Los tipos de outbound.py (TG-4) y el método que los contesta.
+_OUT_TYPES = {"telegram.send": "send", "telegram.draft": "draft", "telegram.stream_open": "stream_open",
+              "telegram.stream_append": "stream_append", "telegram.stream_close": "stream_close",
+              "telegram.threads": "threads", "telegram.thread": "thread", "telegram.image": "image"}
 
 
 async def _write(writer: asyncio.StreamWriter, obj: dict) -> None:
