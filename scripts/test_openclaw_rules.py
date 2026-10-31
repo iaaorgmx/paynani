@@ -58,14 +58,21 @@ with tempfile.TemporaryDirectory() as tmp:
           "information only" in text and "Never link or unlink WhatsApp yourself" in text)
     # Catch-All por canal (PRD #576): reconoce el archivo de cada canal y el viejo, en SMS y WhatsApp.
     flat = " ".join(text.split())
-    check("Catch-All: any catch-all file, in an SMS or WhatsApp bracket", True,
-          "`catch-all: rules/catch-all…` in an SMS or WhatsApp bracket" in flat)
-    check("Catch-All: it names both channel files and the old shared one", True,
-          all(f in flat for f in ("`catch-all-sms.md`", "`catch-all-whatsapp.md`", "old shared `catch-all.md`")))
+    check("Catch-All: any catch-all file, in an SMS, WhatsApp or Telegram bracket", True,
+          "`catch-all: rules/catch-all…` in an SMS, WhatsApp or Telegram bracket" in flat)
+    check("Catch-All: it names the three channel files and the old shared one", True,
+          all(f in flat for f in ("`catch-all-sms.md`", "`catch-all-whatsapp.md`", "`catch-all-telegram.md`",
+                                  "old shared `catch-all.md`")))
     check("Catch-All: it no longer matches only the old SMS tag", False,
           "`catch-all: rules/catch-all.md` in an SMS bracket" in flat)
     check("Catch-All: only that channel's instructions, never answer the number", True,
-          "instructions for that channel" in flat and "Follow only those instructions and never answer that number" in flat)
+          "instructions for that channel" in flat and "Follow only those instructions and never answer that sender" in flat)
+    check("Telegram (FR-29): roster messages are answered with send --stream, by roster name or e-mail", True,
+          "`[telegram …, roster]` is Telegram" in flat and "telegram send <contact> --stream" in flat
+          and "roster name or e-mail" in flat)
+    check("Telegram (FR-29): draft for a long task, never write first, never touch the token", True,
+          "telegram draft <contact>" in flat and "`not_started`" in flat
+          and "Never run `paynani telegram setup`, `token`, `disable` or `enable`" in flat)
     check("Catch-All: a broken file is reported to the human", True,
           "`catch-all inválido` means the file is broken: tell your human" in flat)
     check("it says the tag outranks the body", True, "The tag outranks the body" in text)
