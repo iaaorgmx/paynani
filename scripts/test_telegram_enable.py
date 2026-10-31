@@ -103,8 +103,8 @@ check("enable si el servicio no arranca: 1, lo dice, y telegram.env sí queda en
 answer["start"] = "not-installed"
 actions.clear()
 rc, out = run(cli.run_enable)
-check("enable sin el servicio instalado: dice cómo instalarlo", (0, True, True),
-      (rc, "ya estaba activado" in out, "--with-telegram" in out))
+check("enable sin el servicio instalado: pide install.sh --upgrade (#635)", (0, True, True),
+      (rc, "ya estaba activado" in out, "--upgrade" in out))
 
 # --- service_control en macOS: detener algo que launchd ya tiene detenido es 0 (Ximena en #623) ---
 from unittest import mock  # noqa: E402

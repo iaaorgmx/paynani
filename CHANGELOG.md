@@ -10,6 +10,15 @@
   - **Créditos:** la biblioteca estándar de Python, Spectral y los íconos.
 
   Sin el estado de la instalación, que ya está en el Dashboard (Q277=A). Los enlaces externos abren con `noopener noreferrer`. La versión se lee una vez al arrancar, del clon que corre. Textos en los cinco idiomas; `test_web_about.py`.
+
+- **Telegram se configura desde PaynaniWeb, en «Cuenta de Telegram» (#635, Q279 y Q281 a Q284).** En la prueba real (TG-9, #612), Julian no pudo poner el bot de John desde la web: sin token, PaynaniWeb escondía Telegram del menú, la página sólo cambiaba un token que ya existía, y el servicio ni siquiera estaba instalado. Ahora:
+  - «Mensajes de Telegram» aparece siempre en el menú. Sin bot, sus páginas llevan a «Cuenta de Telegram» (`/telegram`), que antes se llamaba «Bot de Telegram».
+  - Sin bot, «Cuenta de Telegram» pide el token, el `@usuario` del bot, la casilla «Este bot es sólo de esta instalación» y la contraseña de la web. Hace lo mismo que `paynani telegram setup`, con la lógica compartida en `telegram/setup.py`: prueba el token con `getMe`, compara el usuario con el de ese token (Q282 = A), borra el webhook si lo había (la casilla lo autoriza, Q283 = A), escribe `telegram.env` (0600) y arranca el servicio. Si algo falla no se escribe nada, y de dos configuraciones a la vez sólo una guarda: la escritura va bajo un candado entre procesos que vuelve a mirar que no haya token (Ximena en #639). El dueño recibe un correo con el bot, sin el token. El token nunca vuelve a la página.
+  - `install.sh`, `install_macos.py` y `--upgrade` instalan `paynani-telegram` siempre, detenido mientras no haya token (Q281 = A). `--with-telegram` se sigue aceptando.
+  - `paynani doctor`: el servicio sin token es `ok` (Telegram no se usa en esa instalación) y dice dónde configurarlo; antes era un aviso.
+
+  `test_web_telegram_setup.py` (nuevo), `test_web_telegram.py`, `test_telegram_enable.py`, `test_install_macos_telegram.py`, `test_diagnostics.py` y `test_install.sh`.
+
 ## 0.19.0 (2026-10-31)
 
 Telegram (PRD #609, #612): un bot propio por instalación, para recibir y contestar mensajes de los contactos del roster, con Catch-All, multimedia, respuesta por partes, PaynaniWeb y PaynaniApp. Es opcional: sin `--with-telegram` nada cambia en tu instalación. La prueba real TG-9 pasó T9-01 a T9-09 en una instalación de Claude Code; las rondas con OpenClaw y Hermes vienen después de publicar.

@@ -69,7 +69,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Agregar y quitar cuentas** | «+ Agregar cuenta» prueba el acceso IMAP y SMTP antes de guardar y escribe como `paynani account add`. «Quitar esta cuenta» deja de vigilarla como `paynani account remove`, sin borrar su buzón ni su roster. Las dos piden la contraseña de la web. |
 | **Mensajes** | Las conversaciones SMS de la pasarela, de 50 en 50: lo que llegó, lo que mandó el agente con su estado, lo que contestó el dueño desde PaynaniApp o desde la web, y las llamadas perdidas y contestadas. «Nuevo SMS» y el cuadro de responder envían por el teléfono emparejado (ver abajo). |
 | **Mensajes de WhatsApp** | Sólo con WhatsApp activado (`whatsapp.env` con `WHATSAPP_ENABLED=1`). Las conversaciones de WhatsApp, como «Mensajes» las de SMS, sin mensaje nuevo: sólo se contesta donde el contacto ya escribió. «Cuenta de WhatsApp» (`/whatsapp`) vincula, cancela y desvincula (ver abajo). |
-| **Mensajes de Telegram** | Sólo con Telegram activado (`telegram.env` con `TELEGRAM_ENABLED=1` y el token). Las conversaciones con el bot de Telegram, sin mensaje nuevo: sólo se contesta donde la persona ya escribió. «Bot de Telegram» (`/telegram`) muestra el estado y cambia el token (ver abajo). |
+| **Mensajes de Telegram** | Siempre (#635); sin bot configurado lleva a «Cuenta de Telegram». Las conversaciones con el bot de Telegram, sin mensaje nuevo: sólo se contesta donde la persona ya escribió. «Cuenta de Telegram» (`/telegram`) hace la configuración inicial, muestra el estado y cambia el token (ver abajo). |
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. Se abre con el ícono que está junto a tu nombre en el menú lateral, como en el /dash de ServiceButton (#626). Ya no hay avatar arriba a la derecha: «Cerrar sesión» está en el menú lateral. |
 | **Acerca de** | Como el About de PaynaniApp (#636), debajo de «API Tokens». Muestra la versión con su commit, con un botón que la copia, y el aviso de código abierto bajo la licencia MIT. Debajo, tres grupos: **Proyecto** (sitio, código y licencia); **Ayuda** (reportar un problema, que abre un issue en paynani con la versión ya escrita, las novedades y esta guía); y **Créditos**. Los enlaces abren en otra pestaña. El estado de la instalación está en el Dashboard. |
@@ -337,12 +337,23 @@ habla al servicio `paynani-whatsapp` por `state/whatsapp/control.sock`
 
 ### Telegram
 
-Con Telegram activado en la instalación (PRD #609), el menú agrega «Mensajes de
-Telegram» (`/telegram/messages`). Sin activar, no aparece nada de Telegram. La web le
+El menú siempre trae «Mensajes de Telegram» (`/telegram/messages`, #635). Sin bot
+configurado, las páginas de Telegram llevan a «Cuenta de Telegram» (`/telegram`),
+donde se hace la configuración inicial (abajo). La web le
 habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRAM.md`
 §4 y §7).
 
-- **El bot** (`/telegram`): el estado del servicio, el `@usuario` del bot, desde
+- **La configuración inicial** (`/telegram` sin bot, #635): pegas el token de
+  @BotFather (campo de contraseña, sin autocompletar), escribes el `@usuario` del bot,
+  marcas «Este bot es sólo de esta instalación» y escribes la contraseña de la web
+  (con el bloqueo de intentos de la entrada). La web hace lo mismo que
+  `paynani telegram setup` (`telegram/setup.py`): prueba el token con `getMe`,
+  comprueba que el usuario sea el de ese token (Q282), borra un webhook si lo había
+  (la casilla lo autoriza, Q283), escribe `telegram.env` (0600) y arranca
+  `paynani-telegram`. Si algo falla no se escribe nada. Al terminar te llega un correo
+  con el bot, sin el token. Con un token ya puesto pero desactivado, se niega y pide
+  `paynani telegram enable`.
+- **La cuenta** (`/telegram` con bot): el estado del servicio, el `@usuario` del bot, desde
   cuándo funciona, la última consulta a Telegram y cuántos mensajes llegaron y
   salieron hoy. Si otro programa lee el mismo bot o tiene un webhook, o si Telegram
   rechazó el token, la página lo dice.
@@ -373,7 +384,7 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   Telegram: no va en la URL, no se guarda en otro lugar y no se escribe en el log. El
   formulario del roster tiene el campo Telegram mientras Telegram esté activado. Si el roster todavía no tiene la columna `Telegram`, guardar un valor la crea en la misma escritura, con las demás filas vacías; sin un valor, el archivo no cambia (#628).
 - **El Catch-All de Telegram** es su propia página (`/telegram/catch-all`), junto a
-  «Bot de Telegram», como los de SMS y WhatsApp (#588). Se guarda en
+  «Cuenta de Telegram», como los de SMS y WhatsApp (#588). Se guarda en
   `rules/catch-all-telegram.md`.
 - **El Dashboard** agrega el bot de Telegram a Servicios, con su estado.
 

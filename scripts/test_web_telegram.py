@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Tests de Telegram en PaynaniWeb (PRD #609 FR-10, FR-15, FR-25, FR-28; TG-7 de #612):
-el menú sólo con Telegram configurado, «Bot de Telegram» con el cambio de token en dos
+el menú siempre (#635), «Cuenta de Telegram» con el cambio de token en dos
 pasos (contraseña, CSRF, el token sólo en `token_check` y el `check` sólo en memoria),
 «Mensajes de Telegram» con lo de fuera del roster oculto y responder sólo donde se
 puede, «Agregar al roster» con la contraseña, el Catch-All propio y que ni el token ni
@@ -120,10 +120,14 @@ cookie = login()
 
 # ---- Sin Telegram configurado ------------------------------------------------------
 status, _, page = req("GET", "/?lang=es-MX", cookie=cookie)
-check("sin telegram.env no hay «Mensajes de Telegram» en el menú", False, 'href="/telegram/messages"' in page)
-for path in ("/telegram", "/telegram/messages", "/telegram/catch-all"):
-    status, _, _ = req("GET", path, cookie=cookie)
-    check(f"sin Telegram, {path} es 404", 404, status)
+check("#635: sin telegram.env el menú ya trae «Mensajes de Telegram»", True, 'href="/telegram/messages"' in page)
+status, _, page = req("GET", "/telegram", cookie=cookie)
+check("#635: sin Telegram, /telegram es la configuración inicial", (200, True),
+      (status, 'action="/telegram/setup"' in page))
+for path in ("/telegram/messages", "/telegram/catch-all"):
+    status, _, page = req("GET", path, cookie=cookie)
+    check(f"sin Telegram, {path} es 404 y lleva a «Cuenta de Telegram»", (404, True),
+          (status, 'href="/telegram"' in page))
 (tg_root / "telegram.env").write_text("TELEGRAM_ENABLED=1\n", encoding="utf-8")
 check("§4: sin TELEGRAM_TOKEN no cuenta como configurado", False, telegram_source.configured(tg_root))
 (tg_root / "telegram.env").write_text(f"TELEGRAM_ENABLED=1\nTELEGRAM_TOKEN={DEMO_TOKEN}\n", encoding="utf-8")
