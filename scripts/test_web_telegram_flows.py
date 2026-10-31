@@ -70,7 +70,7 @@ REAL = [real_env(), Path.home() / ".config/himalaya/config.toml"]
 BEFORE = [sha(p) for p in REAL]
 
 TOKEN = "424242:" + "k" * 30           # forma de config.TOKEN_RE; no es de ningún bot
-ANA, PEDRO = 7000001, 7000099          # ids de Telegram inventados
+ANA, PEDRO, CARLA = 7000001, 7000099, 7000555   # ids de Telegram inventados
 PASSWORD = "una-contraseña-larga"
 
 api = FakeBotAPI(token=TOKEN, bot_id=424242, username="FlujosPaynaniBot").start()
@@ -207,15 +207,38 @@ try:
     check("activarlo guarda rules/catch-all-telegram.md y vuelve a su página", (303, "/telegram/catch-all?ok=on", True),
           (st, h.get("location"), (tmp / "rules" / "catch-all-telegram.md").exists()))
 
+    # #628 fila 4: un roster SIN la columna Telegram. «Agregar al roster» la crea al guardar
+    # (en la misma escritura, las demás filas vacías) y el mensaje siguiente ya se reconoce.
+    roster.write_text("| Name | Email | Type | Notes |\n|---|---|---|---|\n"
+                      "| Julian Flores | julian@example.com | Human | dueño |\n", encoding="utf-8")
+    api.private_message(CARLA, "Hola, soy Carla", first_name="Carla")
+    carla = until(lambda: next((t for t in threads() if (t.get("name") or "").startswith("Carla")), None))
+    check("#628: Carla escribe y llega fuera del roster", (True, False), (bool(carla), bool(carla and carla.get("in_roster"))))
+    st, h, page = req("POST", "/telegram/roster", {"csrf": csrf, "t": carla["thread"], "password": PASSWORD}, ck)
+    form = {k: v for k, v in re.findall(r'name="(csrf|cuenta|fila|etag|name|email|github|phones|telegram)"[^>]*?value="([^"]*)"', page)}
+    form["type"] = "Human"
+    st, h, _ = req("POST", "/roster/guardar", form, ck)
+    lines = roster.read_text(encoding="utf-8").splitlines()
+    check("guardar crea la columna Telegram y la fila de Carla con su id; la otra fila queda vacía y con su Notes",
+          (303, "| Name | Email | Type | Notes | Telegram |", True, "| Julian Flores | julian@example.com | Human | dueño |  |"),
+          (st, lines[0], any(l.startswith("| Carla") and str(CARLA) in l for l in lines), lines[2]))
+    api.private_message(CARLA, "¿Abren el domingo?", first_name="Carla")
+    check("el mensaje siguiente de Carla ya llega dentro del roster", True,
+          bool(until(lambda: next((t for t in threads() if t["thread"] == carla["thread"] and t.get("in_roster")), None))))
+
     # El token, el id de Ana y el bot_id no salen en ninguna página, tampoco en la de FR-15.
     # El id de Pedro sólo sale en esa respuesta, y sólo en su campo (revisión de Ximena, #621).
     field = f'name="telegram" maxlength="64" autocomplete="off" spellcheck="false" value="{PEDRO}"'
     leaks = [(p, x) for p, html in pages for x in (TOKEN, str(ANA), "424242") if x in html]
+    carla_field = f'name="telegram" maxlength="64" autocomplete="off" spellcheck="false" value="{CARLA}"'
     leaks += [(p, str(PEDRO)) for p, html in pages
               if str(PEDRO) in (html.replace(field, "") if p == "/telegram/roster" else html)]
+    leaks += [(p, str(CARLA)) for p, html in pages
+              if str(CARLA) in (html.replace(carla_field, "") if p == "/telegram/roster" else html)]
     check("ningún token ni id de Telegram en las páginas; el de Pedro sólo en el campo de FR-15", [], leaks)
-    check("y la página de FR-15 trae ese campo exacto una vez", 1,
-          sum(html.count(field) for p, html in pages if p == "/telegram/roster"))
+    check("y las páginas de FR-15 traen cada campo exacto una vez", (1, 1),
+          (sum(html.count(field) for p, html in pages if p == "/telegram/roster"),
+           sum(html.count(carla_field) for p, html in pages if p == "/telegram/roster")))
 finally:
     httpd.shutdown()
     asyncio.run_coroutine_threadsafe(service.stop(), loop).result(15)
@@ -230,7 +253,7 @@ finally:
     loop.call_soon_threadsafe(loop.stop)
     api.stop()
 log_text = "\n".join(logs)
-check("el log del servicio no trae el token ni los ids", [], [x for x in (TOKEN, str(ANA), str(PEDRO)) if x in log_text])
+check("el log del servicio no trae el token ni los ids", [], [x for x in (TOKEN, str(ANA), str(PEDRO), str(CARLA)) if x in log_text])
 check("no se escribió telegram.env en el clon", False, (ROOT / "telegram.env").exists())
 check("la configuración real no cambió (.env y Himalaya)", BEFORE, [sha(p) for p in REAL])
 

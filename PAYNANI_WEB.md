@@ -370,7 +370,7 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   roster. Pide la contraseña de la web y responde con el formulario de la fila nueva,
   con su nombre y su id de Telegram ya puestos. Es el único lugar donde se ve un id de
   Telegram: no va en la URL, no se guarda en otro lugar y no se escribe en el log. El
-  formulario del roster tiene el campo Telegram mientras Telegram esté activado.
+  formulario del roster tiene el campo Telegram mientras Telegram esté activado. Si el roster todavía no tiene la columna `Telegram`, guardar un valor la crea en la misma escritura, con las demás filas vacías; sin un valor, el archivo no cambia (#628).
 - **El Catch-All de Telegram** es su propia página (`/telegram/catch-all`), junto a
   «Bot de Telegram», como los de SMS y WhatsApp (#588). Se guarda en
   `rules/catch-all-telegram.md`.
