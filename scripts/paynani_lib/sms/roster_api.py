@@ -637,7 +637,7 @@ class RosterService:
                 if seen[0] != digest:
                     return {"type": "error", "code": "invalid", "ref": rid, "field": "id", "reason": "id_reused",
                             "detail": "ese id ya se usó con otro pedido"}
-                return {**seen[1], "replayed": True}
+                return _for_device({**seen[1], "replayed": True}, device_id)
         handler = {"roster.accounts": self.roster_accounts, "roster.list": self.roster_list,
                    "roster.save": self.roster_save, "roster.delete": self.roster_delete,
                    "rules.get": self.rules_get, "rules.preview": self.rules_preview,
@@ -657,12 +657,33 @@ class RosterService:
                 self.replays[rid] = (digest, response, time.monotonic())
                 while len(self.replays) > REPLAY_MAX:
                     self.replays.popitem(last=False)
-        return response
+        return _for_device(response, device_id)
 
     def _expire(self) -> None:
         cutoff = time.monotonic() - REPLAY_TTL_S
         for rid in [r for r, (_, _, at) in self.replays.items() if at < cutoff]:
             del self.replays[rid]
+
+
+def _for_device(response: dict, device_id: str) -> dict:
+    """
+    El id de Telegram de cada fila sólo va a PaynaniWeb (PRD #609 FR-15, TELEGRAM.md §8):
+    a PaynaniApp y a la API les llega `has_telegram` en su lugar. Sin `telegram`, una
+    edición desde ellas conserva el de la fila (roster_edit).
+    """
+    if from_web(device_id) or response.get("type") != "result":
+        return response
+    data = response.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("members"), list):
+        return response
+    members = []
+    for m in data["members"]:
+        if isinstance(m, dict) and "telegram" in m:
+            has = bool(m["telegram"])
+            m = {k: v for k, v in m.items() if k != "telegram"}
+            m["has_telegram"] = has
+        members.append(m)
+    return {**response, "data": {**data, "members": members}}
 
 
 def unnotified(state_dir: Path, *, now: float | None = None, window_s: int = NOTIFY_WINDOW_S,

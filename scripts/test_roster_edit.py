@@ -305,6 +305,22 @@ check("editar con telegram vacío lo borra", "| Ana | ana@example.com | Human | 
 check("editar su propia fila con el mismo id no es duplicado", None,
       error_of(re_.save_text, TG, 2, {"name": "Ana", "email": "ana@example.com", "type": "Human", "github": "",
                                       "phones": [], "telegram": "700000001"}))
+TGONLY = TG + "| Pedro |  | Human | @pedro_tienda |\n"
+text, _, _ = re_.save_text(TGONLY, 4, {"name": "Pedro Tienda", "email": "", "type": "Human", "github": "", "phones": []})
+check("#622: editar una fila sólo-Telegram sin la llave (PaynaniApp 0.11) pasa y conserva el id tal cual",
+      "| Pedro Tienda |  | Human | @pedro_tienda |", text.splitlines()[-1])
+check("y con telegram vacío explícito lo borra y queda sin canal: no_channel", ("invalid", "email", "no_channel"),
+      error_of(re_.save_text, TGONLY, 4, {"name": "Pedro", "email": "", "type": "Human", "github": "", "phones": [],
+                                          "telegram": ""}))
+RAW = TG.replace("@beto_paynani", "@Beto_Paynani")
+text, _, _ = re_.save_text(RAW, 3, {"name": "Beto B.", "email": "beto@example.com", "type": "Human", "github": "",
+                                    "phones": []})
+check("sin la llave, la celda no se reescribe (no se normaliza en una edición que no la toca)",
+      "| Beto B. | beto@example.com | Human | @Beto_Paynani |", text.splitlines()[-1])
+try:
+    re_.save_text(TG, None, dict(base, telegram="no válido 123456789"))
+except EditError as exc:
+    check("#622: un valor inválido no sale en el detalle", False, "123456789" in str(exc) or "no válido" in exc.detail)
 check("la firma de relectura incluye telegram", True,
       any("700000001" in sig for sig in re_._signature(TG)))
 

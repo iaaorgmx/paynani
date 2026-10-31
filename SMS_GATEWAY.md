@@ -988,7 +988,9 @@ tipo nuevo (sección 10):
   puede traer varios, y la app los edita como lista. Sin columna `Phone`, `phones` es
   `[]`; sin `GitHub`, `github` es `""`.
 - `telegram` es la celda `Telegram` (PRD #609 FR-11): un id numérico o un `@usuario`,
-  o `""`. Sin la columna, `""`.
+  o `""`. **Sólo va a PaynaniWeb** (`device_id` `web:…`; FR-15, `TELEGRAM.md` §8): a
+  PaynaniApp y a la API les llega `has_telegram` (`true`/`false`) en su lugar, también
+  en la respuesta de `roster.save`. Sin la columna, `""` (o `has_telegram: false`).
 - `rules` es el valor de la columna `Rules` (o `null`). `has_rules` dice si
   `rules/<id>.md` existe, y `rules_enabled`, si además tiene `enabled: true`.
 - `default_rules` dice si existe `rules/default.md`.
@@ -1007,8 +1009,9 @@ tipo nuevo (sección 10):
   de esa fila.
 - `member` lleva siempre los cinco campos, ya completos. Lo que no venga se toma como
   vacío, no como «sin cambio». La excepción es `telegram` (PRD #609, FR-15), que es
-  opcional: sin la llave, una edición conserva lo que la fila tenía, y PaynaniApp 0.11
-  sigue igual; con `""`, la borra. Se guarda normalizado: el id sin ceros adelante y el
+  opcional: sin la llave, una edición conserva lo que la fila tenía (y cuenta como canal,
+  así que una fila sólo con Telegram se puede editar), y PaynaniApp 0.11 sigue igual;
+  con `""`, la borra. Se guarda normalizado: el id sin ceros adelante y el
   `@usuario` en minúsculas.
 - **Validación** (R-3); la primera que falla responde `invalid` con `field` y `reason`:
 

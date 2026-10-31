@@ -214,11 +214,13 @@ def _fail(field: str, reason: str, detail: str):
     raise EditError("invalid", field=field, reason=reason, detail=detail)
 
 
-def validate(member: dict, cols: list[str], others: list[dict], *, owner: bool) -> dict:
+def validate(member: dict, cols: list[str], others: list[dict], *, owner: bool, kept_telegram: str = "") -> dict:
     """
     El contacto que mandó la app, ya limpio, o `EditError("invalid")` con la
     primera regla que falla, en el orden de la tabla de SMS_GATEWAY.md §11.
-    `others` son las demás filas del mismo roster.
+    `others` son las demás filas del mismo roster. `kept_telegram` es el Telegram que
+    la fila ya tiene, en una edición sin la llave `telegram`: se conserva tal cual
+    (_render) y cuenta como canal (revisión de Ximena en #622).
     """
     if not isinstance(member, dict):
         _fail("member", "required", "falta member")
@@ -256,9 +258,10 @@ def validate(member: dict, cols: list[str], others: list[dict], *, owner: bool) 
     if telegram:
         tg = roster_mod.telegram_value(telegram)
         if tg is None:
-            _fail("telegram", "telegram", f"«{telegram}» no es un id de Telegram ni un @usuario")
+            # Sin repetir lo que se escribió: un id de Telegram no va en el detalle (#612).
+            _fail("telegram", "telegram", "no es un id de Telegram ni un @usuario")
         telegram = tg[1] if tg[0] == "id" else "@" + tg[1]
-    if not email and not phones and not telegram:
+    if not email and not phones and not telegram and not (not has_telegram and kept_telegram):
         _fail("email", "no_channel", "hace falta un correo, un teléfono o Telegram")
     norm = roster_mod.normalise(email)
     for other in others:
@@ -357,7 +360,8 @@ def save_text(text: str, row, member: dict) -> tuple[str, int, dict]:
         return _join(lines, text), len(rows) + 1, clean
     line_idx, fields = _row(rows, row)
     others = [m for m in current if m["row"] != row]
-    clean = validate(member, cols, others, owner=current[row - 1]["owner"])
+    kept = current[row - 1]["telegram"] if isinstance(member, dict) and "telegram" not in member else ""
+    clean = validate(member, cols, others, owner=current[row - 1]["owner"], kept_telegram=kept)
     lines[line_idx] = _render(header_fields, clean, fields)
     return _join(lines, text), row, clean
 

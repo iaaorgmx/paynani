@@ -128,11 +128,25 @@ async def main():
         changes = (state / "roster_changes.jsonl").read_text(encoding="utf-8")
         check("roster_changes.jsonl no trae el id", False, str(PEDRO) in changes)
 
+        # FR-15 / TELEGRAM.md §8: el id sólo va a PaynaniWeb (revisión de Metis en #622).
+        for device in ("d_0123456789abcdef", "api:pn_abcdef12:203.0.113.9"):
+            seen = rs.handle({"type": "roster.list", "id": "q_" + "6" * 32}, device)
+            row = next(m for m in seen["data"]["members"] if m["name"] == "Pedro")
+            check(f"roster.list para {device.split(':')[0][:5]}: sin el id, con has_telegram", (False, True, False),
+                  ("telegram" in row, row.get("has_telegram"), str(PEDRO) in json.dumps(seen)))
+        listing = rs.handle({"type": "roster.list", "id": "q_" + "7" * 32}, "d_0123456789abcdef")["data"]
+        prow = next(m for m in listing["members"] if m["name"] == "Pedro")
+        edited = rs.handle({"type": "roster.save", "id": "q_" + "8" * 32, "row": prow["row"], "etag": listing["etag"],
+                            "member": {"name": "Pedro Tienda", "email": "", "type": "Human", "github": "",
+                                       "phones": []}}, "d_0123456789abcdef")
+        check("PaynaniApp edita la fila sólo-Telegram sin la llave: pasa, conserva el id y la respuesta no lo trae",
+              ("result", True, False), (edited.get("type"), f"| Pedro Tienda |  | Human | {PEDRO} |" in
+                                        roster.read_text(encoding="utf-8"), str(PEDRO) in json.dumps(edited)))
         api.private_message(PEDRO, "Somos la tienda de enfrente", first_name="Pedro")
         await until(lambda: len([e for e in events(state) if e.get("event_type") == "telegram.received"]) >= 2)
         after = [e for e in events(state) if e.get("event_type") == "telegram.received"]
         check("después: el mensaje siguiente llega con roster_match true", True, after[-1].get("roster_match"))
-        check("y con el nombre de su fila", "Pedro", (after[-1].get("sender") or {}).get("name"))
+        check("y con el nombre de su fila", "Pedro Tienda", (after[-1].get("sender") or {}).get("name"))
         check("ningún evento trae el id", False, str(PEDRO) in json.dumps(events(state)))
     finally:
         await service.stop()
