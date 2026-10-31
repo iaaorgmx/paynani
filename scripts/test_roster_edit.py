@@ -359,5 +359,28 @@ except EditError as exc:
 check("la firma de relectura incluye telegram", True,
       any("700000001" in sig for sig in re_._signature(TG)))
 
+# Un párrafo suelto después de la tabla (o una línea vieja «Nombre correo») no es
+# una fila: al crear la columna se queda como estaba (Andy en #628).
+PARA = "| Name | Email |\n|---|---|\n| Ana | ana@example.com |\n\nNotas del dueño: no tocar.\n"
+text, _, _ = re_.save_text(PARA, 1, {"name": "Ana", "email": "ana@example.com", "telegram": "@ana_lopez"})
+check("#628: crear Telegram con un párrafo después de la tabla no lo vuelve fila",
+      "| Name | Email | Telegram |\n|---|---|---|\n| Ana | ana@example.com | @ana_lopez |\n\nNotas del dueño: no tocar.\n",
+      text)
+LEGACY = "| Name | Email |\n|---|---|\n| Ana | ana@example.com |\nBeto beto@example.com\n"
+check("#628: _add_column deja igual una línea vieja sin `|`", "Beto beto@example.com",
+      re_._add_column(LEGACY, "Telegram").splitlines()[-1])
+check("y Rules tampoco convierte el párrafo", "Notas del dueño: no tocar.",
+      re_._add_column(PARA, "Rules").splitlines()[-1])
+check("#628: la nota después de la tabla no sale como contacto", ["Ana"],
+      [m["name"] for m in re_.members(PARA)[1]])
+text, _, _ = re_.save_text(PARA, None, {"name": "Beto", "email": "beto@example.com", "phones": []})
+check("#628: un alta va dentro de la tabla, antes de la nota",
+      ["| Ana | ana@example.com |", "| Beto | beto@example.com |", "", "Notas del dueño: no tocar."],
+      text.splitlines()[2:])
+TWO = "| Name | Email |\n|---|---|\n| Ana | ana@example.com |\n\n| Beto | beto@example.com |\n"
+check("#628: una fila con `|` después de un renglón en blanco no es de la tabla y no cambia",
+      "| Name | Email | Telegram |\n|---|---|---|\n| Ana | ana@example.com |  |\n\n| Beto | beto@example.com |\n",
+      re_._add_column(TWO, "Telegram"))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
