@@ -193,9 +193,15 @@ try:
     check("activarlo guarda rules/catch-all-telegram.md y vuelve a su página", (303, "/telegram/catch-all?ok=on", True),
           (st, h.get("location"), (tmp / "rules" / "catch-all-telegram.md").exists()))
 
-    leaks = [(p, x) for p, html in pages if p != "/telegram/roster"
-             for x in (TOKEN, str(ANA), str(PEDRO), "424242") if x in html]
-    check("ningún token ni id de Telegram en las páginas, salvo FR-15", [], leaks)
+    # El token, el id de Ana y el bot_id no salen en ninguna página, tampoco en la de FR-15.
+    # El id de Pedro sólo sale en esa respuesta, y sólo en su campo (revisión de Ximena, #621).
+    field = f'name="telegram" maxlength="64" autocomplete="off" spellcheck="false" value="{PEDRO}"'
+    leaks = [(p, x) for p, html in pages for x in (TOKEN, str(ANA), "424242") if x in html]
+    leaks += [(p, str(PEDRO)) for p, html in pages
+              if str(PEDRO) in (html.replace(field, "") if p == "/telegram/roster" else html)]
+    check("ningún token ni id de Telegram en las páginas; el de Pedro sólo en el campo de FR-15", [], leaks)
+    check("y la página de FR-15 trae ese campo exacto una vez", 1,
+          sum(html.count(field) for p, html in pages if p == "/telegram/roster"))
 finally:
     httpd.shutdown()
     asyncio.run_coroutine_threadsafe(service.stop(), loop).result(15)
