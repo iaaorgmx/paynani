@@ -403,6 +403,11 @@ def _add_column(text: str, name: str) -> str:
     sep = lines[header_idx + 1].rstrip()
     lines[header_idx + 1] = (sep if sep.endswith("|") else sep + "|") + "---|"
     for idx, other in rows:
+        # roster._rows también entrega líneas sin `|` (el formato viejo «Nombre
+        # correo», o un párrafo después de la tabla): no son filas de la tabla y
+        # se quedan como están (Andy en #628).
+        if not lines[idx].lstrip().startswith("|"):
+            continue
         cells = list(other) + [""] * (len(header_fields) - len(other))
         lines[idx] = "| " + " | ".join(c.strip() for c in cells) + " |  |"
     return _join(lines, text)
