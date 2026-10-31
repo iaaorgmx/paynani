@@ -312,6 +312,50 @@ check("y las filas que ya estaban siguen con su Notes y vacías en Telegram", ("
 wait_notices()
 check("el aviso al dueño de esa alta no trae el id", False, any("7000099" in body for _, _, body in sent))
 
+# Texto fuera de la tabla (#628, Andy y Ximena): una nota suelta después de la tabla y
+# `## Notifiers` más abajo quedan byte por byte al crear la columna, por «Editar» y por
+# «Agregar»; sólo las filas reales reciben la celda, el alta queda dentro de la tabla y la
+# nota no sale como contacto.
+TABLE = ("| Name | Email | Type |\n|---|---|---|\n"
+         "| Julián Flores | julian@example.com | Human |\n"
+         "| Iris | iris@example.com | AI Agent |\n")
+TAIL = ("\nNotas del dueño: no tocar.\n\n## Notifiers\n\n| Platform | Address | Header | Column |\n"
+        "|---|---|---|---|\n| GitHub | notifications@github.com | X-GitHub-Sender | GitHub |\n")
+
+
+def split_tail():
+    text = roster.read_text(encoding="utf-8")
+    cut = text.find("\nNotas del dueño")
+    return (text, "") if cut < 0 else (text[:cut], text[cut:])
+
+
+roster.write_text(TABLE + TAIL, encoding="utf-8")
+_, _, page = get("/roster?cuenta=main")
+check("la nota suelta no sale como contacto en la lista del roster", False, "Notas del dueño" in page)
+etag = hidden(get("/roster/editar?cuenta=main&fila=2")[2], "etag")
+status, _, _ = post("/roster/guardar", csrf=csrf, cuenta="main", fila="2", etag=etag, name="Iris",
+                    email="iris@example.com", type="AI Agent", github="", phones="", telegram="@iris_paynani")
+head, tail = split_tail()
+check("«Editar» crea la columna: la nota, el renglón en blanco y ## Notifiers quedan byte por byte",
+      (303, TAIL), (status, tail))
+check("sólo las filas reales reciben la celda", ["| Name | Email | Type | Telegram |", "|---|---|---|---|",
+      "| Julián Flores | julian@example.com | Human |  |", "| Iris | iris@example.com | AI Agent | @iris_paynani |"],
+      head.splitlines())
+roster.write_text(TABLE + TAIL, encoding="utf-8")
+etag = hidden(get("/roster/editar?cuenta=main")[2], "etag")
+status, _, _ = post("/roster/guardar", csrf=csrf, cuenta="main", fila="", etag=etag, name="Pedro", email="",
+                    type="Human", github="", phones="", telegram="7000099")
+head, tail = split_tail()
+check("«Agregar» crea la columna y la fila nueva queda dentro de la tabla; lo de después, byte por byte",
+      (303, TAIL, "| Pedro |  | Human | 7000099 |"), (status, tail, head.splitlines()[-1]))
+roster.write_text(TABLE + TAIL, encoding="utf-8")
+etag = hidden(get("/roster/editar?cuenta=main")[2], "etag")
+status, _, _ = post("/roster/guardar", csrf=csrf, cuenta="main", fila="", etag=etag, name="Beto",
+                    email="beto@example.com", type="Human", github="", phones="", telegram="")
+head, tail = split_tail()
+check("«Agregar» sin Telegram también deja la fila dentro de la tabla y la nota intacta",
+      (303, TAIL, "| Beto | beto@example.com | Human |"), (status, tail, head.splitlines()[-1]))
+
 httpd.shutdown()
 httpd.server_close()
 print(f"\n{passed} passed, {failed} failed")
