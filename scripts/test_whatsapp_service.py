@@ -585,10 +585,51 @@ async def scenario_authors(tmp: Path) -> None:
         await svc.stop()
 
 
+async def scenario_qr_session(tmp: Path) -> None:
+    """#604: una sesión vinculada por QR (registered=false en Baileys) es una sesión de verdad:
+    already_linked, reconecta tras un corte y tras reiniciar, y unlink la cierra. Además,
+    status dice unlinked aunque el puente no mande su `status` después del logout."""
+    svc = make(tmp)
+    await started(svc)
+    try:
+        async with Client(svc.socket_path) as c:
+            r = await c.ask("whatsapp.link", mode="qr")
+            check("qr: link aceptado", True, r.get("ok"))
+            await svc.sup.request("fake.link_done", me="+15550009999")
+            creds = json.loads((svc.layout.auth / "creds.json").read_text())
+            check("qr: creds como Baileys (registered false, con account)", (False, True),
+                  (creds.get("registered"), bool(creds.get("account"))))
+            check("qr: connected", True, await until(lambda: svc.status()["state"] == "connected", 3))
+            r = await c.ask("whatsapp.link", mode="qr")
+            check("qr: link estando vinculado da already_linked", "already_linked", r.get("code"))
+            await svc.sup.request("fake.disconnect")
+            await svc.sup.request("fake.reconnect")
+            check("qr: reconecta tras un corte", True,
+                  await until(lambda: svc.status()["state"] == "connected", 3))
+    finally:
+        await svc.stop()
+    svc = make(tmp)
+    await started(svc)
+    try:
+        check("qr: reconecta al reiniciar el servicio", True,
+              await until(lambda: svc.status()["state"] == "connected", 3))
+        async with Client(svc.socket_path) as c:
+            await svc.sup.request("fake.quiet_logout")
+            r = await c.ask("whatsapp.unlink", by="web")
+            check("qr: unlink ok con remote true", (True, True),
+                  (r.get("ok"), (r.get("data") or {}).get("remote")))
+            check("qr: auth/ vacío tras unlink", [], sorted(p.name for p in svc.layout.auth.iterdir()))
+            r = await c.ask("whatsapp.status")
+            check("#604: status unlinked sin esperar el status del puente", "unlinked", r["data"]["state"])
+    finally:
+        await svc.stop()
+
+
 async def main_async() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         await scenario_main(tmp / "main")
+        await scenario_qr_session(tmp / "qrsession")
         await scenario_qr_idle(tmp / "idle")
         await scenario_catch_all(tmp / "catch")
         await scenario_socket_safety(tmp / "sock")
