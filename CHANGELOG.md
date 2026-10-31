@@ -2,6 +2,28 @@
 
 ## Sin publicar
 
+## 0.19.0 (2026-10-31)
+
+Telegram (PRD #609, #612): un bot propio por instalación, para recibir y contestar mensajes de los contactos del roster, con Catch-All, multimedia, respuesta por partes, PaynaniWeb y PaynaniApp. Es opcional: sin `--with-telegram` nada cambia en tu instalación. La prueba real TG-9 pasó T9-01 a T9-09 en una instalación de Claude Code; las rondas con OpenClaw y Hermes vienen después de publicar.
+
+### Si actualizas desde 0.18.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.19.0
+python3 scripts/upgrade_plan.py --from v0.18.0     # y haz lo que imprima
+```
+
+El plan corre `install.sh --upgrade` y reinicia los servicios de paynani, porque cambia `VERSION`. En Claude Code y Codex dice además que el hook de sesión cambió: la siguiente sesión lo toma. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y `version_drift` tiene que decir `ok`.
+
+- **OpenClaw:** el plan pide `python3 scripts/openclaw_rules.py --install`. Córrelo: trae las instrucciones del aviso `[telegram …]`.
+- **`telegram.env` en `.gitignore`:** si ya instalaste Telegram desde `main` antes de esta versión, revisa con `git status --short` que `telegram.env` no aparezca en ningún commit tuyo. Guarda el token del bot.
+- **Telegram (opcional):** crea un bot con @BotFather que sea sólo de esta instalación, corre `scripts/install.sh --runtime <runtime> --with-telegram` y después `scripts/paynani telegram setup` (el token se lee de stdin). Todo está en `INSTALL.md` 5.5 y `TELEGRAM.md`. Para que el agente reconozca a alguien, pon su `@usuario` o su id en la columna `Telegram` del roster: si el roster no la tiene, guardarla desde PaynaniWeb, PaynaniApp o `paynani roster edit <correo> --telegram @usuario` la crea.
+- **Hermes, antes de instalar Telegram:** copia a `~/.hermes/config.yaml` la lista de eventos y el `prompt` de la ruta `paynani-roster` de `examples/hermes-routes.yaml`, que ahora incluye `telegram.received` y `telegram.edited`, y corre `hermes gateway restart` (`HERMES.md`). Sin eso, Hermes ignora los mensajes de Telegram y la cola del despachador se detiene detrás de ellos, con el correo incluido.
+- **Si `version.sh --apply` te dijo «selected runtime is unknown»** al actualizar a 0.18.0, ya está corregido aquí. Para llegar a 0.19.0 desde 0.18.0, el plan que corre es el de 0.19.0, así que no hace falta `PAYNANI_RUNTIME`.
+- **PaynaniApp 0.12.0** (opcional): «Mensajes de Telegram», el Catch-All de Telegram y el campo «Usuario de Telegram» en la ficha del contacto. Se instala encima, como siempre. PaynaniApp 0.11.0 no muestra nada de Telegram.
+
 - **`paynani telegram send` y `whatsapp send` aceptan `--file` en cualquier lugar (hallazgo de TG-9, #612).** `paynani telegram send ana --file foto.jpg "texto"` fallaba con «unrecognized arguments», porque argparse deja de juntar las palabras del texto en cuanto ve una opción. Ahora lo que sigue a la opción es la continuación del texto. Una opción desconocida sigue siendo un error. `test_telegram_send.py`.
 - **`telegram.env` en `.gitignore` (hallazgo de TG-9, #612).** Guarda el token del bot y no estaba ignorado, a diferencia de `sms.env` y `whatsapp.env`: un `git add -A` en la carpeta de la instalación lo metía en un commit. En la prueba real pasó en un commit local, que se borró sin llegar al remoto. `test_telegram_token.py` lo comprueba.
 - **PaynaniWeb: el acceso a Perfil va junto a tu nombre, en el menú lateral (#626).** Como en el /dash de ServiceButton, un ícono de perfil a la derecha del nombre abre `/profile`, y queda resaltado mientras estás ahí. Lleva `aria-label` y `title` «Perfil» en los cinco idiomas. Sale del menú del avatar (Q265=B), y el avatar de arriba a la derecha se quita (Q267=B): «Cerrar sesión» queda en el menú lateral. Funciona igual en el celular, porque es el mismo menú.
