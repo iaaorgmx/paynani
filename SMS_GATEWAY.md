@@ -1160,8 +1160,10 @@ política `reply` es la de todos los contactos que no tengan la suya.
 ### `catchall.get` y `catchall.save`: el Catch-All de cada canal (PRD #535, #576)
 
 Como las reglas generales, sin `account`, `row` ni `roster_etag`. Llevan `channel`
-(`sms` o `whatsapp`); sin `channel` es `sms`, para PaynaniApp 0.10.0. Cada canal
-tiene su archivo, `rules/catch-all-sms.md` y `rules/catch-all-whatsapp.md`. Mientras
+(`sms`, `whatsapp` o `telegram`); sin `channel` es `sms`, para PaynaniApp 0.10.0.
+`catchall.get` también responde `channels`, la lista de los tres. Cada canal tiene
+su archivo, `rules/catch-all-sms.md`, `rules/catch-all-whatsapp.md` y
+`rules/catch-all-telegram.md` (PRD #609, Q264). Mientras
 un canal no tenga el suyo y exista el único de antes, `rules/catch-all.md`, se lee
 ese. El primer `catchall.save` crea el archivo de cada canal que falte con lo que
 tenía el viejo, escribe el cambio y quita el viejo (queda su copia en
