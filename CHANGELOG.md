@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- **Telegram, TG-0: el contrato y un servidor falso de la Bot API (PRD #609, #612).** `TELEGRAM.md` fija lo que harán TG-1 a TG-8: las carpetas por bot, los métodos de la Bot API que se usan, los eventos `telegram.received`, `telegram.edited` y `telegram.health` (con referencia opaca `tg:…` y sin ids de Telegram), los tipos de `control.sock` (hilos con id opaco `t_…`, envío, streaming con `stream_open`/`append`/`close`, borrador, cambio de token en dos pasos y la única respuesta con un id, para «Agregar al roster»), los mensajes de PaynaniApp por la pasarela y lo que nunca se registra. `scripts/paynani_lib/telegram/fake_api.py` habla HTTP como la Bot API, sin red: un solo `getUpdates` a la vez (409 al segundo), 409 con webhook, 401 con token revocado, 429 con `retry_after`, confirmación por `offset`, ediciones, grupos, archivos con tamaño declarado distinto del real y chats que rechazan `sendMessageDraft`. `test_telegram_fake_api.py` lo prueba. Todavía no hay servicio: nada cambia en una instalación.
 ## 0.18.0 (2026-10-31)
 
 **WhatsApp con el mismo número del SMS (PRD #550), un Catch-All por canal (PRD #576) y
