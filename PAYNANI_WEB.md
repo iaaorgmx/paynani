@@ -250,13 +250,14 @@ no marca avisos, no abre IMAP y no escribe en `state/`. La lectura está en
   está en `warning` o `unknown`, rojo si alguna está en `blocked`. Debajo dice cuántas
   están en orden y enlaza a las que no.
 - **De dónde salen las revisiones:**
-  - Las locales (listener, despachador, cola, credenciales, roster, cuentas
+  - Las locales (listener, despachador, cola, credenciales, roster, `smtp`, cuentas
     adicionales, sesión del agente y teléfono de la pasarela) las calcula la web con
     `healthcheck`, con caché de 60 s.
-  - Las que tocan la red (`himalaya`, que corre `himalaya account check`, y `smtp`)
-    nunca se corren desde la web: se leen del último `paynani doctor` guardado en
+  - La única que toca la red, `himalaya` (corre `himalaya account check`), nunca se
+    corre desde la web: se lee del último `paynani doctor` guardado en
     `state/doctor.json` (#603), con su hora.
-  - Sin ese archivo cuentan como `unknown`.
+  - Sin ese archivo, o con uno de más de 24 h, cuenta como `unknown` y dice su
+    antigüedad: un `doctor` viejo no pinta el estado de verde.
 - **Hoy y los últimos 7 días** se cuentan en la zona horaria del host, y la página la
   muestra.
 - **Los cuatro indicadores:**
@@ -275,7 +276,8 @@ no marca avisos, no abre IMAP y no escribe en `state/`. La lectura está en
   2. cuentas desconectadas;
   3. avisos abiertos;
   4. SMS fallidos o vencidos de hoy;
-  5. tokens de API que vencen en 7 días o menos;
+  5. tokens de API que vencen en 7 días o menos, o que ya vencieron y no están
+     revocados;
   6. una versión nueva de paynani (de `state/version.check`).
 
   Sin nada, «Nada pendiente».
@@ -287,9 +289,10 @@ no marca avisos, no abre IMAP y no escribe en `state/`. La lectura está en
 - **Actualización:** `assets/dashboard.js` pide `/dashboard.json` cada 60 s, sólo con
   la pestaña visible, y cambia los números y el estado general sin recargar. Si
   cambió un servicio o lo pendiente, dice «Hay cambios · Actualizar». `/dashboard.json`
-  pide sesión, responde con `no-store` y sólo trae números y estados: ni direcciones,
-  ni teléfonos, ni asuntos, ni nombres. Sin script, la página se ve completa al
-  cargarla.
+  y el script piden sesión. El JSON responde con `no-store` y sólo trae números y
+  estados: ni direcciones, ni teléfonos, ni asuntos, ni nombres. El modelo se guarda
+  30 s en memoria, así que el ledger no se relee en cada petición. Sin script, la
+  página se ve completa al cargarla.
 
 ## Lo que guarda y lo que no
 

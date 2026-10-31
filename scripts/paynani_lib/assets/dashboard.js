@@ -26,6 +26,10 @@
     setText("open_notices", data.open_notices);
     setText("sms_today.total", (pick(data, "sms_today.in") || 0) + (pick(data, "sms_today.out") || 0));
     setText("roster_count", data.roster_count);
+    ["handled", "replied", "open"].forEach(function (k) { setText("mail_today." + k, pick(data, "mail_today." + k)); });
+    ["in", "out", "failed"].forEach(function (k) { setText("sms_today." + k, pick(data, "sms_today." + k)); });
+    var notices = root.querySelector('[data-dash-kpi="open_notices"]');
+    if (notices) { notices.classList.toggle("kpi-warn", data.open_notices > 0); }
     var status = root.querySelector('[data-dash="status"]');
     if (status) {
       var tone = { ok: "ok", warning: "warn", blocked: "bad" }[data.status] || "warn";

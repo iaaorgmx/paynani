@@ -38,7 +38,11 @@ HEARTBEAT_STALE_S = 300
 QUEUE_STALE_S = 600
 DOCTOR_FILE = "doctor.json"     # el último `paynani doctor` completo, si el núcleo lo guarda
 # Las revisiones de `doctor` que tocan la red: el Dashboard nunca las corre (FR-6).
-NETWORK_CHECKS = ("himalaya", "smtp")
+# `himalaya` es la única que conecta (`himalaya account check`); `smtp` sólo mira si existe
+# `[accounts.paynani]`, y la web la calcula en vivo (revisión de Metis en #605).
+NETWORK_CHECKS = ("himalaya",)
+NETWORK_MAX_AGE_S = 24 * 3600   # una revisión de red más vieja cuenta como unknown (revisión de Metis)
+MODEL_TTL_S = 30.0              # el modelo, para no releer el ledger en cada /dashboard.json
 STATUS_ORDER = {"ok": 0, "unknown": 1, "warning": 2, "blocked": 3}
 
 
@@ -150,9 +154,16 @@ class Core(Source):
     def sms(self):
         from ..sms import store as sms_store
         from ..sms import thread as sms_thread
+        root = self.ctx.state_dir()
+        if not (root / "sms").is_dir():
+            return []
+        # Sin pasar por Store.__init__, que crea y cambia los permisos de sus carpetas:
+        # el Dashboard sólo lee (FR-20; revisión de Ximena en #605). `items()` sólo usa
+        # métodos de lectura.
+        store = sms_store.Store.__new__(sms_store.Store)
+        store.root = root / "sms"
         try:
-            store = sms_store.Store(self.ctx.state_dir() / "sms")
-            items = sms_thread.items(store, self.ctx.state_dir() / "events.jsonl", calls=True)
+            items = sms_thread.items(store, root / "events.jsonl", calls=True)
         except OSError:
             return []
         return [{"epoch": i.get("epoch"), "kind": i.get("kind", ""), "status": i.get("status", ""),
@@ -218,7 +229,7 @@ class Core(Source):
         with self._lock:
             if self._health and self.clock() - self._health[0] < HEALTH_TTL_S:
                 return self._health[1]
-            value = local_health(self.ctx.state_dir())
+            value = local_health(self.ctx.state_dir(), self.clock())
             self._health = (self.clock(), value)
             return value
 
@@ -260,7 +271,7 @@ def _check(name: str, status: str, summary: str) -> dict:
     return {"name": name, "status": status, "summary": summary}
 
 
-def local_health(state_dir: Path) -> dict:
+def local_health(state_dir: Path, now: float | None = None) -> dict:
     """Las revisiones rápidas y locales de `doctor` (FR-6): servicios, cola, archivos,
     roster, sesión y pasarela, con las funciones públicas de `healthcheck`. Las de red
     vienen del último `doctor` guardado (`state/doctor.json`), si existe."""
@@ -302,21 +313,39 @@ def local_health(state_dir: Path) -> dict:
         checks.append(_check("session_watch", "ok", "an agent session is watching the mail"))
     elif watch.get("watch_expired") or watch.get("watch_orphan") or watch.get("watch_ended"):
         checks.append(_check("session_watch", "warning", "no agent session is watching the mail right now"))
+    him = hc.himalaya_facts()
+    checks.append(_check("smtp", "ok" if him.get("account_present") else "blocked",
+                         "himalaya paynani account is configured" if him.get("account_present")
+                         else "himalaya config is missing [accounts.paynani]"))
     phone = hc.sms_phone_facts()
     for text in hc.sms_phone_warnings(phone):
         checks.append(_check("sms_phone", "warning", text.split(":")[0]))
     if phone is not None and not hc.sms_phone_warnings(phone):
         checks.append(_check("sms_phone", "ok", "the paired phone is online"))
-    saved = _jsonl_one(Path(state_dir) / DOCTOR_FILE)
-    network_at = ""
-    if saved:
-        network_at = str(saved.get("generated_at") or "")
-        for c in saved.get("checks") or []:
-            if isinstance(c, dict) and c.get("name") in NETWORK_CHECKS:
-                checks.append(_check(str(c["name"]), str(c.get("status") or "unknown"), str(c.get("summary") or "")))
-    else:
-        checks.append(_check("network", "unknown", "the IMAP and SMTP checks have no saved result"))
-    return {"checks": checks, "network_at": network_at}
+    network, network_at = network_checks(_jsonl_one(Path(state_dir) / DOCTOR_FILE),
+                                         time.time() if now is None else now)
+    return {"checks": checks + network, "network_at": network_at}
+
+
+def network_checks(saved: dict | None, now: float) -> tuple[list[dict], str]:
+    """Las revisiones de red del último `doctor` guardado, con su hora. Una de más de 24 h
+    cuenta como `unknown`, con su antigüedad (revisión de Metis en #605): un `doctor`
+    viejo no pinta el estado de verde. Sin archivo, una sola `network` en `unknown`."""
+    if not saved:
+        return [_check("network", "unknown", "the network checks have no saved result")], ""
+    network_at = str(saved.get("generated_at") or "")
+    at = parse(network_at)
+    age = None if at is None else max(0, int(now - at.timestamp()))
+    out = []
+    for c in saved.get("checks") or []:
+        if not isinstance(c, dict) or c.get("name") not in NETWORK_CHECKS:
+            continue
+        if age is None or age > NETWORK_MAX_AGE_S:
+            days = "unknown" if age is None else f"{age // 86400} day(s)"
+            out.append(_check(str(c["name"]), "unknown", f"the last {c['name']} check is {days} old"))
+        else:
+            out.append(_check(str(c["name"]), str(c.get("status") or "unknown"), str(c.get("summary") or "")))
+    return out, network_at
 
 
 def _jsonl_one(path: Path) -> dict | None:
@@ -447,8 +476,10 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
     open_notices = []
     activity = []
     notice_since = now - dt.timedelta(days=NOTICE_DAYS)
+    mail_by_account = {account_id: source.mail(account_id) for account_id in ids}
+    week_replied = 0
     for account_id in ids:
-        for row in source.mail(account_id):
+        for row in mail_by_account[account_id]:
             seen = parse(row.get("observed_at"))
             if seen is None:
                 continue
@@ -456,7 +487,7 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
             state = row.get("state", "")
             activity.append({"at": local, "channel": "mail", "who": row.get("sender_name") or row.get("sender_address", ""),
                              "what": row.get("subject", ""), "state": state, "account": account_id,
-                             "href": f"/email/{account_id}/ver?id={row.get('event_id', '')}"})
+                             "href": mail_href(account_id, row.get("event_id", ""))})
             if account_id not in chosen:
                 continue
             is_open = state in OPEN
@@ -467,6 +498,8 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
             day = local.date()
             if day in per_day:
                 per_day[day]["open" if is_open else "closed"] += 1
+                if state == "replied":
+                    week_replied += 1
             if day == today:
                 mail_today["received"] += 1
                 if state in ("handled", "closed"):
@@ -480,15 +513,9 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
             if at is not None:
                 activity.append({"at": at.astimezone(tz), "channel": "sent", "who": rec.get("to", ""),
                                  "what": rec.get("subject", ""), "state": "sent", "account": account_id,
-                                 "href": f"/email/{account_id}"})
+                                 "href": mail_href(account_id, sent=rec.get("message_id", ""))})
     open_notices.sort(key=lambda n: n["at"])
     week_received = sum(v["closed"] + v["open"] for v in per_day.values())
-    week_replied = 0
-    for account_id in chosen:
-        for row in source.mail(account_id):
-            seen = parse(row.get("observed_at"))
-            if seen is not None and seen.astimezone(tz).date() in per_day and row.get("state") == "replied":
-                week_replied += 1
 
     # SMS (FR-8)
     sms_today = {"in": 0, "out": 0, "failed": 0}
@@ -566,11 +593,13 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
         if token.get("revoked_at"):
             continue
         expires = parse(token.get("expires_at"))
-        if expires is not None and now <= expires <= now + dt.timedelta(days=TOKEN_SOON_DAYS):
+        if expires is not None and expires <= now + dt.timedelta(days=TOKEN_SOON_DAYS):
+            # Uno ya vencido y sin revocar también (revisión de Metis en #605): un agente que lo
+            # siga usando falla.
             soon.append({"name": token.get("name", ""), "expires": expires.astimezone(tz),
-                         "days": max(0, (expires - now).days)})
+                         "days": max(0, (expires - now).days), "expired": expires < now})
     for token in sorted(soon, key=lambda t: t["expires"]):
-        attention.append({"kind": "token", "status": "info", **token})
+        attention.append({"kind": "token", "status": "warning" if token["expired"] else "info", **token})
     version = source.version()
     newer = bool(version.get("latest")) and _version_tuple(version["latest"]) > _version_tuple(version.get("installed", ""))
     if newer:
@@ -604,6 +633,14 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
         "activity": activity[:ACTIVITY],
         "version": version,
     }
+
+
+def mail_href(account_id: str, event_id: str = "", *, sent: str = "") -> str:
+    """El enlace a un correo, con el mismo ayudante que la lista de la cuenta (`?e=` o `?s=`)."""
+    from . import mail_pages
+    if sent:
+        return mail_pages.href(account_id, {"kind": "out", "message_id": sent})
+    return mail_pages.href(account_id, {"kind": "in", "event_id": event_id})
 
 
 def _q(value: str) -> str:

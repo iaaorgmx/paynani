@@ -49,7 +49,6 @@ STATIC = {
     "/assets/whatsapp.js": (ASSETS / "whatsapp.js", "application/javascript; charset=UTF-8"),
     "/assets/compose.js": (ASSETS / "compose.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
-    "/assets/dashboard.js": (ASSETS / "dashboard.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
@@ -57,6 +56,7 @@ STATIC = {
     "/assets/favicon.svg": (FAVICON, "image/svg+xml"),
     "/favicon.ico": (FAVICON, "image/svg+xml"),
 }
+DASHBOARD_JS = "/assets/dashboard.js"   # con sesión (PRD #602 §5): fuera de STATIC
 LANG_COOKIE = "paynani_web_lang"
 MAX_BODY_BYTES = 64 * 1024
 # Catch-All instructions may be 32 KB once saved (PRD #535 FR-6). The form arrives
@@ -319,6 +319,11 @@ class Context:
         # fuente que pasen las pruebas, y la hora con la zona del host (Q6).
         self.dashboard = dashboard_source or dashboard.Core(self, clock)
         self.now = now or (lambda: dt.datetime.now().astimezone())
+        # El modelo, 30 s por cuenta: con dashboard.js cada 60 s por pestaña, el ledger y el
+        # journal no se releen en cada petición (revisión de Metis en #605).
+        self._dash_cache: dict[str, tuple[float, dict]] = {}
+        self._dash_lock = threading.Lock()
+        self._clock = clock
         self._whatsapp_root = whatsapp_root
         # La vinculación por QR o código de cada sesión del navegador: el link_id vive
         # sólo aquí, en memoria, nunca en una cookie, una URL ni la página (§11).
@@ -327,6 +332,18 @@ class Context:
         # recargar (whatsapp.js recarga cuando /whatsapp/link/current dice `ended`).
         self._wa_ended: dict[str, str] = {}
         self._wa_lock = threading.Lock()
+
+    def dashboard_model(self, account: str = "") -> dict:
+        with self._dash_lock:
+            hit = self._dash_cache.get(account)
+            if hit and self._clock() - hit[0] < dashboard.MODEL_TTL_S:
+                return hit[1]
+        model = dashboard.build(self.dashboard, self.now(), account)
+        with self._dash_lock:
+            if len(self._dash_cache) > 32:
+                self._dash_cache.clear()
+            self._dash_cache[account] = (self._clock(), model)
+        return model
 
     def state_dir(self) -> Path:
         if self._state_dir is not None:
@@ -721,6 +738,11 @@ def make_handler(ctx: Context):
                 return
             if self.route == "/dashboard.json":
                 self._dashboard_json()
+                return
+            if self.route == DASHBOARD_JS:
+                # PRD #602 §5: el script del Dashboard también pide sesión (revisión de
+                # Ximena en #605), por eso no está en STATIC.
+                self._send(200, "application/javascript; charset=UTF-8", (ASSETS / "dashboard.js").read_bytes())
                 return
             if self.route.startswith("/email/"):
                 self._email()
@@ -1166,7 +1188,7 @@ def make_handler(ctx: Context):
         # ---- Dashboard (PRD #602) --------------------------------------------------
         def _dashboard_model(self) -> dict:
             account = self.query.get("cuenta", [""])[0][:64]
-            return dashboard.build(self.CTX.dashboard, self.CTX.now(), account)
+            return self.CTX.dashboard_model(account)
 
         def _dashboard(self):
             """GET /: el Dashboard (FR-1). Sólo lee (FR-20)."""

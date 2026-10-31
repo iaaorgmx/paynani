@@ -153,6 +153,27 @@ bad = dashboard.build(fake(health={"checks": [{"name": "listener", "status": "bl
 check("FR-12: una revisión que no está en ok va primero, y la cuenta caída después",
       ["check", "account"], [a["kind"] for a in bad["attention"]][:2])
 check("FR-5: y el estado general es rojo", ("blocked", 1, 2), (bad["status"], bad["checks_ok"], bad["checks_total"]))
+t0 = NOW.timestamp()
+saved = {"generated_at": "2026-10-30T22:00:00Z", "checks": [{"name": "himalaya", "status": "ok", "summary": "ok"},
+                                                            {"name": "smtp", "status": "blocked", "summary": "x"}]}
+fresh, at = dashboard.network_checks(saved, t0)
+check("FR-6: del doctor guardado sólo se toma la de red (himalaya), con su hora",
+      ([("himalaya", "ok")], "2026-10-30T22:00:00Z"), ([(c["name"], c["status"]) for c in fresh], at))
+old, _ = dashboard.network_checks(dict(saved, generated_at="2026-10-27T22:00:00Z"), t0)
+check("un doctor de hace más de 24 h cuenta como unknown y dice su edad (revisión de Metis, #605)",
+      [("himalaya", "unknown", "the last himalaya check is 3 day(s) old")],
+      [(c["name"], c["status"], c["summary"]) for c in old])
+check("sin doctor guardado, una revisión network en unknown", ["network"],
+      [c["name"] for c in dashboard.network_checks(None, t0)[0]])
+expired = dashboard.build(fake(tokens=[{"name": "Vencido", "expires_at": "2026-10-20T00:00:00Z", "revoked_at": None}]), NOW)
+tok = [a for a in expired["attention"] if a["kind"] == "token"]
+check("un token ya vencido y sin revocar también aparece (revisión de Metis, #605)",
+      [("Vencido", True, "warning")], [(a["name"], a["expired"], a["status"]) for a in tok])
+check("con su texto", True, "Vencido" in dashboard_pages.body(expired, "J") and
+      i18n.t("web.dash.att.token_expired", name="Vencido") in dashboard_pages.body(expired, "J"))
+counting = fake()
+dashboard.build(counting, NOW)
+check("cada cuenta se lee una sola vez por modelo (revisión de Metis, #605)", 2, counting.calls.count("mail"))
 calm = dashboard.build(fake(mail={}, sms=[], tokens=[], version={"installed": "1.0.0", "latest": "1.0.0"}), NOW)
 check("FR-13: sin nada pendiente, la lista está vacía", [], calm["attention"])
 
@@ -180,6 +201,17 @@ check("FR-9: el selector con dos cuentas", True, 'name="cuenta"' in html)
 check("FR-12: el enlace para renovar el token", True, 'href="/api-tokens"' in html)
 one = dashboard_pages.body(dashboard.build(fake(accounts=ACCOUNTS[:1]), NOW), "J")
 check("FR-9: con una sola cuenta no hay selector", False, 'name="cuenta"' in one)
+from paynani_lib.web import mail_pages  # noqa: E402
+check("los enlaces a un correo usan ?e= como la lista de la cuenta (revisión de Andy, #605)",
+      (True, False, True), (mail_pages.href("main", {"kind": "in", "event_id": "imap:INBOX:1:3"}) in html,
+                            "/ver?id=" in html, 'href="/email/main/ver?s=%3Ca%40b%3E"' in html))
+check("y la actividad también", [], [a["href"] for a in m["activity"]
+                                     if a["channel"] == "mail" and "/ver?e=" not in a["href"]])
+check("las cifras de los subtítulos llevan data-dash (revisión de Andy, #605)",
+      True, all(f'data-dash="{k}"' in html for k in ("mail_today.handled", "mail_today.replied", "mail_today.open",
+                                                     "sms_today.in", "sms_today.out", "sms_today.failed")))
+check("la tarjeta de avisos se puede encontrar para cambiar su color", True,
+      'class="kpi kpi-warn" data-dash-kpi="open_notices"' in html)
 check("FR-13: «Nada pendiente»", True, i18n.th("web.dash.attention.none") in dashboard_pages.body(calm, "J"))
 
 for lang in dashboard_strings.STRINGS:
@@ -245,11 +277,34 @@ check("FR-18: /dashboard.json con sesión", (200, "application/json; charset=UTF
       (status, hdrs.get("content-type"), data["mail_today"]["received"]))
 check("FR-19: no-store en el JSON", True, "no-store" in hdrs.get("cache-control", ""))
 check("FR-19: sin datos personales", [], [x for x in ("@", "+52", "Hola", "Metis") if x in body])
-status, hdrs, js = req("GET", "/assets/dashboard.js")
+status, hdrs, _ = req("GET", "/assets/dashboard.js")
+check("§5: /assets/dashboard.js sin sesión va a la entrada (revisión de Ximena, #605)",
+      (303, True), (status, hdrs.get("location", "").startswith("/login")))
+status, hdrs, js = req("GET", "/assets/dashboard.js", cookie=cookie)
 check("/assets/dashboard.js se sirve como JavaScript", (200, True, True),
       (status, hdrs.get("content-type", "").startswith("application/javascript"), "data-dash-src" in js))
 check("FR-20: leer el Dashboard no escribe en state/", [], sorted(p.name for p in (tmp / "state").iterdir()
                                                                 if p.name not in ("api_security",)))
+
+# Core de verdad sobre un state/ temporal (revisión de Ximena, #605): lee el almacén SMS
+# real (`state/sms/`, no `state/sms/sms/`) y no crea ni cambia nada.
+from paynani_lib.sms import store as sms_store  # noqa: E402
+import event as ev  # noqa: E402
+core_state = Path(tempfile.mkdtemp())
+core_ctx = app.Context(user_file, notifier=notify.Notifier(send=lambda *a: None, log=lambda l: None),
+                       agent_email="agente@example.com", accounts_file=tmp / "accounts.json", state_dir=core_state,
+                       roster_path=tmp / "roster.md")
+check("Core sin state/sms/ no lo crea", ([], []), (core_ctx.dashboard.sms(), sorted(p.name for p in core_state.iterdir())))
+sms_store.Store(core_state)            # lo crea la pasarela, no el Dashboard
+ev.append(core_state / "events.jsonl", {"schema_version": 1, "event_id": "sms:1", "event_type": "sms.received",
+                                        "provider_id": "phone:m1", "observed_at": "2026-10-30T20:00:00Z",
+                                        "sent_at": "2026-10-30T20:00:00Z", "sender": {"address": "+15550100", "name": "Ana"}})
+(core_state / "sms" / "outbox").chmod(0o750)   # si el Dashboard llamara Store(), volvería a 700
+before = sorted(str(p.relative_to(core_state)) + oct(p.stat().st_mode) for p in core_state.rglob("*"))
+got = core_ctx.dashboard.sms()
+after = sorted(str(p.relative_to(core_state)) + oct(p.stat().st_mode) for p in core_state.rglob("*"))
+check("Core lee el SMS de state/sms/", [("received", "Ana")], [(i["kind"], i["name"]) for i in got])
+check("FR-20: y no crea carpetas ni cambia permisos", before, after)
 
 httpd.shutdown()
 check("la configuración real no cambió (.env y Himalaya)", BEFORE, [sha(p) for p in REAL])

@@ -13,10 +13,12 @@ misma clave que `/dashboard.json` (FR-18).
 from __future__ import annotations
 
 import datetime as dt
+import html
 from urllib.parse import quote as urlquote
 
 from .. import i18n
 from . import when
+from .dashboard import mail_href
 from .shell import e, icon
 
 
@@ -65,9 +67,19 @@ def _pill(tone: str, label: str, key: str = "") -> str:
     return f'<span class="pill pill-{e(tone)}"{data}><i aria-hidden="true"></i>{e(label)}</span>'
 
 
+def _live(key: str, **parts) -> str:
+    """Un texto del catálogo con sus cifras en `<span data-dash>`, para que dashboard.js las
+    cambie (revisión de Andy en #605). `parts` es `{nombre: (valor, clave del JSON)}`."""
+    marks = {name: f"\x00{name}\x00" for name in parts}
+    text = html.escape(i18n.t("web.dash." + key, **marks), quote=False)
+    for name, (value, dash) in parts.items():
+        text = text.replace(f"\x00{name}\x00", f'<span data-dash="{e(dash)}">{e(value)}</span>')
+    return text
+
+
 def _kpi(ico: str, label: str, value, sub: str, *, key: str, tone: str = "") -> str:
     cls = f"kpi kpi-{tone}" if tone else "kpi"
-    return f"""<div class="{cls}">
+    return f"""<div class="{cls}" data-dash-kpi="{e(key)}">
   <div class="kpi-top">{icon(ico)}<span>{label}</span></div>
   <div class="kpi-valor" data-dash="{e(key)}">{e(value)}</div>
   <div class="kpi-sub">{sub}</div>
@@ -162,7 +174,7 @@ def attention(model: dict) -> str:
             first = a["oldest"]
             title = _th("att.notices.one") if a["count"] == 1 else _th("att.notices", count=a["count"])
             sub = _th("att.notices.sub", who=first["who"], subject=first["subject"], when=clock(first["at"], now))
-            link = f"/email/{urlquote(first['account'], safe='')}/ver?id={urlquote(first['event_id'], safe='')}"
+            link = mail_href(first["account"], first["event_id"])
             action = _th("att.open")
         elif kind == "sms_failed":
             ico = "inbox"
@@ -173,8 +185,12 @@ def attention(model: dict) -> str:
             link, action = "/messages/ver?n=" + urlquote(first.get("number", ""), safe=""), _th("att.open")
         elif kind == "token":
             ico = "key"
-            title = _th("att.token", name=a["name"], days=a["days"])
-            sub = _th("att.token.sub", when=clock(a["expires"], now))
+            if a.get("expired"):
+                title = _th("att.token_expired", name=a["name"])
+                sub = _th("att.token_expired.sub", when=clock(a["expires"], now))
+            else:
+                title = _th("att.token", name=a["name"], days=a["days"])
+                sub = _th("att.token.sub", when=clock(a["expires"], now))
             link, action = "/api-tokens", _th("att.renew")
         elif kind == "version":
             ico = "home"
@@ -327,9 +343,9 @@ def body(model: dict, name: str) -> str:
   <p class="dash-cambios aviso-caja" role="status" hidden>{_th("changed")} · <a href="">{_th("reload")}</a></p>
   {_account_picker(model)}
   <section class="kpis">
-    {_kpi("mail", _th("kpi.mail"), mt["received"], _th("kpi.mail.sub", handled=mt["handled"], replied=mt["replied"], open=mt["open"]), key="mail_today.received")}
+    {_kpi("mail", _th("kpi.mail"), mt["received"], _live("kpi.mail.sub", handled=(mt["handled"], "mail_today.handled"), replied=(mt["replied"], "mail_today.replied"), open=(mt["open"], "mail_today.open")), key="mail_today.received")}
     {_kpi("warn", _th("kpi.notices"), model["open_notices"], notices_sub, key="open_notices", tone="warn" if model["open_notices"] else "")}
-    {_kpi("inbox", _th("kpi.sms"), st["in"] + st["out"], _th("kpi.sms.sub", inn=st["in"], out=st["out"], failed=st["failed"]), key="sms_today.total")}
+    {_kpi("inbox", _th("kpi.sms"), st["in"] + st["out"], _live("kpi.sms.sub", inn=(st["in"], "sms_today.in"), out=(st["out"], "sms_today.out"), failed=(st["failed"], "sms_today.failed")), key="sms_today.total")}
     {_kpi("roster", _th("kpi.roster"), model["roster_count"], roster_sub, key="roster_count")}
   </section>
   <div class="rejilla">

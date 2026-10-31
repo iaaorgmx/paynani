@@ -3,6 +3,8 @@ from ..i18n_data import CATALOGUES
 
 STRINGS = {
     "es-MX": {
+        "att.token_expired": "El token «{name}» ya venció",
+        "att.token_expired.sub": "Venció el {when} y no está revocado",
         "att.notices.one": "1 aviso del roster abierto",
         "att.sms.one": "1 SMS fallido hoy",
         "changed": "Hay cambios en los servicios o en lo pendiente.",
@@ -96,6 +98,8 @@ STRINGS = {
         "never": "nunca",
     },
     "en-US": {
+        "att.token_expired": "Token «{name}» has expired",
+        "att.token_expired.sub": "Expired on {when} and not revoked",
         "att.notices.one": "1 roster notice open",
         "att.sms.one": "1 SMS failed today",
         "changed": "Services or pending items changed.",
@@ -189,6 +193,8 @@ STRINGS = {
         "never": "never",
     },
     "es-ES": {
+        "att.token_expired": "El token «{name}» ha caducado",
+        "att.token_expired.sub": "Caducó el {when} y no está revocado",
         "att.notices.one": "1 aviso del roster abierto",
         "att.sms.one": "1 SMS fallido hoy",
         "changed": "Hay cambios en los servicios o en lo pendiente.",
@@ -282,6 +288,8 @@ STRINGS = {
         "never": "nunca",
     },
     "fr-FR": {
+        "att.token_expired": "Le jeton « {name} » a expiré",
+        "att.token_expired.sub": "Expiré le {when} et non révoqué",
         "att.notices.one": "1 avis du roster ouvert",
         "att.sms.one": "1 SMS échoué aujourd’hui",
         "changed": "Les services ou les éléments en attente ont changé.",
@@ -375,6 +383,8 @@ STRINGS = {
         "never": "jamais",
     },
     "pt-BR": {
+        "att.token_expired": "O token «{name}» venceu",
+        "att.token_expired.sub": "Venceu em {when} e não foi revogado",
         "att.notices.one": "1 aviso do roster aberto",
         "att.sms.one": "1 SMS com falha hoje",
         "changed": "Os serviços ou os itens pendentes mudaram.",
