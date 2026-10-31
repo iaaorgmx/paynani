@@ -565,7 +565,8 @@ class TelegramService:
             links["warned"].pop(gone, None)
             changed = True
         if verdict["pin"]:
-            links["usernames"][verdict["pin"]] = {"id": uid, "at": now_utc()}
+            links["usernames"][verdict["pin"]] = {"id": uid, "row": contacts.row_key(verdict["entry"]),
+                                                  "at": now_utc()}
             self.store.save_links(links)                   # antes del evento: el vínculo no se pierde
             changed = False
             row = verdict["entry"].get("name", "")

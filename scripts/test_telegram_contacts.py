@@ -64,17 +64,23 @@ CATCH_OFF = "---\nversion: 1\nenabled: false\n---\nContesta sólo con el horario
 JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 200
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
 PDF = b"%PDF-1.7\n" + b"x" * 200
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
 OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 200
 
 
-def ooxml(kind="docx", macro=False, bomb=False):
+CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
+
+
+def ooxml(kind="docx", macro=False, bomb=False, types=None):
     part, ctype = {"docx": ("word/document.xml", "wordprocessingml.document.main+xml"),
                    "xlsx": ("xl/workbook.xml", "spreadsheetml.sheet.main+xml")}[kind]
+    if types is None:
+        types = ('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="%s"><Default Extension="xml" '
+                 'ContentType="application/xml"/><Override PartName="/%s" ContentType="application/'
+                 'vnd.openxmlformats-officedocument.%s"/></Types>' % (CT_NS, part, ctype))
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("[Content_Types].xml",
-                    '<Types><Override PartName="/%s" ContentType="application/'
-                    'vnd.openxmlformats-officedocument.%s"/></Types>' % (part, ctype))
+        zf.writestr("[Content_Types].xml", types)
         zf.writestr(part, "<x/>")
         if macro:
             zf.writestr("word/vbaProject.bin", b"\x00" * 10)
@@ -140,13 +146,20 @@ def unit_tests():
 
     d = contacts.decide(known, {}, BETO, "Beto_Ruiz")
     check("decide: primer mensaje del @usuario lo fija", d["pin"] == "beto_ruiz" and d["entry"]["name"] == "Beto Ruiz")
-    links = {"beto_ruiz": {"id": BETO}}
+    beto_row = contacts.row_key(known["usernames"]["beto_ruiz"])
+    links = {"beto_ruiz": {"id": BETO, "row": beto_row}}
     d = contacts.decide(known, links, BETO, "otro_nombre")
     check("decide: fijado, se reconoce por id aunque cambie de @usuario",
           d["entry"]["name"] == "Beto Ruiz" and d["pin"] is None)
     d = contacts.decide(known, links, OTRO, "beto_ruiz")
     check("decide: otro id con el mismo @usuario no se reconoce", d["entry"] is None and d["conflict"] == "beto_ruiz")
-    d = contacts.decide(known, {"viejo_nombre": {"id": BETO}}, BETO, None)
+    moved = roster_mod._telegram_from_text(ROSTER.replace("@Beto_Ruiz", "").replace(
+        "| %d | Human | ana-lopez |" % ANA, "| @beto_ruiz | Human | ana-lopez |"))
+    d = contacts.decide(moved, links, BETO, None)
+    check("#618: el @usuario fijado se mueve a otra fila: el vínculo se borra, no pasa a Ana",
+          d["drop"] == ["beto_ruiz"] and d["entry"] is None, str(d))
+    check("#618: recognized_now tampoco lo da como Ana", contacts.recognized_now(moved, links, BETO) is None)
+    d = contacts.decide(known, {"viejo_nombre": {"id": BETO, "row": beto_row}}, BETO, None)
     check("decide: un vínculo cuyo @usuario ya no está se borra", d["drop"] == ["viejo_nombre"] and d["entry"] is None)
     d = contacts.decide(known, {}, PEDRO, "doble_x")
     check("decide: un @usuario repetido no reconoce a nadie", d["entry"] is None and d["pin"] is None)
@@ -160,7 +173,21 @@ def unit_tests():
              ("docx con macros", ooxml(macro=True), "docx", None),
              ("xlsx con bomba de compresión", ooxml("xlsx", bomb=True), "xlsx", None),
              ("docx declarado xlsx", ooxml(), "xlsx", None),
-             ("zip cualquiera", b"PK\x03\x04" + b"\x00" * 50, "docx", None)]
+             ("zip cualquiera", b"PK\x03\x04" + b"\x00" * 50, "docx", None),
+             ("#618: el MIME sólo en un comentario", ooxml(types='<Types xmlns="%s"><!-- %s --></Types>'
+                                                         % (CT_NS, DOCX)), "docx", None),
+             ("#618: el MIME en otra parte", ooxml(types='<Types xmlns="%s"><Override PartName="/otra.xml" '
+                                                    'ContentType="%s"/></Types>' % (CT_NS, DOCX)), "docx", None),
+             ("#618: XML malformado", ooxml(types='%s <Types' % DOCX), "docx", None),
+             ("#618: la parte principal dos veces", ooxml(types='<Types xmlns="%s"><Override PartName="/word/document.xml" '
+                                                          'ContentType="%s"/><Override PartName="/word/document.xml" '
+                                                          'ContentType="application/xml"/></Types>' % (CT_NS, DOCX)),
+              "docx", None),
+             ("#618: con DOCTYPE", ooxml(types='<!DOCTYPE x [<!ENTITY a "b">]><Types xmlns="%s"><Override '
+                                         'PartName="/word/document.xml" ContentType="%s"/></Types>' % (CT_NS, DOCX)),
+              "docx", None),
+             ("#618: sin el namespace de OOXML", ooxml(types='<Types><Override PartName="/word/document.xml" '
+                                                       'ContentType="%s"/></Types>' % DOCX), "docx", None)]
     for label, data, category, want in cases:
         f = tmp / "f"
         f.write_bytes(data)

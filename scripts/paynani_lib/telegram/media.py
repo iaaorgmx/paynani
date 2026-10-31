@@ -137,11 +137,46 @@ def ooxml(path: Path) -> str | None:
             ct = zf.getinfo("[Content_Types].xml")
             if ct.file_size > MAX_CONTENT_TYPES:
                 return None
-            types = zf.read(ct).decode("utf-8", "replace")
+            overrides = _overrides(zf.read(ct))
     except (zipfile.BadZipFile, OSError, ValueError, RuntimeError, NotImplementedError):
         return None
-    found = [kind for kind, (part, ctype) in _MAIN.items() if part in names and ctype in types]
+    if overrides is None:
+        return None
+    found = [kind for kind, (part, ctype) in _MAIN.items()
+             if part in names and overrides.get("/" + part) == ctype]
     return found[0] if len(found) == 1 else None
+
+
+_CT_NS = "{http://schemas.openxmlformats.org/package/2006/content-types}"
+
+
+def _overrides(raw: bytes) -> dict[str, str] | None:
+    """
+    `{PartName: ContentType}` de los `Override` de `[Content_Types].xml`, o None si el
+    XML no es válido, trae DOCTYPE o entidades, no es un `Types`, o una parte aparece dos
+    veces (ambiguo). Así la parte principal se valida con su propio `Override`, no con
+    un texto que aparezca en cualquier lugar del archivo (Ximena, #618).
+    """
+    import xml.etree.ElementTree as ET
+
+    if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+        return None
+    try:
+        root = ET.fromstring(raw)
+    except (ET.ParseError, ValueError):
+        return None
+    if root.tag != _CT_NS + "Types":
+        return None
+    out: dict[str, str] = {}
+    for el in root:
+        if el.tag != _CT_NS + "Override":
+            continue
+        part = (el.get("PartName") or "").strip()
+        ctype = (el.get("ContentType") or "").strip()
+        if not part or part.lower() in {p.lower() for p in out}:
+            return None
+        out[part] = ctype
+    return out
 
 
 def accept(path: Path, category: str | None) -> str | None:

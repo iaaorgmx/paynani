@@ -133,8 +133,9 @@ o un `@usuario` de la columna ya quedó fijado a ese id en `links.json`; o el
 `@usuario` con el que escribe está en la columna y nadie lo ha fijado, y entonces se
 fija a este id y el dueño recibe «@usuario quedó vinculado a <contacto>». Si ese
 `@usuario` ya está fijado a otro id, no se reconoce y el dueño recibe un aviso, una
-vez por id. Un vínculo cuyo `@usuario` ya no está en la columna (el dueño lo cambió o
-quedó repetido) se borra con el siguiente mensaje. `doctor` muestra el check
+vez por id. El vínculo guarda también su fila (el correo, o el nombre si no tiene).
+Se borra con el siguiente mensaje si su `@usuario` ya no está en la columna, si quedó
+repetido o si ahora está en otra fila: nunca pasa en silencio de un contacto a otro. `doctor` muestra el check
 `roster:telegram` con las filas cuyo valor no vale o está repetido, sin el valor.
 
 Las líneas de aviso:

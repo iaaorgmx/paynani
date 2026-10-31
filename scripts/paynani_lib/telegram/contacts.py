@@ -11,21 +11,34 @@ Un mensaje privado se reconoce sólo por el id numérico de quien lo manda (`fro
 4. si está en la columna pero fijado a otro id, no se reconoce: es alguien fuera del
    roster, y el dueño recibe un aviso.
 
-Un vínculo cuyo `@usuario` ya no está en la columna (el dueño lo cambió o lo borró, o
-quedó repetido) se borra. `decide()` no escribe nada: devuelve qué hacer.
+Un vínculo guarda también la fila a la que se fijó (`row_key`: su correo, o su nombre si
+no tiene). Se borra si su `@usuario` ya no está en la columna (el dueño lo cambió o lo
+borró, o quedó repetido) o si ahora está en otra fila (Ximena, #618): así un vínculo
+nunca pasa en silencio de un contacto a otro. `decide()` no escribe nada: devuelve qué
+hacer.
 """
 from __future__ import annotations
 
 
+def row_key(entry: dict) -> str:
+    """La identidad de una fila del roster para un vínculo: su correo, o su nombre."""
+    return (entry.get("address") or "").lower() or "name:" + (entry.get("name") or "")
+
+
+def _live(known: dict, name: str, link) -> bool:
+    entry = known["usernames"].get(name)
+    return entry is not None and (link or {}).get("row") == row_key(entry)
+
+
 def decide(known: dict, links: dict, user_id: int, username: str | None) -> dict:
     """
-    `known` es `roster.roster_telegram()`; `links` es `{usuario: {"id": int, ...}}`.
+    `known` es `roster.roster_telegram()`; `links` es `{usuario: {"id": int, "row": str}}`.
 
     Devuelve `{"entry": fila o None, "pin": usuario o None, "conflict": usuario o None,
     "drop": [usuarios]}`.
     """
     uid = int(user_id)
-    drop = [u for u in links if u not in known["usernames"]]
+    drop = [u for u, link in links.items() if not _live(known, u, link)]
     live = {u: link for u, link in links.items() if u not in drop}
     out = {"entry": None, "pin": None, "conflict": None, "drop": drop}
     entry = known["ids"].get(str(uid))
@@ -57,7 +70,7 @@ def recognized_now(known: dict, links: dict, user_id: int) -> dict | None:
     if entry is not None:
         return entry
     for name, link in links.items():
-        if name in known["usernames"] and _link_id(link) == uid:
+        if _live(known, name, link) and _link_id(link) == uid:
             return known["usernames"][name]
     return None
 
