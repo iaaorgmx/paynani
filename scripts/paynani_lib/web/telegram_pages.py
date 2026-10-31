@@ -307,9 +307,9 @@ def setup_body(csrf: str, *, error: str = "", username: str = "") -> str:
     «Cuenta de Telegram» sin bot (#635): el token (`type="password"`, nunca vuelve), el
     usuario del bot, que se compara con `getMe` (Q282), la casilla «sólo de esta
     instalación», que también autoriza borrar un webhook (Q283), y la contraseña de la web.
+    Sin el enlace a «Mensajes de Telegram»: sin bot esa página es un 404 (#641).
     """
-    return f"""<p class="acciones"><a class="secundario" href="/telegram/messages">{_th("nav")}</a></p>
-<p class="lead">{_th("setup.lead")}</p>
+    return f"""<p class="lead">{_th("setup.lead")}</p>
 {_error(error)}
 <section class="tg-token" aria-labelledby="tg-setup-h">
   <h3 id="tg-setup-h">{_th("bot_title")}</h3>
@@ -328,3 +328,9 @@ def setup_body(csrf: str, *, error: str = "", username: str = "") -> str:
   </form>
 </section>
 """
+
+
+def disabled_body() -> str:
+    """Hay token pero Telegram está desactivado (#641): el aviso, sin el formulario, que
+    de todos modos se negaría con `already_configured`."""
+    return f'<p class="lead">{_th("setup.disabled")}</p>\n'

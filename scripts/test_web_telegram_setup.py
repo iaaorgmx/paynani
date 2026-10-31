@@ -212,6 +212,8 @@ status, hdrs, page = req("GET", "/telegram?lang=es-MX", cookie=cookie)
 csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
 check("GET /telegram sin bot: el formulario, 200 y no-store", (200, True, True),
       (status, 'action="/telegram/setup"' in page, "no-store" in (hdrs.get("cache-control") or "")))
+check("#641: sin bot, el formulario no enlaza a «Mensajes de Telegram» (sería un 404)", False,
+      'href="/telegram/messages"' in page.split("</aside>", 1)[-1])
 check("el token va en type=password con autocomplete=off", True,
       bool(re.search(r'name="token" type="password" autocomplete="off"', page)))
 check("el menú trae «Mensajes de Telegram» y el título es «Cuenta de Telegram»", (True, True),
@@ -269,6 +271,9 @@ config.write(dict(config.read(tg_env), TELEGRAM_ENABLED="0"), tg_env)
 status, _, page = post()
 check("desactivado (ENABLED=0 con token): 409 y pide enable", (409, True),
       (status, "paynani telegram enable" in page))
+status, _, page = req("GET", "/telegram?lang=es-MX", cookie=cookie)
+check("#641: desactivado, GET /telegram da el aviso de enable sin el formulario", (200, True, False, False),
+      (status, "paynani telegram enable" in page, 'action="/telegram/setup"' in page, 'name="token"' in page))
 
 # Sin el servicio instalado o si no arranca: queda guardado y la página lo dice.
 for result, ok in (("not-installed", "setup_not_installed"), ("failed", "setup_failed")):
