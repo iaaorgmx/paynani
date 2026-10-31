@@ -20,6 +20,7 @@ import base64
 import datetime as dt
 import html
 import json
+import os
 import re
 import secrets
 import sys
@@ -33,9 +34,9 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
-from . import catchall_strings, compose_strings, config_strings, dashboard_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
-               thread, users, whatsapp_pages, whatsapp_source, compose_pages, mail_compose, account_config, config_pages)
+               thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 FAVICON = Path(__file__).resolve().parents[3] / "brand" / "favicon.svg"
@@ -71,6 +72,10 @@ CATCHALL_BODY_BYTES = 6 * 32 * 1024 + 16 * 1024
 CSP = guard.CSP + "; connect-src 'self'"
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 SERVER_NAME = "paynani-web"
+# La referencia opaca de un mensaje de Telegram recibido (`tg:…`, TELEGRAM.md §4), para
+# /telegram/media, y el id opaco de un hilo (`t_` + 32 hex). Nunca un id de Telegram.
+TG_REF = re.compile(r"^tg:[A-Za-z0-9_.:-]{1,120}$")
+TG_THREAD = re.compile(r"^t_[0-9a-f]{32}$")
 # El id de un mensaje de WhatsApp recibido (`wa:<cuenta>:<hash>`), para /whatsapp/media (#573).
 WA_MESSAGE_ID = re.compile(r"^wa:[0-9A-Za-z_.+-]{1,40}:[0-9a-f]{64}$")
 
@@ -266,7 +271,8 @@ class Context:
                  state_dir: Path | None = None, roster_path: Path | None = None, roster_notifier=None,
                  whatsapp_source: whatsapp_source.Source | None = None, whatsapp_root: Path | None = None,
                  mailer: mail_compose.Mailer | None = None, updater: account_config.Updater | None = None,
-                 dashboard_source: dashboard.Source | None = None, now=None):
+                 dashboard_source: dashboard.Source | None = None, now=None,
+                 telegram_source: telegram_source.Source | None = None, telegram_root: Path | None = None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -325,6 +331,14 @@ class Context:
         self._dash_lock = threading.Lock()
         self._clock = clock
         self._whatsapp_root = whatsapp_root
+        # Telegram (PRD #609 FR-28, TG-7): el servicio por control.sock, o la fuente que
+        # pasen las pruebas. `telegram_root` es donde está telegram.env (TELEGRAM.md §4).
+        self._telegram = telegram_source
+        self._telegram_root = telegram_root
+        # El `check` de un cambio de token, por sesión del navegador y sólo en memoria
+        # (TELEGRAM.md §4: vale 5 min). La página nunca lo trae ni trae el token.
+        self._tg_checks: dict[str, dict] = {}
+        self._tg_lock = threading.Lock()
         # La vinculación por QR o código de cada sesión del navegador: el link_id vive
         # sólo aquí, en memoria, nunca en una cookie, una URL ni la página (§11).
         self._wa_links: dict[str, dict] = {}
@@ -429,6 +443,30 @@ class Context:
 
     def whatsapp_configured(self) -> bool:
         return whatsapp_source.configured(self._whatsapp_root)
+
+    def telegram(self) -> telegram_source.Source:
+        if self._telegram is None:
+            self._telegram = telegram_source.for_install(self.state_dir())
+        return self._telegram
+
+    def telegram_configured(self) -> bool:
+        if self._telegram_root is None and os.environ.get("PAYNANI_WEB_TELEGRAM") == "demo":
+            return True
+        return telegram_source.configured(self._telegram_root)
+
+    def tg_check_set(self, sid: str, data: dict) -> None:
+        with self._tg_lock:
+            self._tg_checks[sid] = dict(data, at=time.time())
+
+    def tg_check(self, sid: str, pop: bool = False) -> dict | None:
+        with self._tg_lock:
+            data = self._tg_checks.get(sid)
+            if data is None or time.time() - data["at"] >= telegram_source.CHECK_TTL_S:
+                self._tg_checks.pop(sid, None)
+                return None
+            if pop:
+                self._tg_checks.pop(sid, None)
+            return dict(data)
 
     def wa_link(self, sid: str) -> dict | None:
         with self._wa_lock:
@@ -729,7 +767,8 @@ def make_handler(ctx: Context):
             self._html(code, shell.page(self.lang, self.user, self.session["csrf"], title=title, body=body,
                                         accounts=accounts, accounts_error=error,
                                         collapsed=shell.nav_collapsed(self.headers.get("Cookie", "")),
-                                        whatsapp=self.CTX.whatsapp_configured(), **kw))
+                                        whatsapp=self.CTX.whatsapp_configured(),
+                                        telegram=self.CTX.telegram_configured(), **kw))
 
         def dispatch_get(self):
             t = i18n.t
@@ -756,7 +795,7 @@ def make_handler(ctx: Context):
             if self.route == "/messages/bajas":
                 self._sms_optout()
                 return
-            if self.route in ("/messages/catch-all", "/whatsapp/catch-all"):
+            if self.route in ("/messages/catch-all", "/whatsapp/catch-all", "/telegram/catch-all"):
                 self._catchall()
                 return
             if self.route == "/messages/estados":
@@ -765,6 +804,9 @@ def make_handler(ctx: Context):
             if self.route in ("/whatsapp", "/whatsapp/link/current", "/whatsapp/messages", "/whatsapp/messages/ver",
                               "/whatsapp/media"):
                 self._whatsapp_get()
+                return
+            if self.route in ("/telegram", "/telegram/messages", "/telegram/messages/ver", "/telegram/media"):
+                self._telegram_get()
                 return
             if self.route in ("/roster", "/roster/editar", "/roster/quitar", "/roster/reglas"):
                 self._roster_get()
@@ -977,14 +1019,24 @@ def make_handler(ctx: Context):
 
         # ---- Catch-All (PRD #535 FR-1 a FR-8; una sección por canal, PRD #576) ----
         def _catchall_channel(self) -> str:
-            """El canal de la página: /messages/catch-all es SMS y /whatsapp/catch-all WhatsApp (#588)."""
-            return "whatsapp" if self.route == "/whatsapp/catch-all" else "sms"
+            """El canal de la página: /messages/catch-all es SMS, /whatsapp/catch-all WhatsApp (#588)
+            y /telegram/catch-all Telegram (PRD #609 FR-28)."""
+            return {"/whatsapp/catch-all": "whatsapp", "/telegram/catch-all": "telegram"}.get(self.route, "sms")
+
+        def _catchall_unconfigured(self, channel: str) -> bool:
+            """Un canal apagado no tiene página de Catch-All: 404 con el aviso de su canal."""
+            if channel == "whatsapp" and not self.CTX.whatsapp_configured():
+                self._wa_page(404, whatsapp_pages.not_configured_body())
+                return True
+            if channel == "telegram" and not self.CTX.telegram_configured():
+                self._tg_page(404, telegram_pages.not_configured_body())
+                return True
+            return False
 
         def _catchall(self, notice: str = "", error: str = "", values: dict | None = None, code: int = 200):
             """GET /messages/catch-all y /whatsapp/catch-all: el Catch-All de ese canal por catchall.get."""
             channel = self._catchall_channel()
-            if channel == "whatsapp" and not self.CTX.whatsapp_configured():
-                self._wa_page(404, whatsapp_pages.not_configured_body())
+            if self._catchall_unconfigured(channel):
                 return
             res = self._rq("catchall.get", channel=channel)
             if res.get("type") != "result":
@@ -999,8 +1051,9 @@ def make_handler(ctx: Context):
                 done = self.query.get("ok", [""])[0]
                 if done in ("on", "off"):
                     notice = i18n.t(f"web.catchall.ok_{done}", channel=i18n.t(f"web.catchall.section.{channel}"))
-            back, active, icon = (("/whatsapp/messages", "whatsapp", "chat") if channel == "whatsapp"
-                                  else ("/messages", "messages", "inbox"))
+            back, active, icon = {"whatsapp": ("/whatsapp/messages", "whatsapp", "chat"),
+                                  "telegram": ("/telegram/messages", "telegram", "chat")}.get(
+                channel, ("/messages", "messages", "inbox"))
             self._page(code, title=i18n.t("web.catchall.title"), back=back,
                        body=messages_pages.catchall_body(state, self.session["csrf"], channel=channel,
                                                          notice=notice, error=error, values=values),
@@ -1015,8 +1068,7 @@ def make_handler(ctx: Context):
             dice otro canal (una página vieja de antes de #588), no guarda nada.
             """
             channel = self._catchall_channel()
-            if channel == "whatsapp" and not self.CTX.whatsapp_configured():
-                self._wa_page(404, whatsapp_pages.not_configured_body())
+            if self._catchall_unconfigured(channel):
                 return
             enabled = post.get("enabled") == "1"
             text = post.get("text", "").replace("\r\n", "\n")
@@ -1381,6 +1433,229 @@ def make_handler(ctx: Context):
             ready = res.get("ready")
             key = "web.cfg.ok" if ready == "connected" else "web.cfg.ok_waiting" if ready == "waiting" else "web.cfg.ok_no_restart"
             self._config(notice=recovered + i18n.t(key), probe=res.get("probe"))
+
+        # ---- Telegram (PRD #609 FR-28; TG-7 de #612) -------------------------------
+        # Toda respuesta sale con Cache-Control: no-store (guard.SECURITY_HEADERS). El token
+        # sólo entra en POST /telegram/token/check y nunca vuelve; el único id de Telegram
+        # que sale es el del formulario de «Agregar al roster» (FR-15).
+        def _tg_page(self, code: int, body: str, *, title_key: str = "web.tg.bot_title", back: str = "",
+                     wide: bool = False):
+            self._page(code, title=i18n.t(title_key), body=body, back=back, active="telegram", icon_name="chat",
+                       wide=wide)
+
+        def _telegram_get(self):
+            if not self.CTX.telegram_configured():
+                self._tg_page(404, telegram_pages.not_configured_body())
+                return
+            if self.route == "/telegram/media":
+                self._telegram_image()
+                return
+            if self.route == "/telegram":
+                done = self.query.get("ok", [""])[0]
+                notice = ""
+                if done in ("applied", "unchanged", "canceled"):
+                    status = self.CTX.telegram().status()
+                    notice = i18n.t(f"web.tg.{done}", bot=status.get("bot_username") or "?")
+                self._telegram_bot(notice=notice)
+                return
+            self._telegram_messages()
+
+        def _telegram_bot(self, *, notice: str = "", error: str = "", code: int = 200, check: dict | None = None):
+            """GET /telegram («Bot de Telegram»), y la respuesta de los POST del token."""
+            status = self.CTX.telegram().status()
+            if check is None:
+                check = self.CTX.tg_check(self.session["sid"])
+            self._tg_page(code, telegram_pages.bot_body(status, self.session["csrf"], check=check,
+                                                        notice=notice, error=error))
+
+        def _telegram_image(self):
+            """GET /telegram/media?ref=<tg:…>: la foto de un mensaje recibido. El servicio
+            decide en cada pedido (FR-17) y cualquier rechazo es el mismo 404."""
+            ref = self.query.get("ref", [""])[0]
+            not_found = (404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+            if not TG_REF.match(ref):
+                self._send(*not_found)
+                return
+            try:
+                data = self.CTX.telegram().request("telegram.image", ref=ref)
+            except telegram_source.Failed as exc:
+                if exc.code == "unavailable":
+                    self._send(503, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                else:
+                    self._send(*not_found)
+                return
+            try:
+                body = base64.b64decode(str(data.get("data") or ""), validate=True)
+            except (ValueError, TypeError):
+                body = b""
+            mime = wa_media.image_mime(body[:16])
+            if not body or len(body) > wa_media.IMAGE_MAX_BYTES or mime is None:
+                self._send(*not_found)
+                return
+            self._send(200, mime, body, [("Content-Disposition", "inline"),
+                                         ("Content-Security-Policy", "default-src 'none'; sandbox")])
+
+        def _telegram_messages(self, *, values: dict | None = None, error: str = "", add_error: str = "",
+                               code: int = 200):
+            """GET /telegram/messages y /telegram/messages/ver?t=<hilo>."""
+            t = i18n.t
+            source = self.CTX.telegram()
+            before = self.query.get("antes", [None])[0]
+            if self.route == "/telegram/messages":
+                try:
+                    data = source.request("telegram.threads", limit=telegram_pages.PAGE, before=before)
+                except telegram_source.Failed as exc:
+                    self._tg_page(503 if exc.code == "unavailable" else 400,
+                                  f'<p class="aviso-caja" role="status">{html.escape(telegram_pages.error_text(exc.code, exc.fields))}</p>',
+                                  title_key="web.tg.messages_title")
+                    return
+                self._tg_page(200, telegram_pages.list_body(data.get("threads") or [], data.get("next_before")),
+                              title_key="web.tg.messages_title", wide=True)
+                return
+            tid = (values or {}).get("t") or self.query.get("t", [""])[0]
+            back = (f'<p class="volver"><a href="/telegram/messages">← {i18n.th("web.tg.back")}</a></p>')
+            if not TG_THREAD.match(tid):
+                self._tg_page(404, back + f'<p class="lead">{html.escape(telegram_pages.error_text("not_found"))}</p>',
+                              title_key="web.tg.messages_title", back="/telegram/messages")
+                return
+            try:
+                thread_data = source.request("telegram.thread", thread=tid, limit=telegram_pages.PAGE, before=before)
+            except telegram_source.Failed as exc:
+                status = 404 if exc.code in ("not_found", "invalid") else 503
+                self._tg_page(status, back + f'<p class="lead">{html.escape(telegram_pages.error_text(exc.code, exc.fields))}</p>',
+                              title_key="web.tg.messages_title", back="/telegram/messages")
+                return
+            running = source.status().get("state") == "running"
+            reply = telegram_pages.reply_box(thread_data, self.session["csrf"], running, values, error)
+            add = telegram_pages.add_box(thread_data, self.session["csrf"], add_error)
+            notice = t("web.tg.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
+            self._tg_page(code, telegram_pages.thread_body(thread_data, reply, add, notice),
+                          title_key="web.tg.messages_title", back="/telegram/messages")
+
+        def _telegram_post(self, post: dict):
+            """
+            POST /telegram/messages/enviar: contesta en un hilo; FR-25 y FR-26 las aplica el
+            servicio. POST /telegram/roster (FR-15), /telegram/token/check y
+            /telegram/token/apply (FR-10): CSRF y Origin como todo POST, y la contraseña de
+            la web con el bloqueo de la entrada antes de pedirle nada al servicio.
+            """
+            th = i18n.th
+            if not self.CTX.telegram_configured():
+                self._tg_page(404, telegram_pages.not_configured_body())
+                return
+            source = self.CTX.telegram()
+            sid = self.session["sid"]
+            if self.route == "/telegram/messages/enviar":
+                values = {"t": post.get("t", "").strip()[:40], "text": post.get("text", "").replace("\r\n", "\n")}
+                if not TG_THREAD.match(values["t"]):
+                    self._telegram_messages(values=values, error=telegram_pages.error_text("not_found"), code=404)
+                    return
+                if not values["text"].strip() or len(values["text"]) > telegram_source.MAX_TEXT:
+                    self._telegram_messages(values=values, error=telegram_pages.error_text("invalid", {"field": "text"}),
+                                            code=400)
+                    return
+                try:
+                    source.request("telegram.send", thread=values["t"], text=values["text"])
+                except telegram_source.Failed as exc:
+                    code = {"rate_limited": 429, "unavailable": 503}.get(exc.code, 400)
+                    self._telegram_messages(values=values, error=telegram_pages.error_text(exc.code, exc.fields),
+                                            code=code)
+                    return
+                self._redirect(f"/telegram/messages/ver?t={values['t']}&ok=sent#responder")
+                return
+            if self.route == "/telegram/token/cancel":
+                self.CTX.tg_check(sid, pop=True)
+                self._redirect("/telegram?ok=canceled")
+                return
+            if self.route == "/telegram/token/apply":
+                self._telegram_apply(post)
+                return
+
+            # La contraseña antes de pedirle nada al servicio. Vacía no cuenta como intento.
+            password = post.get("password", "")[:users.MAX_PASSWORD]
+            problem = self._check_current(password) if password else th("web.tg.err.password")
+            status_code = 403 if password else 400
+            if self.route == "/telegram/roster":
+                tid = post.get("t", "").strip()[:40]
+                if problem or not TG_THREAD.match(tid):
+                    self.query["t"] = [tid]
+                    self.route = "/telegram/messages/ver"
+                    self._telegram_messages(add_error=problem or telegram_pages.error_text("not_found"),
+                                            code=status_code if problem else 404)
+                    return
+                try:
+                    cand = source.request("telegram.roster_candidate", thread=tid)
+                except telegram_source.Failed as exc:
+                    self.query["t"] = [tid]
+                    self.route = "/telegram/messages/ver"
+                    self._telegram_messages(add_error=telegram_pages.error_text(exc.code, exc.fields),
+                                            code=503 if exc.code == "unavailable" else 400)
+                    return
+                # FR-15: el id va sólo en este formulario; no se guarda ni se escribe en el log.
+                listing = self._rq("roster.list", account=None)
+                data = listing.get("data") or {"etag": "", "members": []}
+                values = {"name": str(cand.get("display_name") or "")[:200], "type": "Human",
+                          "telegram": str(cand.get("telegram") or "")[:64]}
+                self._roster_page(200, roster_pages.edit_body(None, data, None, self.session["csrf"], values=values,
+                                                              telegram=True, lead=i18n.t("web.tg.add_lead")))
+                return
+            # /telegram/token/check
+            token = post.get("token", "").strip()
+            if problem:
+                self._telegram_bot(error=problem, code=status_code)
+                return
+            if not telegram_source.TOKEN_RE.match(token):
+                self._telegram_bot(error=i18n.t("web.tg.err.token_format"), code=400)
+                return
+            try:
+                data = source.request("telegram.token_check", token=token)
+            except telegram_source.Failed as exc:
+                key = "web.tg.err.token_rejected" if exc.code == "invalid" else ""
+                self._telegram_bot(error=i18n.t(key) if key else telegram_pages.error_text(exc.code, exc.fields),
+                                   code=503 if exc.code == "unavailable" else 400)
+                return
+            finally:
+                token = ""
+            check = {"check": str(data.get("check") or ""), "bot_username": str(data.get("bot_username") or ""),
+                     "same_token": bool(data.get("same_token")), "webhook": bool(data.get("webhook"))}
+            self.CTX.tg_check_set(sid, check)
+            self._telegram_bot(check=check)
+
+        def _telegram_apply(self, post: dict):
+            """POST /telegram/token/apply: el `check` de esta sesión, con las confirmaciones
+            de FR-10. El `check` sale de la memoria del servidor, nunca del formulario."""
+            sid = self.session["sid"]
+            pending = self.CTX.tg_check(sid)
+            if pending is None:
+                self._telegram_bot(error=i18n.t("web.tg.check_expired"), code=409)
+                return
+            if post.get("confirm_dedicated") != "1":
+                self._telegram_bot(error=i18n.t("web.tg.err.missing_field", field=i18n.t("web.tg.confirm_dedicated")),
+                                   code=400, check=pending)
+                return
+            if pending["webhook"] and post.get("confirm_webhook") != "1":
+                self._telegram_bot(error=i18n.t("web.tg.err.missing_field", field=i18n.t("web.tg.confirm_webhook")),
+                                   code=400, check=pending)
+                return
+            self.CTX.tg_check(sid, pop=True)
+            try:
+                data = self.CTX.telegram().request("telegram.token_apply", check=pending["check"],
+                                                   confirm_dedicated=True,
+                                                   confirm_delete_webhook=bool(pending["webhook"]))
+            except telegram_source.Failed as exc:
+                if exc.code == "not_found":
+                    self._telegram_bot(error=i18n.t("web.tg.check_expired"), code=409)
+                else:
+                    self._telegram_bot(error=telegram_pages.error_text(exc.code, exc.fields),
+                                       code=503 if exc.code == "unavailable" else 400)
+                return
+            result = str(data.get("result") or "")
+            if result in ("applied", "unchanged"):
+                self.CTX.notifier.owner(self.user, i18n.t("web.tg.mail_subject"),
+                                        i18n.t("web.tg.mail_body", ip=self.ip, bot=data.get("bot_username") or "?"))
+                self._redirect(f"/telegram?ok={result}")
+                return
+            self._telegram_bot(error=i18n.t("web.tg.rollback", reason=str(data.get("reason") or "?")), code=409)
 
         # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
         # Toda respuesta de aquí sale con Cache-Control: no-store (guard.SECURITY_HEADERS):
@@ -1819,7 +2094,8 @@ def make_handler(ctx: Context):
                     self._roster_page(404, roster_pages.error_box({"code": "not_found", "field": "row"}))
                     return
             if self.route == "/roster/editar":
-                self._roster_page(200, roster_pages.edit_body(account, data, member, self.session["csrf"]))
+                self._roster_page(200, roster_pages.edit_body(account, data, member, self.session["csrf"],
+                                                                   telegram=self.CTX.telegram_configured()))
                 return
             if member is None:
                 self._roster_page(404, roster_pages.error_box({"code": "not_found", "field": "row"}))
@@ -1860,6 +2136,9 @@ def make_handler(ctx: Context):
                 member = {"name": post.get("name", "").strip(), "email": post.get("email", "").strip(),
                           "type": post.get("type", "").strip(), "github": post.get("github", "").strip(),
                           "phones": phones}
+                # La columna Telegram (PRD #609 FR-13, TG-3): sólo si el formulario la trae.
+                if post.get("telegram", "").strip():
+                    member["telegram"] = post.get("telegram", "").strip()[:64]
                 res = self._rq("roster.save", account=account, row=row, member=member, etag=post.get("etag", ""))
                 if res["type"] == "result":
                     self._redirect(back + "&ok=saved")
@@ -1868,7 +2147,8 @@ def make_handler(ctx: Context):
                 data = listing.get("data") or {"etag": post.get("etag", ""), "members": []}
                 current = next((m for m in data.get("members", []) if m["row"] == row), None) if row else None
                 self._roster_page(409 if res.get("code") == "conflict" else 400, roster_pages.edit_body(
-                    account, data, current, self.session["csrf"], error=res, values=member))
+                    account, data, current, self.session["csrf"], error=res, values=member,
+                    telegram=self.CTX.telegram_configured()))
                 return
             if self.route == "/roster/quitar":
                 res = self._rq("roster.delete", account=account, row=row, etag=post.get("etag", ""))
@@ -1928,7 +2208,8 @@ def make_handler(ctx: Context):
                 length = int(self.headers.get("Content-Length", "0") or "0")
             except ValueError:
                 length = -1
-            limit = (CATCHALL_BODY_BYTES if urlparse(self.path).path in ("/messages/catch-all", "/whatsapp/catch-all")
+            limit = (CATCHALL_BODY_BYTES if urlparse(self.path).path in ("/messages/catch-all", "/whatsapp/catch-all",
+                                                                         "/telegram/catch-all")
                      else MAX_BODY_BYTES)
             if length < 0 or length > limit:
                 if urlparse(self.path).path == "/api/agent":
@@ -1974,8 +2255,12 @@ def make_handler(ctx: Context):
             if self.route == "/messages/bajas":
                 self._sms_optout_post(post)
                 return
-            if self.route in ("/messages/catch-all", "/whatsapp/catch-all"):
+            if self.route in ("/messages/catch-all", "/whatsapp/catch-all", "/telegram/catch-all"):
                 self._catchall_post(post)
+                return
+            if self.route in ("/telegram/messages/enviar", "/telegram/roster", "/telegram/token/check",
+                              "/telegram/token/apply", "/telegram/token/cancel"):
+                self._telegram_post(post)
                 return
             if self.route in ("/whatsapp/link", "/whatsapp/link/cancel", "/whatsapp/unlink", "/whatsapp/messages/enviar"):
                 self._whatsapp_post(post)

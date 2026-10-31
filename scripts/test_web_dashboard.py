@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "harness"))
 
 from paynani_lib import guard, i18n  # noqa: E402
-from paynani_lib.web import app, auth, dashboard, dashboard_pages, dashboard_strings, notify, users  # noqa: E402
+from paynani_lib.web import app, auth, dashboard, dashboard_pages, dashboard_strings, notify, telegram_strings, users  # noqa: E402,F401
 
 passed = failed = 0
 
@@ -184,6 +184,12 @@ check("FR-16: la actividad, 10 como máximo y la más reciente primero",
       (10, "sent"), (len(m["activity"]), m["activity"][0]["channel"]))
 every = {a["channel"] for a in dashboard.build(fake(mail={}), NOW)["activity"]}
 check("FR-16: enviado, SMS, WhatsApp y roster entran", {"sent", "sms", "whatsapp", "roster"}, every)
+tgm = dashboard.build(fake(telegram={"state": "conflict", "bot_username": "PruebaBot"}), NOW)
+tg_html = dashboard_pages.body(tgm, "J")
+check("PRD #609 FR-28: Telegram en Servicios, con su estado y el @usuario del bot", (True, True, "conflict"),
+      ("@PruebaBot" in tg_html, 'data-dash="svc.telegram"' in tg_html, dashboard.numbers(tgm)["services"]["telegram"]))
+check("sin Telegram configurado no hay fila", (False, None),
+      ('data-dash="svc.telegram"' in dashboard_pages.body(m, "J"), dashboard.numbers(m)["services"]["telegram"]))
 nowa = dashboard.build(fake(whatsapp=None), NOW)
 check("FR-10: sin WhatsApp configurado no hay fila", None, nowa["whatsapp"])
 

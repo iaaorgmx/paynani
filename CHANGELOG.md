@@ -2,6 +2,13 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: Telegram (TG-7 de #612, PRD #609 FR-28).** Con Telegram activado, el menú agrega «Mensajes de Telegram»:
+  - las conversaciones con el bot, con su foto y sus mensajes editados;
+  - responder sólo donde la persona ya escribió, sin «Nuevo mensaje»;
+  - «Agregar al roster» para alguien fuera del roster, con la contraseña de la web; es el único lugar donde se ve un id de Telegram (FR-15);
+  - el Catch-All de Telegram en su propia página, `/telegram/catch-all`, como SMS y WhatsApp (#588).
+
+  «Bot de Telegram» (`/telegram`) muestra el estado y el `@usuario`, y cambia el token en dos pasos (FR-10). El token va en un campo de contraseña, se revisa con `telegram.token_check` y se aplica con `telegram.token_apply` después de confirmar; nunca vuelve a la página, y la revisión vive sólo 5 minutos en la memoria del servidor, por sesión. El dueño recibe un correo sin el token. El Dashboard suma el bot a Servicios y el formulario del roster tiene el campo Telegram. La web habla con `paynani-telegram` por `control.sock` (`TELEGRAM.md` §4) desde `web/telegram_source.py`, con una fuente de demostración (`PAYNANI_WEB_TELEGRAM=demo`). Textos en los cinco idiomas; `test_web_telegram.py` revisa además que ni el token ni los ids salgan en las páginas ni en el log.
 - `scripts/version.sh --apply` ya no se niega con «selected runtime is unknown». El plan de la
   versión nueva corre desde una copia temporal y buscaba `runtime.env` junto a esa copia;
   ahora lo lee del clon, como el manifiesto. Mientras tanto, `PAYNANI_RUNTIME=<runtime>`
