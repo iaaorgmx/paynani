@@ -64,6 +64,7 @@ con PaynaniWeb y todavía no hay usuario.
 
 | Pantalla | Qué hace |
 |---|---|
+| **Inicio** | El Dashboard: si todo funciona, qué pasó hoy, qué necesita atención y lo último que ocurrió (PRD #602, ver abajo). |
 | **Cuentas de correo** | Una entrada por cuenta: la del agente y las de `accounts.json`. Lista sus últimos correos, de 50 en 50, con el estado del aviso y la marca del roster. Abrir uno lo pide a IMAP en ese momento, como texto, y no lo guarda. |
 | **Agregar y quitar cuentas** | «+ Agregar cuenta» prueba el acceso IMAP y SMTP antes de guardar y escribe como `paynani account add`. «Quitar esta cuenta» deja de vigilarla como `paynani account remove`, sin borrar su buzón ni su roster. Las dos piden la contraseña de la web. |
 | **Mensajes** | Las conversaciones SMS de la pasarela, de 50 en 50: lo que llegó, lo que mandó el agente con su estado, lo que contestó el dueño desde PaynaniApp o desde la web, y las llamadas perdidas y contestadas. «Nuevo SMS» y el cuadro de responder envían por el teléfono emparejado (ver abajo). |
@@ -238,6 +239,60 @@ agente; las cuentas de `accounts.json` se quitan y se vuelven a agregar.
   y la página dice que lo intentes cuando termine el primero.
 - Cada cambio te llega por correo, con los campos que cambiaron, sin sus valores
   ni la contraseña.
+
+### El Dashboard de la página inicial
+
+`/` muestra el estado de paynani de un vistazo (PRD #602). Sólo lee lo que ya existe;
+no marca avisos, no abre IMAP y no escribe en `state/`. La lectura está en
+`web/dashboard.py` y la página en `web/dashboard_pages.py`.
+
+- **Estado general:** verde si todas las revisiones están en `ok`, amarillo si alguna
+  está en `warning` o `unknown`, rojo si alguna está en `blocked`. Debajo dice cuántas
+  están en orden y enlaza a las que no.
+- **De dónde salen las revisiones:**
+  - Las locales (listener, despachador, cola, credenciales, roster, `smtp`, cuentas
+    adicionales, sesión del agente y teléfono de la pasarela) las calcula la web con
+    `healthcheck`, con caché de 60 s.
+  - La única que toca la red, `himalaya` (corre `himalaya account check`), nunca se
+    corre desde la web: se lee del último `paynani doctor` guardado en
+    `state/doctor.json` (#603), con su hora.
+  - Sin ese archivo, o con uno de más de 24 h, cuenta como `unknown` y dice su
+    antigüedad: un `doctor` viejo no pinta el estado de verde.
+- **Hoy y los últimos 7 días** se cuentan en la zona horaria del host, y la página la
+  muestra.
+- **Los cuatro indicadores:**
+  - **Correo hoy**, con atendidos, respondidos y abiertos.
+  - **Avisos abiertos**: correo del roster de los últimos 7 días que sigue sin
+    cerrarse, con el más viejo.
+  - **SMS hoy**: recibidos, enviados y fallidos.
+  - **Roster**: contactos y la hora del último cambio.
+- **Selector de cuenta:** con más de una cuenta, filtra el correo, los avisos y la
+  gráfica (`/?cuenta=<id>`). Una cuenta que no existe muestra todas y lo dice.
+- **Servicios:** el listener, el despachador, la sesión del agente, la pasarela SMS
+  (modelo, PaynaniApp, batería y última conexión), WhatsApp (sólo si está activado) y
+  cada cuenta adicional. Nada que paynani no administre, como el túnel.
+- **Necesita tu atención,** en este orden y cada uno con su enlace:
+  1. revisiones que no están en `ok`;
+  2. cuentas desconectadas;
+  3. avisos abiertos;
+  4. SMS fallidos o vencidos de hoy;
+  5. tokens de API que vencen en 7 días o menos, o que ya vencieron y no están
+     revocados;
+  6. una versión nueva de paynani (de `state/version.check`).
+
+  Sin nada, «Nada pendiente».
+- **Correo, últimos 7 días:** barras por día, cerradas y abiertas, en SVG con
+  atributos (la CSP no cambia) y una tabla para lectores de pantalla.
+- **Actividad reciente:** los últimos 10 de correo recibido y enviado, SMS, llamadas,
+  WhatsApp y cambios al roster. Cada uno lleva quién, el asunto en un correo (nunca el
+  texto de un SMS o un WhatsApp), su estado y la hora, y enlaza a su pantalla.
+- **Actualización:** `assets/dashboard.js` pide `/dashboard.json` cada 60 s, sólo con
+  la pestaña visible, y cambia los números y el estado general sin recargar. Si
+  cambió un servicio o lo pendiente, dice «Hay cambios · Actualizar». `/dashboard.json`
+  y el script piden sesión. El JSON responde con `no-store` y sólo trae números y
+  estados: ni direcciones, ni teléfonos, ni asuntos, ni nombres. El modelo se guarda
+  30 s en memoria, así que el ledger no se relee en cada petición. Sin script, la
+  página se ve completa al cargarla.
 
 ## Lo que guarda y lo que no
 
