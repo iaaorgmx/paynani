@@ -371,6 +371,12 @@ check("#628: _add_column deja igual una línea vieja sin `|`", "Beto beto@exampl
       re_._add_column(LEGACY, "Telegram").splitlines()[-1])
 check("y Rules tampoco convierte el párrafo", "Notas del dueño: no tocar.",
       re_._add_column(PARA, "Rules").splitlines()[-1])
+check("#628: la nota después de la tabla no sale como contacto", ["Ana"],
+      [m["name"] for m in re_.members(PARA)[1]])
+text, _, _ = re_.save_text(PARA, None, {"name": "Beto", "email": "beto@example.com", "phones": []})
+check("#628: un alta va dentro de la tabla, antes de la nota",
+      ["| Ana | ana@example.com |", "| Beto | beto@example.com |", "", "Notas del dueño: no tocar."],
+      text.splitlines()[2:])
 TWO = "| Name | Email |\n|---|---|\n| Ana | ana@example.com |\n\n| Beto | beto@example.com |\n"
 check("#628: una fila con `|` después de un renglón en blanco no es de la tabla y no cambia",
       "| Name | Email | Telegram |\n|---|---|---|\n| Ana | ana@example.com |  |\n\n| Beto | beto@example.com |\n",

@@ -147,7 +147,21 @@ def table(text: str):
             continue
         if header_idx is not None and idx > header_idx:
             rows.append((idx, fields))
-    return header_idx, header_fields, rows
+    if header_idx is None:
+        return header_idx, header_fields, rows
+    # Sólo las filas contiguas que siguen al separador, hasta el primer renglón
+    # que no empiece con `|` (uno en blanco, un párrafo, un `#`). roster._rows
+    # también entrega líneas sueltas (el formato viejo «Nombre correo», un
+    # párrafo de notas) y filas de otra tabla más abajo: no son contactos de la
+    # tabla, ni para listarlos, ni para agregar una fila después de ellos, ni
+    # para crear una columna (Andy, Iris y Ximena en #628).
+    lines = text.splitlines()
+    in_table = set()
+    for idx in range(header_idx + 2, len(lines)):
+        if not lines[idx].lstrip().startswith("|"):
+            break
+        in_table.add(idx)
+    return header_idx, header_fields, [(idx, f) for idx, f in rows if idx in in_table]
 
 
 def columns(header_fields) -> list[str]:
@@ -402,19 +416,7 @@ def _add_column(text: str, name: str) -> str:
     lines[header_idx] = lines[header_idx].rstrip().rstrip("|").rstrip() + f" | {name} |"
     sep = lines[header_idx + 1].rstrip()
     lines[header_idx + 1] = (sep if sep.endswith("|") else sep + "|") + "---|"
-    # Sólo las filas contiguas de la tabla, hasta el primer renglón que no empiece
-    # con `|` (uno en blanco, un párrafo, un `#`). roster._rows también entrega
-    # líneas sueltas (el formato viejo «Nombre correo», un párrafo de notas) y
-    # filas de otra tabla más abajo: esas se quedan byte por byte (Andy y Ximena
-    # en #628).
-    in_table = set()
-    for idx in range(header_idx + 2, len(lines)):
-        if not lines[idx].lstrip().startswith("|"):
-            break
-        in_table.add(idx)
-    for idx, other in rows:
-        if idx not in in_table:
-            continue
+    for idx, other in rows:  # sólo filas de la tabla: ver table()
         cells = list(other) + [""] * (len(header_fields) - len(other))
         lines[idx] = "| " + " | ".join(c.strip() for c in cells) + " |  |"
     return _join(lines, text)
