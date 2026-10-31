@@ -8,8 +8,9 @@ encabezado de PDSL-201 (PRD #434 FR-10, FR-12).
   Roster; *Tools* con Log out. Lo que el PRD deja fuera de la v1 (AI
   Assistant, Settings, Sessions, el buscador, el chat flotante) no se dibuja: un
   control que no hace nada es peor que no tenerlo.
-- **Avatar** (FR-8): las iniciales arriba a la derecha abren un menú con el
-  nombre, el correo, Profile y Log out. Es un `<details>`: no hace falta script.
+- **Perfil** (#626, como el /dash de ServiceButton): un ícono junto al nombre, en el
+  menú lateral, abre Profile. Ya no hay avatar arriba a la derecha (Q267=B): Log out
+  está en el menú lateral.
 - **Fijo y colapsable** (PRD #537, como el /dash de ServiceButton): el menú, la
   barra y el encabezado se quedan fijos al hacer scroll (`position: sticky` en
   `web.css`). El botón junto al logotipo colapsa el menú y ☰, en la barra, lo
@@ -195,8 +196,12 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
             aria-label="{th('web.nav.collapse')}" title="{th('web.nav.collapse')}" hidden>{icon('panel')}</button>
   </div>
   <div class="usuario">
-    <b>{e(name)}</b>
-    <small>paynani</small>
+    <div class="usuario-datos">
+      <b>{e(name)}</b>
+      <small>paynani</small>
+    </div>
+    <a class="perfil{' activo' if active == 'profile' else ''}" href="/profile" aria-label="{th('web.nav.profile')}"
+       title="{th('web.nav.profile')}"{' aria-current="page"' if active == 'profile' else ''}>{icon('profile')}</a>
   </div>
   {nav}
 </aside>
@@ -205,18 +210,6 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
   <header class="barra">
     <a class="mostrar" href="#menu-lateral" aria-label="{th('web.nav.expand')}" title="{th('web.nav.expand')}">{icon('menu')}</a>
     <a class="marca-barra" href="/" aria-label="PaynaniWeb">{logo}</a>
-    <details class="avatar">
-      <summary aria-label="{th('web.nav.account_menu')}"><span class="iniciales">{e(initials(name))}</span></summary>
-      <div class="avatar-panel">
-        <b>{e(name)}</b>
-        <small>{e(user.get('email', ''))}</small>
-        <a href="/profile">{icon('profile')}<span>{th('web.nav.profile')}</span></a>
-        <form method="post" action="/logout">
-          <input type="hidden" name="csrf" value="{e(csrf)}">
-          <button type="submit">{icon('logout')}<span>{th('web.logout')}</span></button>
-        </form>
-      </div>
-    </details>
   </header>
   <div class="encabezado">
     {icon(icon_name)}

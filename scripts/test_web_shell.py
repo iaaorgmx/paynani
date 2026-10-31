@@ -4,7 +4,7 @@ Tests for PaynaniWeb's frame (PRD #434 FR-10, FR-12; T4 of #435; PRD #537).
 An assertion script, like the rest of this suite.
 
 El menú lateral de PDSL-201 con el desplegable de cuentas (la del agente y las de
-accounts.json), Messages, Roster y Log out; el menú del avatar; el menú del celular;
+accounts.json), Messages, Roster y Log out; Perfil junto al nombre (#626); el menú del celular;
 que no aparezca lo que la v1 deja fuera; que nada lleve `style=` (la CSP lo
 bloquea); y que no quede ninguna clave sin traducir en los cinco idiomas.
 
@@ -112,10 +112,20 @@ check("una entrada por cuenta: la del agente primero, luego accounts.json en ord
       ["/email/main", "/email/ventas", "/email/soporte"], links)
 check("la cuenta apagada va marcada", True, 'class="sub apagada"' in page and "apagada</span>" in page)
 check("Mensajes y Roster", True, 'href="/messages"' in page and 'href="/roster"' in page)
-check("cerrar sesión: formularios POST con el token de la sesión", True,
-      len(re.findall(r'<form method="post" action="/logout"[^>]*>\s*<input type="hidden" name="csrf" value="[^"]+">', page)) >= 2)
-check("el menú del avatar con iniciales, correo y Perfil", True,
-      '<span class="iniciales">JB</span>' in page and 'href="/profile"' in page and "john@example.com" in page)
+check("cerrar sesión: un formulario POST con el token de la sesión, en el menú lateral", 1,
+      len(re.findall(r'<form method="post" action="/logout"[^>]*>\s*<input type="hidden" name="csrf" value="[^"]+">', page)))
+check("#626 (Q267=B): ya no hay botón del avatar arriba a la derecha", (False, False, False),
+      ('class="avatar"' in page, "avatar-panel" in page, '<span class="iniciales">' in page))
+usuario = page.split('<div class="usuario">', 1)[1].split("</aside>", 1)[0].split('<div class="grupo">', 1)[0]
+check("#626: el acceso a Perfil va junto al nombre, en el menú lateral, con su ícono y aria-label", (True, True, True),
+      ('<a class="perfil" href="/profile" aria-label="Perfil"' in usuario, 'title="Perfil"' in usuario,
+       shell.ICONS["profile"] in usuario))
+_, _, prof = get("/profile")
+usuario_p = prof.split('<div class="usuario">', 1)[1].split('<div class="grupo">', 1)[0]
+check("#626 (Q266): en /profile el acceso queda activo", (True, True),
+      ('class="perfil activo"' in usuario_p, 'aria-current="page"' in usuario_p))
+_, _, page_en = get("/", lang="en-US")
+check("#626: el aria-label en inglés", True, 'aria-label="Profile"' in page_en.split('<div class="usuario">', 1)[1][:600])
 check("ya no hay segunda copia del menú para el celular (PRD #537 FR-14)", False, "menu-movil" in page)
 check("☰ es un enlace al menú, para que sin JavaScript lo abra :target (FR-16)", True,
       '<a class="mostrar" href="#menu-lateral" aria-label="Mostrar el menú" title="Mostrar el menú">' in page)
