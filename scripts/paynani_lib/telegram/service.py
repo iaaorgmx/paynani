@@ -371,7 +371,7 @@ class TelegramService:
             self.last_poll_at = now_utc()
             for update in updates or []:
                 if not await self._handle_update(update):
-                    return            # journal_mismatch: no se avanza nada
+                    return            # sin confirmar: journal_mismatch, 401 o el servicio se detiene
                 self.store.save_offset(int(update["update_id"]) + 1)
             self._write_status()
 
@@ -439,7 +439,7 @@ class TelegramService:
 
     # --- cada update ----------------------------------------------------------------
     async def _handle_update(self, update: dict) -> bool:
-        """False sólo con journal_mismatch; cualquier otro update deja avanzar el offset."""
+        """False con journal_mismatch, o si no pudo salir de un grupo (FR-19): no se confirma."""
         u = int(update["update_id"])
         digest = canonical_hash(update)
         entry = self.store.journal().get(u)
@@ -452,8 +452,7 @@ class TelegramService:
         member = update.get("my_chat_member")
         chat = (message or member or {}).get("chat") or {}
         if chat.get("type") in GROUP_TYPES:
-            await self._leave(chat)                        # FR-19
-            return True
+            return await self._leave(chat)                 # FR-19: sin salir, no se confirma
         if not message or chat.get("type") != "private":
             return True                                    # bloqueos y otros: nada que guardar
         if "edited_message" in update:
@@ -530,14 +529,42 @@ class TelegramService:
             self.counters["received_today"] += 1
         self.log(envelope["notification_text"])
 
-    async def _leave(self, chat: dict) -> None:
-        """FR-19: sale del grupo y sólo registra que salió, sin nombre ni quién lo agregó."""
-        try:
-            await self._call("leaveChat", {"chat_id": int(chat["id"])})
-        except (tg_api.ApiError, tg_api.NetworkError):
-            return
-        self.counters["groups_left"] += 1
-        self.log("salió de un grupo o canal")
+    async def _leave(self, chat: dict) -> bool:
+        """
+        FR-19: sale del grupo y sólo registra que salió, sin nombre ni quién lo agregó.
+
+        True cuando ya no está en el grupo: salió, o Telegram dice que no estaba (400/403).
+        Con red, 5xx o 429 reintenta con la misma espera que getUpdates y no regresa hasta
+        salir, para que el offset no confirme un update del que nunca salió (Ximena, #616).
+        False sólo si el servicio se detiene o el token dejó de valer: el update no se
+        confirma y Telegram lo vuelve a entregar.
+        """
+        delay = self.backoff[0]
+        while not self._stopping.is_set():
+            try:
+                await self._call("leaveChat", {"chat_id": int(chat["id"])})
+            except tg_api.Unauthorized:
+                self._set_state("token_invalid")
+                self._health("token_invalid")
+                return False
+            except tg_api.RetryAfter as exc:
+                await self._sleep(exc.retry_after or delay)
+                continue
+            except tg_api.NetworkError:
+                await self._sleep(self._jitter(delay))
+                delay = min(delay * 2, self.backoff[1])
+                continue
+            except tg_api.ApiError as exc:
+                if exc.code in (400, 403):
+                    self.log("un grupo o canal en el que el bot ya no está")
+                    return True
+                await self._sleep(self._jitter(delay))
+                delay = min(delay * 2, self.backoff[1])
+                continue
+            self.counters["groups_left"] += 1
+            self.log("salió de un grupo o canal")
+            return True
+        return False
 
     # --- control.sock (FR-6) --------------------------------------------------------
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:

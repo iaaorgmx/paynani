@@ -198,6 +198,40 @@ async def main():
     await s2.stop()
     api.stop()
 
+    # --- FR-19: salir de un grupo aunque leaveChat falle (Ximena, #616) -------------
+    state, api = fresh()
+    s = make(state, api)
+    await s.start()
+    await until(lambda: s.state == "running")
+    api.fail_next("leaveChat", 502)
+    api.fail_next("leaveChat", 429, retry_after=1)
+    api.fail_next("leaveChat", 503)
+    uid = api.group_message(-100777, PEDRO, "contenido del grupo")
+    offsets = []
+    real_save = s.store.save_offset
+    s.store.save_offset = lambda off: (offsets.append((off, list(api.left_chats))), real_save(off))[1]
+    ok = await until(lambda: api.left_chats == [-100777] and s.store.offset() == uid + 1)
+    check("leaveChat con 502, 429 y 503: reintenta hasta salir", ok, f"{api.left_chats} {s.store.offset()}")
+    check("el offset avanza sólo después de salir",
+          offsets and all(left == [-100777] for _, left in offsets), str(offsets))
+    check("del grupo no queda evento ni inbox",
+          tg_events(state) == [] and list(s.store.inbox_refs()) == [])
+    await s.stop()
+    api.stop()
+
+    state, api = fresh()
+    s = make(state, api, backoff=(0.3, 0.3))
+    await s.start()
+    await until(lambda: s.state == "running")
+    for _ in range(50):
+        api.fail_next("leaveChat", 502)
+    api.group_message(-100888, PEDRO, "otro grupo")
+    await until(lambda: api.calls.count("leaveChat") >= 1)
+    await s.stop()
+    check("si se detiene sin haber salido, el update no se confirma",
+          s.store.offset() == 0 and api.left_chats == [], f"{s.store.offset()} {api.left_chats}")
+    api.stop()
+
     # --- caídas entre los pasos de FR-5 --------------------------------------------
     async def crash_at(target, attr, label):
         state, api = fresh()
