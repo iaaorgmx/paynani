@@ -668,7 +668,9 @@ _UNATTENDED_KINDS = {"sms.received": "SMS", "call.missed": "llamada perdida", "c
                      "sms.human_sent": "SMS que mandó el dueño desde PaynaniApp",
                      "sms.gateway.battery_low": "batería baja del teléfono",
                      "sms.gateway.battery_ok": "batería del teléfono recuperada",
-                     "whatsapp.received": "WhatsApp", "whatsapp.health": "estado de WhatsApp"}
+                     "whatsapp.received": "WhatsApp", "whatsapp.health": "estado de WhatsApp",
+                     "telegram.received": "Telegram", "telegram.edited": "edición en Telegram",
+                     "telegram.health": "estado de Telegram"}
 
 
 def unattended_line(event_id, envelope):

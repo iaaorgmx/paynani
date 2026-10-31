@@ -769,7 +769,8 @@ Ask for their name and address and add one line:
 The name is for whoever reads the file later, and `Type` is informational:
 being on the list is the whole permission, and a row is exactly as authorised
 whether it says `Human`, `AI Agent`, or nothing. `scripts/send.sh` matches on the
-field containing an `@`, exactly and case-insensitively, so the number and order
+field containing an `@` that does not start with one (a leading `@` is a
+Telegram `@usuario`), exactly and case-insensitively, so the number and order
 of the other columns does not matter and an older `Name | address` line keeps
 working.
 

@@ -40,6 +40,26 @@ state/telegram/                      0700
 - **`account.json`** guarda `{"alias": "<16 hex aleatorios>"}`, que el servicio crea
   la primera vez que usa ese bot con `secrets.token_hex(8)`. No se deriva de ningún id.
 
+### El diario y la reconciliación (FR-4, FR-5)
+
+Para cada update de un chat privado, en este orden: se anota en `journal.jsonl`
+`update_id`, referencia y hash; se guarda `inbox/<ref>.json` con el mensaje, el hash y
+el sobre del evento (`journaled: false`); se escribe el evento en `events.jsonl`; se
+marca `journaled: true` y se anota «escrito» en el diario. El offset se guarda después.
+
+`events.jsonl` se compacta y `lifecycle.jsonl` se recorta, así que al arrancar, para cada
+entrada del diario sin «escrito», se busca en este orden:
+
+1. un evento con esa referencia en `events.jsonl`: si el hash coincide, se marca
+   escrita; si no, `journal_mismatch` y no se marca nada;
+2. la referencia en `lifecycle.jsonl`: el evento se escribió y ya se compactó; se marca;
+3. su `inbox/<ref>.json` con el mismo hash: el evento se rehace desde ahí y se marca;
+4. nada: queda pendiente. El offset no avanzó, Telegram lo vuelve a entregar, y si el
+   hash coincide se escribe con la misma referencia; si no, `journal_mismatch`.
+
+Los grupos (FR-19), los mensajes de alguien que bloquea al bot y las ediciones de un
+mensaje que no está en el inbox no se anotan: sólo avanzan el offset.
+
 ## 2. La Bot API
 
 El servicio habla con `https://api.telegram.org` (o con `PAYNANI_TELEGRAM_API`, sólo
@@ -212,6 +232,10 @@ Catch-All de Telegram activo.
   por omisión). Para la página siguiente, con mensajes más viejos, se manda `before`
   con el `next_before` que llegó; `null` es que no hay más. `status` de un mensaje que sale:
   `sending`, `sent` o `failed` (Telegram no da «entregado» ni «leído» a un bot).
+- `by` de un mensaje que sale es quién lo escribió, como en `whatsapp.thread`
+  (`SMS_GATEWAY.md` §12): `agent` (el agente o la terminal), `owner` (PaynaniWeb o
+  PaynaniApp) o `api`. No es la etiqueta `by` de la petición: el servicio convierte
+  `web` y `phone:<device_id>` en `owner`.
 - `edited: true` en un mensaje que la persona editó; `text` es el último.
 - Fuera del roster sin Catch-All activo: `messages` va vacío y `hidden: true`.
 

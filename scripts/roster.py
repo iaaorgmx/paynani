@@ -87,6 +87,15 @@ def normalise(address: str) -> str:
     return re.sub(r"\s+", "", address or "").lower()
 
 
+def is_address(normalised: str) -> bool:
+    """
+    Whether a normalised field is the row's mail address: it contains "@" and does
+    not start with it. A Telegram `@usuario` cell (PRD #609) also has an "@", but no
+    mail address starts with one. roster_extract.sh applies the same rule.
+    """
+    return "@" in normalised and not normalised.startswith("@")
+
+
 def _is_separator(line: str) -> bool:
     stripped = line.strip().strip("|").strip()
     return bool(stripped) and set(stripped.replace("|", "").strip()) <= set("-: \t")
@@ -176,7 +185,7 @@ def _addresses_from_text(text: str) -> set[str]:
     for fields, _, _ in _rows(text, "contacts"):
         for field in fields:
             candidate = normalise(field)
-            if "@" in candidate:
+            if is_address(candidate):
                 allowed.add(candidate)
                 break
     allowed.discard("")
@@ -236,7 +245,7 @@ def _phone_entries_from_text(text: str, region: str | None = None) -> list[dict]
         if PHONE_COLUMN not in headers:
             continue
         columns = {name: value.strip() for name, value in zip(headers, fields) if name}
-        address = next((normalise(f) for f in fields if "@" in normalise(f)), "")
+        address = next((normalise(f) for f in fields if is_address(normalise(f))), "")
         for raw in phone.split_cell(columns.get(PHONE_COLUMN, "")):
             number = phone.to_e164(raw, region)
             if number:
@@ -266,6 +275,74 @@ def roster_phone_problems(path: pathlib.Path, region: str | None = None) -> list
                 problems.append({"name": columns.get("name", ""), "value": raw})
     return problems
 
+
+
+TELEGRAM_COLUMN = "telegram"
+_TG_ID = re.compile(r"^[0-9]{1,20}$")
+_TG_USERNAME = re.compile(r"^[a-z][a-z0-9_]{4,31}$")
+
+
+def telegram_value(raw: str) -> tuple[str, str] | None:
+    """Una celda `Telegram` normalizada (PRD #609 FR-11): ("id", "123") o ("username", "ana_lopez").
+
+    El `@usuario` pierde la `@` y pasa a minúsculas, y sólo vale con la regla de
+    Telegram: 5 a 32 caracteres, letras, dígitos o `_`, empezando con letra. Cualquier
+    otra cosa es None.
+    """
+    value = (raw or "").strip()
+    if not value:
+        return None
+    if _TG_ID.match(value):
+        return ("id", str(int(value)))
+    name = value[1:] if value.startswith("@") else value
+    name = name.lower()
+    if _TG_USERNAME.match(name):
+        return ("username", name)
+    return None
+
+
+def roster_telegram(path: pathlib.Path) -> dict:
+    """Los contactos de la columna `Telegram` (FR-11, FR-11a).
+
+    `{"ids": {id: entry}, "usernames": {usuario: entry}, "problems": [...]}`, con
+    `entry` = `{name, address}`. Un valor que no cumple la regla es un problema
+    `invalid`, y un id o `@usuario` que aparece en más de una fila es `duplicate`: esas
+    filas no se reconocen por Telegram (falla cerrado). Los problemas nombran la fila,
+    nunca el valor. Sin la columna, todo vacío.
+    """
+    return _telegram_from_text(_read(path))
+
+
+def _telegram_from_text(text: str) -> dict:
+    headers: list[str] = []
+    seen: dict[tuple[str, str], list[dict]] = {}
+    problems: list[dict] = []
+    for fields, is_header, _ in _rows(text, "contacts"):
+        if is_header:
+            headers = [canonical_column(f) for f in fields]
+            continue
+        if TELEGRAM_COLUMN not in headers:
+            continue
+        columns = {name: value.strip() for name, value in zip(headers, fields) if name}
+        raw = columns.get(TELEGRAM_COLUMN, "")
+        if not raw:
+            continue
+        address = next((normalise(f) for f in fields if is_address(normalise(f))), "")
+        entry = {"name": columns.get("name", ""), "address": address}
+        value = telegram_value(raw)
+        if value is None:
+            problems.append({"name": entry["name"], "problem": "invalid"})
+            continue
+        seen.setdefault(value, []).append(entry)
+    ids: dict[str, dict] = {}
+    usernames: dict[str, dict] = {}
+    for (kind, value), entries in seen.items():
+        if len(entries) > 1:
+            for e in entries:
+                problems.append({"name": e["name"], "problem": "duplicate"})
+            continue
+        (ids if kind == "id" else usernames)[value] = entries[0]
+    return {"ids": ids, "usernames": usernames, "problems": problems}
 
 def roster_phones(path: pathlib.Path, region: str | None = None) -> set[str]:
     """Every E.164 number the roster authorises. Missing file or column means none."""
@@ -316,7 +393,7 @@ def roster_entries(path: pathlib.Path) -> list[dict]:
         if is_header:
             headers = [canonical_column(f) for f in fields]
             continue
-        index = next((i for i, f in enumerate(fields) if "@" in normalise(f)), None)
+        index = next((i for i, f in enumerate(fields) if is_address(normalise(f))), None)
         if index is None:
             continue
         entries.append({
@@ -577,7 +654,7 @@ def notifiers(path: pathlib.Path) -> list[dict]:
     for fields, is_header, _ in _rows(text, "notifiers"):
         if is_header:
             continue
-        address = next((normalise(f) for f in fields if "@" in normalise(f)), "")
+        address = next((normalise(f) for f in fields if is_address(normalise(f))), "")
         if not address:
             continue
         rest = [f.strip() for f in fields if "@" not in normalise(f) and f.strip()]
