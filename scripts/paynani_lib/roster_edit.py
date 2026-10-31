@@ -294,7 +294,8 @@ def validate(member: dict, cols: list[str], others: list[dict], *, owner: bool, 
     if "Email" not in cols and email:
         _fail("email", "no_email_column", "este roster no tiene columna Email")
     if telegram and "Telegram" not in cols:
-        # No se agrega la columna sola: cambiar la forma del roster es decisión del dueño.
+        # save_text agrega la columna antes de validar (Q269 = A, #628); esto sólo
+        # protege a quien llame a validate con otras columnas.
         _fail("telegram", "no_telegram_column", "este roster no tiene columna Telegram")
     clean = {"name": name, "email": email, "type": type_, "github": github, "phones": phones}
     if has_telegram:
@@ -351,6 +352,13 @@ def save_text(text: str, row, member: dict) -> tuple[str, int, dict]:
     schema_error = roster_mod.write_schema_error(text)
     if schema_error:
         raise EditError("unreadable", detail=schema_error)
+    if isinstance(member, dict) and str(member.get("telegram") or "").strip():
+        cols, _ = members(text)
+        if "Telegram" not in cols:
+            # Q269 = A (#628): guardar un Telegram crea la columna, vacía en las demás
+            # filas. Sin un valor de Telegram el archivo no cambia de forma.
+            text = _add_column(text, "Telegram")
+            header_idx, header_fields, rows = table(text)
     cols, current = members(text)
     lines = text.splitlines()
     if row is None:
@@ -384,6 +392,22 @@ def delete_text(text: str, row) -> tuple[str, dict]:
     return _join(lines, text), gone
 
 
+def _add_column(text: str, name: str) -> str:
+    """
+    La tabla de contactos con la columna `name` al final, vacía en todas las filas.
+    Sólo para `Rules` (SMS_GATEWAY.md §11) y `Telegram` (#628). Las demás celdas no cambian.
+    """
+    header_idx, header_fields, rows = table(text)
+    lines = text.splitlines()
+    lines[header_idx] = lines[header_idx].rstrip().rstrip("|").rstrip() + f" | {name} |"
+    sep = lines[header_idx + 1].rstrip()
+    lines[header_idx + 1] = (sep if sep.endswith("|") else sep + "|") + "---|"
+    for idx, other in rows:
+        cells = list(other) + [""] * (len(header_fields) - len(other))
+        lines[idx] = "| " + " | ".join(c.strip() for c in cells) + " |  |"
+    return _join(lines, text)
+
+
 def set_rules_text(text: str, row, rules_id: str) -> str:
     """
     El roster con `rules_id` en la columna `Rules` de `row` (I-1). Si la tabla no
@@ -396,18 +420,14 @@ def set_rules_text(text: str, row, rules_id: str) -> str:
     schema_error = roster_mod.write_schema_error(text)
     if schema_error:
         raise EditError("unreadable", detail=schema_error)
-    line_idx, fields = _row(rows, row)
-    lines = text.splitlines()
+    _row(rows, row)
     canon = [roster_mod.canonical_column(h) for h in header_fields]
     if "rules" not in canon:
-        lines[header_idx] = lines[header_idx].rstrip().rstrip("|").rstrip() + " | Rules |"
-        sep = lines[header_idx + 1].rstrip()
-        lines[header_idx + 1] = (sep if sep.endswith("|") else sep + "|") + "---|"
-        for idx, other in rows:
-            cells = list(other) + [""] * (len(header_fields) - len(other))
-            lines[idx] = "| " + " | ".join(c.strip() for c in cells) + " |  |"
-        header_fields = list(header_fields) + ["Rules"]
-        canon.append("rules")
+        text = _add_column(text, "Rules")
+        header_idx, header_fields, rows = table(text)
+        canon = [roster_mod.canonical_column(h) for h in header_fields]
+    line_idx, fields = _row(rows, row)
+    lines = text.splitlines()
     cells = [f.strip() for f in fields] + [""] * (len(header_fields) - len(fields))
     cells[canon.index("rules")] = rules_id
     lines[line_idx] = "| " + " | ".join(cells) + " |"

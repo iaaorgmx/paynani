@@ -31,6 +31,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 from paynani_lib import roster_edit  # noqa: E402
+roster_mod = roster_edit.roster_mod
 from paynani_lib import rules as rules_mod  # noqa: E402
 from paynani_lib.roster_edit import EditError  # noqa: E402
 
@@ -217,6 +218,7 @@ class RosterService:
         if not isinstance(member, dict):
             raise EditError("missing_field", field="member", detail="falta member")
         before: dict = {}
+        web = from_web(device_id)
 
         def transform(text):
             nonlocal before
@@ -224,7 +226,20 @@ class RosterService:
                 _, current = roster_edit.members(text)
                 if 1 <= row <= len(current):
                     before = current[row - 1]
-            new_text, saved_row, clean = roster_edit.save_text(text, row, member)
+            asked = dict(member)
+            if not web and "telegram" in asked:
+                # Q270 = A (#628): PaynaniApp y la API escriben un @usuario; el id numérico
+                # sólo se escribe desde PaynaniWeb (FR-15). Un vacío no borra un id que la
+                # app no ve: la fila lo conserva.
+                value = str(asked.get("telegram") or "").strip()
+                kind = roster_mod.telegram_value(value) if value else None
+                if value and (kind is None or kind[0] == "id"):
+                    raise EditError("invalid", field="telegram", reason="telegram_username_only",
+                                    detail="desde aquí sólo se guarda un @usuario de Telegram")
+                if not value and roster_mod.telegram_value(before.get("telegram", "")) is not None \
+                        and roster_mod.telegram_value(before.get("telegram", ""))[0] == "id":
+                    del asked["telegram"]
+            new_text, saved_row, clean = roster_edit.save_text(text, row, asked)
             if "telegram" not in clean:
                 # Sin `telegram` en el pedido la fila conserva el suyo (PRD #609): el aviso
                 # al dueño dice lo que quedó, no un vacío.
@@ -679,9 +694,11 @@ def _for_device(response: dict, device_id: str) -> dict:
     members = []
     for m in data["members"]:
         if isinstance(m, dict) and "telegram" in m:
-            has = bool(m["telegram"])
+            value = m["telegram"] or ""
             m = {k: v for k, v in m.items() if k != "telegram"}
-            m["has_telegram"] = has
+            m["has_telegram"] = bool(value)
+            # Q270 = A (#628): un @usuario sí va a la app y a la API; un id nunca.
+            m["telegram_username"] = value if value.startswith("@") else ""
         members.append(m)
     return {**response, "data": {**data, "members": members}}
 

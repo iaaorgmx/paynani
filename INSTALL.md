@@ -1416,6 +1416,12 @@ systemctl --user restart paynani-telegram.service   # after paynani telegram set
 and `state/telegram.err.log`. Have your human write to the bot: a roster contact
 (the `Telegram` column, `TELEGRAM.md` §3) reaches you as a `[telegram …]` notice.
 
+**Putting someone in the `Telegram` column.** From PaynaniWeb, «Agregar al roster» in
+that person's conversation, or the Telegram field when editing a row. From the
+terminal, `scripts/paynani roster edit <their e-mail> --telegram @username` (or their
+numeric id), or `roster add … --telegram` for a new contact. A roster without the
+column gets it on that first save; nothing else changes.
+
 **Turning it off.** `scripts/paynani telegram disable` sets `TELEGRAM_ENABLED=0`
 and stops the service. The token stays in `telegram.env`, and
 `scripts/paynani telegram enable` turns it back on. PaynaniWeb and PaynaniApp stop

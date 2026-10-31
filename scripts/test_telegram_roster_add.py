@@ -142,6 +142,31 @@ async def main():
         check("PaynaniApp edita la fila sólo-Telegram sin la llave: pasa, conserva el id y la respuesta no lo trae",
               ("result", True, False), (edited.get("type"), f"| Pedro Tienda |  | Human | {PEDRO} |" in
                                         roster.read_text(encoding="utf-8"), str(PEDRO) in json.dumps(edited)))
+        # Q270 = A (#628): desde la app, un @usuario sí; un id no; un vacío no borra el id.
+        def app_save(qid, member):
+            cur = rs.handle({"type": "roster.list", "id": "q_" + qid * 32}, "d_0123456789abcdef")["data"]
+            row_ = next(m for m in cur["members"] if m["name"] == "Pedro Tienda")
+            return rs.handle({"type": "roster.save", "id": "q_" + chr(ord(qid) + 1) * 32, "row": row_["row"],
+                              "etag": cur["etag"], "member": dict({"name": "Pedro Tienda", "email": "",
+                                                                   "type": "Human", "github": "", "phones": []},
+                                                                  **member)}, "d_0123456789abcdef")
+        refused = app_save("a", {"telegram": "700000555"})
+        check("PaynaniApp no escribe un id numérico (sólo @usuario, #628)", ("invalid", "telegram_username_only"),
+              (refused.get("code"), refused.get("reason")))
+        kept = app_save("c", {"telegram": ""})
+        check("un vacío desde la app no borra el id que no ve", ("result", True),
+              (kept.get("type"), f"| Pedro Tienda |  | Human | {PEDRO} |" in roster.read_text(encoding="utf-8")))
+        check("y la app recibe telegram_username vacío para una celda con id", "",
+              next(m for m in kept["data"]["members"] if m["name"] == "Pedro Tienda").get("telegram_username"))
+        cur = rs.handle({"type": "roster.list", "id": "q_" + "e" * 32}, "d_0123456789abcdef")["data"]
+        jrow = next(m for m in cur["members"] if m["name"] == "Julian Flores")
+        user = rs.handle({"type": "roster.save", "id": "q_" + "f" * 32, "row": jrow["row"], "etag": cur["etag"],
+                          "member": {"name": "Julian Flores", "email": "julian@example.com", "type": "Human",
+                                     "github": "", "phones": [], "telegram": "@Julian_Paynani"}},
+                         "d_0123456789abcdef")
+        jseen = next(m for m in user["data"]["members"] if m["name"] == "Julian Flores")
+        check("PaynaniApp guarda un @usuario (en minúsculas, como lo compara el servicio) y lo recibe", ("result", "@julian_paynani", True),
+              (user.get("type"), jseen.get("telegram_username"), jseen.get("has_telegram")))
         api.private_message(PEDRO, "Somos la tienda de enfrente", first_name="Pedro")
         await until(lambda: len([e for e in events(state) if e.get("event_type") == "telegram.received"]) >= 2)
         after = [e for e in events(state) if e.get("event_type") == "telegram.received"]

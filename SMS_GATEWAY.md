@@ -990,7 +990,9 @@ tipo nuevo (sección 10):
 - `telegram` es la celda `Telegram` (PRD #609 FR-11): un id numérico o un `@usuario`,
   o `""`. **Sólo va a PaynaniWeb** (`device_id` `web:…`; FR-15, `TELEGRAM.md` §8): a
   PaynaniApp y a la API les llega `has_telegram` (`true`/`false`) en su lugar, también
-  en la respuesta de `roster.save`. Sin la columna, `""` (o `has_telegram: false`).
+  en la respuesta de `roster.save`, y `telegram_username` (Q270 = A, #628): el
+  `@usuario` si la celda es uno, o `""` si es un id o está vacía. Sin la columna, `""`
+  (o `has_telegram: false`).
 - `rules` es el valor de la columna `Rules` (o `null`). `has_rules` dice si
   `rules/<id>.md` existe, y `rules_enabled`, si además tiene `enabled: true`.
 - `default_rules` dice si existe `rules/default.md`.
@@ -1032,12 +1034,18 @@ tipo nuevo (sección 10):
 | `github` | `no_github_column` | Trae GitHub y el roster no tiene columna `GitHub` |
 | `type` | `no_type_column` | Trae `type` y el roster no tiene columna `Type` |
 | `email` | `no_email_column` | Trae correo y el roster no tiene columna `Email` |
-| `telegram` | `no_telegram_column` | Trae Telegram y el roster no tiene columna `Telegram`. No se agrega sola: cambiar la forma del roster es decisión del dueño |
+| `telegram` | `telegram_username_only` (`reason`) | PaynaniApp o la API mandaron un id numérico: desde ahí sólo se guarda un `@usuario` (Q270 = A, #628). El detalle no repite el valor |
 
 - **Columnas.** La pasarela no agrega columnas por su cuenta (Q3: los cinco campos de
-  hoy). Si el roster no tiene la columna `Phone` o `GitHub` y el campo viene lleno,
-  responde `invalid`. La app deja esos campos deshabilitados si no están en
-  `columns`, y el dueño agrega la columna con `paynani roster`.
+  hoy), salvo `Rules` (§11) y `Telegram`. Si el roster no tiene la columna `Phone` o
+  `GitHub` y el campo viene lleno, responde `invalid`. La app deja esos campos
+  deshabilitados si no están en `columns`, y el dueño agrega la columna con
+  `paynani roster`. Un `telegram` no vacío en un roster sin la columna la crea al
+  final, vacía en las demás filas, en la misma escritura (Q269 = A, #628); un
+  `telegram` vacío no la crea.
+- **Telegram desde PaynaniApp y la API** (Q270 = A, #628): sólo un `@usuario`. Sin la
+  llave `telegram`, o con `""` en una fila que tiene un id, la fila conserva su
+  valor: la app no ve el id y no lo puede borrar sin querer.
 - **Escritura** (sección 4.4 del PRD): copia fechada de `roster.md` antes, escritura
   atómica con el mismo mecanismo de `roster_cli` (temporal, relectura, y se revierte si
   no cuadra), una línea en el log de cambios y el correo al humano. Si la relectura no
