@@ -185,6 +185,15 @@ export async function resolveJid(s, rawJid, rawAlt) {
   return { e164: null, jid, lid: null };
 }
 
+// ¿Estas credenciales son de una vinculación terminada? (#604)
+// Baileys guarda `account` (la identidad firmada del dispositivo) sólo al recibir
+// pair-success, igual con QR que con código. `me.id` solo no basta: pedir un código
+// ya lo escribe antes de que el teléfono acepte. `registered` tampoco sirve: con QR
+// se queda en false para siempre, porque sólo lo pone el flujo de código.
+export function credsLinked(creds) {
+  return Boolean(creds?.me?.id) && Boolean(creds?.account);
+}
+
 // Estado de un envío (WAMessageStatus) -> receipt.status
 export function receiptStatus(ack) {
   if (ack === 2) return 'server';

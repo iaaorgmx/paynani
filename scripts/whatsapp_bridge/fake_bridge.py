@@ -14,6 +14,7 @@ Habla el mismo protocolo que index.js, por stdin y stdout, sin red ni Baileys. L
     fake.crash          sale con el código `code` (1 por omisión) sin cerrar
     fake.hang           deja de contestar (para probar los pings)
     fake.silent_link    el próximo link contesta bien pero no manda QR ni código
+    fake.quiet_logout   el próximo logout contesta bien pero no manda `status` (#604)
     fake.stderr         escribe `text` en stderr
 
 Variables de entorno, para las pruebas de arranque:
@@ -67,13 +68,22 @@ class Fake:
         self.link: dict | None = None
         self.hung = False
         self.silent_link = False
+        self.quiet_logout = False
 
     # --- estado ---
     def creds(self) -> Path:
         return Path(self.cfg["auth_dir"]) / "creds.json"
 
     def has_creds(self) -> bool:
-        return self.cfg is not None and self.creds().exists()
+        # La misma regla que credsLinked() en lib.js (#604): me.id y account, sin mirar
+        # `registered`, que con QR se queda en false.
+        if self.cfg is None or not self.creds().exists():
+            return False
+        try:
+            c = json.loads(self.creds().read_text())
+        except (OSError, ValueError):
+            return False
+        return bool((c.get("me") or {}).get("id")) and bool(c.get("account"))
 
     def set_status(self, state: str, reason=None, me=None) -> None:
         self.state = {"state": state, "me": me if state != "unlinked" else None,
@@ -119,7 +129,7 @@ class Fake:
         self.allowed = {n for n in msg.get("allowed") or [] if E164_RE.match(n)}
         result(ref, {"protocol": PROTOCOL, "bridge_version": "fake", "baileys_version": None})
         if self.has_creds():
-            me = json.loads(self.creds().read_text()).get("me")
+            me = json.loads(self.creds().read_text()).get("fake_me")
             self.set_status("connecting", me=me)
             self.set_status("connected", me=me)
         else:
@@ -194,7 +204,11 @@ class Fake:
         if not self.has_creds():
             return fail(ref, "not_connected")
         self.wipe()
-        self.set_status("unlinked")
+        if self.quiet_logout:
+            self.quiet_logout = False
+            self.state = {"state": "unlinked", "me": None, "since": iso(), "reason": None}
+        else:
+            self.set_status("unlinked")
         result(ref, {"remote": True})
 
     def do_shutdown(self, ref, msg) -> None:
@@ -209,7 +223,11 @@ class Fake:
         p = self.creds()
         fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as fh:
-            json.dump({"me": me, "registered": True}, fh)
+            # Como Baileys: `account` llega con pair-success; `registered` sólo lo pone
+            # el flujo de código, con QR se queda en false (#604).
+            json.dump({"me": {"id": me.lstrip("+") + ":3@s.whatsapp.net"},
+                       "account": {"details": "fake"}, "fake_me": me,
+                       "registered": self.link.get("mode") == "code"}, fh)
         self.link = None
         out({"type": "link.ended", "reason": "linked", "me": me})
         self.set_status("connected", me=me)
@@ -251,6 +269,10 @@ class Fake:
 
     def do_fake_silent_link(self, ref, msg) -> None:
         self.silent_link = True
+        result(ref)
+
+    def do_fake_quiet_logout(self, ref, msg) -> None:
+        self.quiet_logout = True
         result(ref)
 
     def do_fake_hang(self, ref, msg) -> None:
