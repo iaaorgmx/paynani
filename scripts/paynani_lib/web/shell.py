@@ -53,6 +53,17 @@ ICONS = {
     "key": '<circle cx="7" cy="15" r="4"/><path d="m10 12 10-10 2 2-3 3 2 2-3 3-2-2-3 3"/>',
     "chat": '<path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.6-5.4A8.4 8.4 0 1 1 21 11.5z"/>',
     "warn": '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
+    # «Acerca de» (#636): el menú y los renglones de la página, con el mismo trazo.
+    "info": '<circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/>',
+    "web": '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/>',
+    "code": '<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',
+    "license": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/>',
+    "bug": '<path d="M8 2l1.9 1.9M16 2l-1.9 1.9M9 7.1V6a3 3 0 0 1 6 0v1.1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6zM12 20v-9M6 13H2M22 13h-4M6 17l-3 2M18 17l3 2M6 9 3 7M18 9l3-2"/>',
+    "news": '<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
+    "book": '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+    "python": '<path d="M12 2c-4 0-4 2-4 3v2h4v1H5c-2 0-3 2-3 4s1 4 3 4h2v-2.5c0-1.5 1-2.5 2.5-2.5h5c1.4 0 2.5-1 2.5-2.5V5c0-2-2-3-5-3z"/><path d="M12 22c4 0 4-2 4-3v-2h-4v-1h7c2 0 3-2 3-4s-1-4-3-4h-2v2.5c0 1.5-1 2.5-2.5 2.5h-5C8.1 13 7 14 7 15.5V19c0 2 2 3 5 3z"/>',
+    "font": '<path d="M4 20 10 4h4l6 16M7 14h10"/>',
+    "shapes": '<rect x="3" y="3" width="8" height="8" rx="1"/><circle cx="17" cy="7" r="4"/><path d="M7 14l4 7H3zM14 14h7v7h-7z"/>',
 }
 
 
@@ -145,6 +156,7 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
     {entry('telegram', '/telegram/messages', 'chat', 'web.tg.nav') if telegram else ''}
     {entry('roster', '/roster', 'roster', 'web.nav.roster')}
     {entry('api_tokens', '/api-tokens', 'key', 'web.tokens.title')}
+    {entry('about', '/about', 'info', 'web.about.nav')}
   </nav>
   <div class="grupo separa">{th('web.nav.tools')}</div>
   <nav aria-label="{th('web.nav.tools')}">

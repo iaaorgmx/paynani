@@ -609,3 +609,27 @@ body.web-shell {
 .web-shell .estado-tg-warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
 .web-shell .estado-tg-bad { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad-ink); }
 .web-shell .tg-token, .web-shell .tg-agregar { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+
+/* ---- «Acerca de» (#636), como el About de PaynaniApp ----------------------------------- */
+.web-shell .about { max-width: 40rem; display: grid; gap: .25rem; }
+.web-shell .about-card { text-align: center; padding: 1.5rem 1rem 1.25rem; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.web-shell .about-logo svg { height: 5.5rem; width: auto; }
+.web-shell .about-logo .logotipo { fill: var(--ink); }
+.web-shell .about-logo .voluta { stroke: var(--accent); }
+.web-shell .about-name { margin: .4rem 0 .6rem; font-size: 1.15rem; font-weight: 650; }
+.web-shell .about-version { display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap; justify-content: center; margin: 0; font-size: .85rem; border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: .3rem .8rem; }
+.web-shell .about-version span { user-select: all; }
+.web-shell .about-copiar { font: inherit; font-size: .8rem; border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; font-weight: 600; }
+.web-shell .about-p { color: var(--quiet); font-size: .92rem; line-height: 1.5; margin: 1rem auto 0; max-width: 32rem; }
+.web-shell .about-h { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--quiet); margin: 1.4rem 0 .4rem; }
+.web-shell .about-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.web-shell .about-list li + li { border-top: 1px solid var(--line); }
+.web-shell .about-row { display: grid; grid-template-columns: 2.2rem 1fr auto; gap: .8rem; align-items: center; padding: .8rem 1rem; color: var(--ink); text-decoration: none; }
+.web-shell a.about-row:hover, .web-shell a.about-row:focus-visible { background: var(--bg); }
+.web-shell .about-ico { width: 2.2rem; height: 2.2rem; border-radius: 10px; background: var(--bg); display: grid; place-items: center; color: var(--accent); }
+.web-shell .about-ico svg { width: 1.15rem; height: 1.15rem; }
+.web-shell .about-txt { min-width: 0; overflow-wrap: anywhere; }
+.web-shell .about-txt b { display: block; font-size: .95rem; font-weight: 600; }
+.web-shell .about-txt small { color: var(--quiet); font-size: .82rem; }
+.web-shell .about-flecha { color: var(--quiet); }
+.web-shell .about-copy { text-align: center; color: var(--quiet); font-size: .8rem; margin-top: 1.4rem; }
