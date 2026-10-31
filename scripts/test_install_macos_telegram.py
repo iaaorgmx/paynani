@@ -46,6 +46,7 @@ env_file = tmp / "mail.env"
 env_file.write_text("x=1\n")
 env_file.chmod(0o600)
 calls: list = []
+svc = {"state": "loaded"}   # launchctl print: running = "active", cargado sin correr = "loaded"
 
 
 def run(argv):
@@ -58,7 +59,7 @@ def run(argv):
          mock.patch.object(m, "manifest", lambda: tmp / "install.manifest"), \
          mock.patch.object(m, "run_launchctl", lambda *a, **k: calls.append(a) or mock.Mock(returncode=0)), \
          mock.patch.object(m, "bootstrap", lambda path, label: calls.append(("bootstrap", label)) or True), \
-         mock.patch.object(m, "service_state", lambda label: "loaded"), \
+         mock.patch.object(m, "service_state", lambda label: svc["state"]), \
          mock.patch.object(m.shutil, "which", lambda name, *a, **k: "/usr/bin/" + name), \
          contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         args = m.parse(argv)
@@ -108,9 +109,15 @@ check("el manifiesto registra el LaunchAgent y no telegram.env", (True, False),
       (str(tg) in manifest_text, "telegram.env" in manifest_text))
 
 write_env("1")
+code, out, err = run(["--runtime", "codex", "--upgrade"])
+check("con telegram.env y el proceso sin correr: falla y lo dice (Ximena en #623)", (m.EX_CONFIG, True),
+      (code, "did not stay running" in err))
+svc["state"] = "active"
 code, out, _ = run(["--runtime", "codex", "--upgrade"])
-check("con telegram.env: el upgrade lo atiende y ya no pide setup", (True, False, False),
-      (("bootstrap", "com.paynani.telegram") in calls, "waiting-setup" in out, TOKEN in out))
+check("con telegram.env: el upgrade lo atiende, queda corriendo y ya no pide setup", (True, True, False, False),
+      (("bootstrap", "com.paynani.telegram") in calls, code in (m.EX_OK, m.EX_CHANGED), "waiting-setup" in out,
+       TOKEN in out))
+svc["state"] = "loaded"
 write_env("0")
 code, out, _ = run(["--runtime", "codex", "--upgrade"])
 check("desactivado en telegram.env: vuelve a decir que espera", True, "telegram=waiting-setup" in out)

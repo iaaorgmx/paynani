@@ -124,8 +124,7 @@ def run_setup(args) -> int:
         config.save_backup(env)
     config.write(config.with_token(current, token), env)
     print(f"listo: {env.name} guardado (0600).")
-    _say_started(service_control("start"))
-    return 0
+    return _say_started(service_control("start"))
 
 
 # --- el servicio y `enable`/`disable` (TG-6) ---------------------------------------------------
@@ -160,19 +159,35 @@ def service_control(action: str) -> str:
         rc = subprocess.run(cmd, capture_output=True, text=True, timeout=30).returncode
     except (OSError, subprocess.SubprocessError):
         return "failed"
+    if rc != 0 and action == "stop" and sys.platform == "darwin" and not _launchd_running(target):
+        # launchd ya lo tenía detenido: `kill` falla, pero no hay nada que detener (Ximena en #623).
+        return "stopped"
     if rc != 0:
         return "failed"
     return "stopped" if action == "stop" else "started"
 
 
-def _say_started(result: str) -> None:
+def _launchd_running(target: str) -> bool:
+    import subprocess
+
+    try:
+        out = subprocess.run(["launchctl", "print", target], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return True   # sin saberlo, no se da por detenido
+    return out.returncode == 0 and "state = running" in out.stdout
+
+
+def _say_started(result: str) -> int:
+    """Dice cómo quedó el servicio; 1 si no arrancó (Ximena en #623), 0 si arrancó o no está instalado."""
     if result == "started":
         print("paynani-telegram arrancó. Revisa con: paynani telegram status")
     elif result == "not-installed":
         print("El servicio paynani-telegram no está instalado. Instálalo con el instalador y --with-telegram "
               "(INSTALL.md, «Telegram»); arranca solo con este telegram.env.")
     else:
-        print("No pude arrancar paynani-telegram: arráncalo o reinícialo a mano (INSTALL.md, «Telegram»).")
+        _err("no pude arrancar paynani-telegram: arráncalo o reinícialo a mano (INSTALL.md, «Telegram»)")
+        return 1
+    return 0
 
 
 def run_disable(args) -> int:
@@ -213,8 +228,7 @@ def run_enable(args) -> int:
         print(f"Telegram activado ({config.ENABLED}=1 en {env.name}).")
     else:
         print("Telegram ya estaba activado.")
-    _say_started(service_control("start"))
-    return 0
+    return _say_started(service_control("start"))
 
 
 def run_status(args) -> int:

@@ -58,6 +58,9 @@ class Args:
         self.__dict__.update(kw)
 
 
+CONTROL = {"start": "not-installed"}
+
+
 def run_cli(fn, args, stdin_text, env_path, base):
     """Corre una orden de la CLI con stdin, env_path y la Bot API falsa; (código, salida)."""
     saved = (sys.stdin, sys.stdout, sys.stderr, config.env_path, os.environ.get(config.API_ENV))
@@ -66,7 +69,7 @@ def run_cli(fn, args, stdin_text, env_path, base):
     config.env_path = lambda environ=None: env_path
     os.environ[config.API_ENV] = base
     real_control = cli.service_control
-    cli.service_control = lambda action: "not-installed"   # nunca el servicio real del host
+    cli.service_control = lambda action: CONTROL["start"]   # nunca el servicio real del host
     try:
         rc = fn(args)
     finally:
@@ -121,6 +124,13 @@ check("setup muestra el @usuario del bot", "@NuevoBot" in out)
 check("setup nunca imprime el token", NEW not in out and NEW.split(":")[1] not in out)
 rc, out = run_cli(cli.run_setup, Args(dedicated=True), NEW + "\n", env, api.base_url)
 check("setup con Telegram ya configurado pide paynani telegram token", rc == 2 and "telegram token" in out)
+env2 = d / "otro" / "telegram.env"
+env2.parent.mkdir()
+CONTROL["start"] = "failed"
+rc, out = run_cli(cli.run_setup, Args(dedicated=True), NEW + "\n", env2, api.base_url)
+CONTROL["start"] = "not-installed"
+check("setup si el servicio no arranca: 1 y lo dice, con telegram.env ya escrito (Ximena en #623)",
+      rc == 1 and "no pude arrancar" in out and config.token(config.read(env2)) == NEW, out)
 api.stop()
 
 

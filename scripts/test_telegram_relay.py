@@ -222,12 +222,16 @@ async def main() -> None:
 
         # --- vuelve el servicio: otro aviso status, sin que la app pida nada -------------
         app.notices.clear()
+        # El getUpdates del servicio detenido puede seguir abierto en la API falsa hasta su
+        # timeout; uno nuevo antes de eso recibe 409, como en Telegram (Ximena en #623).
+        await until(lambda: api._polling == 0, 5)
         svc = TelegramService(state, roster_path=roster, token=TOKEN, api_base=api.base_url,
                               log=lambda line: None, poll_timeout=1, backoff=(0.05, 0.2), rules_root=tmp,
                               settings={"TELEGRAM_SEND_PER_DAY": "50"})
         await svc.start()
         n = await app.notice("telegram.changed", timeout=8)
         check("vuelve el servicio: aviso telegram.changed status", "status", (n or {}).get("what"))
+        await until(lambda: svc.state == "running", 5)
         r = await app.ask("telegram.status")
         check("y status ya dice running", "running", (r.get("data") or {}).get("state"))
         await app.ws.close()

@@ -618,6 +618,9 @@ def install(args: argparse.Namespace) -> int:
         print(f"launchagent={path} label={label} state={service_state(label)}")
         if name == "telegram" and not telegram_configured():
             print('telegram=waiting-setup next="paynani telegram setup"')
+        elif name == "telegram" and service_state(label) != "active":
+            # Con telegram.env el servicio tiene que quedar arriba, como en Linux (Ximena en #623).
+            die(f"{label} did not stay running with telegram.env; see {state_dir() / 'telegram.err.log'}")
 
     if args.runtime == "openclaw":
         result = subprocess.run([runtime_bin, "--version"], capture_output=True, text=True, timeout=20)
