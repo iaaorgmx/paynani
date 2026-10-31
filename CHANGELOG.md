@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: dos detalles de «Cuenta de Telegram» sin bot (#641, seguimiento de #639).**
+  - Con un token ya puesto pero desactivado, `/telegram` muestra el aviso de `paynani telegram enable` y ya no el formulario, que de todos modos se negaba al guardar.
+  - El formulario de configuración ya no enlaza a «Mensajes de Telegram», que sin bot es un 404.
+
+  Dos pruebas nuevas en `test_web_telegram_setup.py`.
+
 ## 0.20.0 (2026-10-31)
 
 Telegram se configura desde PaynaniWeb (#635): «Mensajes de Telegram» → «Cuenta de Telegram» pide el token y el usuario del bot, sin terminal. Para eso el instalador pone ahora el servicio de Telegram en todas las instalaciones, detenido hasta que haya un token. PaynaniWeb trae además la página «Acerca de» (#636) y «Messages» pasa a llamarse «Text Messages» (#633). Una instalación que no use Telegram no cambia en nada más.

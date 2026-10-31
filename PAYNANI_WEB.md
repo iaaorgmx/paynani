@@ -351,8 +351,9 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   comprueba que el usuario sea el de ese token (Q282), borra un webhook si lo había
   (la casilla lo autoriza, Q283), escribe `telegram.env` (0600) y arranca
   `paynani-telegram`. Si algo falla no se escribe nada. Al terminar te llega un correo
-  con el bot, sin el token. Con un token ya puesto pero desactivado, se niega y pide
-  `paynani telegram enable`.
+  con el bot, sin el token. Con un token ya puesto pero desactivado, la página no muestra
+  el formulario: sólo pide `paynani telegram enable` (#641). La página no enlaza a
+  «Mensajes de Telegram», que sin bot es un 404.
 - **La cuenta** (`/telegram` con bot): el estado del servicio, el `@usuario` del bot, desde
   cuándo funciona, la última consulta a Telegram y cuántos mensajes llegaron y
   salieron hoy. Si otro programa lee el mismo bot o tiene un webhook, o si Telegram
