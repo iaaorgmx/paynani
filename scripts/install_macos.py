@@ -46,8 +46,12 @@ WEB_LABEL = "com.paynani.web"
 # WhatsApp (PRD #550 FR-1) is optional the same way: --with-whatsapp, or a
 # LaunchAgent of this checkout that is already here.
 WHATSAPP_LABEL = "com.paynani.whatsapp"
-ALL_LABELS = {**LABELS, "sms": SMS_LABEL, "web": WEB_LABEL, "whatsapp": WHATSAPP_LABEL}
-OPTIONAL = ("sms", "web", "whatsapp")
+# Telegram (PRD #609 FR-1) too: --with-telegram, or a LaunchAgent of this checkout.
+# The token is never the installer's: `paynani telegram setup` writes telegram.env.
+TELEGRAM_LABEL = "com.paynani.telegram"
+ALL_LABELS = {**LABELS, "sms": SMS_LABEL, "web": WEB_LABEL, "whatsapp": WHATSAPP_LABEL,
+              "telegram": TELEGRAM_LABEL}
+OPTIONAL = ("sms", "web", "whatsapp", "telegram")
 # The port and the tunnel address are not written into the LaunchAgent: the gateway
 # reads them from the user's sms.env itself (paynani_lib/sms/config.py).
 
@@ -79,11 +83,24 @@ def whatsapp_wanted(args: argparse.Namespace) -> bool:
     return bool(getattr(args, "with_whatsapp", False)) or plist_path("whatsapp").exists()
 
 
+def telegram_wanted(args: argparse.Namespace) -> bool:
+    """--with-telegram, or a Telegram LaunchAgent that is already here."""
+    return bool(getattr(args, "with_telegram", False)) or plist_path("telegram").exists()
+
+
+def telegram_configured() -> bool:
+    """telegram.env turns Telegram on, read by the same code the service uses. Never the token."""
+    from paynani_lib.telegram import config as telegram_config
+    return telegram_config.configured(config_dir() / "telegram.env")
+
+
 def optional_names(args: argparse.Namespace) -> list[str]:
-    """The gateway and PaynaniWeb together when the gateway is wanted; WhatsApp on its own."""
+    """The gateway and PaynaniWeb together when the gateway is wanted; WhatsApp and Telegram on their own."""
     names = ["sms", "web"] if sms_wanted(args) else []
     if whatsapp_wanted(args):
         names.append("whatsapp")
+    if telegram_wanted(args):
+        names.append("telegram")
     return names
 
 
@@ -260,6 +277,20 @@ def plist_for(name: str, python: str, runtime: str, runtime_bin: str | None = No
             "StandardOutPath": str(state / "whatsapp.log"),
             "StandardErrorPath": str(state / "whatsapp.err.log"),
         }
+    if name == "telegram":
+        return {
+            "Label": TELEGRAM_LABEL,
+            "ProgramArguments": [python, str(ROOT / "scripts" / "telegram_service.py")],
+            "WorkingDirectory": str(ROOT),
+            "RunAtLoad": True,
+            # Without telegram.env (no `paynani telegram setup` yet, or `paynani telegram
+            # disable`) the service exits 0 at once and stays down; only a failure restarts it.
+            "KeepAlive": {"SuccessfulExit": False},
+            "Umask": 0o077,
+            "EnvironmentVariables": env,
+            "StandardOutPath": str(state / "telegram.log"),
+            "StandardErrorPath": str(state / "telegram.err.log"),
+        }
     if name == "logrotate":
         return {
             "Label": LABELS[name],
@@ -398,6 +429,7 @@ def parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--roster-secret-file")
     parser.add_argument("--with-sms", action="store_true")
     parser.add_argument("--with-whatsapp", action="store_true")
+    parser.add_argument("--with-telegram", action="store_true")
     args = parser.parse_args(argv)
     if args.runtime == "hermes":
         die("macOS install currently supports --runtime openclaw, codex and opencode only", EX_USAGE)
@@ -408,6 +440,8 @@ def parse(argv: list[str]) -> argparse.Namespace:
         die("--with-sms does not apply to --uninstall: it removes the gateway LaunchAgent when it is this checkout's", EX_USAGE)
     if args.with_whatsapp and args.uninstall:
         die("--with-whatsapp does not apply to --uninstall: it removes the WhatsApp LaunchAgent when it is this checkout's", EX_USAGE)
+    if getattr(args, "with_telegram", False) and args.uninstall:
+        die("--with-telegram does not apply to --uninstall: it removes the Telegram LaunchAgent when it is this checkout's", EX_USAGE)
     return args
 
 
@@ -582,6 +616,8 @@ def install(args: argparse.Namespace) -> int:
         record_artifact(args.runtime, path)
         changed = bootstrap(path, label) or changed
         print(f"launchagent={path} label={label} state={service_state(label)}")
+        if name == "telegram" and not telegram_configured():
+            print('telegram=waiting-setup next="paynani telegram setup"')
 
     if args.runtime == "openclaw":
         result = subprocess.run([runtime_bin, "--version"], capture_output=True, text=True, timeout=20)

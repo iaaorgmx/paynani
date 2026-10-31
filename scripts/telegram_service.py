@@ -70,8 +70,11 @@ async def main_async(args: argparse.Namespace) -> int:
     values = config.read()
     token = config.token(values)
     if not (values and values.get(config.ENABLED) == "1" and token):
-        log("Telegram no está activado (telegram.env sin TELEGRAM_ENABLED=1 y un token): paynani telegram setup")
-        return 2
+        # Sale con 0: no es una falla, y así ni systemd (Restart=on-failure) ni launchd
+        # (KeepAlive con SuccessfulExit=false) lo vuelven a arrancar (TG-6).
+        log("Telegram no está activado (telegram.env sin TELEGRAM_ENABLED=1 y un token): "
+            "paynani telegram setup, o paynani telegram enable si sólo se desactivó")
+        return 0
     state = Path(args.state) if args.state else Path(paths.state_dir())
     service = TelegramService(state, roster_path=Path(args.roster), token=token,
                               api_base=config.api_base(), settings=values, log=log,
@@ -97,7 +100,12 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--state", help="carpeta de estado (por omisión, la del clon)")
     parser.add_argument("--roster", default=str(paths.roster()), help="roster.md (por omisión el del clon)")
-    return asyncio.run(main_async(parser.parse_args(argv)))
+    parser.add_argument("--check-configured", action="store_true",
+                        help="sólo dice si Telegram está configurado: sale 0 si sí, 3 si no (para el instalador)")
+    args = parser.parse_args(argv)
+    if args.check_configured:
+        return 0 if config.configured() else 3
+    return asyncio.run(main_async(args))
 
 
 if __name__ == "__main__":

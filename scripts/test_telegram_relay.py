@@ -204,7 +204,12 @@ async def main() -> None:
         check("welcome de nuevo con Telegram", True, "telegram.send" in (welcome.get("accepts") or []))
 
         # --- el servicio no corre --------------------------------------------------------
+        r = await app.ask("telegram.status")   # esta conexión ya pidió status: recibe avisos
+        await asyncio.sleep(0.3)
+        app.notices.clear()
         await svc.stop()
+        n = await app.notice("telegram.changed", timeout=5)
+        check("se cae el servicio: aviso telegram.changed status (Andy en #612)", "status", (n or {}).get("what"))
         r = await app.ask("telegram.status")
         check("servicio caído: status service_down", "service_down", (r.get("data") or {}).get("state"))
         r = await app.ask("telegram.threads")
@@ -214,6 +219,17 @@ async def main() -> None:
         check("la conexión sigue abierta después de los errores", None, app.closed_code)
         r = await relay.handle({"type": "telegram.status", "id": "q_corto"}, device_id, configured=True)
         check("id malo: missing_field id", ("missing_field", "id"), (r.get("code"), r.get("field")))
+
+        # --- vuelve el servicio: otro aviso status, sin que la app pida nada -------------
+        app.notices.clear()
+        svc = TelegramService(state, roster_path=roster, token=TOKEN, api_base=api.base_url,
+                              log=lambda line: None, poll_timeout=1, backoff=(0.05, 0.2), rules_root=tmp,
+                              settings={"TELEGRAM_SEND_PER_DAY": "50"})
+        await svc.start()
+        n = await app.notice("telegram.changed", timeout=8)
+        check("vuelve el servicio: aviso telegram.changed status", "status", (n or {}).get("what"))
+        r = await app.ask("telegram.status")
+        check("y status ya dice running", "running", (r.get("data") or {}).get("state"))
         await app.ws.close()
     finally:
         await g.shutdown()

@@ -59,6 +59,8 @@ Options:
   --roster-secret-file PATH  Pre-provisioned Hermes roster-route secret
   --with-sms                 Also install and supervise the SMS gateway (SMS_GATEWAY.md)
   --with-whatsapp            Also install and supervise WhatsApp (WHATSAPP_BRIDGE.md): uses this shell's Node 20+, or downloads the pinned Node 22 into ~/.local/lib/paynani (no sudo)
+  --with-telegram            Also install and supervise the Telegram bot (TELEGRAM.md). Standard library only;
+                             the token comes from `paynani telegram setup`, before or after this run
                              and PaynaniWeb behind it (PRD #434), which is only reachable
                              through the gateway. Optional: without it neither is installed,
                              upgraded or removed unless this installer already owns the
@@ -477,6 +479,19 @@ whatsapp_enabled() {
     ((with_whatsapp)) || [[ -n "${owned_digests[$unit_dir/paynani-whatsapp.service]+present}" ]]
 }
 
+# Telegram (PRD #609 FR-1) too: --with-telegram, or this installer already owns the
+# unit. No Node and nothing to download. The token is never the installer's:
+# `paynani telegram setup` writes telegram.env, before or after this run.
+telegram_enabled() {
+    ((with_telegram)) || [[ -n "${owned_digests[$unit_dir/paynani-telegram.service]+present}" ]]
+}
+
+# Whether telegram.env turns Telegram on (TELEGRAM_ENABLED=1 and a token), asked of
+# the same code the service reads. Never prints the token.
+telegram_configured() {
+    python3 "$ROOT/scripts/telegram_service.py" --check-configured >/dev/null 2>&1
+}
+
 # WhatsApp (PRD #550 FR-1, FR-3b): before any unit is written, the bridge must be
 # able to run. Node 20 or newer with npm: the one this shell finds, or else the
 # official release pinned in scripts/node_release.json, downloaded by
@@ -544,6 +559,7 @@ set_managed_paths() {
         "$unit_dir/paynani-sms.service"
         "$unit_dir/paynani-web.service"
         "$unit_dir/paynani-whatsapp.service"
+        "$unit_dir/paynani-telegram.service"
         "$config_dir/runtime.env"
         # Generated Hermes secrets remain installer-owned across an explicit
         # runtime migration so rollback can reuse them and uninstall can still
@@ -864,6 +880,9 @@ print_managed_inventory() {
     if whatsapp_enabled; then
         plan_units+=(paynani-whatsapp.service)
     fi
+    if telegram_enabled; then
+        plan_units+=(paynani-telegram.service)
+    fi
     for unit in "${plan_units[@]}"; do
         if ((unit_container_safe)); then
             classify_planned_artifact file "$unit_dir/$unit" "$ROOT/systemd/$unit"
@@ -1059,7 +1078,8 @@ deactivate_owned_services() {
         return 0
     fi
     for unit in paynani-idle.service paynani-dispatch.service \
-        paynani-logrotate.timer paynani-sms.service paynani-web.service paynani-whatsapp.service; do
+        paynani-logrotate.timer paynani-sms.service paynani-web.service paynani-whatsapp.service \
+        paynani-telegram.service; do
         unit_path="$unit_dir/$unit"
         [[ -n "${owned_digests[$unit_path]+present}" ]] || continue
         if "$discovered_systemctl" --user is-enabled --quiet "$unit" 2>/dev/null ||
@@ -1156,6 +1176,9 @@ converge_runtime_filesystem() {
     fi
     if whatsapp_enabled; then
         converge_units+=(paynani-whatsapp.service)
+    fi
+    if telegram_enabled; then
+        converge_units+=(paynani-telegram.service)
     fi
     for unit in "${converge_units[@]}"; do
         converge_artifact file "$unit_dir/$unit" "$ROOT/systemd/$unit" 0644
@@ -1263,6 +1286,9 @@ verify_installed_units() {
     fi
     if whatsapp_enabled; then
         verify_paths+=("$unit_dir/paynani-whatsapp.service")
+    fi
+    if telegram_enabled; then
+        verify_paths+=("$unit_dir/paynani-telegram.service")
     fi
     systemd_analyze=$(resolve_command systemd-analyze || true)
     [[ -n "$systemd_analyze" ]] || \
@@ -1377,6 +1403,9 @@ print_final_verification_report() {
     if whatsapp_enabled; then
         report_units+=(paynani-whatsapp.service)
     fi
+    if telegram_enabled; then
+        report_units+=(paynani-telegram.service)
+    fi
     for unit in "${report_units[@]}"; do
         printf 'verification_unit=%s/%s validated=true\n' "$unit_dir" "$unit"
     done
@@ -1478,6 +1507,37 @@ converge_required_services() {
         printf 'service=%s state=enabled-active changed=true\n' "$unit"
         changes_made=1
     done
+    converge_telegram_service
+}
+
+# Telegram (TG-6): the unit is always enabled, but it can only stay up once
+# telegram.env turns Telegram on. Without it (no `paynani telegram setup` yet, or
+# `paynani telegram disable`) the service exits 0 at once and Restart=on-failure
+# leaves it down, so here it is enabled and not required to be active.
+converge_telegram_service() {
+    telegram_enabled || return 0
+    local unit=paynani-telegram.service
+    if ! "$discovered_systemctl" --user is-enabled --quiet "$unit"; then
+        "$discovered_systemctl" --user enable "$unit" || \
+            die_config "failed to enable user unit: $unit"
+        changes_made=1
+    fi
+    if ! telegram_configured; then
+        "$discovered_systemctl" --user stop "$unit" 2>/dev/null || true
+        printf 'service=%s state=enabled-waiting-setup next="paynani telegram setup"\n' "$unit"
+        return 0
+    fi
+    if "$discovered_systemctl" --user is-active --quiet "$unit" && ! ((runtime_filesystem_changed)); then
+        printf 'service=%s state=enabled-active\n' "$unit"
+        return 0
+    fi
+    "$discovered_systemctl" --user restart "$unit" || \
+        die_config "failed to start user unit: $unit"
+    if ! "$discovered_systemctl" --user is-active --quiet "$unit"; then
+        die_config "user unit did not remain active: $unit (see paynani telegram status)"
+    fi
+    printf 'service=%s state=enabled-active restarted=true\n' "$unit"
+    changes_made=1
 }
 
 runtime=""
@@ -1497,6 +1557,7 @@ non_interactive=0
 dry_run=0
 with_sms=0
 with_whatsapp=0
+with_telegram=0
 declare -A seen_options=()
 # What the ownership manifest says this installer owns. Declared here, empty, and
 # filled by load_ownership_manifest: the inventory skips that load when the
@@ -1559,6 +1620,11 @@ while (($#)); do
             with_whatsapp=1
             shift
             ;;
+        --with-telegram)
+            mark_option_once "$1"
+            with_telegram=1
+            shift
+            ;;
         -h|--help)
             usage
             exit "$EX_OK"
@@ -1580,6 +1646,9 @@ if ((with_sms && uninstall)); then
 fi
 if ((with_whatsapp && uninstall)); then
     die_usage '--with-whatsapp does not apply to --uninstall: it removes the WhatsApp unit when this installer owns it'
+fi
+if ((with_telegram && uninstall)); then
+    die_usage '--with-telegram does not apply to --uninstall: it removes the Telegram unit when this installer owns it'
 fi
 
 if ((upgrade + uninstall > 1)); then

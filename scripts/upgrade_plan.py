@@ -93,6 +93,9 @@ WEB = ("paynani-web*.service", "com.paynani.web*")
 # It runs the Baileys bridge as a child, so a change to the bridge's code needs it
 # restarted as well.
 WHATSAPP = ("paynani-whatsapp*.service", "com.paynani.whatsapp*")
+# The optional Telegram service (PRD #609): a pattern too, absent from most hosts.
+# It imports its whole package, roster.py and the harness modules once at start.
+TELEGRAM = ("paynani-telegram*.service", "com.paynani.telegram*")
 INSTALLER = None
 OPENCODE_PLUGIN = "python3 scripts/opencode_plugin.py --install"
 OPENCODE_RESTART = "OpenCode (close and reopen it)"
@@ -112,8 +115,8 @@ RULES = (
     (r"^scripts/openclaw_rules\.py$", "reinstall-and-restart", "OpenClaw standing rule (~/.openclaw/workspace/AGENTS.md)", None, None, {"openclaw"}, "python3 scripts/openclaw_rules.py --install"),
     # Long-running services.
     (r"^scripts/idle_listener\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
-    (r"^scripts/roster\.py$", "restart", "listener and SMS gateway", "listener-all", "listener-all", None, None),
-    (r"^scripts/(sms_gateway\.py|paynani_lib/sms/(__init__|gateway|store|websocket|whatsapp_api)\.py)$", "restart", "SMS gateway", *SMS_GATEWAY, None, None),
+    (r"^scripts/roster\.py$", "restart", "listener, SMS gateway and Telegram service", "roster-readers", "roster-readers", None, None),
+    (r"^scripts/(sms_gateway\.py|paynani_lib/sms/(__init__|gateway|store|websocket|whatsapp_api|telegram_api)\.py)$", "restart", "SMS gateway", *SMS_GATEWAY, None, None),
     # The gateway (§11) and PaynaniWeb both import these once at start.
     (r"^scripts/paynani_lib/sms/(roster_api|api_replies)\.py$", "restart", "SMS gateway and PaynaniWeb", "gateway-web", "gateway-web", None, None),
     # WhatsApp (PRD #550 FR-3): the bridge's dependencies come from the lockfile, so
@@ -127,6 +130,13 @@ RULES = (
     # `configured()` is read by the WhatsApp service, the SMS gateway (§12) and PaynaniWeb.
     (r"^scripts/paynani_lib/whatsapp/(config|media)\.py$", "restart", "WhatsApp service, SMS gateway and PaynaniWeb", "whatsapp-all", "whatsapp-all", None, None),
     (r"^scripts/(whatsapp_service\.py|paynani_lib/whatsapp/.*\.py|whatsapp_bridge/.*\.js)$", "restart", "WhatsApp service and bridge", *WHATSAPP, None, None),
+    # Telegram (TG-6 of #612). The fake Bot API is for tests and the CLI runs fresh on
+    # each call; `configured()` is also read by the SMS gateway (TELEGRAM.md §6) and
+    # PaynaniWeb, so a change to config.py restarts all three.
+    (r"^scripts/paynani_lib/telegram/fake_api\.py$", "none", "tests (the fake Bot API)", None, None, None, None),
+    (r"^scripts/paynani_lib/telegram/cli\.py$", "none", "command-line scripts (read on each call)", None, None, None, None),
+    (r"^scripts/paynani_lib/telegram/config\.py$", "restart", "Telegram service, SMS gateway and PaynaniWeb", "telegram-all", "telegram-all", None, None),
+    (r"^scripts/(telegram_service\.py|paynani_lib/telegram/.*\.py)$", "restart", "Telegram service", *TELEGRAM, None, None),
     # Both read sms.env at start: the gateway for its own port and PaynaniWeb's,
     # PaynaniWeb for its port.
     (r"^scripts/paynani_lib/sms/config\.py$", "restart", "SMS gateway and PaynaniWeb", "gateway-web", "gateway-web", None, None),
@@ -135,7 +145,7 @@ RULES = (
     (r"^scripts/(paynani_web\.py|paynani_lib/web/.*\.py|paynani_lib/(i18n|guard|brand)\.py|paynani_lib/i18n_data/.*\.py)$", "restart", "PaynaniWeb", *WEB, None, None),
     (r"^harness/dispatch\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
     (r"^harness/adapters/.*\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
-    (r"^harness/(event|paths|ledger|python_floor|phone)\.py$", "restart", "listener, account listeners, dispatcher and SMS gateway", "both", "both", None, None),
+    (r"^harness/(event|paths|ledger|python_floor|phone)\.py$", "restart", "listener, account listeners, dispatcher, SMS gateway and Telegram service", "both", "both", None, None),
     # Read when a session starts or a watch is armed.
     (r"^harness/(session_start\.py|session_watch\.sh)$", "next-session", "session hook and watcher", None, None, {"claudecode", "codex"}, None),
     # Both services record this value at process start, and version_drift
@@ -337,13 +347,18 @@ def _units_of(f):
         # The per-account listeners (paynani-idle@<id>) import the same
         # harness modules as the main one; leaving them out kept doctor
         # in `warning` after following the plan exactly (#336).
-        return [LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB]
+        return [LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB, TELEGRAM]
     if f["unit"] == "gateway-web":
         return [SMS_GATEWAY, WEB]
     if f["unit"] == "whatsapp-all":
         return [WHATSAPP, SMS_GATEWAY, WEB]
+    if f["unit"] == "telegram-all":
+        return [TELEGRAM, SMS_GATEWAY, WEB]
     if f["unit"] == "listener-all":
         return [LISTENER, LISTENER_INSTANCES, SMS_GATEWAY]
+    if f["unit"] == "roster-readers":
+        # roster.py: the listeners, the gateway and the Telegram service parse the roster with it.
+        return [LISTENER, LISTENER_INSTANCES, SMS_GATEWAY, TELEGRAM]
     if f["unit"] == "all":
         return [LISTENER, LISTENER_INSTANCES, DISPATCHER, SMS_GATEWAY, WEB]
     return [(f["unit"], f["label"])]

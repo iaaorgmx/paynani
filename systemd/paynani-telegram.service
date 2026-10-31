@@ -1,0 +1,39 @@
+# Template. scripts/install.sh renders it only when the owner turns Telegram on
+# (`--with-telegram`, PRD #609 FR-1); a manual install edits it by hand. Three
+# placeholders:
+#
+#   /path/to/paynani      your clone's absolute path, which is also the install
+#   /path/to/state        the state tree, normally <clone>/state
+#   /path/to/service-path the PATH the service runs with: the folder of
+#                         `command -v himalaya` first (send.sh mails the owner), then
+#                         the system's
+#
+# Python standard library only, no port: the service talks to the Bot API with
+# getUpdates (TELEGRAM.md). The token lives in telegram.env (0600), never here.
+# Until `paynani telegram setup` writes it, or after `paynani telegram disable`,
+# the service exits 0 at once and stays down: Restart=on-failure does not bring
+# it back.
+
+[Unit]
+Description=paynani Telegram bot (getUpdates, no port)
+Documentation=file:///path/to/paynani/TELEGRAM.md
+
+[Service]
+Type=simple
+Environment="PATH=/path/to/service-path"
+ExecStart=/usr/bin/python3 /path/to/paynani/scripts/telegram_service.py
+WorkingDirectory=/path/to/paynani
+UMask=0077
+
+# The service already retries the Bot API itself (1 to 60 s); this only matters
+# if the Python process dies outright.
+Restart=on-failure
+RestartSec=10
+
+# stdout: state changes and notices, never a token, an id or a message text.
+StandardOutput=append:/path/to/state/telegram.log
+StandardError=append:/path/to/state/telegram.err.log
+SyslogIdentifier=paynani-telegram
+
+[Install]
+WantedBy=default.target

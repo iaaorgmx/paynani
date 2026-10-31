@@ -516,5 +516,55 @@ check("#603: a failed save only warns on stderr and keeps the exit code",
       _rc2 == _rc == 0 and "could not save doctor.json" in _err.getvalue() and "paynani doctor: warning" in _out.getvalue())
 shutil.rmtree(_dj, ignore_errors=True)
 
+# ---- Telegram (TG-6 of #612): the service's state, never the token or an id ----------
+def tg_check(tg):
+    facts = base_facts()
+    facts["telegram"] = tg
+    return next((c for c in doctor_with(facts)["checks"] if c["name"] == "telegram"), None)
+
+
+check("telegram: no check on a host without Telegram", tg_check(None) is None)
+on = {"unit_installed": True, "env_present": True, "enabled": True, "token_present": True, "launchd": False}
+c = tg_check(dict(on, state="running", bot_username="NegocioBot"))
+check("telegram: running is ok and names the bot", c["status"] == "ok" and "@NegocioBot" in c["summary"])
+c = tg_check(dict(on, state="service_down"))
+check("telegram: service down is blocked with a systemctl restart",
+      c["status"] == "blocked" and c["next_command"] == "systemctl --user restart paynani-telegram.service")
+c = tg_check(dict(on, state="service_down", launchd=True))
+check("telegram: on macOS the fix is launchctl kickstart", c["next_command"].startswith("launchctl kickstart -k gui/"))
+for state, fix in (("conflict", "paynani telegram status"), ("token_invalid", "paynani telegram token"),
+                   ("journal_mismatch", "paynani telegram status")):
+    c = tg_check(dict(on, state=state))
+    check(f"telegram: {state} is blocked with its own fix", c["status"] == "blocked" and c["next_command"].startswith(fix))
+check("telegram: offline is a warning", tg_check(dict(on, state="offline"))["status"] == "warning")
+c = tg_check({"unit_installed": True, "env_present": False, "enabled": False, "token_present": False})
+check("telegram: unit without a token asks for setup", c["status"] == "warning" and c["next_command"] == "paynani telegram setup")
+c = tg_check({"unit_installed": True, "env_present": True, "enabled": False, "token_present": True})
+check("telegram: turned off is ok", c["status"] == "ok" and "turned off" in c["summary"])
+c = tg_check(dict(on, unit_installed=False))
+check("telegram: configured without the service asks for --with-telegram",
+      c["status"] == "warning" and "--with-telegram" in c["next_command"])
+c = tg_check(dict(on, token_present=False))
+check("telegram: enabled without a valid token is blocked", c["status"] == "blocked")
+c = tg_check(dict(on, state="something-new"))
+check("telegram: an unknown state is unknown, not ok", c["status"] == "unknown")
+
+# _telegram_facts reads the service, and nothing secret reaches the facts.
+import tempfile as _tf  # noqa: E402
+from pathlib import Path  # noqa: E402
+from paynani_lib.telegram import cli as _tg_cli, config as _tg_config  # noqa: E402
+_tgd = Path(_tf.mkdtemp())
+_tg_config.write(_tg_config.with_token({}, "123456789:fake_token_only_for_tests_x"), _tgd / "telegram.env")
+with mock.patch.object(_tg_config, "env_path", lambda environ=None: _tgd / "telegram.env"), \
+     mock.patch.object(_tg_cli, "_service_installed", lambda: True), \
+     mock.patch.object(_tg_cli, "ask", lambda *a, **k: {"type": "result", "data": {
+         "state": "running", "bot_username": "NegocioBot", "counters": {"received_today": 3}}}):
+    _tf_facts = d._telegram_facts()
+check("telegram facts: state and bot, without the token or counters",
+      _tf_facts.get("state") == "running" and "fake_token" not in json.dumps(_tf_facts) and "counters" not in _tf_facts)
+with mock.patch.object(_tg_config, "env_path", lambda environ=None: _tgd / "nothing.env"), \
+     mock.patch.object(_tg_cli, "_service_installed", lambda: False):
+    check("telegram facts: None with neither telegram.env nor the unit", d._telegram_facts() is None)
+
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

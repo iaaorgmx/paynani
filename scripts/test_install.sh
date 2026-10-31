@@ -138,6 +138,16 @@ case "$*" in
         fi
         printf '%s\n' "$*" >>"$FAKE_SYSTEMD_LOG"
         ;;
+    '--user enable '*)
+        unit=${*: -1}
+        : >"$FAKE_SYSTEMD_STATE/$unit.enabled"
+        printf '%s\n' "$*" >>"$FAKE_SYSTEMD_LOG"
+        ;;
+    '--user stop '*)
+        unit=${*: -1}
+        rm -f "$FAKE_SYSTEMD_STATE/$unit.active"
+        printf '%s\n' "$*" >>"$FAKE_SYSTEMD_LOG"
+        ;;
     '--user disable --now '*)
         unit=${*: -1}
         rm -f "$FAKE_SYSTEMD_STATE/$unit.enabled" "$FAKE_SYSTEMD_STATE/$unit.active"
@@ -1366,6 +1376,79 @@ check_status 'uninstall removes the owned WhatsApp unit and stops it' 10 --runti
     printf 'FAIL uninstall left the WhatsApp unit, did not stop it, or removed whatsapp.env\n'; fail=$((fail + 1))
 }
 rm -f "$fixture_bin/node" "$fixture_bin/npm" "$npm_log" "$clone/whatsapp.env"; rm -rf "$sandbox/node"
+reset_install; rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
+
+# ---------------------------------------------------------------------------
+# Telegram (TG-6 of #612, PRD #609 FR-1): only with --with-telegram or when this
+# installer owns the unit. No Node and nothing downloaded. The token is never the
+# installer's: without telegram.env the unit is enabled but left stopped.
+reset_install; rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
+: >"$FAKE_SYSTEMD_LOG"
+tg_unit="$sandbox/.config/systemd/user/paynani-telegram.service"
+tg_env="$clone/telegram.env"
+rm -f "$tg_env"
+check_status '--with-telegram does not apply to --uninstall' 64 --runtime codex --uninstall --with-telegram
+check_status 'a plain dry-run does not plan Telegram' 10 --runtime codex --dry-run
+[[ "$LAST_OUTPUT" != *paynani-telegram* ]] || {
+    printf 'FAIL a dry-run without --with-telegram mentioned Telegram\n'; fail=$((fail + 1))
+}
+check_status 'a dry-run with --with-telegram plans the unit and writes nothing' 10 --runtime codex --dry-run --with-telegram
+[[ "$LAST_OUTPUT" == *paynani-telegram.service* && ! -e "$tg_unit" && ! -e "$tg_env" ]] || {
+    printf 'FAIL --with-telegram --dry-run did not plan the unit, or wrote something\n'; fail=$((fail + 1))
+}
+check_status '--with-telegram without telegram.env installs the unit and leaves it stopped' 10 \
+    --runtime codex --with-telegram
+[[ -f "$tg_unit" && "$(file_mode "$tg_unit")" == 644 ]] && ! grep -q '/path/to' "$tg_unit" || {
+    printf 'FAIL --with-telegram did not write a rendered 0644 unit\n'; fail=$((fail + 1))
+}
+grep -q "^ExecStart=/usr/bin/python3 $clone/scripts/telegram_service.py\$" "$tg_unit" &&
+grep -q "^StandardOutput=append:$clone/state/telegram.log\$" "$tg_unit" &&
+grep -q '^Restart=on-failure$' "$tg_unit" && grep -q '^UMask=0077$' "$tg_unit" &&
+grep -q '^Environment="PATH=' "$tg_unit" || {
+    printf 'FAIL the rendered Telegram unit has the wrong ExecStart, log, Restart, UMask or PATH\n'; fail=$((fail + 1))
+}
+grep -qx -- '--user enable paynani-telegram.service' "$FAKE_SYSTEMD_LOG" &&
+! grep -q -- 'enable --now paynani-telegram.service' "$FAKE_SYSTEMD_LOG" &&
+[[ ! -e "$FAKE_SYSTEMD_STATE/paynani-telegram.service.active" ]] || {
+    printf 'FAIL without telegram.env the unit was not enabled-and-stopped: %s\n' \
+        "$(grep telegram "$FAKE_SYSTEMD_LOG" | tr '\n' ';')"; fail=$((fail + 1))
+}
+[[ "$LAST_OUTPUT" == *'service=paynani-telegram.service state=enabled-waiting-setup next="paynani telegram setup"'* &&
+   "$LAST_OUTPUT" == *"verification_unit=$tg_unit validated=true"* ]] || {
+    printf 'FAIL the report does not say Telegram waits for setup, or does not list its unit\n'; fail=$((fail + 1))
+}
+[[ ! -e "$tg_env" ]] && grep -q "$tg_unit" "$clone/install.manifest" &&
+! grep -q 'telegram.env' "$clone/install.manifest" || {
+    printf 'FAIL the installer wrote or recorded telegram.env, or did not record the unit\n'; fail=$((fail + 1))
+}
+# After `paynani telegram setup`: the next run starts it and requires it active.
+(umask 077 && printf 'TELEGRAM_ENABLED=1\nTELEGRAM_TOKEN=123456789:fake_token_only_for_tests_x\n' >"$tg_env")
+: >"$FAKE_SYSTEMD_LOG"
+check_status 'with telegram.env, an upgrade starts the Telegram service' 10 --runtime codex --upgrade
+grep -qx -- '--user restart paynani-telegram.service' "$FAKE_SYSTEMD_LOG" &&
+[[ "$LAST_OUTPUT" == *'service=paynani-telegram.service state=enabled-active restarted=true'* ]] || {
+    printf 'FAIL with telegram.env the Telegram service was not started\n'; fail=$((fail + 1))
+}
+[[ "$LAST_OUTPUT" != *fake_token_only_for_tests_x* ]] || {
+    printf 'FAIL the installer printed the Telegram token\n'; fail=$((fail + 1))
+}
+check_status 'a second run with nothing new leaves it running' 0 --runtime codex --upgrade
+[[ "$LAST_OUTPUT" == *'service=paynani-telegram.service state=enabled-active'* ]] || {
+    printf 'FAIL an idempotent run did not report Telegram active\n'; fail=$((fail + 1))
+}
+# `paynani telegram disable` leaves TELEGRAM_ENABLED=0: the installer stops it again.
+(umask 077 && printf 'TELEGRAM_ENABLED=0\nTELEGRAM_TOKEN=123456789:fake_token_only_for_tests_x\n' >"$tg_env")
+: >"$FAKE_SYSTEMD_LOG"
+check_status 'disabled in telegram.env: the unit is stopped, the run still passes' 0 --runtime codex --upgrade
+grep -qx -- '--user stop paynani-telegram.service' "$FAKE_SYSTEMD_LOG" &&
+[[ "$LAST_OUTPUT" == *'state=enabled-waiting-setup'* ]] || {
+    printf 'FAIL a disabled Telegram was not stopped\n'; fail=$((fail + 1))
+}
+check_status 'uninstall removes the owned Telegram unit and keeps telegram.env' 10 --runtime codex --uninstall
+[[ ! -e "$tg_unit" && -f "$tg_env" ]] && grep -q -- 'disable --now paynani-telegram.service' "$FAKE_SYSTEMD_LOG" || {
+    printf 'FAIL uninstall left the Telegram unit, did not stop it, or removed telegram.env\n'; fail=$((fail + 1))
+}
+rm -f "$tg_env"
 reset_install; rm -rf "$FAKE_SYSTEMD_STATE"; mkdir -p "$FAKE_SYSTEMD_STATE"
 
 printf '

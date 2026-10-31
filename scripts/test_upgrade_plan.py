@@ -188,6 +188,28 @@ try:
         check(f"{path} -> restart the WhatsApp service, the gateway and PaynaniWeb",
               (c["verb"], c["unit"]) == ("restart", "whatsapp-all")
               and up._units_of(c) == [up.WHATSAPP, up.SMS_GATEWAY, up.WEB], str(c))
+    # Telegram (TG-6 of #612): the service, the gateway relay and who reads telegram.env.
+    for path in ("scripts/telegram_service.py", "scripts/paynani_lib/telegram/service.py",
+                 "scripts/paynani_lib/telegram/outbound.py", "scripts/paynani_lib/telegram/contacts.py"):
+        c = up.classify(path)
+        check(f"{path} -> restart the Telegram service",
+              (c["verb"], c["unit"]) == ("restart", "paynani-telegram*.service"), str(c))
+    c = up.classify("scripts/paynani_lib/telegram/config.py")
+    check("telegram/config.py -> restart the Telegram service, the gateway and PaynaniWeb",
+          (c["verb"], c["unit"]) == ("restart", "telegram-all")
+          and up._units_of(c) == [up.TELEGRAM, up.SMS_GATEWAY, up.WEB], str(c))
+    c = up.classify("scripts/paynani_lib/sms/telegram_api.py")
+    check("sms/telegram_api.py -> restart the SMS gateway",
+          (c["verb"], c["unit"]) == ("restart", "paynani-sms*.service"), str(c))
+    for path in ("scripts/paynani_lib/telegram/cli.py", "scripts/paynani_lib/telegram/fake_api.py"):
+        check(f"{path} -> none (CLI or tests)", up.classify(path)["verb"] == "none")
+    c = up.classify("scripts/roster.py")
+    check("roster.py -> also the Telegram service, which parses the roster with it",
+          up.TELEGRAM in up._units_of(c), str(c))
+    check("idle_listener.py does not restart Telegram",
+          up.TELEGRAM not in up._units_of(up.classify("scripts/idle_listener.py")))
+    check("harness/event.py -> also the Telegram service",
+          up.TELEGRAM in up._units_of(up.classify("harness/event.py")))
     for path in ("scripts/node_runtime.py", "scripts/node_release.json"):
         check(f"{path} -> the installer again (the pinned Node of WhatsApp)",
               up.classify(path)["verb"] == "reinstall-and-restart")

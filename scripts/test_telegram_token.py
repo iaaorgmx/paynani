@@ -65,9 +65,12 @@ def run_cli(fn, args, stdin_text, env_path, base):
     sys.stdout = sys.stderr = out
     config.env_path = lambda environ=None: env_path
     os.environ[config.API_ENV] = base
+    real_control = cli.service_control
+    cli.service_control = lambda action: "not-installed"   # nunca el servicio real del host
     try:
         rc = fn(args)
     finally:
+        cli.service_control = real_control
         sys.stdin, sys.stdout, sys.stderr, config.env_path = saved[:4]
         if saved[4] is None:
             os.environ.pop(config.API_ENV, None)

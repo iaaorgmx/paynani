@@ -123,7 +123,97 @@ def run_setup(args) -> int:
     if current:
         config.save_backup(env)
     config.write(config.with_token(current, token), env)
-    print(f"listo: {env.name} guardado (0600). Arranca o reinicia paynani-telegram para recibir.")
+    print(f"listo: {env.name} guardado (0600).")
+    _say_started(service_control("start"))
+    return 0
+
+
+# --- el servicio y `enable`/`disable` (TG-6) ---------------------------------------------------
+UNIT = "paynani-telegram.service"
+LABEL = "com.paynani.telegram"
+
+
+def _service_installed() -> bool:
+    if sys.platform == "darwin":
+        return (Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist").exists()
+    return (Path.home() / ".config" / "systemd" / "user" / UNIT).exists()
+
+
+def service_control(action: str) -> str:
+    """
+    Arranca (`start`) o detiene (`stop`) el servicio que puso el instalador (`--with-telegram`).
+    `not-installed`, `started`, `stopped` o `failed`. Ni el token ni ids pasan por aquí.
+    """
+    import os
+    import subprocess
+
+    if not _service_installed():
+        return "not-installed"
+    if sys.platform == "darwin":
+        target = f"gui/{os.getuid()}/{LABEL}"
+        # Detenido con TERM, el servicio sale con 0 y KeepAlive (SuccessfulExit=false) no lo
+        # vuelve a arrancar; tampoco al iniciar sesión, porque telegram.env ya dice que no.
+        cmd = ["launchctl", "kill", "TERM", target] if action == "stop" else ["launchctl", "kickstart", "-k", target]
+    else:
+        cmd = ["systemctl", "--user", "stop" if action == "stop" else "restart", UNIT]
+    try:
+        rc = subprocess.run(cmd, capture_output=True, text=True, timeout=30).returncode
+    except (OSError, subprocess.SubprocessError):
+        return "failed"
+    if rc != 0:
+        return "failed"
+    return "stopped" if action == "stop" else "started"
+
+
+def _say_started(result: str) -> None:
+    if result == "started":
+        print("paynani-telegram arrancó. Revisa con: paynani telegram status")
+    elif result == "not-installed":
+        print("El servicio paynani-telegram no está instalado. Instálalo con el instalador y --with-telegram "
+              "(INSTALL.md, «Telegram»); arranca solo con este telegram.env.")
+    else:
+        print("No pude arrancar paynani-telegram: arráncalo o reinícialo a mano (INSTALL.md, «Telegram»).")
+
+
+def run_disable(args) -> int:
+    """
+    Apaga Telegram: `TELEGRAM_ENABLED=0` en telegram.env y detiene el servicio. El token se
+    queda en el archivo (0600) para `paynani telegram enable`. La pasarela y PaynaniWeb dejan de
+    mostrar Telegram en cuanto ven el cambio.
+    """
+    env = config.env_path()
+    values = config.read(env)
+    if values is None:
+        print("Telegram no está configurado: no hay nada que desactivar.")
+        return 0
+    if values.get(config.ENABLED) != "0":
+        config.write(dict(values, **{config.ENABLED: "0"}), env)
+        print(f"Telegram desactivado ({config.ENABLED}=0 en {env.name}). El token se queda en el archivo.")
+    else:
+        print("Telegram ya estaba desactivado.")
+    result = service_control("stop")
+    if result == "stopped":
+        print("paynani-telegram detenido.")
+    elif result == "failed":
+        _err("no pude detener paynani-telegram: detenlo a mano (al arrancar ya no recibe)")
+        return 1
+    print("Para volver a activarlo: paynani telegram enable")
+    return 0
+
+
+def run_enable(args) -> int:
+    """Vuelve a encender Telegram con el token que ya está en telegram.env y arranca el servicio."""
+    env = config.env_path()
+    values = config.read(env)
+    if not config.token(values):
+        _err("no hay un token en telegram.env: usa paynani telegram setup")
+        return 2
+    if values.get(config.ENABLED) != "1":
+        config.write(dict(values, **{config.ENABLED: "1"}), env)
+        print(f"Telegram activado ({config.ENABLED}=1 en {env.name}).")
+    else:
+        print("Telegram ya estaba activado.")
+    _say_started(service_control("start"))
     return 0
 
 

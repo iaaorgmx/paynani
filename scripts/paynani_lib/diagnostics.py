@@ -237,7 +237,85 @@ def _facts() -> dict:
     facts["dependencies"] = _dependency_facts(facts["runtime"].get("selected"), facts["python"])
     facts["version_drift"] = healthcheck.version_drift_facts(
         healthcheck.disk_version(), facts["listener"], facts["dispatcher"])
+    facts["telegram"] = _telegram_facts()
     return facts
+
+
+# Telegram (TG-6 of #612, PRD #609 FR-3, FR-5, FR-7). The service's own state, never
+# the token, a Bot API URL or an id (§8). None when nothing of Telegram is on this host.
+TELEGRAM_UNIT = "paynani-telegram.service"
+TELEGRAM_ERRORS = {
+    "conflict": ("another install or a webhook is reading this bot's updates (409)",
+                 "paynani telegram status (then stop the other reader, or paynani telegram token for a new bot)"),
+    "token_invalid": ("Telegram rejected the bot token (401): it was revoked or changed",
+                      "paynani telegram token"),
+    "journal_mismatch": ("the service found an update whose event does not match its journal and stopped "
+                         "marking anything (FR-5)", "paynani telegram status (TELEGRAM.md, «FR-5»)"),
+    "stopped": ("the Telegram service stopped", None),
+}
+
+
+def _telegram_facts() -> dict | None:
+    try:
+        from paynani_lib.telegram import cli as tg_cli
+        from paynani_lib.telegram import config as tg_config
+    except Exception as exc:  # noqa: BLE001 - doctor never fails for one check
+        return {"error": type(exc).__name__}
+    values = tg_config.read()
+    installed = tg_cli._service_installed()
+    if values is None and not installed:
+        return None
+    out = {"unit_installed": installed, "env_present": values is not None,
+           "enabled": bool(values and values.get(tg_config.ENABLED) == "1"),
+           "token_present": bool(tg_config.token(values)),
+           "launchd": sys.platform == "darwin"}
+    if out["enabled"] and out["token_present"]:
+        try:
+            reply = tg_cli.ask("telegram.status", timeout=5)
+        except tg_cli.ServiceDown:
+            out["state"] = "service_down"
+        else:
+            data = reply.get("data") or {}
+            out["state"] = str(data.get("state") or "unknown")
+            for key in ("reason", "since", "last_poll_at", "bot_username"):
+                if data.get(key):
+                    out[key] = str(data[key])[:80]
+    return out
+
+
+def _telegram_service_check(tg: dict | None) -> dict | None:
+    if tg is None:
+        return None
+    if tg.get("error"):
+        return _check("telegram", "unknown", "the Telegram check could not run", tg)
+    restart = (f"launchctl kickstart -k gui/{os.getuid()}/com.paynani.telegram" if tg.get("launchd")
+               else _service_fix(TELEGRAM_UNIT))
+    if not tg.get("env_present"):
+        return _check("telegram", "warning", "the Telegram service is installed but has no bot token yet", tg,
+                      "paynani telegram setup")
+    if not tg.get("enabled"):
+        return _check("telegram", "ok", "Telegram is turned off (telegram.env)", tg)
+    if not tg.get("token_present"):
+        return _check("telegram", "blocked", "telegram.env turns Telegram on but has no valid bot token", tg,
+                      "paynani telegram setup --replace")
+    if not tg.get("unit_installed"):
+        return _check("telegram", "warning", "Telegram is configured but its service is not installed", tg,
+                      "scripts/install.sh --runtime <runtime> --upgrade --with-telegram")
+    state = tg.get("state")
+    bot = f" (@{tg['bot_username']})" if tg.get("bot_username") else ""
+    if state == "running":
+        return _check("telegram", "ok", f"the Telegram service is running{bot}", tg)
+    if state == "starting":
+        return _check("telegram", "warning", "the Telegram service is starting", tg)
+    if state == "offline":
+        return _check("telegram", "warning", "the Telegram service cannot reach Telegram right now; it keeps "
+                      "retrying", tg)
+    if state == "service_down":
+        return _check("telegram", "blocked", "the Telegram service is not running", tg, restart)
+    if state in TELEGRAM_ERRORS:
+        summary, fix = TELEGRAM_ERRORS[state]
+        return _check("telegram", "blocked", summary, tg, fix or restart)
+    return _check("telegram", "unknown", f"the Telegram service reports {state}", tg, "paynani telegram status")
 
 
 def _check(name: str, status: str, summary: str, facts=None, fix: str | None = None) -> dict:
@@ -921,6 +999,9 @@ def doctor_data() -> dict:
     else:
         checks.append(_check("roster", "blocked", "roster.md is missing", ros, "scripts/paynani roster add NAME ADDRESS"))
     telegram = _telegram_roster_check(ros)
+    if telegram:
+        checks.append(telegram)
+    telegram = _telegram_service_check(facts.get("telegram"))
     if telegram:
         checks.append(telegram)
 
