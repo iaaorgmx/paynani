@@ -193,7 +193,8 @@ sigue limitado al roster.
 - **Para, CC y CCO** aceptan varias direcciones separadas por comas, hasta 50 en
   total. La libreta es el roster de esa cuenta: elegir un contacto lo agrega al
   campo donde estaba el cursor (`assets/compose.js`). Sin script, las direcciones se
-  escriben a mano. Cualquier dirección vale, esté o no en el roster.
+  escriben a mano. Vale cualquier dirección válida, esté o no en el roster; una
+  dirección inválida se rechaza (`invalid_address`) y no sale nada.
 - **Fuera del roster** pide la contraseña de la web, con el mismo bloqueo de
   intentos que la entrada. Si todos están en el roster se envía sin contraseña.
 - **El permiso** es de un solo uso y dura 60 segundos: queda ligado a la cuenta, a
@@ -225,7 +226,9 @@ agente; las cuentas de `accounts.json` se quitan y se vuelven a agregar.
 - **Por dentro** es `paynani_lib/main_account.update` (#591 N2): prueba IMAP y SMTP
   con los datos nuevos sin mandar nada, escribe juntos el `.env` y la cuenta
   `paynani` de Himalaya, reinicia el listener y espera a que vuelva. Si algo falla,
-  deja los tres archivos como estaban y la página dice si el regreso funcionó.
+  intenta restaurar los tres archivos (`.env`, Himalaya y el estado del listener)
+  y la página dice si la restauración funcionó; si no (`rollback: failed`), lo
+  dice y pide revisar `paynani doctor`.
   La prueba se ve paso por paso, con el error de cada uno.
 - **Sólo el nombre visible** no prueba ni reinicia nada: se guarda y la página lo
   dice. Es la forma segura de probar la pantalla.
