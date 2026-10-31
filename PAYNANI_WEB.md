@@ -182,6 +182,60 @@ correos como siempre), así que el hilo se arma así.
   que no se puede leer dice por qué (un enviado sin copia, por ejemplo), y el
   resto se ve igual.
 
+### Nuevo correo
+
+El dueño manda sus propios correos desde cualquier cuenta (#590 cambio 2). El envío
+es del núcleo, `paynani_lib/owner_mail.py` (#591 N1); `send.sh` no cambia y el agente
+sigue limitado al roster.
+
+- **Dónde:** «Nuevo correo» en la lista de cada cuenta (`/email/<cuenta>/nuevo`).
+  Sale de esa cuenta, con su nombre y su firma si tiene.
+- **Para, CC y CCO** aceptan varias direcciones separadas por comas, hasta 50 en
+  total. La libreta es el roster de esa cuenta: elegir un contacto lo agrega al
+  campo donde estaba el cursor (`assets/compose.js`). Sin script, las direcciones se
+  escriben a mano. Cualquier dirección vale, esté o no en el roster.
+- **Fuera del roster** pide la contraseña de la web, con el mismo bloqueo de
+  intentos que la entrada. Si todos están en el roster se envía sin contraseña.
+- **El permiso** es de un solo uso y dura 60 segundos: queda ligado a la cuenta, a
+  esos destinatarios y a si se escribió la contraseña. Si el roster cambia antes de
+  mandar y alguien queda fuera sin contraseña, no sale (`not_authorized`).
+- **Al terminar** la página vuelve a la lista y dice cuántos estaban fuera del
+  roster, si no se guardó la copia en Enviados y si no salió el aviso. Las
+  direcciones no van en la URL.
+- **El aviso:** si alguien fuera del roster recibió el correo, al dueño le llega un
+  aviso por correo, con `send.sh` y a su propia dirección.
+- **Resultado desconocido:** si el envío se corta a medias, la página no invita a
+  reenviar; dice que se revise Enviados antes, para no mandarlo dos veces.
+
+Cada envío deja una línea en `state/owner_sends.jsonl` y otra en `state/sent.log`,
+sin el cuerpo. La copia queda en Enviados, como con `send.sh`.
+
+### Configuración de la cuenta principal
+
+Cambia el buzón del agente: correo, nombre visible, servidores y puertos IMAP y
+SMTP, y la contraseña del buzón (#590 cambio 3). Sólo existe para la cuenta del
+agente; las cuentas de `accounts.json` se quitan y se vuelven a agregar.
+
+- **Dónde:** «Configuración» en la lista de la cuenta del agente
+  (`/email/main/configuracion`).
+- **La contraseña del buzón** nunca se muestra: el campo viene vacío y vacío
+  quiere decir que no cambia.
+- **Guardar** pide siempre la contraseña de la web, con el mismo bloqueo de
+  intentos que la entrada.
+- **Por dentro** es `paynani_lib/main_account.update` (#591 N2): prueba IMAP y SMTP
+  con los datos nuevos sin mandar nada, escribe juntos el `.env` y la cuenta
+  `paynani` de Himalaya, reinicia el listener y espera a que vuelva. Si algo falla,
+  deja los tres archivos como estaban y la página dice si el regreso funcionó.
+  La prueba se ve paso por paso, con el error de cada uno.
+- **Sólo el nombre visible** no prueba ni reinicia nada: se guarda y la página lo
+  dice. Es la forma segura de probar la pantalla.
+- **Formulario viejo:** si los datos cambiaron desde que se abrió la página, no se
+  guarda nada (409) y se muestran los actuales.
+- **Otro cambio en curso:** dos cambios no corren a la vez; el segundo no se guarda
+  y la página dice que lo intentes cuando termine el primero.
+- Cada cambio te llega por correo, con los campos que cambiaron, sin sus valores
+  ni la contraseña.
+
 ## Lo que guarda y lo que no
 
 - **Guarda** el usuario y las direcciones desde las que entró (`web/user.json` y
