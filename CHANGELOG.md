@@ -10,6 +10,15 @@
 
   Por idioma (Q274=A): en-US «Text Messages», es-MX y es-ES «Mensajes de texto», fr-FR «SMS» y pt-BR «Mensagens de texto». La columna «Messages» (el número de mensajes) no cambia. PaynaniApp hace lo mismo en su propio issue.
 
+- **PaynaniWeb: página «Acerca de» (#636), como el About de PaynaniApp.** Va en el menú, debajo de «API Tokens». Muestra:
+  - la versión con su commit, con un botón «Copiar» (`assets/about.js`) (Q275=A);
+  - el aviso de código abierto bajo la licencia MIT;
+  - **Proyecto:** sitio, código y licencia;
+  - **Ayuda:** «Reportar un problema», que abre un issue en paynani con la versión y el commit ya escritos (Q276=A), las novedades y `PAYNANI_WEB.md`;
+  - **Créditos:** la biblioteca estándar de Python, Spectral y los íconos.
+
+  Sin el estado de la instalación, que ya está en el Dashboard (Q277=A). Los enlaces externos abren con `noopener noreferrer`. La versión se lee una vez al arrancar, del clon que corre. Textos en los cinco idiomas; `test_web_about.py`.
+
 - **Telegram se configura desde PaynaniWeb, en «Cuenta de Telegram» (#635, Q279 y Q281 a Q284).** En la prueba real (TG-9, #612), Julian no pudo poner el bot de John desde la web: sin token, PaynaniWeb escondía Telegram del menú, la página sólo cambiaba un token que ya existía, y el servicio ni siquiera estaba instalado. Ahora:
   - «Mensajes de Telegram» aparece siempre en el menú. Sin bot, sus páginas llevan a «Cuenta de Telegram» (`/telegram`), que antes se llamaba «Bot de Telegram».
   - Sin bot, «Cuenta de Telegram» pide el token, el `@usuario` del bot, la casilla «Este bot es sólo de esta instalación» y la contraseña de la web. Hace lo mismo que `paynani telegram setup`, con la lógica compartida en `telegram/setup.py`: prueba el token con `getMe`, compara el usuario con el de ese token (Q282 = A), borra el webhook si lo había (la casilla lo autoriza, Q283 = A), escribe `telegram.env` (0600) y arranca el servicio. Si algo falla no se escribe nada, y de dos configuraciones a la vez sólo una guarda: la escritura va bajo un candado entre procesos que vuelve a mirar que no haya token (Ximena en #639). El dueño recibe un correo con el bot, sin el token. El token nunca vuelve a la página.

@@ -72,6 +72,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Mensajes de Telegram** | Siempre (#635); sin bot configurado lleva a «Cuenta de Telegram». Las conversaciones con el bot de Telegram, sin mensaje nuevo: sólo se contesta donde la persona ya escribió. «Cuenta de Telegram» (`/telegram`) hace la configuración inicial, muestra el estado y cambia el token (ver abajo). |
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. Se abre con el ícono que está junto a tu nombre en el menú lateral, como en el /dash de ServiceButton (#626). Ya no hay avatar arriba a la derecha: «Cerrar sesión» está en el menú lateral. |
+| **Acerca de** | Como el About de PaynaniApp (#636), debajo de «API Tokens». Muestra la versión con su commit, con un botón que la copia, y el aviso de código abierto bajo la licencia MIT. Debajo, tres grupos: **Proyecto** (sitio, código y licencia); **Ayuda** (reportar un problema, que abre un issue en paynani con la versión ya escrita, las novedades y esta guía); y **Créditos**. Los enlaces abren en otra pestaña. El estado de la instalación está en el Dashboard. |
 
 Cuentas de correo no cierra ni responde avisos: eso sigue siendo trabajo del agente.
 Desde «Nuevo correo» el dueño sí manda sus propios correos (#590, ver abajo).
