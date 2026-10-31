@@ -137,6 +137,14 @@ def services(model: dict) -> str:
             label = wa or _t("state.unknown")
         tone = "ok" if wa == "connected" else "bad" if wa == "service_down" else "warn"
         rows.append(_row("chat", _th("svc.whatsapp"), "", _pill(tone, label, "svc.whatsapp")))
+    tg = model.get("telegram")
+    if tg is not None:
+        from . import telegram_pages
+        state = tg.get("state", "")
+        tone = {"ok": "ok", "warn": "warn", "bad": "bad"}[telegram_pages.state_tone(state)]
+        detail = f"@{tg['bot_username']}" if tg.get("bot_username") else ""
+        rows.append(_row("chat", i18n.th("web.tg.dash.svc"), detail,
+                         _pill(tone, i18n.t("web.tg.state." + state) if state else _t("state.unknown"), "svc.telegram")))
     for extra in svc.get("additional") or []:
         if extra.get("enabled"):
             rows.append(_row("mail", _th("svc.account"), extra.get("email", ""), _unit_pill(extra.get("unit", ""), "")))

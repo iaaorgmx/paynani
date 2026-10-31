@@ -107,7 +107,7 @@ def mail_accounts(agent_email: str, additional: list[dict]) -> list[dict]:
 
 
 def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, accounts_error: str,
-         whatsapp: bool = False) -> str:
+         whatsapp: bool = False, telegram: bool = False) -> str:
     th = i18n.th
     open_attr = " open"   # abierto siempre, como en PDSL-201: las cuentas son el centro
     items = []
@@ -141,6 +141,7 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
     </details>
     {entry('messages', '/messages', 'inbox', 'web.nav.messages')}
     {entry('whatsapp', '/whatsapp/messages', 'chat', 'web.wa.nav') if whatsapp else ''}
+    {entry('telegram', '/telegram/messages', 'chat', 'web.tg.nav') if telegram else ''}
     {entry('roster', '/roster', 'roster', 'web.nav.roster')}
     {entry('api_tokens', '/api-tokens', 'key', 'web.tokens.title')}
   </nav>
@@ -157,7 +158,7 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
 def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str = "",
          active_account: str = "", accounts: list[dict] | None = None, accounts_error: str = "",
          icon_name: str = "home", back: str = "", wide: bool = False, collapsed: bool = False,
-         whatsapp: bool = False) -> str:
+         whatsapp: bool = False, telegram: bool = False) -> str:
     """Una página con sesión. `body` ya viene escapado. `wide` deja que el panel use todo el ancho
     (la lista de correos, como Orders en el /dash). `collapsed` dibuja el menú colapsado
     (PRD #537 FR-11); en el celular no cuenta, ahí el menú siempre empieza escondido. `whatsapp`
@@ -165,7 +166,7 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
     th = i18n.th
     accounts = accounts or []
     logo = brand_svg("paynani-horizontal.svg")
-    nav = _nav(accounts, active, active_account, csrf, accounts_error, whatsapp)
+    nav = _nav(accounts, active, active_account, csrf, accounts_error, whatsapp, telegram)
     name = user.get("name", "")
     back_link = (f'<a class="atras" href="{e(back)}" aria-label="{th("web.back")}">{icon("back")}</a>'
                  if back else "")
