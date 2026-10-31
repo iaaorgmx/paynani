@@ -604,3 +604,9 @@ body.web-shell {
   .web-shell .dash .actividad li { grid-template-columns: 1.9rem 1fr 3.6rem; }
   .web-shell .dash .actividad li .estado { display: none; }
 }
+
+/* ---- Telegram (PRD #609 FR-28, TG-7) ------------------------------------------------ */
+.web-shell .estado-tg-ok { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-ink); }
+.web-shell .estado-tg-warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
+.web-shell .estado-tg-bad { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad-ink); }
+.web-shell .tg-token, .web-shell .tg-agregar { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }

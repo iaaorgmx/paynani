@@ -109,7 +109,11 @@ def list_body(accounts: list[dict], listing: dict, csrf: str, ok: str = "", erro
     return "\n".join(out) + "\n"
 
 
-def edit_body(account, listing: dict, member: dict | None, csrf: str, error=None, values: dict | None = None) -> str:
+def edit_body(account, listing: dict, member: dict | None, csrf: str, error=None, values: dict | None = None,
+              telegram: bool = False, lead: str = "") -> str:
+    """El formulario de una fila. `telegram` agrega el campo Telegram (PRD #609 FR-13 y
+    FR-15), que también sale si la fila ya trae uno. «Agregar al roster» desde un hilo de
+    Telegram llega aquí con `values` llenos y `lead`."""
     th = i18n.th
     acc = _acct(account)
     m = values or member or {}
@@ -120,9 +124,14 @@ def edit_body(account, listing: dict, member: dict | None, csrf: str, error=None
     options = "".join(f'<option value="{t}"{" selected" if (m.get("type") or "Human") == t else ""}>{t}</option>'
                       for t in TYPES)
     owner_note = f'<p class="quiet">{th("web.roster.owner_note")}</p>' if (member or {}).get("owner") else ""
+    tg_value = str(m.get("telegram") or "")
+    tg_field = (f'''<label for="telegram">Telegram <span class="opt">{th('web.roster.optional')}</span></label>
+  <input id="telegram" name="telegram" maxlength="64" autocomplete="off" spellcheck="false" value="{e(tg_value)}">
+  ''' if telegram or tg_value else "")
+    lead_html = f'<p class="lead">{e(lead)}</p>' if lead else ""
     return f"""<p class="volver"><a href="/roster?{e(q(cuenta=acc))}">← {th('web.roster.back')}</a></p>
 <h2 class="asunto-correo">{title}</h2>
-{error_box(error)}{owner_note}
+{lead_html}{error_box(error)}{owner_note}
 <form method="post" action="/roster/guardar" class="formulario">
   <input type="hidden" name="csrf" value="{e(csrf)}">
   <input type="hidden" name="cuenta" value="{e(acc)}">
@@ -139,7 +148,7 @@ def edit_body(account, listing: dict, member: dict | None, csrf: str, error=None
   <label for="phones">{th('web.roster.f.phones')} <span class="opt">{th('web.roster.optional')}</span></label>
   <input id="phones" name="phones" maxlength="300" value="{e(phones)}">
   <p class="hint">{th('web.roster.phones_hint')}</p>
-  <button type="submit" class="primario">{th('web.roster.save')}</button>
+  {tg_field}<button type="submit" class="primario">{th('web.roster.save')}</button>
 </form>
 """
 

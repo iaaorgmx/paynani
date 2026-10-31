@@ -69,6 +69,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Agregar y quitar cuentas** | «+ Agregar cuenta» prueba el acceso IMAP y SMTP antes de guardar y escribe como `paynani account add`. «Quitar esta cuenta» deja de vigilarla como `paynani account remove`, sin borrar su buzón ni su roster. Las dos piden la contraseña de la web. |
 | **Mensajes** | Las conversaciones SMS de la pasarela, de 50 en 50: lo que llegó, lo que mandó el agente con su estado, lo que contestó el dueño desde PaynaniApp o desde la web, y las llamadas perdidas y contestadas. «Nuevo SMS» y el cuadro de responder envían por el teléfono emparejado (ver abajo). |
 | **Mensajes de WhatsApp** | Sólo con WhatsApp activado (`whatsapp.env` con `WHATSAPP_ENABLED=1`). Las conversaciones de WhatsApp, como «Mensajes» las de SMS, sin mensaje nuevo: sólo se contesta donde el contacto ya escribió. «Cuenta de WhatsApp» (`/whatsapp`) vincula, cancela y desvincula (ver abajo). |
+| **Mensajes de Telegram** | Sólo con Telegram activado (`telegram.env` con `TELEGRAM_ENABLED=1` y el token). Las conversaciones con el bot de Telegram, sin mensaje nuevo: sólo se contesta donde la persona ya escribió. «Bot de Telegram» (`/telegram`) muestra el estado y cambia el token (ver abajo). |
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. |
 
@@ -332,6 +333,48 @@ habla al servicio `paynani-whatsapp` por `state/whatsapp/control.sock`
 - **Responder** sólo aparece en la conversación de un contacto del roster que ya
   escribió por WhatsApp, con WhatsApp conectado. No hay «Nuevo mensaje»: paynani nunca
   escribe primero, ni el agente ni tú desde aquí.
+
+### Telegram
+
+Con Telegram activado en la instalación (PRD #609), el menú agrega «Mensajes de
+Telegram» (`/telegram/messages`). Sin activar, no aparece nada de Telegram. La web le
+habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRAM.md`
+§4 y §7).
+
+- **El bot** (`/telegram`): el estado del servicio, el `@usuario` del bot, desde
+  cuándo funciona, la última consulta a Telegram y cuántos mensajes llegaron y
+  salieron hoy. Si otro programa lee el mismo bot o tiene un webhook, o si Telegram
+  rechazó el token, la página lo dice.
+- **Cambiar el token** (FR-10) va en dos pasos:
+  1. Pegas el token de @BotFather en un campo de contraseña, sin autocompletar, y
+     escribes la contraseña de la web (con el mismo bloqueo de intentos que la
+     entrada). La web lo revisa con el servicio (`telegram.token_check`) y te dice de
+     qué bot es.
+  2. Confirmas que el token es sólo de esta instalación y, si el bot tenía un
+     webhook, que se borre. El servicio lo aplica (`telegram.token_apply`) y, si el
+     bot nuevo no funciona, vuelve al anterior y la página lo dice.
+
+  El token nunca vuelve a la página, ni completo ni en parte. La revisión del paso 1
+  sólo vive 5 minutos en la memoria del servidor y es de esa sesión del navegador. Al
+  terminar, te llega un correo con el bot nuevo, sin el token.
+- **Las conversaciones:** lo que llegó, lo que mandó el agente y lo que contestaste
+  tú. Un mensaje editado lo dice, y una foto se ve en el globo (`/telegram/media`,
+  que se la pide al servicio cada vez). Un hilo se nombra por un id opaco (`t_…`),
+  nunca por un id de Telegram. De alguien fuera del roster se ven el nombre que dio,
+  marcado «no verificado», y la hora; el texto sólo con el Catch-All de Telegram
+  activo.
+- **Responder** sólo aparece en la conversación de un contacto del roster que ya le
+  escribió al bot, con el servicio funcionando. No hay «Nuevo mensaje»: Telegram no
+  deja que un bot escriba primero.
+- **Agregar al roster** (FR-15) aparece en la conversación de alguien fuera del
+  roster. Pide la contraseña de la web y responde con el formulario de la fila nueva,
+  con su nombre y su id de Telegram ya puestos. Es el único lugar donde se ve un id de
+  Telegram: no va en la URL, no se guarda en otro lugar y no se escribe en el log. El
+  formulario del roster tiene el campo Telegram mientras Telegram esté activado.
+- **El Catch-All de Telegram** es su propia página (`/telegram/catch-all`), junto a
+  «Bot de Telegram», como los de SMS y WhatsApp (#588). Se guarda en
+  `rules/catch-all-telegram.md`.
+- **El Dashboard** agrega el bot de Telegram a Servicios, con su estado.
 
 ## Seguridad
 

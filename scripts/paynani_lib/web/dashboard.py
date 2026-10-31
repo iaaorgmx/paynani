@@ -101,6 +101,11 @@ class Source:
         """None sin WhatsApp configurado; si no, `{status: {...}, received: [{at, name, number}]}`."""
         raise NotImplementedError
 
+    def telegram(self) -> dict | None:
+        """None sin Telegram configurado; si no, `{state, bot_username}` de `telegram.status`
+        (PRD #609 FR-28). Nunca el token ni ids de Telegram."""
+        return None
+
     def roster(self) -> dict:
         """`{count, changes: [{at, action, name, device_id}]}`."""
         raise NotImplementedError
@@ -185,6 +190,13 @@ class Core(Source):
             received.append({"at": str(record.get("sent_at") or record.get("observed_at") or ""),
                              "name": str(sender.get("name") or ""), "number": str(sender.get("address") or "")})
         return {"status": {"state": str(status.get("state") or "")}, "received": received}
+
+    def telegram(self):
+        if not self.ctx.telegram_configured():
+            return None
+        status = self.ctx.telegram().status()
+        return {"state": str(status.get("state") or "service_down"),
+                "bot_username": str(status.get("bot_username") or "")}
 
     def roster(self):
         import roster as roster_mod
@@ -396,7 +408,7 @@ class Fake(Source):
     def __init__(self, **data):
         self.data = {"accounts": [{"id": accounts.MAIN, "email": "agent@example.com", "enabled": True,
                                    "agent": True}],
-                     "mail": {}, "sent": {}, "sms": [], "whatsapp": None,
+                     "mail": {}, "sent": {}, "sms": [], "whatsapp": None, "telegram": None,
                      "roster": {"count": 0, "changes": []}, "tokens": [],
                      "version": {"installed": "1.0.0", "latest": "1.0.0", "checked_at": ""},
                      "health": {"checks": [_check("listener", "ok", "listener service is active")], "network_at": ""},
@@ -424,6 +436,9 @@ class Fake(Source):
 
     def whatsapp(self):
         return self._get("whatsapp")
+
+    def telegram(self):
+        return self._get("telegram")
 
     def roster(self):
         return self._get("roster")
@@ -559,6 +574,9 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
                                  "who": rec.get("name") or rec.get("number", ""), "what": "", "state": "received",
                                  "account": "", "href": "/whatsapp/messages/ver?n=" + _q(rec.get("number", ""))})
 
+    # Telegram (PRD #609 FR-28): sólo su estado en Servicios.
+    tg = source.telegram()
+
     # Roster (FR-8, FR-16)
     roster = source.roster()
     last_change = None
@@ -630,6 +648,7 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
         "roster_last_change": last_change,
         "services": services,
         "whatsapp": None if wa is None else (wa.get("status") or {}).get("state", ""),
+        "telegram": None if tg is None else {"state": tg.get("state", ""), "bot_username": tg.get("bot_username", "")},
         "attention": attention,
         "week": [{"day": d, **per_day[d]} for d in days],
         "week_received": week_received,
@@ -671,6 +690,7 @@ def numbers(model: dict) -> dict:
             "session": "live" if services["session"]["live"] else "none",
             "phone": None if phone is None else ("online" if phone["online"] else "offline"),
             "whatsapp": model["whatsapp"],
+            "telegram": None if model.get("telegram") is None else model["telegram"]["state"],
         },
         "attention": len(model["attention"]),
         "week": [{"day": w["day"].isoformat(), "closed": w["closed"], "open": w["open"]} for w in model["week"]],

@@ -280,11 +280,12 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
     return "\n".join(head + bubbles + [reply, watch, script]) + "\n"
 
 
-CATCHALL_CHANNELS = ("sms", "whatsapp")
+CATCHALL_CHANNELS = ("sms", "whatsapp", "telegram")
 # Por canal: la página del Catch-All, a dónde vuelve y el texto de esa liga (#588).
 CATCHALL_PAGES = {
     "sms": ("/messages/catch-all", "/messages", "web.sms.back"),
     "whatsapp": ("/whatsapp/catch-all", "/whatsapp/messages", "web.wa.back"),
+    "telegram": ("/telegram/catch-all", "/telegram/messages", "web.tg.back"),
 }
 
 
