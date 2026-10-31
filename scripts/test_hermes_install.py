@@ -166,6 +166,9 @@ case "$*" in
   '--user is-active --quiet '*) unit=${*: -1}; [[ -e "$FAKE_SYSTEMD_STATE/$unit.active" ]] ;;
   '--user enable --now '*) unit=${*: -1}; : >"$FAKE_SYSTEMD_STATE/$unit.enabled"; : >"$FAKE_SYSTEMD_STATE/$unit.active"; printf '%s\\n' "$*" >>"$FAKE_SYSTEMD_LOG" ;;
   '--user restart '*) unit=${*: -1}; : >"$FAKE_SYSTEMD_STATE/$unit.active"; printf '%s\\n' "$*" >>"$FAKE_SYSTEMD_LOG" ;;
+  # paynani-telegram is installed on every run since 0.20.0 (#635): enabled, stopped without a token.
+  '--user enable '*) unit=${*: -1}; : >"$FAKE_SYSTEMD_STATE/$unit.enabled"; printf '%s\\n' "$*" >>"$FAKE_SYSTEMD_LOG" ;;
+  '--user stop '*) unit=${*: -1}; rm -f "$FAKE_SYSTEMD_STATE/$unit.active"; printf '%s\\n' "$*" >>"$FAKE_SYSTEMD_LOG" ;;
   *) exit 2 ;;
 esac
 """,

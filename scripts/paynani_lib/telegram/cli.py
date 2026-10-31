@@ -23,8 +23,8 @@ for _p in (str(_ROOT / "scripts"), str(_ROOT / "harness")):
 
 import paths  # noqa: E402
 
-from . import api as tg_api  # noqa: E402
 from . import config  # noqa: E402
+from . import setup  # noqa: E402
 
 DEDICATED_Q = ("¿Este token es sólo para esta instalación de paynani? Otro programa que lea el "
                "mismo bot se lleva los mensajes")
@@ -85,28 +85,26 @@ def _err(text: str) -> None:
 
 
 def run_setup(args) -> int:
-    """FR-9: token por stdin, getMe, webhook con confirmación, y telegram.env 0600."""
+    """FR-9: token por stdin, getMe, webhook con confirmación, y telegram.env 0600.
+    La lógica la comparte con «Cuenta de Telegram» de PaynaniWeb (setup.py, #635)."""
     env = config.env_path()
-    current = config.read(env)
-    if config.token(current) and not args.replace:
+    if setup.already_configured(env) and not args.replace:
         _err("Telegram ya está configurado. Para cambiar de bot: paynani telegram token")
         return 2
     token = read_token()
-    if not token or not config.TOKEN_RE.match(token):
-        _err("eso no es un token de bot (se ve como 123456789:AA…, y lo da @BotFather)")
-        return 2
-    bot = tg_api.BotAPI(token, config.api_base())
     try:
-        me = bot.call("getMe")
-        info = bot.call("getWebhookInfo")
-    except tg_api.Unauthorized:
-        _err("Telegram no aceptó el token (401). Revisa que lo copiaste completo de @BotFather")
-        return 2
-    except (tg_api.ApiError, tg_api.NetworkError) as exc:
-        _err(f"Telegram no contestó ({type(exc).__name__})")
+        found = setup.probe(token)
+    except setup.SetupError as exc:
+        if exc.code == setup.NOT_A_TOKEN:
+            _err("eso no es un token de bot (se ve como 123456789:AA…, y lo da @BotFather)")
+            return 2
+        if exc.code == setup.UNAUTHORIZED:
+            _err("Telegram no aceptó el token (401). Revisa que lo copiaste completo de @BotFather")
+            return 2
+        _err("Telegram no contestó")
         return 1
-    print(f"bot: @{me.get('username')}")
-    if (info or {}).get("url"):
+    print(f"bot: @{found['bot_username']}")
+    if found["webhook"]:
         print("Este bot tiene un webhook: otra instalación o servicio puede estar recibiendo sus mensajes.")
         if not confirm("¿Lo borro para que paynani reciba con getUpdates?", args.delete_webhook):
             _err("no se escribió nada: el webhook sigue")
@@ -114,15 +112,18 @@ def run_setup(args) -> int:
     if not confirm(DEDICATED_Q, args.dedicated):
         _err("no se escribió nada: confirma que el token es sólo de esta instalación (--dedicated)")
         return 2
-    if (info or {}).get("url"):
-        try:
-            bot.call("deleteWebhook", {"drop_pending_updates": False})
-        except (tg_api.ApiError, tg_api.NetworkError) as exc:
-            _err(f"no se pudo borrar el webhook ({type(exc).__name__}); no se escribió nada")
-            return 1
-    if current:
-        config.save_backup(env)
-    config.write(config.with_token(current, token), env)
+    try:
+        setup.save(token, webhook=found["webhook"], env=env, replace=bool(args.replace))
+    except setup.SetupError as exc:
+        if exc.code == setup.ALREADY:
+            _err("otra configuración guardó un token mientras tanto; no se escribió nada. "
+                 "Revisa con: paynani telegram status")
+            return 2
+        if exc.code == setup.WEBHOOK:
+            _err("no se pudo borrar el webhook; no se escribió nada")
+        else:
+            _err(f"no se pudo escribir {env.name}")
+        return 1
     print(f"listo: {env.name} guardado (0600).")
     return _say_started(service_control("start"))
 
@@ -140,7 +141,7 @@ def _service_installed() -> bool:
 
 def service_control(action: str) -> str:
     """
-    Arranca (`start`) o detiene (`stop`) el servicio que puso el instalador (`--with-telegram`).
+    Arranca (`start`) o detiene (`stop`) el servicio que puso el instalador (siempre desde 0.20.0, #635).
     `not-installed`, `started`, `stopped` o `failed`. Ni el token ni ids pasan por aquí.
     """
     import os
@@ -182,8 +183,9 @@ def _say_started(result: str) -> int:
     if result == "started":
         print("paynani-telegram arrancó. Revisa con: paynani telegram status")
     elif result == "not-installed":
-        print("El servicio paynani-telegram no está instalado. Instálalo con el instalador y --with-telegram "
-              "(INSTALL.md, «Telegram»); arranca solo con este telegram.env.")
+        print("El servicio paynani-telegram no está instalado. Actualiza la instalación "
+              "(scripts/install.sh --runtime <runtime> --upgrade, INSTALL.md «Telegram»); "
+              "arranca solo con este telegram.env.")
     else:
         _err("no pude arrancar paynani-telegram: arráncalo o reinícialo a mano (INSTALL.md, «Telegram»)")
         return 1

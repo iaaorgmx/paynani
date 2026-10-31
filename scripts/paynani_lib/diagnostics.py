@@ -291,8 +291,10 @@ def _telegram_service_check(tg: dict | None) -> dict | None:
     restart = (f"launchctl kickstart -k gui/{os.getuid()}/com.paynani.telegram" if tg.get("launchd")
                else _service_fix(TELEGRAM_UNIT))
     if not tg.get("env_present"):
-        return _check("telegram", "warning", "the Telegram service is installed but has no bot token yet", tg,
-                      "paynani telegram setup")
+        # Since 0.20.0 every install has the service (#635): no token just means Telegram
+        # is not used here, not that something is wrong.
+        return _check("telegram", "ok", "Telegram is not set up (no bot token); the service waits for one", tg,
+                      "PaynaniWeb, Telegram messages > Telegram account, or paynani telegram setup")
     if not tg.get("enabled"):
         return _check("telegram", "ok", "Telegram is turned off (telegram.env)", tg)
     if not tg.get("token_present"):
@@ -300,7 +302,7 @@ def _telegram_service_check(tg: dict | None) -> dict | None:
                       "paynani telegram setup --replace")
     if not tg.get("unit_installed"):
         return _check("telegram", "warning", "Telegram is configured but its service is not installed", tg,
-                      "scripts/install.sh --runtime <runtime> --upgrade --with-telegram")
+                      "scripts/install.sh --runtime <runtime> --upgrade")
     state = tg.get("state")
     bot = f" (@{tg['bot_username']})" if tg.get("bot_username") else ""
     if state == "running":

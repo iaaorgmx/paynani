@@ -422,8 +422,9 @@ chmod 0600 "$runtime_env"
     printf 'FAIL convergence did not create the state tree as a mode-0700 directory\n'
     fail=$((fail + 1))
 }
-[[ "$(grep -c '^artifact[[:space:]]' "$manifest")" == 6 ]] || {
-    printf 'FAIL manifest does not record exactly six created artifacts\n'
+# Six, plus paynani-telegram.service, which every install adds since 0.20.0 (#635).
+[[ "$(grep -c '^artifact[[:space:]]' "$manifest")" == 7 ]] || {
+    printf 'FAIL manifest does not record exactly seven created artifacts\n'
     fail=$((fail + 1))
 }
 [[ "$(<"$runtime_env")" == 'PAYNANI_RUNTIME=openclaw' ]] || {
@@ -539,7 +540,7 @@ crash_window_artifact="$sandbox/.config/systemd/user/paynani-idle.service"
     fail=$((fail + 1))
 }
 check_status 'matching crash-window artifact is adopted on resume' 10 --runtime openclaw
-[[ "$(grep -c '^artifact[[:space:]]' "$manifest")" == 6 ]] || {
+[[ "$(grep -c '^artifact[[:space:]]' "$manifest")" == 7 ]] || {
     printf 'FAIL resumed convergence did not record the adopted artifact set\n'
     fail=$((fail + 1))
 }
@@ -1388,9 +1389,9 @@ tg_unit="$sandbox/.config/systemd/user/paynani-telegram.service"
 tg_env="$clone/telegram.env"
 rm -f "$tg_env"
 check_status '--with-telegram does not apply to --uninstall' 64 --runtime codex --uninstall --with-telegram
-check_status 'a plain dry-run does not plan Telegram' 10 --runtime codex --dry-run
-[[ "$LAST_OUTPUT" != *paynani-telegram* ]] || {
-    printf 'FAIL a dry-run without --with-telegram mentioned Telegram\n'; fail=$((fail + 1))
+check_status 'a plain dry-run plans Telegram too (#635, Q281 = A)' 10 --runtime codex --dry-run
+[[ "$LAST_OUTPUT" == *paynani-telegram* ]] || {
+    printf 'FAIL a dry-run without --with-telegram did not plan Telegram (#635)\n'; fail=$((fail + 1))
 }
 check_status 'a dry-run with --with-telegram plans the unit and writes nothing' 10 --runtime codex --dry-run --with-telegram
 [[ "$LAST_OUTPUT" == *paynani-telegram.service* && ! -e "$tg_unit" && ! -e "$tg_env" ]] || {

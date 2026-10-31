@@ -58,13 +58,14 @@ Options:
   --notify-secret-file PATH  Pre-provisioned Hermes notification-route secret
   --roster-secret-file PATH  Pre-provisioned Hermes roster-route secret
   --with-sms                 Also install and supervise the SMS gateway (SMS_GATEWAY.md)
-  --with-whatsapp            Also install and supervise WhatsApp (WHATSAPP_BRIDGE.md): uses this shell's Node 20+, or downloads the pinned Node 22 into ~/.local/lib/paynani (no sudo)
-  --with-telegram            Also install and supervise the Telegram bot (TELEGRAM.md). Standard library only;
-                             the token comes from `paynani telegram setup`, before or after this run
                              and PaynaniWeb behind it (PRD #434), which is only reachable
                              through the gateway. Optional: without it neither is installed,
                              upgraded or removed unless this installer already owns the
                              gateway unit
+  --with-whatsapp            Also install and supervise WhatsApp (WHATSAPP_BRIDGE.md): uses this shell's Node 20+, or downloads the pinned Node 22 into ~/.local/lib/paynani (no sudo)
+  --with-telegram            Accepted, changes nothing: since 0.20.0 the Telegram service (TELEGRAM.md) is
+                             always installed, upgraded and supervised, and stays stopped until
+                             PaynaniWeb («Telegram account») or `paynani telegram setup` gives it a token
   --dry-run                  Discover and plan without executing runtimes or changing host
   -h, --help                 Show this help
 
@@ -479,11 +480,13 @@ whatsapp_enabled() {
     ((with_whatsapp)) || [[ -n "${owned_digests[$unit_dir/paynani-whatsapp.service]+present}" ]]
 }
 
-# Telegram (PRD #609 FR-1) too: --with-telegram, or this installer already owns the
-# unit. No Node and nothing to download. The token is never the installer's:
+# Telegram (PRD #609 FR-1): since 0.20.0 the unit is always installed (#635, Q281 = A),
+# and it stays stopped until telegram.env has a token, so PaynaniWeb's «Telegram
+# account» can do the first setup on its own. --with-telegram is still accepted. No
+# Node and nothing to download. The token is never the installer's: PaynaniWeb or
 # `paynani telegram setup` writes telegram.env, before or after this run.
 telegram_enabled() {
-    ((with_telegram)) || [[ -n "${owned_digests[$unit_dir/paynani-telegram.service]+present}" ]]
+    return 0
 }
 
 # Whether telegram.env turns Telegram on (TELEGRAM_ENABLED=1 and a token), asked of
@@ -1510,8 +1513,9 @@ converge_required_services() {
     converge_telegram_service
 }
 
-# Telegram (TG-6): the unit is always enabled, but it can only stay up once
-# telegram.env turns Telegram on. Without it (no `paynani telegram setup` yet, or
+# Telegram (TG-6): the unit is always installed and enabled (#635), but it can only
+# stay up once telegram.env turns Telegram on. Without it (no setup from PaynaniWeb or
+# `paynani telegram setup` yet, or
 # `paynani telegram disable`) the service exits 0 at once and Restart=on-failure
 # leaves it down, so here it is enabled and not required to be active.
 converge_telegram_service() {
