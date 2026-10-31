@@ -371,6 +371,10 @@ check("#628: _add_column deja igual una línea vieja sin `|`", "Beto beto@exampl
       re_._add_column(LEGACY, "Telegram").splitlines()[-1])
 check("y Rules tampoco convierte el párrafo", "Notas del dueño: no tocar.",
       re_._add_column(PARA, "Rules").splitlines()[-1])
+TWO = "| Name | Email |\n|---|---|\n| Ana | ana@example.com |\n\n| Beto | beto@example.com |\n"
+check("#628: una fila con `|` después de un renglón en blanco no es de la tabla y no cambia",
+      "| Name | Email | Telegram |\n|---|---|---|\n| Ana | ana@example.com |  |\n\n| Beto | beto@example.com |\n",
+      re_._add_column(TWO, "Telegram"))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

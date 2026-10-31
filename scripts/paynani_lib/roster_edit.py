@@ -402,11 +402,18 @@ def _add_column(text: str, name: str) -> str:
     lines[header_idx] = lines[header_idx].rstrip().rstrip("|").rstrip() + f" | {name} |"
     sep = lines[header_idx + 1].rstrip()
     lines[header_idx + 1] = (sep if sep.endswith("|") else sep + "|") + "---|"
-    for idx, other in rows:
-        # roster._rows también entrega líneas sin `|` (el formato viejo «Nombre
-        # correo», o un párrafo después de la tabla): no son filas de la tabla y
-        # se quedan como están (Andy en #628).
+    # Sólo las filas contiguas de la tabla, hasta el primer renglón que no empiece
+    # con `|` (uno en blanco, un párrafo, un `#`). roster._rows también entrega
+    # líneas sueltas (el formato viejo «Nombre correo», un párrafo de notas) y
+    # filas de otra tabla más abajo: esas se quedan byte por byte (Andy y Ximena
+    # en #628).
+    in_table = set()
+    for idx in range(header_idx + 2, len(lines)):
         if not lines[idx].lstrip().startswith("|"):
+            break
+        in_table.add(idx)
+    for idx, other in rows:
+        if idx not in in_table:
             continue
         cells = list(other) + [""] * (len(header_fields) - len(other))
         lines[idx] = "| " + " | ".join(c.strip() for c in cells) + " |  |"
