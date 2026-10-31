@@ -19,7 +19,9 @@ from paynani_lib.telegram.fake_api import FakeBotAPI  # noqa: E402
 from paynani_lib.telegram.service import StartError, TelegramService  # noqa: E402
 
 passed = failed = 0
-TOKEN = "123456789:AAEhBP0av18vdTESTtokenSECRETvalue12"
+# Falso a propósito y sin la forma de un token real (AA… de 35), para que el escaneo
+# de secretos de GitHub no lo tome por uno (alerta del 2026-10-31).
+TOKEN = "123456:fake_token_only_for_tests_x"
 BOT_ID = 987654321
 ANA = 7771234501          # en el roster por id
 BETO = 7771234502         # en el roster por @usuario
