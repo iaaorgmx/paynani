@@ -9,7 +9,12 @@
   - el Catch-All de Telegram en su propia página, `/telegram/catch-all`, como SMS y WhatsApp (#588).
 
   «Bot de Telegram» (`/telegram`) muestra el estado y el `@usuario`, y cambia el token en dos pasos (FR-10). El token va en un campo de contraseña, se revisa con `telegram.token_check` y se aplica con `telegram.token_apply` después de confirmar; nunca vuelve a la página, y la revisión vive sólo 5 minutos en la memoria del servidor, por sesión. El dueño recibe un correo sin el token. El Dashboard suma el bot a Servicios y el formulario del roster tiene el campo Telegram. La web habla con `paynani-telegram` por `control.sock` (`TELEGRAM.md` §4) desde `web/telegram_source.py`, con una fuente de demostración (`PAYNANI_WEB_TELEGRAM=demo`). Textos en los cinco idiomas; `test_web_telegram.py` revisa además que ni el token ni los ids salgan en las páginas ni en el log.
+- `scripts/version.sh --apply` ya no se niega con «selected runtime is unknown». El plan de la
+  versión nueva corre desde una copia temporal y buscaba `runtime.env` junto a esa copia;
+  ahora lo lee del clon, como el manifiesto. Mientras tanto, `PAYNANI_RUNTIME=<runtime>`
+  antes del comando lo evita.
 - **Telegram, TG-0: el contrato y un servidor falso de la Bot API (PRD #609, #612).** `TELEGRAM.md` fija lo que harán TG-1 a TG-8: las carpetas por bot, los métodos de la Bot API que se usan, los eventos `telegram.received`, `telegram.edited` y `telegram.health` (con referencia opaca `tg:…` y sin ids de Telegram), los tipos de `control.sock` (hilos con id opaco `t_…`, envío, streaming con `stream_open`/`append`/`close`, borrador, cambio de token en dos pasos y la única respuesta con un id, para «Agregar al roster»), los mensajes de PaynaniApp por la pasarela y lo que nunca se registra. `scripts/paynani_lib/telegram/fake_api.py` habla HTTP como la Bot API, sin red: un solo `getUpdates` a la vez (409 al segundo), 409 con webhook, 401 con token revocado, 429 con `retry_after`, confirmación por `offset`, ediciones, grupos, archivos con tamaño declarado distinto del real y chats que rechazan `sendMessageDraft`. `test_telegram_fake_api.py` lo prueba. Todavía no hay servicio: nada cambia en una instalación.
+
 ## 0.18.0 (2026-10-31)
 
 **WhatsApp con el mismo número del SMS (PRD #550), un Catch-All por canal (PRD #576) y

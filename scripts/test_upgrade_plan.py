@@ -831,6 +831,17 @@ for text, want in (('PAYNANI_RUNTIME="openclaw"\n', "openclaw"),
                    ("OTHER=1\n", None)):
     _tmp_env.write_text(text, encoding="utf-8")
     check(f"selected_runtime: {text.strip()!r} -> {want!r}", up.selected_runtime() == want, repr(up.selected_runtime()))
+# version.sh runs the target's planner from a temporary copy with --repo set to the
+# clone: the runtime comes from that clone's runtime.env, not from the copy's own
+# location (John, 0.18.0 upgrade: "selected runtime is unknown").
+_tmp_env.write_text('PAYNANI_RUNTIME="hermes"\n', encoding="utf-8")
+_other_repo = pathlib.Path(tempfile.mkdtemp())
+(_other_repo / "runtime.env").write_text('PAYNANI_RUNTIME="openclaw"\n', encoding="utf-8")
+check("selected_runtime(repo=<clone>) reads the clone's runtime.env",
+      up.selected_runtime(repo=_other_repo) == "openclaw", repr(up.selected_runtime(repo=_other_repo)))
+_empty_repo = pathlib.Path(tempfile.mkdtemp())
+check("selected_runtime(repo=<clone>) without runtime.env is unknown, not this copy's",
+      up.selected_runtime(repo=_empty_repo) is None, repr(up.selected_runtime(repo=_empty_repo)))
 up.harness_paths.runtime_env = _real_runtime_env
 if _saved_env is not None:
     os.environ["PAYNANI_RUNTIME"] = _saved_env
