@@ -24,9 +24,12 @@ ACCOUNTS_WRITE = "accounts.write"
 # PRD #535 FR-P2: activar el Catch-All deja que el agente lea mensajes de números fuera
 # del roster, así que no va dentro de roster.write. Desde el PRD #576 hay un permiso por
 # canal (FR-13); el viejo `catchall.write` vale sólo para SMS, el más estrecho (FR-13a).
-CATCHALL_WRITE = {"sms": "catchall.sms.write", "whatsapp": "catchall.whatsapp.write"}
+CATCHALL_WRITE = {"sms": "catchall.sms.write", "whatsapp": "catchall.whatsapp.write",
+                  "telegram": "catchall.telegram.write"}
 LEGACY_CATCHALL_WRITE = "catchall.write"
 SMS_SEND = "sms.send"
+# PRD #609 FR-30: leer Telegram tiene su propio permiso, fuera de `read`.
+TELEGRAM_READ = "telegram.read"
 
 PAGE = 50
 MAX_FIELD = 320
@@ -277,6 +280,43 @@ def get_whatsapp_thread(call: Call) -> dict:
     return _whatsapp(call, "whatsapp.thread", number=number, **_wa_page(call))
 
 
+# ---- Telegram (TG-5 de #612, PRD #609 FR-30) -----------------------------------------
+# Sólo lectura, con su propio permiso `telegram.read`. Como WhatsApp: las dos acciones le
+# preguntan al servicio paynani-telegram por control.sock con `by: api`, y el servicio
+# aplica sus reglas (alguien fuera del roster sale `hidden`, salvo lo que llegó con el
+# Catch-All mientras siga activo). Ni ids de Telegram ni el token salen por aquí (§8).
+_TG_THREAD = re.compile(r"^t_[0-9a-f]{32}$")   # THREAD_RE de telegram/store.py
+
+
+def _telegram(call: Call, kind: str, **fields) -> dict:
+    from . import telegram_source
+    if not call.ctx.telegram_configured():
+        raise ApiError(503, "telegram_unavailable", "Telegram is not set up on this install.")
+    try:
+        return call.ctx.telegram().request(kind, by="api", **fields)
+    except telegram_source.Failed as exc:
+        if exc.code == "not_found":
+            raise ApiError(404, "not_found", "No Telegram conversation with that thread.", field="thread") from None
+        if exc.code == "invalid":
+            field = str(exc.fields.get("field") or "thread")
+            raise ApiError(400, "invalid_parameter", f"{field} is not valid.", field=field) from None
+        raise ApiError(503, "telegram_unavailable",
+                       "The Telegram service is not answering; try again in a minute.") from None
+
+
+def list_telegram_conversations(call: Call) -> dict:
+    data = _telegram(call, "telegram.threads", **_wa_page(call))
+    return {"threads": data.get("threads") or [], "next_before": data.get("next_before")}
+
+
+def get_telegram_thread(call: Call) -> dict:
+    thread = call.required("thread", 80).strip()
+    if not _TG_THREAD.match(thread):
+        raise ApiError(400, "invalid_parameter", "thread must be a thread from ListTelegramConversations.",
+                       field="thread")
+    return _telegram(call, "telegram.thread", thread=thread, **_wa_page(call))
+
+
 # ---- roster y reglas ---------------------------------------------------------------
 
 def list_roster(call: Call) -> dict:
@@ -344,12 +384,12 @@ def save_default_rules(call: Call) -> dict:
 # ---- Catch-All (PRD #535 FR-P1, FR-P2) ----------------------------------------------
 
 def _catch_all_channel(call: Call) -> str:
-    """`sms` o `whatsapp`. Sin `channel`, `sms` (obsoleto, para PaynaniApp 0.10.0; FR-12)."""
+    """`sms`, `whatsapp` o `telegram`. Sin `channel`, `sms` (obsoleto, para PaynaniApp 0.10.0; FR-12)."""
     channel = call.params.get("channel")
     if channel is None or channel == "":
         return "sms"
     if channel not in CATCHALL_WRITE:
-        raise ApiError(400, "invalid_parameter", "channel must be sms or whatsapp.", field="channel")
+        raise ApiError(400, "invalid_parameter", "channel must be sms, whatsapp or telegram.", field="channel")
     return channel
 
 
@@ -674,6 +714,8 @@ ACTIONS = {
     "GetSmsThread": (READ, get_sms_thread),
     "ListWhatsAppConversations": (READ, list_whatsapp_conversations),
     "GetWhatsAppThread": (READ, get_whatsapp_thread),
+    "ListTelegramConversations": (TELEGRAM_READ, list_telegram_conversations),
+    "GetTelegramThread": (TELEGRAM_READ, get_telegram_thread),
     "ListRoster": (READ, list_roster),
     "SaveRosterContact": (ROSTER_WRITE, save_roster_contact),
     "DeleteRosterContact": (ROSTER_WRITE, delete_roster_contact),
