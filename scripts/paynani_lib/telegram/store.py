@@ -6,7 +6,7 @@ El estado privado de cada bot (PRD #609 FR-3a, FR-4, FR-5; TELEGRAM.md §1).
         journal.jsonl    una línea por paso: {"u": update_id, "ref", "hash"} y {"u", "written": true}
         inbox/<ref>.json el mensaje recibido (texto, tipo, hilo) con su hash
         chats.json       hilo opaco t_… <-> chat privado; y el último mensaje por chat
-        links.json       @usuario -> id fijado (FR-13, TG-3)
+        links.json       @usuario -> id fijado (FR-13), y a qué otros ids ya se avisó
 
 Todo es 0600 en carpetas 0700, se escribe completo o no se escribe (archivo temporal,
 fsync, os.replace) y el diario se agrega con fsync. Los ids de Telegram sólo viven aquí.
@@ -168,18 +168,41 @@ class BotStore:
     def _chats(self) -> dict:
         return read_json(self.root / "chats.json", {}) or {}
 
-    def thread_for(self, chat_id: int, user_id: int) -> str:
-        """El hilo opaco de un chat privado; lo crea la primera vez."""
+    def thread_for(self, chat_id: int, user_id: int, display_name: str | None = None) -> str:
+        """
+        El hilo opaco de un chat privado; lo crea la primera vez. `display_name` es el
+        nombre que muestra Telegram (no verificado), para «Agregar al roster» (FR-15).
+        """
         data = self._chats()
         key = str(int(chat_id))
         entry = data.get("by_chat", {}).get(key)
+        if entry and (display_name is None or entry.get("name") == display_name):
+            return entry["thread"]
         if entry:
+            entry["name"] = display_name
+            write_json(self.root / "chats.json", data)
             return entry["thread"]
         thread = new_thread()
-        data.setdefault("by_chat", {})[key] = {"thread": thread, "user": int(user_id)}
+        data.setdefault("by_chat", {})[key] = {"thread": thread, "user": int(user_id), "name": display_name}
         data.setdefault("by_thread", {})[thread] = key
         write_json(self.root / "chats.json", data)
         return thread
+
+    def display_name(self, thread: str) -> str:
+        data = self._chats()
+        key = data.get("by_thread", {}).get(thread) if THREAD_RE.match(thread or "") else None
+        return str((data.get("by_chat", {}).get(key) or {}).get("name") or "") if key else ""
+
+    # --- @usuario fijado a un id (FR-13) ---
+    def links(self) -> dict:
+        """`{"usernames": {usuario: {"id", "at"}}, "warned": {usuario: [ids avisados]}}`."""
+        data = read_json(self.root / "links.json", {}) or {}
+        data.setdefault("usernames", {})
+        data.setdefault("warned", {})
+        return data
+
+    def save_links(self, data: dict) -> None:
+        write_json(self.root / "links.json", data)
 
     def chat_of(self, thread: str) -> tuple[int, int] | None:
         """(chat_id, user_id) de un hilo, o None."""
@@ -205,3 +228,26 @@ class BotStore:
                     and data.get("type") == "telegram.received":
                 return ref
         return None
+
+
+def store_for_account(telegram_root: Path, account: str) -> "BotStore | None":
+    """
+    La carpeta del bot de un evento, por su `account` (`tg:<alias>` de account.json).
+    Sólo lee: no crea carpetas. None si ningún bot tiene ese alias.
+    """
+    alias = account[3:] if isinstance(account, str) and account.startswith("tg:") else ""
+    if not re.fullmatch(r"[0-9a-f]{16}", alias):
+        return None
+    bots = Path(telegram_root) / "bots"
+    try:
+        candidates = sorted(p for p in bots.iterdir() if p.is_dir() and not p.is_symlink())
+    except OSError:
+        return None
+    for folder in candidates:
+        data = read_json(folder / "account.json", {}) or {}
+        if isinstance(data, dict) and data.get("alias") == alias:
+            store = BotStore.__new__(BotStore)
+            store.root = folder
+            store.inbox_dir = folder / "inbox"
+            return store
+    return None

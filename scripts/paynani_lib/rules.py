@@ -47,12 +47,13 @@ DEFAULT_ID = "default"
 # roster. Mismo formato que las reglas, pero nunca de un contacto: los nombres quedan
 # reservados. Desde el PRD #576 hay uno por canal (`catch-all-sms`, `catch-all-whatsapp`);
 # `catch-all` es el archivo único de antes, que se sigue leyendo hasta el primer
-# guardado (FR-4, FR-5). Telegram sólo tiene el nombre reservado (FR-3).
+# guardado (FR-4, FR-5). Telegram (PRD #609 FR-17) sólo lee `catch-all-telegram`: el
+# archivo viejo era de SMS y WhatsApp, y no abre los mensajes de Telegram.
 LEGACY_CATCH_ALL_ID = "catch-all"
 CATCH_ALL_ID = LEGACY_CATCH_ALL_ID  # compatibilidad con quien importaba el nombre viejo
-CATCH_ALL_CHANNELS = ("sms", "whatsapp")
-_RESERVED_CHANNELS = CATCH_ALL_CHANNELS + ("telegram",)
-CATCH_ALL_IDS = (LEGACY_CATCH_ALL_ID,) + tuple(f"catch-all-{c}" for c in _RESERVED_CHANNELS)
+CATCH_ALL_CHANNELS = ("sms", "whatsapp", "telegram")
+LEGACY_CHANNELS = ("sms", "whatsapp")   # los que leen `catch-all` mientras no tengan el suyo
+CATCH_ALL_IDS = (LEGACY_CATCH_ALL_ID,) + tuple(f"catch-all-{c}" for c in CATCH_ALL_CHANNELS)
 RESERVED_IDS = (DEFAULT_ID,) + CATCH_ALL_IDS
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 MAX_BYTES = 32 * 1024
@@ -312,7 +313,7 @@ def tag(note: dict | None) -> str:
 # --- Catch-All (PRD #535, uno por canal desde el PRD #576) -------------------------------
 
 def catch_all_id(channel: str) -> str:
-    """`catch-all-sms` o `catch-all-whatsapp`. Un canal que paynani no tiene es un error."""
+    """`catch-all-sms`, `catch-all-whatsapp` o `catch-all-telegram`. Otro canal es un error."""
     if channel not in CATCH_ALL_CHANNELS:
         raise ValueError(f"canal sin Catch-All: {channel!r}")
     return f"catch-all-{channel}"
@@ -321,10 +322,12 @@ def catch_all_id(channel: str) -> str:
 def catch_all_source(channel: str, root: Path | None = None) -> str:
     """
     El id del archivo que manda para ese canal: el suyo si existe; si no, el viejo
-    `catch-all` mientras exista (FR-4). Si no hay ninguno, el del canal.
+    `catch-all` mientras exista (FR-4), salvo Telegram, que sólo tiene el suyo. Si no hay
+    ninguno, el del canal.
     """
     own = catch_all_id(channel)
-    if path_for(own, root).exists() or not path_for(LEGACY_CATCH_ALL_ID, root).exists():
+    if (channel not in LEGACY_CHANNELS or path_for(own, root).exists()
+            or not path_for(LEGACY_CATCH_ALL_ID, root).exists()):
         return own
     return LEGACY_CATCH_ALL_ID
 
@@ -338,7 +341,8 @@ def _catch_all_snapshot(channel: str, root: Path | None = None) -> tuple[dict | 
     """
     name = None
     text = None
-    for candidate in (catch_all_id(channel), LEGACY_CATCH_ALL_ID):
+    candidates = (catch_all_id(channel),) + ((LEGACY_CATCH_ALL_ID,) if channel in LEGACY_CHANNELS else ())
+    for candidate in candidates:
         try:
             text = path_for(candidate, root).read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -367,7 +371,7 @@ def _catch_all_snapshot(channel: str, root: Path | None = None) -> tuple[dict | 
 
 def catch_all_notice(channel: str, root: Path | None = None) -> dict | None:
     """
-    El Catch-All del canal (`sms` o `whatsapp`) para el aviso de un mensaje de un
+    El Catch-All del canal (`sms`, `whatsapp` o `telegram`) para el aviso de un mensaje de un
     número fuera del roster: `{"file": "rules/catch-all-sms.md", "status": "active"}`
     si su archivo (o el viejo `catch-all.md`, mientras el canal no tenga el suyo)
     existe, es válido y tiene `enabled: true`; `"invalid"` si existe pero no se puede

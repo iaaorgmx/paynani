@@ -43,7 +43,7 @@ import python_floor           # noqa: E402
 from adapters import ACCEPTED, CONFIG   # noqa: E402
 from paths import (env_file, harness_env_files, install_root,   # noqa: E402
                    recorded_env, repo_root, roster, runtime_env, state_dir)
-from roster import notifiers, roster_addresses   # noqa: E402
+from roster import notifiers, roster_addresses, roster_telegram   # noqa: E402
 from paynani_lib.sms import health as sms_health   # noqa: E402
 from paynani_lib.sms import roster_api   # noqa: E402
 
@@ -990,6 +990,9 @@ def roster_facts():
                          "column": n["column"],
                          "source": n.get("implied_by", "notifiers table")}
                         for n in notifiers(ROSTER)]
+    # La columna Telegram (PRD #609 FR-11, FR-11a): qué filas no se reconocen por
+    # Telegram y por qué, nombradas por su fila. Nunca el id ni el @usuario.
+    out["telegram_problems"] = roster_telegram(ROSTER)["problems"] if out["present"] else []
     return out
 
 

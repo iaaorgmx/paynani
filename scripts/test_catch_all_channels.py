@@ -73,11 +73,15 @@ check("FR-2: un archivo roto de SMS no toca WhatsApp", ("invalid", "active"),
       (rules_mod.catch_all_notice("sms", root)["status"], rules_mod.catch_all_notice("whatsapp", root)["status"]))
 check("FR-6: la etiqueta nombra el archivo del canal", "catch-all: rules/catch-all-whatsapp.md",
       rules_mod.catch_all_tag(rules_mod.catch_all_notice("whatsapp", root)))
+check("#609 FR-17: Telegram sin su archivo no tiene Catch-All", None, rules_mod.catch_all_notice("telegram", root))
+put(root, "catch-all-telegram", ON)
+check("#609 FR-17: Telegram lee rules/catch-all-telegram.md", {"file": "rules/catch-all-telegram.md", "status": "active"},
+      rules_mod.catch_all_notice("telegram", root))
 try:
-    rules_mod.catch_all_notice("telegram", root)
-    check("Telegram todavía no es un canal con Catch-All", "ValueError", None)
+    rules_mod.catch_all_notice("fax", root)
+    check("un canal que paynani no tiene es un error", "ValueError", None)
 except ValueError:
-    check("Telegram todavía no es un canal con Catch-All", True)
+    check("un canal que paynani no tiene es un error", True)
 
 root = install()
 put(root, "catch-all", ON)
@@ -89,6 +93,9 @@ check("FR-4: el archivo del canal manda sobre el viejo", ("active", None),
       (rules_mod.catch_all_notice("sms", root)["status"], rules_mod.catch_all_notice("whatsapp", root)))
 check("catch_all_source: el del canal o el viejo", ("catch-all", "catch-all-whatsapp"),
       (rules_mod.catch_all_source("sms", root), rules_mod.catch_all_source("whatsapp", root)))
+check("#609 FR-17: el viejo rules/catch-all.md no abre Telegram", (None, None, "catch-all-telegram"),
+      (rules_mod.catch_all_notice("telegram", root), rules_mod.catch_all_instructions("telegram", root),
+       rules_mod.catch_all_source("telegram", root)))
 
 # --- nombres reservados (FR-3) ----------------------------------------------------------
 check("FR-3: los cuatro nombres del Catch-All están reservados", True,
@@ -119,9 +126,12 @@ def text_of(root, name):
 
 root = install()
 svc, call, mail = service_for(root)
-res = call("catchall.get", channel="telegram")
+res = call("catchall.get", channel="fax")
 check("un canal desconocido: invalid en channel", ("error", "invalid", "channel"),
       (res["type"], res.get("code"), res.get("field")))
+res = call("catchall.get", channel="telegram")
+check("#609: catchall.get acepta telegram", ("telegram", "rules/catch-all-telegram.md", False, ["sms", "whatsapp", "telegram"]),
+      (res["data"]["channel"], res["data"]["file"], res["data"]["exists"], res["data"]["channels"]))
 res = call("catchall.get")
 check("FR-12: sin channel es SMS", ("sms", "rules/catch-all-sms.md"), (res["data"]["channel"], res["data"]["file"]))
 res = call("catchall.save", channel="whatsapp", enabled=True, text="Guarda el número.\n", etag="")
@@ -159,6 +169,27 @@ check("el log dice el canal y la migración", ("sms", ["rules/catch-all-whatsapp
 check("FR-14: el correo dice que hubo migración y qué canal cambió", (True, True, True),
       ("Catch-All de SMS" in mail[0][1], "rules/catch-all.md se separó" in mail[0][2],
        "rules/catch-all-whatsapp.md" in mail[0][2]))
+
+check("#609 FR-17: la migración no crea rules/catch-all-telegram.md", False,
+      (root / "rules" / "catch-all-telegram.md").exists())
+
+# Telegram con el viejo presente: guarda sólo el suyo y no migra nada.
+root = install()
+put(root, "catch-all", ON)
+svc, call, mail = service_for(root)
+got = call("catchall.get", channel="telegram")["data"]
+check("#609: Telegram no muestra el viejo", ("rules/catch-all-telegram.md", False, "off"),
+      (got["file"], got["enabled"], got["status"]))
+res = call("catchall.save", channel="telegram", enabled=True, text="Contesta sólo con el horario.\n", etag=got["etag"])
+check("#609: guardar Telegram escribe sólo el suyo; el viejo y los demás siguen igual",
+      ("result", "active", ON, None, None),
+      (res["type"], rules_mod.catch_all_notice("telegram", root)["status"], text_of(root, "catch-all"),
+       text_of(root, "catch-all-sms"), text_of(root, "catch-all-whatsapp")))
+change = next(json.loads(line) for line in (root / "state" / roster_api.CHANGES_LOG).read_text().splitlines()
+              if json.loads(line).get("action") == "catch_all")
+check("#609: sin migración, y el correo dice Telegram", ("telegram", [], False, True),
+      (change["rules"]["channel"], change["rules"]["migrated"], change["rules"]["legacy_removed"],
+       "Catch-All de Telegram" in mail[0][1]))
 
 # El viejo apagado: los dos canales quedan apagados; prender WhatsApp no prende SMS.
 root = install()

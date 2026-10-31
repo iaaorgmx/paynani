@@ -386,13 +386,13 @@ class RosterService:
     # --- Catch-All (PRD #535 FR-0a, FR-0b; uno por canal, PRD #576) ---------
     @staticmethod
     def _channel(msg: dict) -> str:
-        """`sms` o `whatsapp`. Sin `channel`, `sms`: así sigue PaynaniApp 0.10.0 (FR-12)."""
+        """`sms`, `whatsapp` o `telegram`. Sin `channel`, `sms`: así sigue PaynaniApp 0.10.0 (FR-12)."""
         channel = msg.get("channel")
         if channel is None or channel == "":
             return "sms"
         if channel not in rules_mod.CATCH_ALL_CHANNELS:
             raise EditError("invalid", field="channel",
-                            detail=f"channel es {' o '.join(rules_mod.CATCH_ALL_CHANNELS)}")
+                            detail="channel es " + ", ".join(rules_mod.CATCH_ALL_CHANNELS))
         return channel
 
     def catchall_get(self, msg: dict, device_id: str) -> dict:
@@ -463,7 +463,7 @@ class RosterService:
         target = self._rules_path(rules_mod.catch_all_id(channel))
         legacy = self._rules_path(rules_mod.LEGACY_CATCH_ALL_ID)
         label = f"rules__{rules_mod.catch_all_id(channel)}"
-        if not legacy.exists():
+        if channel not in rules_mod.LEGACY_CHANNELS or not legacy.exists():
             done = roster_edit.apply_file(target, etag, new_text, state_dir=self.state_dir, label=label)
             return done, [], False
         try:
@@ -486,7 +486,7 @@ class RosterService:
                 before = roster_edit.read_bytes(target)
                 written = False
                 try:
-                    for other in rules_mod.CATCH_ALL_CHANNELS:
+                    for other in rules_mod.LEGACY_CHANNELS:
                         path = self._rules_path(rules_mod.catch_all_id(other))
                         if other == channel or path.exists():
                             continue
@@ -713,7 +713,7 @@ def who_changed(device_id: str) -> str:
     return f"phone {device_id}"
 
 
-_CHANNEL_NAMES = {"sms": "SMS", "whatsapp": "WhatsApp"}
+_CHANNEL_NAMES = {"sms": "SMS", "whatsapp": "WhatsApp", "telegram": "Telegram"}
 
 
 def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:

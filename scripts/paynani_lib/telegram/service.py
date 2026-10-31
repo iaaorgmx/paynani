@@ -45,6 +45,8 @@ import roster as roster_mod  # noqa: E402
 
 from . import api as tg_api  # noqa: E402
 from . import config  # noqa: E402
+from . import contacts  # noqa: E402
+from . import media as tg_media  # noqa: E402
 from .store import BotStore, canonical_hash, new_ref, private_dir, read_json, write_json  # noqa: E402
 
 REQUEST_ID = re.compile(r"^q_[0-9a-f]{32}$")
@@ -66,6 +68,33 @@ CHECK_RE = re.compile(r"^c_[0-9a-f]{32}$")
 KINDS = (("photo", "image"), ("video", "video"), ("video_note", "video"), ("voice", "voice"),
          ("audio", "audio"), ("document", "document"), ("sticker", "sticker"),
          ("location", "location"), ("venue", "location"), ("contact", "contact"))
+
+
+_REJECT_LABEL = {"size": "tamaño", "type": "tipo"}
+# Lo que se baja de cada tipo de mensaje (FR-18: fotos, documentos, audio y video).
+_MEDIA_KEYS = ("document", "audio", "voice", "video", "video_note")
+
+
+def _int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _media_item(message: dict) -> dict | None:
+    """El archivo a bajar: la foto más grande, o el documento, audio o video."""
+    photos = message.get("photo")
+    if isinstance(photos, list) and photos:
+        best = max((p for p in photos if isinstance(p, dict) and p.get("file_id")),
+                   key=lambda p: _int(p.get("file_size")) or _int(p.get("width")) * _int(p.get("height")),
+                   default=None)
+        return dict(best) if best else None
+    for key in _MEDIA_KEYS:
+        item = message.get(key)
+        if isinstance(item, dict) and item.get("file_id"):
+            return item
+    return None
 
 
 class StartError(Exception):
@@ -101,6 +130,8 @@ class TelegramService:
                  offline_alert_s: float = OFFLINE_ALERT_S, token_retry_s: float = TOKEN_RETRY_S,
                  webhook_retry_s: float = WEBHOOK_RETRY_S, env_path: Path | None = None,
                  notify_owner: Callable[[str], None] | None = None,
+                 mail_owner: Callable[[str, str], None] | None = None,
+                 rules_root: Path | None = None,
                  ready_timeout_s: float = READY_TIMEOUT_S):
         self.state_dir = Path(state_dir)
         self.root = self.state_dir / "telegram"
@@ -114,6 +145,8 @@ class TelegramService:
         self._token = token
         self.env_path = Path(env_path) if env_path else None   # None: config.env_path()
         self.notify_owner = notify_owner
+        self.mail_owner = mail_owner                   # (asunto, cuerpo) al dueño: FR-13
+        self.rules_root = Path(rules_root) if rules_root else None  # None: PAYNANI_RULES o el clon
         self.ready_timeout_s = ready_timeout_s
         self._checks: dict[str, dict] = {}
         self._apply_lock = asyncio.Lock()
@@ -504,49 +537,209 @@ class TelegramService:
                 return True
         else:
             self.store.journal_begin(u, ref, digest)       # FR-5 paso 2
-        inbox, envelope = self._build(ref, digest, message, original)
+        inbox, envelope = await self._build(ref, digest, message, original)
         self.store.save_inbox(ref, inbox)
         self._write_event(u, ref, inbox, envelope)
         return True
 
-    def _sender(self, user: dict) -> tuple[bool, str]:
-        """(en el roster, nombre). Por id o por @usuario; un duplicado no reconoce a nadie."""
+    # --- quién escribe (FR-11 a FR-13, FR-17) ---------------------------------------
+    def _sender(self, user: dict) -> tuple[dict | None, str]:
+        """
+        (fila del roster o None, nombre para el aviso). Sólo por `from.id`: por la columna
+        `Telegram`, o por un `@usuario` de la columna fijado a ese id (contacts.decide).
+        Fija el `@usuario` la primera vez y avisa al dueño; si ya estaba fijado a otro id,
+        no reconoce a nadie y también le avisa (una vez por id).
+        """
+        name = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p)
+        shown = ev.safe_excerpt(name, 60) if name else ""
         try:
             known = roster_mod.roster_telegram(self.roster_path)
         except OSError:
-            return False, ""
-        entry = known["ids"].get(str(int(user.get("id", 0))))
-        username = (user.get("username") or "").lower()
-        if entry is None and username:
-            entry = known["usernames"].get(username)
-        if entry is not None:
-            return True, entry.get("name", "")
-        name = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p)
-        return False, ev.safe_excerpt(name, 60) if name else ""
+            return None, shown
+        links = self.store.links()
+        uid = int(user.get("id", 0))
+        verdict = contacts.decide(known, links["usernames"], uid, user.get("username"))
+        changed = False
+        for gone in verdict["drop"]:                       # FR-13: el dueño cambió la columna
+            links["usernames"].pop(gone, None)
+            links["warned"].pop(gone, None)
+            changed = True
+        if verdict["pin"]:
+            links["usernames"][verdict["pin"]] = {"id": uid, "row": contacts.row_key(verdict["entry"]),
+                                                  "at": now_utc()}
+            self.store.save_links(links)                   # antes del evento: el vínculo no se pierde
+            changed = False
+            row = verdict["entry"].get("name", "")
+            self.log(f"un @usuario del roster quedó vinculado a {row}")
+            self._mail_owner(f"paynani: @{verdict['pin']} quedó vinculado a {row} en Telegram",
+                             f"@{verdict['pin']} quedó vinculado a {row}.\n\n"
+                             f"Desde ahora paynani reconoce a {row} en Telegram sólo por esa cuenta, aunque "
+                             "después cambie su @usuario. Si no es la cuenta correcta, pon en la columna "
+                             "Telegram de su fila el id que da «Agregar al roster» en PaynaniWeb.\n")
+        elif verdict["conflict"]:
+            warned = links["warned"].setdefault(verdict["conflict"], [])
+            row = known["usernames"][verdict["conflict"]].get("name", "")
+            if uid not in warned:
+                warned.append(uid)
+                changed = True
+                self.log(f"otra cuenta de Telegram usa el @usuario de {row}; no se reconoce")
+                self._mail_owner(f"paynani: otra cuenta de Telegram escribió como @{verdict['conflict']}",
+                                 f"Una cuenta de Telegram distinta de la que quedó vinculada a {row} escribió "
+                                 f"con el @usuario @{verdict['conflict']}. paynani no la reconoce como {row}: "
+                                 "sus mensajes llegan como de alguien fuera del roster.\n\n"
+                                 f"Si {row} cambió de cuenta, pon en la columna Telegram de su fila el id que "
+                                 "da «Agregar al roster» en PaynaniWeb, desde el hilo de esa cuenta.\n")
+        if changed:
+            self.store.save_links(links)
+        if verdict["entry"] is not None:
+            return verdict["entry"], verdict["entry"].get("name", "")
+        return None, shown
 
-    def _build(self, ref: str, digest: str, message: dict, original: str | None) -> tuple[dict, dict]:
+    def _mail_owner(self, subject: str, body: str) -> None:
+        """El correo al dueño va en un hilo: send.sh no detiene la lectura de updates."""
+        if not self.mail_owner:
+            return
+
+        def send():
+            with contextlib.suppress(Exception):
+                self.mail_owner(subject, body)
+        try:
+            asyncio.get_running_loop().run_in_executor(None, send)
+        except RuntimeError:
+            send()
+
+    def _rules_note(self, entry: dict) -> dict | None:
+        from paynani_lib import rules as rules_mod
+        try:
+            return rules_mod.notice(entry.get("rules"), self.rules_root)
+        except Exception:  # noqa: BLE001 - sin reglas legibles, el mensaje igual entra
+            return None
+
+    def _catch_all(self) -> dict | None:
+        from paynani_lib import rules as rules_mod
+        try:
+            return rules_mod.catch_all_notice("telegram", self.rules_root)  # sólo el de Telegram (FR-17)
+        except Exception:  # noqa: BLE001 - sin Catch-All, el mensaje igual entra
+            return None
+
+    async def _build(self, ref: str, digest: str, message: dict, original: str | None) -> tuple[dict, dict]:
         user = message.get("from") or {}
         chat_id = int(message["chat"]["id"])
-        thread = self.store.thread_for(chat_id, int(user.get("id", chat_id)))
-        in_roster, name = self._sender(user)
+        entry, name = self._sender(user)
+        in_roster = entry is not None
+        shown = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p)
+        thread = self.store.thread_for(chat_id, int(user.get("id", chat_id)), ev.safe_excerpt(shown, 60))
+        rules_note = self._rules_note(entry) if in_roster else None
+        catch = self._catch_all() if not in_roster else None
+        caught = (catch or {}).get("status") == "active"
+        visible = in_roster or caught
         kind = message_kind(message)
         text = message.get("text") if kind == "text" else message.get("caption")
         text = text if isinstance(text, str) else ""
         filename = (message.get("document") or {}).get("file_name")
-        visible = in_roster                                # Catch-All de Telegram: TG-3
+        media = None
+        if visible and original is None:
+            media = await self._media(ref, message, kind)
+        label = ev.telegram_kind_label(kind, filename=filename, show_name=visible)
+        if media and media.get("rejected"):
+            label = label[:-1] + f", rechazado: {_REJECT_LABEL[media['rejected']]}]" if label else label
         sent_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(message.get("date") or time.time())))
         envelope = ev.telegram_event(
             account=self.account, ref=ref, digest=digest, sender_name=name, kind=kind,
-            text=text if visible else "",
-            media_label=ev.telegram_kind_label(kind, filename=filename, show_name=visible),
+            text=text if visible else "", media_label=label,
             sent_at=sent_at, roster_match=in_roster, local_time=time.strftime("%H:%M:%S"),
-            edits=original)
+            rules=rules_note, catch_all=catch, edits=original)
+        if media and media.get("rejected"):
+            envelope["media_rejected"] = media["rejected"]
         inbox = {"type": envelope["event_type"], "chat": chat_id, "user": int(user.get("id", chat_id)),
                  "message_id": int(message["message_id"]), "thread": thread, "kind": kind, "text": text,
                  "filename": filename, "sent_at": sent_at, "received_at": now_utc(),
-                 "in_roster": in_roster, "hash": digest, "edits": original,
-                 "envelope": envelope, "journaled": False}
+                 "in_roster": in_roster, "catch_all": caught, "media": media, "hash": digest,
+                 "edits": original, "envelope": envelope, "journaled": False}
         return inbox, envelope
+
+    def roster_candidate(self, thread) -> dict:
+        """
+        FR-15: el id de alguien fuera del roster, para «Agregar al roster» de PaynaniWeb.
+        Es la única respuesta con un id de Telegram; ni el log ni el status lo llevan.
+        """
+        if self.store is None:
+            raise Refused("not_started")
+        found = self.store.chat_of(thread if isinstance(thread, str) else "")
+        if found is None:
+            raise Refused("not_found")
+        _, user_id = found
+        try:
+            known = roster_mod.roster_telegram(self.roster_path)
+        except OSError:
+            raise Refused("unavailable") from None
+        if contacts.recognized_now(known, self.store.links()["usernames"], user_id) is not None:
+            raise Refused("conflict", "ya está en el roster")
+        self.log("«Agregar al roster»: se entregó un id a PaynaniWeb")
+        return {"telegram": str(int(user_id)), "display_name": self.store.display_name(thread)}
+
+    # --- multimedia (FR-18) -----------------------------------------------------------
+    def _media_dir(self) -> Path:
+        return private_dir(self.root / "media")
+
+    async def _media(self, ref: str, message: dict, kind: str) -> dict | None:
+        """
+        Baja el archivo del mensaje a `media/` y lo valida. `{"path", "mime", "bytes", "type"}`
+        si pasó; `{"rejected": "size"|"type"}` si no (y no queda nada en disco);
+        `{"skipped": "download"}` si Telegram o la red fallaron. None sin archivo.
+        """
+        previous = (self.store.inbox(ref) or {}).get("media")
+        if previous and (previous.get("rejected") or Path(previous.get("path") or "/nonexistent").is_file()):
+            return previous                                # el mismo update, entregado otra vez
+        item = _media_item(message)
+        if item is None:
+            return None
+        limit = config.setting("TELEGRAM_MAX_MEDIA_MB", self.settings) * 1024 * 1024
+        category = tg_media.declared(kind, item.get("mime_type"), item.get("file_name"))
+        reject = None
+        if _int(item.get("file_size")) > limit:
+            reject = "size"                                # no se baja
+        elif category is None:
+            reject = "type"
+        if reject:
+            return self._rejected(reject)
+        part = None
+        try:
+            info = await self._call("getFile", {"file_id": item["file_id"]})
+            if _int((info or {}).get("file_size")) > limit:
+                return self._rejected("size")
+            folder = self._media_dir()
+            part = folder / f".part-{secrets.token_hex(16)}"
+            fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                size = await asyncio.to_thread(self.api.download, str(info["file_path"]), limit, fh, timeout=120.0)
+                fh.flush()
+                os.fsync(fh.fileno())
+            real = tg_media.accept(part, category)
+            if real is None:
+                return self._rejected("type", part)
+            _, ext, mime = tg_media.REAL_TYPES[real]
+            final = folder / f"{secrets.token_hex(16)}.{ext}"
+            os.replace(part, final)
+            part = None
+            return {"path": str(final), "mime": mime, "bytes": size, "type": real}
+        except tg_api.ApiError as exc:
+            if exc.code == 413:
+                return self._rejected("size", part)        # pasó el límite mientras bajaba
+            self.log(f"no se pudo bajar un archivo ({exc.method}: {exc.code})")
+        except (tg_api.NetworkError, OSError, KeyError, TypeError) as exc:
+            self.log(f"no se pudo bajar un archivo ({type(exc).__name__})")
+        finally:
+            if part is not None:
+                tg_media.remove(part)
+        return {"skipped": "download"}
+
+    def _rejected(self, reason: str, part: Path | None = None) -> dict:
+        if part is not None:
+            tg_media.remove(part)
+        self.counters["media_rejected"] += 1
+        self.log(f"archivo rechazado por {_REJECT_LABEL[reason]}")
+        return {"rejected": reason}
 
     def _write_event(self, update_id: int, ref: str, inbox: dict, envelope: dict) -> None:
         ev.append(self.journal, envelope)                  # FR-5 paso 3
@@ -766,6 +959,10 @@ class TelegramService:
         try:
             if kind == "telegram.status":
                 data = self.status()
+            elif kind == "telegram.roster_candidate":
+                if by != "web":
+                    raise Refused("not_allowed", "sólo PaynaniWeb")   # la pasarela no lo reenvía
+                data = self.roster_candidate(msg.get("thread"))
             elif kind == "telegram.token_check":
                 data = await self.token_check(msg.get("token"))
             elif kind == "telegram.token_apply":

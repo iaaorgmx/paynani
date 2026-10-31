@@ -643,8 +643,12 @@ def unattended_roster(ledger_path=None, now=None, days=None, exclude=()):
 
 
 def _catch_all_channel(envelope):
-    """`sms` o `whatsapp`: el canal del Catch-All con el que llegó el evento (PRD #576)."""
-    return "whatsapp" if str(envelope.get("event_type", "")).startswith("whatsapp.") else "sms"
+    """`sms`, `whatsapp` o `telegram`: el canal del Catch-All con el que llegó el evento (PRD #576)."""
+    kind = str(envelope.get("event_type", ""))
+    for channel in ("whatsapp", "telegram"):
+        if kind.startswith(channel + "."):
+            return channel
+    return "sms"
 
 
 def catch_all_active_now(channel):
@@ -1344,7 +1348,7 @@ def main():
     additional_context = "\n\n".join(parts)
     # Avisos del Catch-All del spool o del journal, repetidos después de apagarlo (#544):
     # cada canal según su propio Catch-All (PRD #576 FR-7).
-    off = {c for c in ("sms", "whatsapp")
+    off = {c for c in ("sms", "whatsapp", "telegram")
            if ev.has_catch_all(additional_context, c) and not catch_all_active_now(c)}
     if off:
         additional_context = ev.redact_catch_all(additional_context, off)
