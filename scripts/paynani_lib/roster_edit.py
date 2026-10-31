@@ -190,7 +190,7 @@ def members(text: str) -> tuple[list[str], list[dict]]:
         cells = _cells(header_fields, fields)
         email = cells.get("email", "")
         if not email:
-            email = next((f.strip() for f in fields if "@" in f), "")
+            email = next((f.strip() for f in fields if "@" in f and not f.strip().startswith("@")), "")
         type_ = TYPES.get(cells.get("type", "").strip().lower(), cells.get("type", ""))
         owner = not owner_seen and type_ == "Human"
         owner_seen = owner_seen or owner

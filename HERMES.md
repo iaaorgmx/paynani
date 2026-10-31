@@ -66,7 +66,8 @@ where it is, so one ignored event holds back everything after it, mail
 included (#582). That is why both lists are exact:
 
 - `paynani-notify` takes every event type paynani writes: mail, `listener.error`,
-  the SMS gateway (`sms.*`), WhatsApp (`whatsapp.received`, `whatsapp.health`)
+  the SMS gateway (`sms.*`), WhatsApp (`whatsapp.received`, `whatsapp.health`), Telegram (`telegram.received`,
+  `telegram.edited`, `telegram.health`)
   and calls (`call.missed`, `call.answered`).
 - `paynani-roster` takes only the types that have a sender and can carry
   `roster_match=true`: `email.received`, `sms.received`, `sms.human_sent`,

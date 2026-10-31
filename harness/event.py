@@ -760,6 +760,111 @@ def whatsapp_health_event(*, state, account, local_time, reason=None, observed_a
     }
 
 
+
+TELEGRAM_RECEIVED = "telegram.received"
+TELEGRAM_EDITED = "telegram.edited"
+TELEGRAM_HEALTH = "telegram.health"
+_TG_KIND_LABEL = {"image": "foto", "video": "video", "audio": "audio", "voice": "nota de voz",
+                  "document": "documento", "sticker": "sticker", "location": "ubicación",
+                  "contact": "contacto", "other": "mensaje"}
+
+
+def telegram_kind_label(kind, *, filename=None, show_name=True):
+    """`[foto]`, `[documento: factura.pdf]` (TELEGRAM.md §3). Sin nombre fuera del roster."""
+    if kind == "text":
+        return ""
+    label = _TG_KIND_LABEL.get(kind, "mensaje")
+    if kind == "document" and filename and show_name:
+        return f"[{label}: {safe_excerpt(str(filename), 60)}]"
+    return f"[{label}]"
+
+
+def telegram_event(*, account, ref, digest, sender_name, kind, text, media_label, sent_at,
+                   roster_match, local_time, observed_at=None, rules=None, catch_all=None,
+                   edits=None):
+    """
+    Un mensaje privado de Telegram (PRD #609 FR-16), o su edición si `edits` es la
+    referencia del original (FR-16a). `event_id` es la referencia opaca `tg:…` (FR-5):
+    ningún id de Telegram entra al evento. El texto no va aquí; vive en el inbox privado
+    del bot y sale con `paynani event show --body`.
+    """
+    if roster_match:
+        who = sender_name or "contacto del roster"
+    else:
+        who = f"{sender_name} (no verificado)" if sender_name else "alguien (no verificado)"
+    verb = " editó su mensaje" if edits else ""
+    excerpt = " ".join(p for p in (media_label, safe_excerpt(text or "")) if p)
+    if roster_match:
+        note = f", {_rules_tag(rules)}" if rules else ""
+        line = f"[telegram {local_time}{note}, roster] {who}{verb}: {excerpt}"
+    elif catch_all and catch_all.get("status") == "active":
+        line = f"[telegram {local_time}, catch-all: {catch_all['file']}] {who}{verb}: {excerpt}"
+    elif catch_all:
+        line = f"[telegram {local_time}, catch-all inválido] {who}: mensaje de alguien fuera del roster"
+    else:
+        line = f"[telegram {local_time}] {who}: mensaje de alguien fuera del roster"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": TELEGRAM_EDITED if edits else TELEGRAM_RECEIVED,
+        "event_id": ref,
+        "source": "paynani",
+        "channel": "telegram",
+        "account": account,
+        "observed_at": observed_at or _now(),
+        "sent_at": sent_at or "",
+        "kind": kind,
+        "sender": {"name": who if not roster_match else (sender_name or ""), "address": ""},
+        "roster_match": bool(roster_match),
+        "authenticated_sender": False,
+        "provider_id": "telegram:" + ref.split(":", 1)[1],
+        "inspection_command": f"scripts/paynani event show {ref}",
+        "_tg_hash": digest,
+    }
+    if edits:
+        record["edits"] = edits
+    if roster_match and rules:
+        record["rules"] = {"file": rules["file"], "status": rules["status"]}
+    if not roster_match and catch_all:
+        record["catch_all"] = {"file": catch_all["file"], "status": catch_all["status"]}
+    record["notification_text"] = f"{line} [{record['inspection_command']}]"
+    return record
+
+
+_TG_HEALTH_TEXT = {
+    "token_invalid": "Telegram rechazó el token del bot (401). Nadie recibe mensajes de Telegram"
+                     " hasta cambiarlo: `paynani telegram token`. Avisa a tu humano",
+    "conflict": "otro programa está leyendo este bot de Telegram (o tiene un webhook). paynani no"
+                " lo toca; revisa `paynani telegram status` y avisa a tu humano",
+    "offline": "Telegram lleva más de 10 minutos sin contestar. Los mensajes esperan en Telegram;"
+               " revisa `paynani telegram status`",
+    "journal_mismatch": "el diario de Telegram no coincide con un evento ya escrito; el servicio se"
+                        " detuvo para no entregar algo distinto. Avisa a tu humano y revisa"
+                        " `paynani doctor`",
+    "recovered": "Telegram volvió a funcionar",
+}
+
+
+def telegram_health_event(*, state, account, local_time, reason=None, observed_at=None):
+    """De la instalación, sin remitente (TELEGRAM.md §3). Nunca el token ni un id."""
+    if state not in _TG_HEALTH_TEXT:
+        raise ValueError(f"estado de salud de Telegram desconocido: {state}")
+    observed_at = observed_at or _now()
+    line = f"[telegram-health {local_time}] {_TG_HEALTH_TEXT[state]}"
+    eid = f"{account}:health-{state}:{hashlib.sha256(observed_at.encode()).hexdigest()[:12]}"
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": TELEGRAM_HEALTH,
+        "event_id": eid,
+        "source": "paynani",
+        "channel": "telegram",
+        "account": account,
+        "observed_at": observed_at,
+        "state": state,
+        "reason": reason or "",
+        "inspection_command": "scripts/paynani telegram status",
+        "notification_text": f"{line} [scripts/paynani telegram status]",
+    }
+
 GATEWAY_OFFLINE = "sms.gateway.offline"
 GATEWAY_ONLINE = "sms.gateway.online"
 

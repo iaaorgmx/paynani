@@ -6,7 +6,9 @@
 # so there is one bash implementation, not two.
 #
 # For each non-comment, non-blank roster row, prints the first field
-# containing "@", normalised (whitespace and CR stripped, lowercased) -- the
+# containing "@" anywhere but its first character (a leading "@" is a
+# Telegram @usuario, PRD #609), normalised (whitespace and CR stripped,
+# lowercased) -- the
 # same rule scripts/roster.py's roster_addresses() applies, so the two
 # outputs can be compared directly (#98). A row with no such field
 # contributes nothing, same as roster.py discarding it.
@@ -51,7 +53,9 @@ awk '
         for (i = 1; i <= n; i++) {
             field = parts[i]
             gsub(/[ \t\r]/, "", field)
-            if (index(field, "@") > 0) {
+            # "> 1", not "> 0": a field that starts with "@" is a Telegram
+            # @usuario (PRD #609), never a mail address (roster.py is_address).
+            if (index(field, "@") > 1) {
                 print tolower(field)
                 break
             }

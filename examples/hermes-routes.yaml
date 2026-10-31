@@ -8,7 +8,7 @@
         "routes": {
           "paynani-notify": {
             "secret": "replace-with-a-unique-notify-route-secret",
-            "events": ["email.received", "listener.error", "sms.received", "sms.human_sent", "sms.unseen", "sms.gateway.offline", "sms.gateway.online", "sms.gateway.battery_low", "sms.gateway.battery_ok", "whatsapp.received", "whatsapp.health", "call.missed", "call.answered"],
+            "events": ["email.received", "listener.error", "sms.received", "sms.human_sent", "sms.unseen", "sms.gateway.offline", "sms.gateway.online", "sms.gateway.battery_low", "sms.gateway.battery_ok", "whatsapp.received", "whatsapp.health", "telegram.received", "telegram.edited", "telegram.health", "call.missed", "call.answered"],
             "prompt": "paynani: {notification_text}",
             "deliver": "telegram",
             "deliver_only": true,

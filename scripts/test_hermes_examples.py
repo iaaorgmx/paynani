@@ -43,7 +43,9 @@ check("notify route does not load a skill", not notify.get("skills"))
 NOTIFY_EVENTS = ["email.received", "listener.error", "sms.received", "sms.human_sent",
                  "sms.unseen", "sms.gateway.offline", "sms.gateway.online",
                  "sms.gateway.battery_low", "sms.gateway.battery_ok",
-                 "whatsapp.received", "whatsapp.health", "call.missed", "call.answered"]
+                 "whatsapp.received", "whatsapp.health",
+                 "telegram.received", "telegram.edited", "telegram.health",
+                 "call.missed", "call.answered"]
 ROSTER_EVENTS = ["email.received", "sms.received", "sms.human_sent",
                  "whatsapp.received", "call.missed", "call.answered"]
 check("notify route accepts every event type, roster only the ones with a sender",

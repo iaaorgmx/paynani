@@ -88,6 +88,26 @@ Metis Claude-Tob | metis.claude.tob@gmail.com
 EOF
 agree "plain two-field" "$f" "jjulianfe@gmail.com"
 
+# --- A Telegram column (PRD #609): "@usuario" has an "@" but is not an address,
+# even before the Email column, and a row with only @usuario adds nothing. -----
+f="$tmp/telegram.md"
+cat >"$f" <<'EOF'
+| Name | Telegram | Email | Type |
+|---|---|---|---|
+| Ana Lopez | @ana_lopez | ana@example.com | Human |
+| Solo Telegram | @solo_telegram |  | Human |
+EOF
+agree "telegram column before email" "$f" "ana@example.com"
+for side in py sh; do
+    if "${side}_addresses" "$f" | grep -q '^@'; then
+        printf 'FAIL telegram column: %s took an @usuario as an address\n' "$side"
+        fail=$((fail + 1))
+    else
+        printf 'ok   telegram column: %s takes no @usuario as an address\n' "$side"
+        pass=$((pass + 1))
+    fi
+done
+
 # --- The shipped table shape: header, separator, Type column, outer pipes.
 # This is the exact shape #91 broke on -- "take the last field" reads "Human". -
 f="$tmp/table.md"
