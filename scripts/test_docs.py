@@ -359,5 +359,13 @@ for translation in translations:
     check(f"i18n/{translation} matches README.md's structure",
           source_shape, readme_shape(f"i18n/{translation}"))
 
+# TELEGRAM.md (PRD #609 FR-3a): `account` lleva un alias aleatorio, nunca el <bot>
+# derivado del bot_id, y el <bot> no aparece en ningún ejemplo de evento o respuesta.
+telegram = (ROOT / "TELEGRAM.md").read_text(encoding="utf-8")
+telegram_accounts = sorted(set(re.findall(r'"account":\s*"([^"]*)"', telegram)))
+check("TELEGRAM.md: every example account is the random alias", ["tg:<alias>"], telegram_accounts)
+check("TELEGRAM.md: no JSON example carries the <bot> folder name", [],
+      [line for line in telegram.splitlines() if line.lstrip().startswith(("{", '"')) and "<bot>" in line])
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
