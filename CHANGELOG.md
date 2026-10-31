@@ -2,6 +2,25 @@
 
 ## Sin publicar
 
+## 0.20.0 (2026-10-31)
+
+Telegram se configura desde PaynaniWeb (#635): «Mensajes de Telegram» → «Cuenta de Telegram» pide el token y el usuario del bot, sin terminal. Para eso el instalador pone ahora el servicio de Telegram en todas las instalaciones, detenido hasta que haya un token. PaynaniWeb trae además la página «Acerca de» (#636) y «Messages» pasa a llamarse «Text Messages» (#633). Una instalación que no use Telegram no cambia en nada más.
+
+### Si actualizas desde 0.19.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.20.0
+python3 scripts/upgrade_plan.py --from v0.19.0     # y haz lo que imprima
+```
+
+El plan corre `install.sh --upgrade`, que agrega `paynani-telegram.service` (en macOS, el LaunchAgent `com.paynani.telegram`) aunque no hayas usado `--with-telegram`. Sin `telegram.env`, se queda habilitado y detenido (`state=enabled-waiting-setup`) y no hace nada. También reinicia PaynaniWeb, y los servicios de paynani porque cambia `VERSION`. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien; el check `telegram` dice `ok` sin token.
+
+- **Para usar Telegram:** crea un bot con @BotFather que sea sólo de esta instalación. Luego, en PaynaniWeb, «Mensajes de Telegram» → «Cuenta de Telegram»: el token, el `@usuario` del bot, la casilla «Este bot es sólo de esta instalación» y la contraseña de la web. Desde la terminal sigue funcionando `scripts/paynani telegram setup`.
+- **Si ya tenías Telegram configurado**, nada cambia: «Bot de Telegram» se llama ahora «Cuenta de Telegram» y sigue cambiando el token como antes.
+- **PaynaniWeb:** en el menú, «Messages» es ahora «Text Messages» («Mensajes de texto»), y hay una opción nueva, «Acerca de», debajo de «API Tokens». PaynaniApp no cambia en esta versión.
+
 - **PaynaniWeb: «Messages» ahora se llama «Text Messages» (#633).** El cambio aplica en todos los lugares donde «Messages» nombra la pantalla de SMS (Q273=A):
   - el menú;
   - el título;
