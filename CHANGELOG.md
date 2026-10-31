@@ -2,6 +2,17 @@
 
 ## Sin publicar
 
+## 0.18.0 (2026-10-31)
+
+**WhatsApp con el mismo número del SMS (PRD #550), un Catch-All por canal (PRD #576) y
+una PaynaniWeb que ya administra la cuenta principal y abre en un Dashboard (PRD #602).**
+WhatsApp es opcional: no se instala ni se vincula al actualizar. Lo probaron en real
+Ocelotl (Codex), Ximena (OpenClaw) y Atenea (Hermes) en WA-8 (#560); el turno de John
+(OpenClaw) sigue abierto, y su desvinculación por QR la arregla #604 en esta versión.
+Desde PaynaniWeb el dueño ya puede escribir un correo nuevo, cambiar los datos de la
+cuenta principal sin que `.env` y Himalaya se separen (#590, #591), y ver el estado de
+paynani en la página inicial.
+
 - **`upgrade_plan.py`: un cambio en las dependencias del puente de WhatsApp pide el instalador, no un `npm ci` suelto.** Al preparar 0.18.0, el plan desde v0.17.1 imprimía `npm ci --ignore-scripts --prefix scripts/whatsapp_bridge` en todos los hosts, también en los que no tienen WhatsApp. Ese `npm` sale del PATH: en un host sin Node, o con sólo el Node que bajó el instalador en `~/.local/lib/paynani`, el comando falla, y `--apply` se detenía ahí, después de actualizar el código y antes de reiniciar los servicios, así que seguía corriendo el código anterior. Ahora `package.json` y `package-lock.json` piden `install.sh --upgrade`, que ya corre `npm ci --ignore-scripts` con su Node y sólo si es dueño de la unidad de WhatsApp. `UPGRADE.md` dice lo mismo.
 - **PaynaniWeb: la página inicial es un Dashboard con el estado de paynani (PRD #602, de #601).** `/` deja de ser sólo un saludo y muestra:
   - el estado general en verde, amarillo o rojo, con las revisiones de `doctor`: las locales con caché de 60 s y las de red del último `paynani doctor` guardado (#603);
@@ -14,7 +25,7 @@
   «Hoy» se cuenta en la zona del host. `assets/dashboard.js` actualiza los números cada 60 s desde `/dashboard.json`, que sólo trae números y estados. Sólo lee: no marca avisos, no abre IMAP y no escribe en `state/`. Textos en los cinco idiomas; `test_web_dashboard.py`.
 - **`paynani doctor` guarda su último resultado en `state/doctor.json` (#603, para el Dashboard #602).** PaynaniWeb no puede correr la revisión que toca la red (`himalaya account check`, que con Gmail tarda de 2 a 45 s, #478), así que el Dashboard la toma del último `doctor`. Cada `paynani doctor`, con o sin `--json`, escribe lo mismo que `--json` sin `paths` (`schema_version`, `status`, `generated_at`, `checks`). Lo escribe completo o no lo escribe (archivo temporal y `os.replace`), en modo `0600`. No escribe nada si la carpeta de estado no existe o es un enlace. Si no puede guardar, avisa en stderr y la salida y el código de salida no cambian.
 - **WhatsApp: una sesión vinculada por QR ya se puede desvincular y reconecta (#604).** En la prueba de John (WA-8 #560), Julian vinculó por QR desde PaynaniWeb y al desvincular la web respondió 503: el puente contestó `not_connected` y la sesión siguió conectada. El puente sólo contaba como vinculadas las credenciales con `creds.registered`, pero Baileys sólo pone ese campo en el flujo de código. Con QR se queda en `false`. Así, una sesión QR no se podía desvincular, se perdía con el primer corte de red y no volvía al reiniciar el servicio. Ahora `credsLinked()` (`lib.js`) pide `me.id` y `account`, la identidad firmada que Baileys guarda al terminar cualquier vinculación. Un código pedido y todavía no aceptado tiene `me.id` sin `account`, así que no cuenta como vinculación. Además, después de un `logout` correcto el servicio pone su estado en `unlinked` sin esperar el siguiente `status` del puente (lo encontró Iris), y la web y `paynani whatsapp status` ya no muestran «vinculado» por un momento. El puente falso escribe credenciales como las de Baileys y `test_whatsapp_service.py` prueba una sesión QR completa: `already_linked`, reconexión tras un corte y tras reiniciar, y unlink con `auth/` vacío.
-- **PaynaniWeb: «Configuración» de la cuenta principal (#590 cambio 3).** Un botón junto a «Nuevo correo» en `/email/main` abre los datos de la cuenta del agente: correo, nombre, IMAP y SMTP con sus puertos, y una contraseña nueva opcional. La actual nunca se muestra. Guardar pide la contraseña de la web con el bloqueo de la entrada (Q10). Al núcleo (#591 N2/N3) sólo va lo que cambió, y los saltos de línea se rechazan. La página muestra la prueba contra el servidor, y el dueño recibe un correo con los campos que cambiaron, sin la contraseña del buzón. Hasta que N2 entre, la pantalla dice que todavía no se puede guardar y no escribe nada. Textos en los cinco idiomas; `test_web_config.py`.
+- **PaynaniWeb: «Configuración» de la cuenta principal (#590 cambio 3).** Un botón junto a «Nuevo correo» en `/email/main` abre los datos de la cuenta del agente: correo, nombre, IMAP y SMTP con sus puertos, y una contraseña nueva opcional. La actual nunca se muestra. Guardar pide la contraseña de la web con el bloqueo de la entrada (Q10). Al núcleo (#591 N2/N3) sólo va lo que cambió, y los saltos de línea se rechazan. La página muestra la prueba contra el servidor, y el dueño recibe un correo con los campos que cambiaron, sin la contraseña del buzón. Hasta que N2 entre, la pantalla dice que todavía no se puede guardar y no escribe nada. Textos en los cinco idiomas; `test_web_config.py`. `PAYNANI_WEB.md` tiene secciones nuevas para «Nuevo correo» y «Configuración» (#600).
 - **Cambiar la cuenta principal desde PaynaniWeb sin que `.env` y Himalaya se separen (#591, N2; para W2 de #590).** La cuenta `paynani` de Himalaya guarda su propia copia de la dirección, los servidores y los usuarios; del `.env` sólo lee la contraseña. Por eso cambiar sólo el `.env` dejaba al listener en un buzón y a `send.sh` en otro (Iris, en #591). `paynani_lib/main_account.py` es un módulo nuevo, sin CLI, y hace el cambio como una sola operación. `check(changes)` valida y prueba IMAP y SMTP sin escribir. `update(changes, by=...)` hace todo con un candado: prueba, escribe `.env` y sólo los valores de `[accounts.paynani]` que nombran el buzón, reinicia el listener con N3 y espera que vuelva con la dirección esperada. Si algo falla, restaura los tres archivos y vuelve a la configuración anterior. Lo que había antes queda en un respaldo `0600`, dentro de `state/main_account.txn/` (`0700`), escrito con fsync antes de tocar nada y nunca reescrito. El cambio sólo cuenta como confirmado si además existe `committed.json`, un marcador aparte con el mismo identificador de transacción, escrito con fsync. Si un commit falla y su marcador no se puede borrar, se escribe `aborted.json` para la misma transacción, y ese marcador gana. Un marcador que existe pero no se puede verificar (truncado, ilegible o un enlace) detiene la recuperación, igual que un respaldo ilegible. Si tampoco se puede escribir, el cambio nuevo se deja completo en vez de restaurar a medias. Si el proceso se cae a la mitad, el siguiente `update()` o `recover()` deshace un cambio sin marcador de commit (o con uno anulado) y sólo limpia uno confirmado. Si el respaldo no se puede leer, no se pueden restaurar los archivos o el listener anterior no vuelve, no sigue ningún cambio: el respaldo se queda como evidencia y `update()` responde `recovery_failed`. Si el nombre del remitente queda vacío, `display-name` sale de Himalaya. Si al bloque principal de Himalaya le falta un valor, se agrega en su tabla, o se agrega la tabla, sin quitar nada más. Si no se puede guardar en disco que el cambio quedó confirmado, el cambio se deshace (`commit_failed`) en vez de reportarse como hecho. Si cambia la dirección, el listener sigue desde el `UIDNEXT` que vio la prueba (guarda `UIDNEXT - 1`): el correo que llegue después se entrega y el anterior no. Las otras cuentas de Himalaya, sus permisos, `password.cmd` y `roster.md` no se tocan. El `Result` y el registro (`state/main_account_changes.jsonl`) sólo llevan nombres de campos, nunca contraseñas, direcciones ni valores. Además, `probe.py` ya no muestra el error de una contraseña con una ñ o un acento, que citaba un carácter de la contraseña y su posición. En su lugar da un mensaje traducido.
 - **Instalación: el agente sólo manda la liga del formulario, sin el comando del túnel.** En la prueba de instalación con un agente de Hermes (10-30), el agente le mandó al dueño, junto con la liga, «Si accedes desde otra computadora, crea primero el túnel… `ssh -L 8765:127.0.0.1:8765 usuario@host`». Así lo pedía el paso 2 de `AGENTS.md`, y `scripts/paynani onboard` lo imprimía debajo de la liga. Julian pidió quitarlo: confunde a quien sí está en la máquina, y el nombre del host casi nunca es el correcto. Ahora `onboard` imprime sólo la liga, y `AGENTS.md` le pide al agente mandar sólo eso. Si el dueño dice que la liga no abre, el agente le da el comando de `INSTALL.md` §2.1 (nueva) con el host que el dueño usa. El Paso 2 del README dice lo mismo en los cinco idiomas.
 - **PaynaniWeb: «Nuevo correo» en la lista de cada cuenta (#590 cambio 2).** Un botón en `/email/<cuenta>`, como «Catch-All» en «Mensajes», abre un formulario con Para, CC y CCO (Q6=B), asunto y mensaje, que sale desde esa cuenta con su firma (Q7=A). La libreta es el roster de esa cuenta (`compose.js` agrega el contacto al campo donde está el cursor), y se puede escribir cualquier otra dirección. Si alguien está fuera del roster, pide la contraseña de la web con el bloqueo de la entrada (Q5). Las direcciones se validan antes (un salto de línea no cuela un encabezado), y el aviso de la lista dice cuántos estaban fuera del roster sin poner sus direcciones en la URL. El envío es del núcleo (#591 N1, `owner_mail`), con un permiso de un solo uso que la web pide y usa en la misma petición. `send.sh` y la API siguen sin mandar fuera del roster. Textos en los cinco idiomas; `test_web_compose.py`.
@@ -41,6 +52,61 @@
 - **WhatsApp: el puente de Baileys y el servicio `paynani-whatsapp` (WA-1 #553, PRD #550).** `scripts/whatsapp_bridge/` es el puente en Node, con Baileys fijo en `7.0.0-rc14` y su `package-lock.json` con hashes (FR-3). Las pruebas revisan que ninguna dependencia directa tenga un rango (FR-3a). El puente se conecta sin presencia ni historial (FR-4, FR-4a), sólo deja pasar chats directos (FR-17) y no abre ningún puerto (FR-2). `scripts/whatsapp_service.py` lo arranca como proceso hijo y lo relanza a los 5, 10 y 30 s y luego cada 60 s. Si deja de contestar tres pings, lo reinicia, y avisa cuando pasan 10 minutos sin conexión o WhatsApp cierra la sesión (FR-5). Las llaves quedan en `state/whatsapp/auth/` con 0700/0600, y ni el servicio ni el puente arrancan si están abiertas o si una carpeta de `state/whatsapp/` es un enlace simbólico, para no tocar nada fuera de ahí (FR-10). `upgrade_plan.py` reinicia `paynani-whatsapp` cuando cambia su código, y corre `npm ci --ignore-scripts` antes cuando cambia el lockfile. El QR y el código de vinculación nunca se escriben en disco ni en el log (FR-6a). La plantilla de systemd y la instalación llegan con WA-3. Las pruebas usan un puente falso con el mismo contrato (`fake_bridge.py`), y nada se conecta a WhatsApp.
 - **WhatsApp: el contrato del puente y los mensajes de PaynaniApp (WA-0 #552, PRD #550).** `WHATSAPP_BRIDGE.md` describe cómo se hablan el servicio `paynani-whatsapp` y el puente de Baileys: un JSON por línea por stdin/stdout, sin puerto; arranque, estado, vinculación por QR o código (credenciales de un solo uso que nunca se guardan ni se registran), mensajes directos sin historial ni grupos, archivos, llamadas, envío con su lista `allowed`, acuses, salud, desvincular y cierre. `SMS_GATEWAY.md` §12 agrega para PaynaniApp `whatsapp.status`, `whatsapp.link`, `whatsapp.link_cancel`, `whatsapp.unlink`, `whatsapp.threads`, `whatsapp.thread`, `whatsapp.send` y el aviso `whatsapp.changed`, anunciados en `welcome.accepts`, y `welcome.grants` con la capacidad `whatsapp.admin`, que la pasarela sólo le da al teléfono emparejado. Todavía no hay código: es el contrato que siguen WA-1 a WA-7.
 - **`bootstrap.sh` corre los comandos del dueño desde su `$HOME`** (#562). Un `git` reciente no arranca si no puede leer el directorio donde lo lanzaron. Por eso `git clone` fallaba con `Invalid path ...: Permission denied` cuando root corría `bootstrap.sh` desde `/root` o desde el checkout de CI. Un `--dir` relativo se resuelve contra el directorio de quien llama, como antes.
+
+Lo hicieron Metis, Iris y Andy, con la revisión de Ximena. Sin requisitos nuevos para
+quien no instala WhatsApp. Con PaynaniApp 0.11.0.
+
+### Si actualizas desde 0.17.1
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.18.0
+python3 scripts/upgrade_plan.py --from v0.17.1     # y haz lo que imprima
+```
+
+El plan corre `install.sh --upgrade` y reinicia todos los servicios de paynani, porque
+cambia `VERSION`. En Claude Code y Codex dice además que el hook de sesión cambió: la
+siguiente sesión lo toma, y ahí se vuelve a armar la vigilancia del correo.
+`scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien, y
+`version_drift` tiene que decir `ok`. `doctor` deja su resultado en `state/doctor.json`,
+que es lo que el Dashboard muestra como revisión de red.
+
+- **OpenClaw:** el plan pide `python3 scripts/openclaw_rules.py --install`. Córrelo: trae
+  el Catch-All por canal y las instrucciones de WhatsApp.
+- **Hermes:** el plan pide copiar las dos listas de eventos y el `prompt` de
+  `examples/hermes-routes.yaml` a `~/.hermes/config.yaml` y correr `hermes gateway
+  restart` (`HERMES.md`, «Event lists»). Sin eso, Hermes ignora los SMS, los WhatsApp y
+  las llamadas, y la cola del despachador se detiene detrás de ellos, con el correo
+  incluido.
+- **Catch-All:** no cambia nada al actualizar. Los dos canales siguen leyendo
+  `rules/catch-all.md` hasta el primer guardado, que lo separa en
+  `rules/catch-all-sms.md` y `rules/catch-all-whatsapp.md` con lo que tenía.
+- **Tokens de la API:** un token con `catchall.write` queda sólo con
+  `catchall.sms.write`. PaynaniWeb lo reescribe al arrancar y le manda al dueño un correo
+  con los tokens que cambiaron.
+- **WhatsApp (opcional):** `scripts/install.sh --with-whatsapp` (`INSTALL.md` 5.4). Lee
+  antes el aviso de riesgo de bloqueo de Meta de esa sección. Después se vincula desde
+  PaynaniWeb, «WhatsApp», con QR o con código. El agente nunca vincula ni desvincula.
+- **PaynaniApp 0.11.0** (opcional): «WhatsApp» y «Mensajes de WhatsApp», el Catch-All por
+  canal y los globos con los colores de PaynaniWeb. Se instala encima, como siempre
+  (`INSTALL.md`, sección del teléfono). PaynaniApp 0.10.0 sigue funcionando con la
+  pasarela nueva.
+
+### Si actualizas desde 0.17.0 o anterior
+
+Un solo salto desde la versión que tienes instalada. Cambia `v0.17.0` por tu versión
+(la que dice `scripts/version.sh` antes de actualizar):
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.18.0
+python3 scripts/upgrade_plan.py --from v0.17.0     # y haz lo que imprima
+```
+
+Después, lo mismo que arriba y lo que pidan las secciones «Si actualizas» de las
+versiones que te saltaste.
 
 ## 0.17.1 (2026-10-26)
 
