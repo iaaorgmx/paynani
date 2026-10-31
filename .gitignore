@@ -24,6 +24,8 @@
 /sms.env
 # WhatsApp on or off, and its settings (paynani_lib/whatsapp/config.py): per-install, never tracked.
 /whatsapp.env
+# The Telegram bot token and settings (paynani_lib/telegram/config.py): a secret, never tracked.
+/telegram.env
 
 # The two Hermes route secrets. Anchored so HERMES.md, harness/adapters/hermes.py
 # and examples/hermes-routes.yaml stay tracked.

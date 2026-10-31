@@ -339,7 +339,18 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
 
-    args = parser.parse_args(argv)
+    args, extra = parser.parse_known_args(argv)
+    # `telegram send` y `whatsapp send` toman el texto en varias palabras. argparse
+    # deja de juntarlas en cuanto ve una opción, así que `send ana --file foto.jpg
+    # "texto"` fallaba con «unrecognized arguments». Lo que sobra después de la
+    # opción es la continuación del texto (hallazgo de TG-9, #612).
+    if extra and getattr(args, "text", None) is not None and (
+            getattr(args, "tg_command", None) == "send" or getattr(args, "wa_command", None) == "send"):
+        if any(word.startswith("-") and len(word) > 1 for word in extra):
+            parser.error("unrecognized arguments: " + " ".join(extra))
+        args.text = list(args.text) + extra
+    elif extra:
+        parser.error("unrecognized arguments: " + " ".join(extra))
 
     # `set` and `roster` are terminal commands whose own strings are English,
     # but i18n.LANG_DEFAULT is es-MX (right for onboard's web form, which
