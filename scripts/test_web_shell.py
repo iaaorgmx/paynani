@@ -4,7 +4,7 @@ Tests for PaynaniWeb's frame (PRD #434 FR-10, FR-12; T4 of #435; PRD #537).
 An assertion script, like the rest of this suite.
 
 El menú lateral de PDSL-201 con el desplegable de cuentas (la del agente y las de
-accounts.json), Messages, Roster y Log out; el menú del avatar; el menú del celular;
+accounts.json), Messages, Roster y Log out; Perfil junto al nombre (#626); el menú del celular;
 que no aparezca lo que la v1 deja fuera; que nada lleve `style=` (la CSP lo
 bloquea); y que no quede ninguna clave sin traducir en los cinco idiomas.
 
@@ -112,13 +112,11 @@ check("una entrada por cuenta: la del agente primero, luego accounts.json en ord
       ["/email/main", "/email/ventas", "/email/soporte"], links)
 check("la cuenta apagada va marcada", True, 'class="sub apagada"' in page and "apagada</span>" in page)
 check("Mensajes y Roster", True, 'href="/messages"' in page and 'href="/roster"' in page)
-check("cerrar sesión: formularios POST con el token de la sesión", True,
-      len(re.findall(r'<form method="post" action="/logout"[^>]*>\s*<input type="hidden" name="csrf" value="[^"]+">', page)) >= 2)
-check("el menú del avatar con iniciales y correo", True,
-      '<span class="iniciales">JB</span>' in page and "john@example.com" in page)
-panel = page.split('<div class="avatar-panel">', 1)[1].split("</div>", 1)[0]
+check("cerrar sesión: un formulario POST con el token de la sesión, en el menú lateral", 1,
+      len(re.findall(r'<form method="post" action="/logout"[^>]*>\s*<input type="hidden" name="csrf" value="[^"]+">', page)))
+check("#626 (Q267=B): ya no hay botón del avatar arriba a la derecha", (False, False, False),
+      ('class="avatar"' in page, "avatar-panel" in page, '<span class="iniciales">' in page))
 usuario = page.split('<div class="usuario">', 1)[1].split("</aside>", 1)[0].split('<div class="grupo">', 1)[0]
-check("#626 (Q265=B): «Perfil» ya no está en el menú del avatar", False, 'href="/profile"' in panel)
 check("#626: el acceso a Perfil va junto al nombre, en el menú lateral, con su ícono y aria-label", (True, True, True),
       ('<a class="perfil" href="/profile" aria-label="Perfil"' in usuario, 'title="Perfil"' in usuario,
        shell.ICONS["profile"] in usuario))

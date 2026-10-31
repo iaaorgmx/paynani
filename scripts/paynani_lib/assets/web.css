@@ -214,14 +214,6 @@ body.web-shell {
 /* Sobre la barra blanca (u oscura en modo oscuro), los colores de .marca de app.css. */
 .web-shell .marca-barra .voluta { stroke: var(--accent); }
 .web-shell .marca-barra .logotipo { fill: var(--ink); }
-.web-shell .avatar { position: relative; }
-.web-shell .avatar summary { list-style: none; cursor: pointer; }
-.web-shell .avatar summary::-webkit-details-marker { display: none; }
-.web-shell .iniciales { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #efe3e1; color: var(--grana); font-weight: 600; letter-spacing: .03em; }
-.web-shell .avatar-panel { position: absolute; right: 0; top: 48px; z-index: 5; min-width: 15rem; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(28,28,26,.14); padding: .75rem; display: flex; flex-direction: column; gap: .2rem; }
-.web-shell .avatar-panel small { color: var(--quiet); overflow-wrap: anywhere; margin-bottom: .4rem; }
-.web-shell .avatar-panel a, .web-shell .avatar-panel button { display: flex; align-items: center; gap: 8px; padding: .45rem .4rem; border-radius: 6px; color: var(--ink); text-decoration: none; font: inherit; background: none; border: 0; width: 100%; cursor: pointer; text-align: left; }
-.web-shell .avatar-panel a:hover, .web-shell .avatar-panel button:hover { background: var(--bg); }
 
 .web-shell .encabezado { height: 81px; background: var(--grana); color: #fff; display: flex; align-items: center; gap: 18px; padding: 0 22px 0 24px; position: sticky; top: 64px; z-index: 3; }
 .web-shell .encabezado svg.i { width: 30px; height: 30px; stroke-width: 2; }
