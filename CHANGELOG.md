@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: página «Acerca de» (#636), como el About de PaynaniApp.** Va en el menú, debajo de «API Tokens». Muestra:
+  - la versión con su commit, con un botón «Copiar» (`assets/about.js`) (Q275=A);
+  - el aviso de código abierto bajo la licencia MIT;
+  - **Proyecto:** sitio, código y licencia;
+  - **Ayuda:** «Reportar un problema», que abre un issue en paynani con la versión y el commit ya escritos (Q276=A), las novedades y `PAYNANI_WEB.md`;
+  - **Créditos:** la biblioteca estándar de Python, Spectral y los íconos.
+
+  Sin el estado de la instalación, que ya está en el Dashboard (Q277=A). Los enlaces externos abren con `noopener noreferrer`. La versión se lee una vez al arrancar, del clon que corre. Textos en los cinco idiomas; `test_web_about.py`.
 ## 0.19.0 (2026-10-31)
 
 Telegram (PRD #609, #612): un bot propio por instalación, para recibir y contestar mensajes de los contactos del roster, con Catch-All, multimedia, respuesta por partes, PaynaniWeb y PaynaniApp. Es opcional: sin `--with-telegram` nada cambia en tu instalación. La prueba real TG-9 pasó T9-01 a T9-09 en una instalación de Claude Code; las rondas con OpenClaw y Hermes vienen después de publicar.

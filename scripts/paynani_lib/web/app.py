@@ -34,8 +34,8 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
-from . import catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import about_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import (about_pages, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -50,6 +50,7 @@ STATIC = {
     "/assets/whatsapp.js": (ASSETS / "whatsapp.js", "application/javascript; charset=UTF-8"),
     "/assets/compose.js": (ASSETS / "compose.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
+    "/assets/about.js": (ASSETS / "about.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
@@ -262,6 +263,16 @@ def form_fields(raw: bytes) -> dict:
     return {k: v[0] for k, v in parse_qs(text, keep_blank_values=True).items()}
 
 
+def _running_version() -> tuple[str, str]:
+    """(versión, commit corto) del clon que corre; vacíos si no se pueden leer."""
+    try:
+        import healthcheck as hc
+        commit = hc.disk_commit() or ""
+        return (hc.disk_version() or "", hc.short_commit(commit) if commit else "")
+    except Exception:  # noqa: BLE001 -- sólo es para mostrar
+        return ("", "")
+
+
 class Context:
     """Lo que comparten todas las peticiones de un servidor."""
 
@@ -272,7 +283,8 @@ class Context:
                  whatsapp_source: whatsapp_source.Source | None = None, whatsapp_root: Path | None = None,
                  mailer: mail_compose.Mailer | None = None, updater: account_config.Updater | None = None,
                  dashboard_source: dashboard.Source | None = None, now=None,
-                 telegram_source: telegram_source.Source | None = None, telegram_root: Path | None = None):
+                 telegram_source: telegram_source.Source | None = None, telegram_root: Path | None = None,
+                 version: tuple[str, str] | None = None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -334,6 +346,9 @@ class Context:
         # Telegram (PRD #609 FR-28, TG-7): el servicio por control.sock, o la fuente que
         # pasen las pruebas. `telegram_root` es donde está telegram.env (TELEGRAM.md §4).
         self._telegram = telegram_source
+        # «Acerca de» (#636): la versión y el commit del código que corre, leídos una vez al
+        # arrancar (como idle.json), o los que pasen las pruebas.
+        self.version = version if version is not None else _running_version()
         self._telegram_root = telegram_root
         # El `check` de un cambio de token, por sesión del navegador y sólo en memoria
         # (TELEGRAM.md §4: vale 5 min). La página nunca lo trae ni trae el token.
@@ -813,6 +828,11 @@ def make_handler(ctx: Context):
                 return
             if self.route in ("/profile", "/profile/info", "/profile/password"):
                 self._profile_get()
+                return
+            if self.route == "/about":
+                version, commit = self.CTX.version
+                self._page(200, title=i18n.t("web.about.title"), body=about_pages.body(version, commit),
+                           active="about", icon_name="info")
                 return
             if self.route in ("/api-tokens", "/api-tokens/new", "/api-tokens/detail"):
                 self._tokens_get()
