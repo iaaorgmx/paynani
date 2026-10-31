@@ -239,6 +239,79 @@ status, _, page = get("/roster/reglas?cuenta=main&fila=1")
 check("la regla efectiva: la General del contacto sustituye a la general, y ## SMS de las generales sigue",
       (True, True, False), ("Sé breve." in page, "No contestar" in page, "Saluda." in page))
 
+# ---- #628 fila 4: el campo Telegram en un roster sin la columna -------------------------
+# Con Telegram activado el formulario trae el campo Telegram. Guardar un valor crea la
+# columna en la misma escritura (roster_edit, #629), con las demás filas vacías; sin un
+# valor, el archivo no cambia. Las columnas que la web no conoce se conservan.
+tgroot = tmp / "tg"
+tgroot.mkdir()
+(tgroot / "telegram.env").write_text("TELEGRAM_ENABLED=1\nTELEGRAM_TOKEN=424242:" + "k" * 30 + "\n", encoding="utf-8")
+(tgroot / "telegram.env").chmod(0o600)
+ctx._telegram_root = tgroot
+NOTES = """# roster de prueba
+
+# 1. Approved contacts
+
+| Name | Email | Type | GitHub | Phone | Notes |
+|---|---|---|---|---|---|
+| Julián Flores | julian@example.com | Human | julianflores | +525511112222 | dueño |
+| Iris | iris@example.com | AI Agent | irisclaudetob |  | agente |
+"""
+roster.write_text(NOTES, encoding="utf-8")
+before = roster.read_bytes()
+
+
+def header():
+    return next(line for line in roster.read_text(encoding="utf-8").splitlines() if line.startswith("| Name"))
+
+
+def row_of(name):
+    return next(line for line in roster.read_text(encoding="utf-8").splitlines() if line.startswith(f"| {name} "))
+
+
+def cells(name):
+    """La fila de `name` como {columna: valor}, por el encabezado de la tabla."""
+    cols = [c.strip() for c in header().strip("|").split("|")]
+    return dict(zip(cols, [c.strip() for c in row_of(name).strip("|").split("|")]))
+
+
+status, _, page = get("/roster/editar?cuenta=main&fila=2")
+check("#628: con Telegram activado, «Editar» trae el campo Telegram aunque el roster no tenga la columna",
+      (200, True), (status, 'name="telegram"' in page))
+etag = hidden(page, "etag")
+iris = dict(csrf=csrf, cuenta="main", fila="2", etag=etag, name="Iris", email="iris@example.com", type="AI Agent",
+            github="irisclaudetob", phones="", telegram="")
+status, hdrs, _ = post("/roster/guardar", **iris)
+check("«Editar» sin valor de Telegram: guarda y el archivo queda byte-idéntico, sin la columna",
+      (303, True, False), (status, roster.read_bytes() == before, "Telegram" in header()))
+etag = hidden(get("/roster/editar?cuenta=main&fila=2")[2], "etag")
+status, hdrs, _ = post("/roster/guardar", **dict(iris, etag=etag, telegram="@Iris_Paynani"))
+check("«Editar» con un @usuario: guarda y crea la columna Telegram en la misma escritura", (303, True),
+      (status, "Telegram" in header()))
+check("la fila editada trae el @usuario normalizado y conserva su Notes", ("@iris_paynani", "agente"),
+      (cells("Iris")["Telegram"], cells("Iris")["Notes"]))
+check("la otra fila queda vacía en Telegram y conserva su Notes", ("", "dueño"),
+      (cells("Julián Flores")["Telegram"], cells("Julián Flores")["Notes"]))
+status, _, page = get("/roster/editar?cuenta=main&fila=2")
+check("al volver a «Editar», el campo trae el @usuario", True, 'value="@iris_paynani"' in page)
+
+roster.write_text(NOTES, encoding="utf-8")
+before = roster.read_bytes()
+etag = hidden(get("/roster/editar?cuenta=main")[2], "etag")
+status, _, _ = post("/roster/guardar", csrf=csrf, cuenta="main", fila="", etag=etag, name="Beto",
+                    email="beto@example.com", type="Human", github="", phones="", telegram="")
+check("«Agregar» sin valor de Telegram: no crea la columna", (303, False), (status, "Telegram" in header()))
+roster.write_text(NOTES, encoding="utf-8")
+etag = hidden(get("/roster/editar?cuenta=main")[2], "etag")
+status, _, _ = post("/roster/guardar", csrf=csrf, cuenta="main", fila="", etag=etag, name="Pedro",
+                    email="", type="Human", github="", phones="", telegram="7000099")
+check("«Agregar» sólo con Telegram en un roster sin la columna: la crea y guarda la fila", (303, "7000099", ""),
+      (status, cells("Pedro").get("Telegram"), cells("Pedro").get("Email")))
+check("y las filas que ya estaban siguen con su Notes y vacías en Telegram", ("dueño", "agente", "", ""),
+      (cells("Julián Flores")["Notes"], cells("Iris")["Notes"], cells("Julián Flores")["Telegram"], cells("Iris")["Telegram"]))
+wait_notices()
+check("el aviso al dueño de esa alta no trae el id", False, any("7000099" in body for _, _, body in sent))
+
 httpd.shutdown()
 httpd.server_close()
 print(f"\n{passed} passed, {failed} failed")
