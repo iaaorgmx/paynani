@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- `scripts/version.sh --apply` ya no se niega con «selected runtime is unknown». El plan de la
+  versión nueva corre desde una copia temporal y buscaba `runtime.env` junto a esa copia;
+  ahora lo lee del clon, como el manifiesto. Mientras tanto, `PAYNANI_RUNTIME=<runtime>`
+  antes del comando lo evita.
+
 ## 0.18.0 (2026-10-31)
 
 **WhatsApp con el mismo número del SMS (PRD #550), un Catch-All por canal (PRD #576) y
