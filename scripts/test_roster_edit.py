@@ -256,5 +256,57 @@ check("un roster con CRLF lo conserva en todas sus líneas", (True, False),
 out, _ = re_.delete_text(crlf, 3)
 check("y en la baja", False, "\n" in out.replace("\r\n", ""))
 
+# ---- La columna Telegram (PRD #609 FR-11, FR-15; #612) -------------------------------
+import roster as roster_mod  # noqa: E402
+
+TG = """| Name | Email | Type | Telegram |
+|---|---|---|---|
+| Julián Flores | julian@example.com | Human |  |
+| Ana | ana@example.com | Human | 700000001 |
+| Beto | beto@example.com | Human | @beto_paynani |
+"""
+cols, rows = re_.members(TG)
+check("members: la columna Telegram y el campo telegram de cada fila", (True, "700000001", "@beto_paynani", ""),
+      ("Telegram" in cols, rows[1]["telegram"], rows[2]["telegram"], rows[0]["telegram"]))
+base = {"name": "Pedro", "email": "pedro@example.com", "type": "Human", "github": "", "phones": []}
+text, row, clean = re_.save_text(TG, None, dict(base, telegram="700000099"))
+check("alta con correo y Telegram: la celda se guarda", ("| Pedro | pedro@example.com | Human | 700000099 |", 4,
+      "700000099"), (text.splitlines()[-1], row, clean["telegram"]))
+check("y roster.py la lee igual que el servicio", True,
+      "700000099" in roster_mod._telegram_from_text(text)["ids"])
+text, row, clean = re_.save_text(TG, None, dict(base, email="", telegram="@Pedro_Tienda"))
+check("alta sólo con Telegram: ya no es no_channel; el @usuario se normaliza", ("@pedro_tienda", True),
+      (clean["telegram"], text.splitlines()[-1].endswith("| @pedro_tienda |")))
+check("sin correo, ni teléfono, ni Telegram sigue siendo no_channel", ("invalid", "email", "no_channel"),
+      error_of(re_.save_text, TG, None, dict(base, email="", telegram="")))
+check("un Telegram inválido: invalid en el campo telegram", ("invalid", "telegram", "telegram"),
+      error_of(re_.save_text, TG, None, dict(base, telegram="no es @-válido")))
+check("un id con ceros adelante se normaliza", "700000099",
+      re_.save_text(TG, None, dict(base, telegram="0700000099"))[2]["telegram"])
+check("duplicado por id (mismo valor normalizado)", ("invalid", "telegram", "duplicate_telegram"),
+      error_of(re_.save_text, TG, None, dict(base, telegram="0700000001")))
+check("duplicado por @usuario sin importar mayúsculas ni la @", ("invalid", "telegram", "duplicate_telegram"),
+      error_of(re_.save_text, TG, None, dict(base, telegram="Beto_Paynani")))
+try:
+    re_.save_text(TG, None, dict(base, telegram="700000001"))
+except EditError as exc:
+    check("el detalle del duplicado no dice el id (FR-15)", False, "700000001" in str(exc))
+check("sin columna Telegram: falla cerrado con no_telegram_column, sin agregarla",
+      ("invalid", "telegram", "no_telegram_column"), error_of(re_.save_text, ROSTER, None, dict(base, telegram="700000099")))
+check("un roster sin columna Telegram sigue sirviendo sin Telegram", True,
+      re_.save_text(ROSTER, None, dict(base, email="nuevo@example.com"))[0].count("| Telegram") == 0)
+text, _, clean = re_.save_text(TG, 2, {"name": "Ana López", "email": "ana@example.com", "type": "Human",
+                                       "github": "", "phones": []})
+check("editar sin mandar telegram conserva el que tenía", ("| Ana López | ana@example.com | Human | 700000001 |",
+      False), (text.splitlines()[-2], "telegram" in clean))
+text, _, _ = re_.save_text(TG, 2, {"name": "Ana", "email": "ana@example.com", "type": "Human", "github": "",
+                                   "phones": [], "telegram": ""})
+check("editar con telegram vacío lo borra", "| Ana | ana@example.com | Human |  |", text.splitlines()[-2])
+check("editar su propia fila con el mismo id no es duplicado", None,
+      error_of(re_.save_text, TG, 2, {"name": "Ana", "email": "ana@example.com", "type": "Human", "github": "",
+                                      "phones": [], "telegram": "700000001"}))
+check("la firma de relectura incluye telegram", True,
+      any("700000001" in sig for sig in re_._signature(TG)))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

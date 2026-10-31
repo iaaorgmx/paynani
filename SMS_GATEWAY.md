@@ -987,6 +987,8 @@ tipo nuevo (sección 10):
 - `phones` es la celda `Phone` separada por comas, cada número ya en E.164. Una fila
   puede traer varios, y la app los edita como lista. Sin columna `Phone`, `phones` es
   `[]`; sin `GitHub`, `github` es `""`.
+- `telegram` es la celda `Telegram` (PRD #609 FR-11): un id numérico o un `@usuario`,
+  o `""`. Sin la columna, `""`.
 - `rules` es el valor de la columna `Rules` (o `null`). `has_rules` dice si
   `rules/<id>.md` existe, y `rules_enabled`, si además tiene `enabled: true`.
 - `default_rules` dice si existe `rules/default.md`.
@@ -1004,7 +1006,10 @@ tipo nuevo (sección 10):
 - `row: null` es un alta, que se agrega al final de la tabla. Un número es la edición
   de esa fila.
 - `member` lleva siempre los cinco campos, ya completos. Lo que no venga se toma como
-  vacío, no como «sin cambio».
+  vacío, no como «sin cambio». La excepción es `telegram` (PRD #609, FR-15), que es
+  opcional: sin la llave, una edición conserva lo que la fila tenía, y PaynaniApp 0.11
+  sigue igual; con `""`, la borra. Se guarda normalizado: el id sin ceros adelante y el
+  `@usuario` en minúsculas.
 - **Validación** (R-3); la primera que falla responde `invalid` con `field` y `reason`:
 
 | `field` | `reason` | Cuándo |
@@ -1012,9 +1017,11 @@ tipo nuevo (sección 10):
 | `name` | `required` | Vacío, o con `\|` o un salto de línea |
 | `email` | `email_format` | No es un correo válido |
 | `phones` | `phone_e164` | Un número no está en E.164 (`^\+[1-9][0-9]{7,14}$`) |
-| `email` | `no_channel` | Sin correo y sin teléfono |
+| `telegram` | `telegram` | No es un id de Telegram ni un `@usuario` válido (`roster.telegram_value`) |
+| `email` | `no_channel` | Sin correo, sin teléfono y sin Telegram |
 | `email` | `duplicate_email` | Otra fila de ese roster ya tiene ese correo (sin distinguir mayúsculas) |
 | `phones` | `duplicate_phone` | Otra fila de ese roster ya tiene ese número |
+| `telegram` | `duplicate_telegram` | Otra fila ya tiene ese id o `@usuario` (normalizado). El detalle no dice el valor |
 | `type` | `type` | No es `Human`, `AI Agent` ni vacío |
 | `github` | `github` | No es un login de GitHub válido |
 | `type` | `owner_type` | La fila del dueño dejaría de ser `Human` |
@@ -1022,6 +1029,7 @@ tipo nuevo (sección 10):
 | `github` | `no_github_column` | Trae GitHub y el roster no tiene columna `GitHub` |
 | `type` | `no_type_column` | Trae `type` y el roster no tiene columna `Type` |
 | `email` | `no_email_column` | Trae correo y el roster no tiene columna `Email` |
+| `telegram` | `no_telegram_column` | Trae Telegram y el roster no tiene columna `Telegram`. No se agrega sola: cambiar la forma del roster es decisión del dueño |
 
 - **Columnas.** La pasarela no agrega columnas por su cuenta (Q3: los cinco campos de
   hoy). Si el roster no tiene la columna `Phone` o `GitHub` y el campo viene lleno,
