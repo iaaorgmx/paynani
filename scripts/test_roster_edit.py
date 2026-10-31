@@ -291,8 +291,43 @@ try:
     re_.save_text(TG, None, dict(base, telegram="700000001"))
 except EditError as exc:
     check("el detalle del duplicado no dice el id (FR-15)", False, "700000001" in str(exc))
-check("sin columna Telegram: falla cerrado con no_telegram_column, sin agregarla",
-      ("invalid", "telegram", "no_telegram_column"), error_of(re_.save_text, ROSTER, None, dict(base, telegram="700000099")))
+# Q269 = A (#628): guardar un Telegram en un roster sin la columna la crea, vacía en las demás filas.
+added, added_row, _ = re_.save_text(ROSTER, None, dict(base, telegram="700000099"))
+added_cols, added_rows = re_.members(added)
+check("sin columna Telegram: guardar un Telegram crea la columna (Q269 = A, #628)", True, "Telegram" in added_cols)
+check("y la fila nueva la tiene; las demás quedan vacías", ("700000099", True),
+      (added_rows[added_row - 1]["telegram"],
+       all(m["telegram"] == "" for m in added_rows if m["row"] != added_row)))
+check("las demás celdas no cambian", [ (m["name"], m["email"], m["phones"]) for m in re_.members(ROSTER)[1] ],
+      [ (m["name"], m["email"], m["phones"]) for m in added_rows if m["row"] != added_row ])
+edited, _, _ = re_.save_text(ROSTER, 1, dict(re_.members(ROSTER)[1][0], telegram="@dueno_paynani"))
+check("al editar una fila también: la columna aparece con el @usuario de esa fila", "@dueno_paynani",
+      re_.members(edited)[1][0]["telegram"])
+check("un Telegram vacío no agrega la columna", False,
+      "Telegram" in re_.members(re_.save_text(ROSTER, None, dict(base, email="otro@example.com", telegram=""))[0])[0])
+# Ximena en #628: CRLF, columnas desconocidas y el resto de los bytes se conservan.
+crlf = ROSTER.replace("\n", "\r\n")
+crlf_out, crlf_row, _ = re_.save_text(crlf, None, dict(base, telegram="@nuevo_crlf"))
+check("CRLF: la columna nueva y la fila conservan el fin de línea", (True, False),
+      ("\r\n" in crlf_out, "\n" in crlf_out.replace("\r\n", "")))
+UNKNOWN = ROSTER.replace("| Name | Email |", "| Name | Notas | Email |", 1)
+lines_u = UNKNOWN.splitlines()
+for i, l in enumerate(lines_u):
+    if l.startswith("|---"):
+        lines_u[i] = l + "---|"
+    elif l.startswith("| ") and not l.startswith("| Name"):
+        cells = [c for c in l.strip().strip("|").split("|")]
+        lines_u[i] = "| " + cells[0].strip() + " | nota " + str(i) + " | " + " | ".join(c.strip() for c in cells[1:]) + " |"
+UNKNOWN = "\n".join(lines_u) + "\n"
+u_out, u_row, _ = re_.save_text(UNKNOWN, None, dict(base, telegram="@con_notas"))
+check("una columna desconocida conserva su lugar y sus valores", True,
+      all(f"nota {i}" in u_out for i, l in enumerate(lines_u) if l.startswith("| ") and not l.startswith("| Name")))
+check("y la columna Telegram queda al final", True, u_out.splitlines()[[l.startswith("| Name") for l in u_out.splitlines()].index(True)].endswith("| Telegram |"))
+untouched = re_.save_text(ROSTER, 2, dict({k: re_.members(ROSTER)[1][1][k] for k in ("name", "email", "type", "github", "phones")}, telegram=""))[0]
+check("sin columna y con telegram vacío: el archivo queda igual byte por byte", ROSTER, untouched)
+check("validate sigue fallando cerrado si alguien la llama sin la columna",
+      ("invalid", "telegram", "no_telegram_column"),
+      error_of(re_.validate, dict(base, telegram="700000099"), re_.members(ROSTER)[0], [], owner=False))
 check("un roster sin columna Telegram sigue sirviendo sin Telegram", True,
       re_.save_text(ROSTER, None, dict(base, email="nuevo@example.com"))[0].count("| Telegram") == 0)
 text, _, clean = re_.save_text(TG, 2, {"name": "Ana López", "email": "ana@example.com", "type": "Human",

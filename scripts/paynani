@@ -16,7 +16,8 @@ paynani CLI.
     paynani roster explain --from ADDRESS [--header NAME=VALUE]
     paynani roster migrate --plan|--apply [--yes]
     paynani roster apply --file CONTACTS.json [--dry-run] [--yes]
-    paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--phone NUMBER] [--roster PATH] [--yes]
+    paynani roster add NAME ADDRESS [--type TYPE] [--github HANDLE] [--phone NUMBER] [--telegram ID|@USER] [--roster PATH] [--yes]
+    paynani roster edit ADDRESS [--name N] [--type T] [--github H] [--phone P] [--telegram ID|@USER] [--roster PATH] [--yes]
     paynani roster remove ADDRESS [--roster PATH] [--yes]
     paynani paths [--json]
     paynani doctor [--json]
@@ -150,9 +151,23 @@ def main(argv: list[str] | None = None) -> int:
     roster_add.add_argument("--type", help='e.g. "Human" or "AI Agent" (only if roster.md has a Type column).')
     roster_add.add_argument("--github", help="GitHub login (only if roster.md has a GitHub column).")
     roster_add.add_argument("--phone", help="Phone number(s), comma separated, for SMS (only if roster.md has a Phone column). Stored in E.164.")
+    roster_add.add_argument("--telegram", help="Telegram numeric id or @username (TELEGRAM.md §3). "
+                                               "Adds the Telegram column if roster.md has none.")
     roster_add.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
     roster_add.add_argument("--roster", help="An additional account's roster, as `paynani account add` prints it "
                                              "(e.g. rosters/ventas.md). Default: roster.md.")
+
+    roster_edit_p = roster_sub.add_parser("edit", help="Change fields of one contact, found by address.")
+    roster_edit_p.add_argument("address")
+    roster_edit_p.add_argument("--name")
+    roster_edit_p.add_argument("--type", help='"Human" or "AI Agent".')
+    roster_edit_p.add_argument("--github", help='GitHub login; "" clears it.')
+    roster_edit_p.add_argument("--phone", help='Phone number(s), comma separated, in E.164; "" clears them.')
+    roster_edit_p.add_argument("--telegram", help='Telegram numeric id or @username; "" clears it. '
+                                                "Adds the Telegram column if roster.md has none.")
+    roster_edit_p.add_argument("--yes", action="store_true", help="Write without an interactive confirmation.")
+    roster_edit_p.add_argument("--roster", help="An additional account's roster, as `paynani account add` prints it "
+                                              "(e.g. rosters/ventas.md). Default: roster.md.")
 
     roster_remove = roster_sub.add_parser("remove", help="Remove a contact by address.")
     roster_remove.add_argument("address")
@@ -357,6 +372,8 @@ def main(argv: list[str] | None = None) -> int:
             return roster_cli.run_apply(args)
         if args.roster_command == "add":
             return roster_cli.run_add(args)
+        if args.roster_command == "edit":
+            return roster_cli.run_edit(args)
         if args.roster_command == "remove":
             return roster_cli.run_remove(args)
         if args.roster_command == "explain":

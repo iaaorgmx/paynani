@@ -636,6 +636,33 @@ def _roster_target(args) -> Path | None:
     return None
 
 
+def _with_telegram(text: str, address: str, telegram: str, overrides: dict | None = None) -> tuple[bool, str]:
+    """
+    `text` with `telegram` (an id or an @username) and `overrides` on the row of
+    `address`, through roster_edit, the same rules PaynaniWeb and PaynaniApp use:
+    the value is validated and normalised, a duplicate is refused, and a roster
+    without a Telegram column gets one (Q269 = A, #628). `(ok, text or reason)`.
+    """
+    from . import roster_edit
+
+    _, current = roster_edit.members(text)
+    want = roster_mod.normalise(address)
+    match = [m for m in current if roster_mod.normalise(m["email"]) == want]
+    if not match:
+        return False, f"{address} is not on the roster"
+    row = match[0]
+    member = {k: row[k] for k in ("name", "email", "type", "github", "phones")}
+    member.update(overrides or {})
+    if telegram is not None:
+        member["telegram"] = telegram
+    try:
+        new_text, _, _ = roster_edit.save_text(text, row["row"], member)
+    except roster_edit.EditError as exc:
+        err = exc.as_error()
+        return False, f"{err.get('field') or 'roster'}: {err.get('detail') or err.get('code')}"
+    return True, new_text
+
+
 def run_add(args) -> int:
     path = _roster_target(args)
     if path is None:
@@ -645,6 +672,8 @@ def run_add(args) -> int:
         text, args.name, args.address, type_=args.type or "", github=args.github or "",
         phone_cell=getattr(args, "phone", None) or "",
     )
+    if ok and getattr(args, "telegram", None):
+        ok, result = _with_telegram(result, args.address, args.telegram)
     if not ok:
         print(f"Not saved: {result}", file=sys.stderr)
         return 1
@@ -653,6 +682,40 @@ def run_add(args) -> int:
         result, expected, "add a contact to", args.yes, base_text=text, creating=creating, path=path,
         base=None if creating else text,
     )
+
+
+def run_edit(args) -> int:
+    """
+    `paynani roster edit ADDRESS [--name] [--type] [--github] [--phone] [--telegram]`
+    (Q271 = A, #628): change fields of one row, with the same validation as
+    PaynaniWeb. An empty value clears that field (`--telegram ""`). The address
+    itself does not change here: remove and add the contact for that.
+    """
+    path = _roster_target(args)
+    if path is None:
+        return 1
+    text = _read(path)
+    overrides = {}
+    for field in ("name", "type", "github"):
+        value = getattr(args, field, None)
+        if value is not None:
+            overrides[field] = value
+    if getattr(args, "phone", None) is not None:
+        overrides["phones"] = [p.strip() for p in args.phone.split(",") if p.strip()]
+    telegram = getattr(args, "telegram", None)
+    if not overrides and telegram is None:
+        print("Not saved: nothing to change (use --name, --type, --github, --phone or --telegram).",
+              file=sys.stderr)
+        return 1
+    ok, result = _with_telegram(text, args.address, telegram, overrides)
+    if not ok:
+        print(f"Not saved: {result}", file=sys.stderr)
+        return 1
+    if result == text:
+        print("Nothing to change: the row already has those values.")
+        return 0
+    expected = roster_mod.roster_addresses(path)
+    return _apply_change(result, expected, "edit a contact in", args.yes, path=path, base=text)
 
 
 def run_remove(args) -> int:
