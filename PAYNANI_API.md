@@ -47,6 +47,8 @@ contraseña, y un token revocado no se puede reactivar.
 | `accounts.write` | `AddAccount`, `RemoveAccount` |
 | `catchall.sms.write` | `SaveCatchAll` con `channel: sms` |
 | `catchall.whatsapp.write` | `SaveCatchAll` con `channel: whatsapp` |
+| `catchall.telegram.write` | `SaveCatchAll` con `channel: telegram` |
+| `telegram.read` | `ListTelegramConversations`, `GetTelegramThread` |
 | `sms.send` | `SendSms`, `GetSmsStatus` |
 
 `GetTokenInfo` y `GetUsage` funcionan con cualquier permiso. Una acción sin su
@@ -54,7 +56,7 @@ permiso responde `forbidden`. Los permisos del Catch-All van aparte de
 `roster.write`, uno por canal, porque encender el Catch-All de un canal deja que tu
 agente lea los mensajes de ese canal de números fuera del roster. Un token que tenía
 el permiso viejo `catchall.write` ahora sólo tiene `catchall.sms.write`; para el de
-WhatsApp hay que darle `catchall.whatsapp.write`. El perfil y la contraseña de la web no están en la
+WhatsApp hay que darle `catchall.whatsapp.write`, y para el de Telegram, `catchall.telegram.write`. El perfil y la contraseña de la web no están en la
 API.
 
 ## Las acciones
@@ -71,11 +73,13 @@ API.
 | `ListSmsReplies` | Las respuestas a los SMS de ese token desde una hora (`since`) |
 | `ListWhatsAppConversations` | Las conversaciones de WhatsApp, de la más reciente a la más vieja, de 50 en 50 (`limit` de 1 a 100, `before`) |
 | `GetWhatsAppThread` | Una conversación de WhatsApp (`number`), con el estado de lo enviado |
+| `ListTelegramConversations` | Las conversaciones de Telegram, de la más reciente a la más vieja, de 50 en 50 (`limit` de 1 a 100, `before`) |
+| `GetTelegramThread` | Una conversación de Telegram (`thread`, el `t_…` de la lista), con el estado de lo enviado |
 | `SendSms` | Envía un SMS |
 | `GetSmsStatus` | El estado de una orden del token |
 | `ListRoster`, `SaveRosterContact`, `DeleteRosterContact` | El roster por cuenta, con el mismo servicio que la web y PaynaniApp |
 | `GetRules`, `SaveRules`, `GetDefaultRules`, `SaveDefaultRules` | Instrucciones por contacto y generales |
-| `GetCatchAll`, `SaveCatchAll` | El Catch-All de un canal (`channel`: `sms` o `whatsapp`; sin `channel`, `sms`, obsoleto): si está activo y sus instrucciones; cada cambio te llega por correo |
+| `GetCatchAll`, `SaveCatchAll` | El Catch-All de un canal (`channel`: `sms`, `whatsapp` o `telegram`; sin `channel`, `sms`, obsoleto): si está activo y sus instrucciones; cada cambio te llega por correo |
 | `AddAccount`, `RemoveAccount` | Como «Agregar cuenta» y «Quitar esta cuenta», con la prueba de IMAP y SMTP |
 
 Cuando la API agrega o quita una cuenta, te llega el mismo correo que cuando lo
@@ -96,6 +100,23 @@ WhatsApp: no hay acción para eso.
 - Las páginas van con `before`: se manda el `next_before` que llegó; `null` es que no
   hay más.
 - Sin WhatsApp activado, o con el servicio caído, responden `whatsapp_unavailable`.
+
+## Telegram, sólo lectura
+
+Con el bot de Telegram configurado (`TELEGRAM.md`), `ListTelegramConversations` y
+`GetTelegramThread` dejan que el agente lea los mismos hilos que ves en «Mensajes de
+Telegram» (PRD #609 FR-30). Piden su propio permiso, `telegram.read`; `read` no
+alcanza. La API no manda mensajes de Telegram.
+
+- Cada conversación se nombra con `thread`, un `t_…` opaco. Ningún id de Telegram,
+  `@usuario` ni el token sale por la API.
+- De alguien fuera del roster sólo se ven la hora y la dirección de cada mensaje, con
+  `hidden: true`, salvo lo que llegó con el Catch-All de Telegram activo, mientras siga
+  activo. La regla la aplica el servicio `paynani-telegram`, no la API.
+- `name` sale del roster; fuera del roster, el nombre que muestra Telegram, marcado
+  «(no verificado)».
+- Las páginas van con `before`, como en WhatsApp.
+- Sin Telegram configurado, o con el servicio caído, responden `telegram_unavailable`.
 
 ## Los SMS que manda la API
 
@@ -182,6 +203,7 @@ encabezado `X-Request-Id`. Si un agente te reporta un problema, pídele el
 | `app_outdated` | 409 | El teléfono tiene una PaynaniApp anterior a la 0.9.0 |
 | `busy` | 503 | El roster se está escribiendo; hay que reintentar en unos segundos |
 | `whatsapp_unavailable` | 503 | WhatsApp no está activado en la instalación, o el servicio `paynani-whatsapp` no contesta |
+| `telegram_unavailable` | 503 | Telegram no está configurado en la instalación, o el servicio `paynani-telegram` no contesta |
 | `internal_error` | 500 | Algo falló en paynani. El detalle queda en el log de `paynani-web`, nunca en la respuesta |
 
 ## Seguridad

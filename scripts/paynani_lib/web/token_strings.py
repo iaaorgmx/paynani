@@ -17,9 +17,9 @@ for language, words in WORDS.items():
     CATALOGUES[language]["web.tokens.agent_replies"] = {"es-MX": "El agente local contesta las respuestas", "en-US": "Local agent replies to responses", "es-ES": "El agente local contesta las respuestas", "fr-FR": "L’agent local répond aux réponses", "pt-BR": "O agente local responde às respostas"}[language]
     # PRD #535 FR-P3 y #576 FR-13b: lo que deja hacer cada permiso del Catch-All, junto a sus casillas.
     CATALOGUES[language]["web.tokens.catchall_hint"] = {
-        "es-MX": "catchall.sms.write y catchall.whatsapp.write dejan que este token active el Catch-All de ese canal, y entonces tu agente leerá los mensajes de ese canal de números fuera del roster.",
-        "en-US": "catchall.sms.write and catchall.whatsapp.write let this token turn on that channel's Catch-All, and then your agent will read that channel's messages from numbers that are not on the roster.",
-        "es-ES": "catchall.sms.write y catchall.whatsapp.write permiten que este token active el Catch-All de ese canal, y entonces tu agente leerá los mensajes de ese canal de números fuera del roster.",
-        "fr-FR": "catchall.sms.write et catchall.whatsapp.write permettent à ce jeton d’activer le Catch-All de ce canal : votre agent lira alors les messages de ce canal venant de numéros absents du roster.",
-        "pt-BR": "catchall.sms.write e catchall.whatsapp.write deixam este token ativar o Catch-All desse canal, e então seu agente lerá as mensagens desse canal de números fora do roster.",
+        "es-MX": "catchall.sms.write, catchall.whatsapp.write y catchall.telegram.write dejan que este token active el Catch-All de ese canal, y entonces tu agente leerá los mensajes de ese canal de quien no está en el roster.",
+        "en-US": "catchall.sms.write, catchall.whatsapp.write and catchall.telegram.write let this token turn on that channel's Catch-All, and then your agent will read that channel's messages from senders who are not on the roster.",
+        "es-ES": "catchall.sms.write, catchall.whatsapp.write y catchall.telegram.write permiten que este token active el Catch-All de ese canal, y entonces tu agente leerá los mensajes de ese canal de quien no está en el roster.",
+        "fr-FR": "catchall.sms.write, catchall.whatsapp.write et catchall.telegram.write permettent à ce jeton d’activer le Catch-All de ce canal : votre agent lira alors les messages de ce canal venant d’expéditeurs absents du roster.",
+        "pt-BR": "catchall.sms.write, catchall.whatsapp.write e catchall.telegram.write deixam este token ativar o Catch-All desse canal, e então seu agente lerá as mensagens desse canal de quem não está no roster.",
     }[language]

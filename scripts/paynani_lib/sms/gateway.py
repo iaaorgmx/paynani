@@ -30,7 +30,7 @@ from pathlib import Path
 from . import api_replies
 from . import config as sms_config
 from . import roster_api
-from . import whatsapp_api
+from . import telegram_api, whatsapp_api
 from . import store as store_mod
 from .websocket import ConnectionClosed, WebSocket, accept_key
 
@@ -164,7 +164,8 @@ class Gateway:
                  battery_warn_pct: int = 25, battery_critical_pct: int = 10,
                  battery_stale_s: int = BATTERY_STALE_S, roster_service=None,
                  web_port: int = WEB_PORT, web_host: str = "127.0.0.1", api_tokens_path: Path | None = None,
-                 whatsapp: whatsapp_api.WhatsAppRelay | None = None, whatsapp_check_s: float = 5.0):
+                 whatsapp: whatsapp_api.WhatsAppRelay | None = None, whatsapp_check_s: float = 5.0,
+                 telegram: telegram_api.TelegramRelay | None = None):
         self.store = store_mod.Store(state_dir)
         self.journal = Path(journal)
         self.ledger_path = ledger.path_for(self.journal)
@@ -197,6 +198,9 @@ class Gateway:
         # sms_gateway.py pasa el de la instalación, que lee whatsapp.env.
         self.whatsapp = whatsapp or whatsapp_api.WhatsAppRelay(state_dir, log=log, configured=lambda: False)
         self.whatsapp_check_s = whatsapp_check_s
+        # Telegram desde PaynaniApp (TELEGRAM.md §6), igual: sin uno dado, no está configurado.
+        # `whatsapp_check_s` también es cada cuánto se mira si cambió su configuración.
+        self.telegram = telegram or telegram_api.TelegramRelay(state_dir, log=log, configured=lambda: False)
         # 0 apaga el reenvío: fuera de /sms/ se responde 404, como antes de #434.
         self.web_port = web_port
         self.web_host = web_host
@@ -601,10 +605,14 @@ class Gateway:
         ws.wa_configured = self.whatsapp.configured()
         ws.wa_grants = self.whatsapp.grants(ws.wa_configured)
         ws.wa_watching = False
+        # TELEGRAM.md §6: los tipos telegram.* sólo con Telegram configurado, sin `grants`.
+        ws.tg_configured = self.telegram.configured()
+        ws.tg_watching = False
         welcome = {"type": "welcome", "protocol": PROTOCOL, "server_time": store_mod.now_utc(),
                    "heartbeat_s": self.heartbeat_s, "allowed": allowed,
                    "max_out_per_hour": self.max_out_per_hour,
-                   "accepts": list(ACCEPTS) + self.whatsapp.accepts(ws.wa_configured),
+                   "accepts": list(ACCEPTS) + self.whatsapp.accepts(ws.wa_configured)
+                   + self.telegram.accepts(ws.tg_configured),
                    "grants": list(ws.wa_grants)}
         if SERVER_VERSION:
             welcome["server_version"] = SERVER_VERSION
@@ -615,6 +623,8 @@ class Gateway:
                  asyncio.create_task(self._watch_whatsapp_config(ws))]
         if ws.wa_configured:
             tasks.append(asyncio.create_task(self.whatsapp.watch(device_id, lambda what: self._wa_changed(ws, what))))
+        if ws.tg_configured:
+            tasks.append(asyncio.create_task(self.telegram.watch(device_id, lambda what: self._tg_changed(ws, what))))
         try:
             while True:
                 raw = await ws.recv()
@@ -682,6 +692,11 @@ class Gateway:
                 log("cambió la configuración de WhatsApp; se cierra la conexión (1012) para un welcome nuevo")
                 await ws.close(1012, "cambió la configuración de WhatsApp")
                 return
+            # TELEGRAM.md §6: lo mismo con Telegram, cuyos tipos también van sólo en el welcome.
+            if self.telegram.configured() != getattr(ws, "tg_configured", False):
+                log("cambió la configuración de Telegram; se cierra la conexión (1012) para un welcome nuevo")
+                await ws.close(1012, "cambió la configuración de Telegram")
+                return
 
     async def _wa_changed(self, ws: WebSocket, what: str) -> None:
         """`whatsapp.changed` sólo a una conexión que ya pidió status o threads (§12)."""
@@ -689,6 +704,25 @@ class Gateway:
             return
         try:
             await self._send(ws, {"type": "whatsapp.changed", "what": what})
+        except (ConnectionClosed, ConnectionError, OSError):
+            pass
+
+    async def _tg_changed(self, ws: WebSocket, what: str) -> None:
+        """`telegram.changed` sólo a una conexión que ya pidió status o threads (§6)."""
+        if ws.closed or not getattr(ws, "tg_watching", False):
+            return
+        try:
+            await self._send(ws, {"type": "telegram.changed", "what": what})
+        except (ConnectionClosed, ConnectionError, OSError):
+            pass
+
+    async def _telegram(self, ws: WebSocket, device_id: str, msg: dict) -> None:
+        """Un pedido `telegram.*` de la app (TELEGRAM.md §6), pasado al servicio paynani-telegram."""
+        if msg.get("type") in ("telegram.status", "telegram.threads"):
+            ws.tg_watching = True
+        response = await self.telegram.handle(msg, device_id, configured=getattr(ws, "tg_configured", False))
+        try:
+            await self._send(ws, response)
         except (ConnectionClosed, ConnectionError, OSError):
             pass
 
@@ -788,6 +822,11 @@ class Gateway:
         elif kind in whatsapp_api.TYPES:
             # Como tarea, igual que el roster: el servicio puede tardar (unlink, hasta 20 s).
             task = asyncio.create_task(self._whatsapp(ws, device_id, msg))
+            self.roster_tasks.add(task)
+            task.add_done_callback(self.roster_tasks.discard)
+        elif kind in telegram_api.TYPES:
+            # Como tarea: un `telegram.send` largo sale por partes, una por segundo.
+            task = asyncio.create_task(self._telegram(ws, device_id, msg))
             self.roster_tasks.add(task)
             task.add_done_callback(self.roster_tasks.discard)
         elif kind == "hello":
