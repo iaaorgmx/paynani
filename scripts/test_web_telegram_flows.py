@@ -184,6 +184,20 @@ try:
     check("FR-15: «Agregar al roster» trae el id de Pedro sólo en el formulario", (200, True, False),
           (st, f'value="{PEDRO}"' in page, "location" in h))
 
+    # FR-15 de punta a punta (#622): guardar ese formulario deja el id en la columna Telegram,
+    # y el mensaje siguiente de Pedro ya llega como contacto del roster.
+    form = {k: v for k, v in re.findall(r'name="(csrf|cuenta|fila|etag|name|email|github|phones|telegram)"[^>]*?value="([^"]*)"', page)}
+    form["type"] = "Human"
+    st, h, _ = req("POST", "/roster/guardar", form, ck)
+    check("FR-15: guardar el formulario → /roster?…ok=saved", (303, True), (st, "ok=saved" in h.get("location", "")))
+    check("y el id queda en la columna Telegram de roster.md", True, f"| Pedro |  | Human | {PEDRO} |" in roster.read_text(encoding="utf-8"))
+    api.private_message(PEDRO, "Somos la tienda de enfrente", first_name="Pedro")
+    now_in = until(lambda: next((t for t in threads() if t["thread"] == pedro["thread"] and t.get("in_roster")), None))
+    check("la conversación de Pedro pasa al roster", True, bool(now_in))
+    st, _, page = req("GET", f"/telegram/messages/ver?t={pedro['thread']}&lang=es-MX", cookie=ck)
+    check("y en la web ya se ve su mensaje, con el cuadro de responder", (200, True, True),
+          (st, "Somos la tienda de enfrente" in page, 'action="/telegram/messages/enviar"' in page))
+
     st, _, page = req("GET", "/telegram/catch-all?lang=es-MX", cookie=ck)
     check("el Catch-All de Telegram abre en su página (catchall.get channel=telegram)", (200, True),
           (st, 'id="catchall-telegram"' in page))
