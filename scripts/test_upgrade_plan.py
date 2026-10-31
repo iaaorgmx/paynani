@@ -170,10 +170,9 @@ try:
               (c["verb"], c["unit"]) == ("restart", "paynani-whatsapp*.service"), str(c))
     for path in ("scripts/whatsapp_bridge/package.json", "scripts/whatsapp_bridge/package-lock.json"):
         c = up.classify(path)
-        check(f"{path} -> npm ci (from the lockfile) and restart",
-              (c["verb"], c["command"], c["unit"]) == ("reinstall-and-restart", up.WHATSAPP_NPM,
-                                                         "paynani-whatsapp*.service")
-              and "--ignore-scripts" in c["command"], str(c))
+        check(f"{path} -> the installer (npm ci with its Node, only if it owns WhatsApp) and restart",
+              (c["verb"], c["command"], c["unit"]) == ("reinstall-and-restart", up.INSTALLER,
+                                                         "paynani-whatsapp*.service"), str(c))
     for path in ("scripts/whatsapp_bridge/test/lib.test.js", "scripts/whatsapp_bridge/fake_bridge.py"):
         check(f"{path} -> none (tests)", up.classify(path)["verb"] == "none")
     # The gateway's §11 and §12 modules, and who reads whatsapp.env (WhatsApp from PaynaniApp).

@@ -93,7 +93,6 @@ WEB = ("paynani-web*.service", "com.paynani.web*")
 # It runs the Baileys bridge as a child, so a change to the bridge's code needs it
 # restarted as well.
 WHATSAPP = ("paynani-whatsapp*.service", "com.paynani.whatsapp*")
-WHATSAPP_NPM = "npm ci --ignore-scripts --prefix scripts/whatsapp_bridge"
 INSTALLER = None
 OPENCODE_PLUGIN = "python3 scripts/opencode_plugin.py --install"
 OPENCODE_RESTART = "OpenCode (close and reopen it)"
@@ -121,7 +120,10 @@ RULES = (
     # a change to either file needs `npm ci` before the restart.
     (r"^scripts/whatsapp_bridge/test/", "none", "tests", None, None, None, None),
     (r"^scripts/whatsapp_bridge/fake_bridge\.py$", "none", "tests (the fake bridge)", None, None, None, None),
-    (r"^scripts/whatsapp_bridge/package(-lock)?\.json$", "reinstall-and-restart", "WhatsApp bridge dependencies", *WHATSAPP, None, WHATSAPP_NPM),
+    # The installer runs `npm ci` with the Node it pinned, and only when it owns the
+    # WhatsApp unit. A bare `npm ci` from PATH failed on hosts without WhatsApp, or
+    # with only the pinned Node, and stopped --apply before any restart.
+    (r"^scripts/whatsapp_bridge/package(-lock)?\.json$", "reinstall-and-restart", "the installer (WhatsApp bridge dependencies)", *WHATSAPP, None, INSTALLER),
     # `configured()` is read by the WhatsApp service, the SMS gateway (§12) and PaynaniWeb.
     (r"^scripts/paynani_lib/whatsapp/(config|media)\.py$", "restart", "WhatsApp service, SMS gateway and PaynaniWeb", "whatsapp-all", "whatsapp-all", None, None),
     (r"^scripts/(whatsapp_service\.py|paynani_lib/whatsapp/.*\.py|whatsapp_bridge/.*\.js)$", "restart", "WhatsApp service and bridge", *WHATSAPP, None, None),
