@@ -845,6 +845,27 @@ def _sent_copy_checks() -> list[dict]:
     return checks
 
 
+def _telegram_roster_check(ros: dict) -> dict | None:
+    """
+    PRD #609 FR-11, FR-11a: filas cuya columna Telegram no sirve. Nombra la fila, nunca
+    el id ni el @usuario. Sin problemas, ningún check (la columna es opcional).
+    """
+    problems = ros.get("telegram_problems") or []
+    if not problems:
+        return None
+    dup = sorted({p["name"] for p in problems if p["problem"] == "duplicate"})
+    bad = sorted({p["name"] for p in problems if p["problem"] == "invalid"})
+    parts = []
+    if dup:
+        parts.append("error: the same Telegram id or @username is on more than one row, so none of "
+                     "them is recognized on Telegram: " + ", ".join(dup))
+    if bad:
+        parts.append("not a Telegram id or @username (5-32 letters, digits or _), so the row is not "
+                     "recognized on Telegram: " + ", ".join(bad))
+    return _check("roster:telegram", "warning", "; ".join(parts), {"problems": problems},
+                  "fix the Telegram column of those rows in roster.md")
+
+
 def doctor_data() -> dict:
     facts = _facts()
     checks = []
@@ -899,6 +920,9 @@ def doctor_data() -> dict:
         checks.append(_check("roster", "blocked", "roster has no authorized addresses", ros, "scripts/paynani roster add NAME ADDRESS"))
     else:
         checks.append(_check("roster", "blocked", "roster.md is missing", ros, "scripts/paynani roster add NAME ADDRESS"))
+    telegram = _telegram_roster_check(ros)
+    if telegram:
+        checks.append(telegram)
 
     checks.extend(_capability_checks(facts))
     checks.extend(facts.get("harness_step_checks") or [])

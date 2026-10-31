@@ -28,8 +28,8 @@ from paynani_lib.telegram import config  # noqa: E402
 from paynani_lib.telegram.service import StartError, TelegramService  # noqa: E402
 
 
-def notify_owner(username: str) -> None:
-    """FR-10: un correo al dueño (la primera fila Human del roster) con el @usuario nuevo, sin el token."""
+def mail_owner(subject: str, body: str) -> None:
+    """Un correo al dueño (la primera fila Human del roster) por send.sh. Nunca lleva el token ni ids."""
     import subprocess
     import tempfile
 
@@ -42,20 +42,24 @@ def notify_owner(username: str) -> None:
     owner = next((m for m in members if m.get("owner") and m.get("email")), None)
     if not owner:
         return
-    body = (f"El bot de Telegram de paynani cambió. Ahora recibe @{username}.\n\n"
-            "Si tú no lo cambiaste, revisa «Bot de Telegram» en PaynaniWeb o corre\n"
-            "paynani telegram status en la terminal.\n")
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as fh:
         fh.write(body)
         name = fh.name
     try:
-        subprocess.run([str(ROOT / "scripts" / "send.sh"), owner["email"],
-                        "paynani: cambió el bot de Telegram", name],
+        subprocess.run([str(ROOT / "scripts" / "send.sh"), owner["email"], subject, name],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60, check=False)
     except (OSError, subprocess.SubprocessError):
         pass
     finally:
         Path(name).unlink(missing_ok=True)
+
+
+def notify_owner(username: str) -> None:
+    """FR-10: el @usuario del bot nuevo, sin el token."""
+    mail_owner("paynani: cambió el bot de Telegram",
+               f"El bot de Telegram de paynani cambió. Ahora recibe @{username}.\n\n"
+               "Si tú no lo cambiaste, revisa «Bot de Telegram» en PaynaniWeb o corre\n"
+               "paynani telegram status en la terminal.\n")
 
 
 def log(line: str) -> None:
@@ -71,7 +75,7 @@ async def main_async(args: argparse.Namespace) -> int:
     state = Path(args.state) if args.state else Path(paths.state_dir())
     service = TelegramService(state, roster_path=Path(args.roster), token=token,
                               api_base=config.api_base(), settings=values, log=log,
-                              notify_owner=notify_owner)
+                              notify_owner=notify_owner, mail_owner=mail_owner)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

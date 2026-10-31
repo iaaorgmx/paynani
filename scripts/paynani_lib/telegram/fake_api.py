@@ -36,6 +36,7 @@ class FakeBotAPI:
         self.revoked = False
         self.sent = []                   # [{"method": ..., "params": {...}}] en orden
         self.left_chats = []
+        self.file_requests = []      # file_id de cada getFile (FR-18)
         self.calls = []                  # nombres de métodos, en orden (para las pruebas de orden)
         self._updates = []               # [{"update_id": n, ...}]
         self._next_update = 1000
@@ -114,22 +115,29 @@ class FakeBotAPI:
         return u
 
     def private_message(self, user_id, text=None, first_name="Prueba", username=None, *,
-                        photo=None, document=None, message_id=None):
-        """Un mensaje privado. `photo`/`document`: bytes; el archivo queda listo para getFile."""
+                        photo=None, document=None, message_id=None, declared_size=None, caption=None):
+        """
+        Un mensaje privado. `photo`: bytes; `document`: (bytes, nombre, mime). El archivo
+        queda listo para getFile. `declared_size` es el tamaño que dice el mensaje y
+        getFile, distinto del real, para probar el corte durante la descarga (FR-18).
+        """
         msg = {"message_id": message_id or self._message_id(user_id), "date": int(time.time()),
                "from": self._user(user_id, first_name, username),
                "chat": {"id": user_id, "type": "private", "first_name": first_name}}
         if text is not None:
             msg["text"] = text
+        if caption is not None:
+            msg["caption"] = caption
         if photo is not None:
-            fid = self.add_file(photo, "photos/file_%d.jpg" % len(self._files))
+            fid = self.add_file(photo, "photos/file_%d.jpg" % len(self._files), declared_size)
             msg["photo"] = [{"file_id": fid, "file_unique_id": fid + "u", "width": 90, "height": 90,
-                             "file_size": len(photo)}]
+                             "file_size": declared_size if declared_size is not None else len(photo)}]
         if document is not None:
             data, name, mime = document
-            fid = self.add_file(data, "documents/file_%d" % len(self._files))
+            fid = self.add_file(data, "documents/file_%d" % len(self._files), declared_size)
             msg["document"] = {"file_id": fid, "file_unique_id": fid + "u", "file_name": name,
-                               "mime_type": mime, "file_size": len(data)}
+                               "mime_type": mime,
+                               "file_size": declared_size if declared_size is not None else len(data)}
         uid = self._push({"message": msg})
         return uid, msg["message_id"]
 
@@ -288,6 +296,7 @@ class FakeBotAPI:
 
     def _m_getFile(self, p):
         fid = p.get("file_id")
+        self.file_requests.append(fid)
         if fid not in self._files:
             return 400, _err(400, "Bad Request: invalid file_id")
         path, data, declared = self._files[fid]

@@ -117,11 +117,34 @@ def wait_status(cond, timeout=10.0) -> dict:
 
 wait_status(lambda s: s.get("state") == "running")
 
+class _Tee:
+    """
+    Los logs de PaynaniWeb en una lista, sin dejar de mostrarlos: stdout es su log de
+    peticiones (state/web.log) y stderr el de errores. Las líneas `ok`/`FAIL` de esta
+    prueba no cuentan.
+    """
+
+    def __init__(self, out, sink):
+        self.out, self.sink = out, sink
+
+    def write(self, text):
+        if not text.startswith(("ok   ", "FAIL ", "     expected", "     got")):
+            self.sink.append(text)
+        return self.out.write(text)
+
+    def flush(self):
+        self.out.flush()
+
+
+web_log: list[str] = []
+sys.stderr = _Tee(sys.stderr, web_log)
+sys.stdout = _Tee(sys.stdout, web_log)
+
 uf = tmp / "web" / "user.json"
 users.create("julian@example.com", "Julian Flores", PASSWORD, uf)
 mails = []
 (tmp / "webstate").mkdir()
-ctx = app.Context(uf, notifier=notify.Notifier(send=lambda *a: mails.append(a), log=lambda l: None),
+ctx = app.Context(uf, notifier=notify.Notifier(send=lambda *a: mails.append(a), log=web_log.append),
                   agent_email="agente@example.com", accounts_file=tmp / "accounts.json", state_dir=tmp / "webstate",
                   roster_path=roster, telegram_source=src, telegram_root=cfg, whatsapp_root=tmp)
 httpd = app.serve("127.0.0.1", 0, ctx=ctx)
@@ -208,11 +231,12 @@ finally:
     asyncio.run_coroutine_threadsafe(_drain(), loop).result(15)
     loop.call_soon_threadsafe(loop.stop)
     api.stop()
-log_text = "\n".join(logs)
-check("el log del servicio no trae ningún token", [], [x[:6] for x in TOKENS if x in log_text])
-check("ni ningún check (revisión de Ximena, #617)", False, bool(re.search(r"c_[0-9a-f]{32}", log_text)))
+log_text = "\n".join(logs) + "\n" + "".join(web_log)
+check("la prueba sí leyó el log de peticiones de PaynaniWeb", True, " POST /" in "".join(web_log))
+check("los logs del servicio y de la web no traen ningún token", [], [x[:6] for x in TOKENS if x in log_text])
+check("los logs del servicio y de la web no traen ningún check", None, re.search(r"c_[0-9a-f]{32}", log_text))
 check("no se escribió telegram.env en el clon", False, (ROOT / "telegram.env").exists())
-check("la configuración real no cambió (.env y Himalaya)", BEFORE, [sha(p) for p in REAL])
+check("la configuración real no cambió (paths.env_file(), .env y Himalaya)", BEFORE, [sha(p) for p in REAL])
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

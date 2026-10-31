@@ -305,7 +305,7 @@ def roster_telegram(path: pathlib.Path) -> dict:
     """Los contactos de la columna `Telegram` (FR-11, FR-11a).
 
     `{"ids": {id: entry}, "usernames": {usuario: entry}, "problems": [...]}`, con
-    `entry` = `{name, address}`. Un valor que no cumple la regla es un problema
+    `entry` = `{name, address, rules}`. Un valor que no cumple la regla es un problema
     `invalid`, y un id o `@usuario` que aparece en más de una fila es `duplicate`: esas
     filas no se reconocen por Telegram (falla cerrado). Los problemas nombran la fila,
     nunca el valor. Sin la columna, todo vacío.
@@ -328,7 +328,7 @@ def _telegram_from_text(text: str) -> dict:
         if not raw:
             continue
         address = next((normalise(f) for f in fields if is_address(normalise(f))), "")
-        entry = {"name": columns.get("name", ""), "address": address}
+        entry = {"name": columns.get("name", ""), "address": address, "rules": columns.get("rules") or None}
         value = telegram_value(raw)
         if value is None:
             problems.append({"name": entry["name"], "problem": "invalid"})

@@ -21,10 +21,10 @@ state/telegram/                      0700
     account.json                     0600  alias aleatorio del bot para `account` (sección 3)
     offset.json                      0600  siguiente offset de getUpdates (FR-4)
     journal.jsonl                    0600  update_id, ref, hash, written (FR-5)
-    links.json                       0600  @usuario -> id fijado (FR-13)
+    links.json                       0600  @usuario -> id fijado (FR-13) y a qué otros ids se avisó
     inbox/<ref>.json                 0600  texto y datos de cada mensaje recibido
     outbox.jsonl                     0600  lo que se mandó, por hilo
-    chats.json                       0600  hilo -> chat privado abierto por la persona (FR-25)
+    chats.json                       0600  hilo -> chat privado y nombre que muestra Telegram (FR-15, FR-25)
   active                             0600  el <bot> en uso; un cambio de token lo reemplaza (FR-10)
 ```
 
@@ -118,7 +118,24 @@ para pruebas, sección 9) usando la biblioteca estándar. Sólo usa estos métod
 - **`kind`**: `text`, `image`, `video`, `audio`, `voice`, `document`, `sticker`,
   `location`, `contact` u `other`. El aviso dice el tipo, como WhatsApp (`[foto]`,
   `[documento: factura.pdf]`), y nunca el nombre del archivo fuera del roster.
-- `rules` y `catch_all` se agregan igual que en `whatsapp.received`.
+- `rules` y `catch_all` se agregan igual que en `whatsapp.received`. El Catch-All de
+  Telegram es sólo `rules/catch-all-telegram.md`: el viejo `rules/catch-all.md` era de
+  SMS y WhatsApp y no abre Telegram, ni se copia a Telegram al migrar (#576 FR-5).
+- **`media_rejected`**: `size` o `type` cuando el archivo no pasó FR-18; el aviso lo
+  dice (`[documento: factura.pdf, rechazado: tipo]`) y no queda nada en disco. Sólo se
+  baja el archivo de alguien del roster, o de fuera con el Catch-All activo; de los
+  demás no se pide ni `getFile`.
+
+### Quién es quién (FR-11 a FR-13)
+
+Sólo cuenta `from.id`. En este orden: el id está en la columna `Telegram` de una fila;
+o un `@usuario` de la columna ya quedó fijado a ese id en `links.json`; o el
+`@usuario` con el que escribe está en la columna y nadie lo ha fijado, y entonces se
+fija a este id y el dueño recibe «@usuario quedó vinculado a <contacto>». Si ese
+`@usuario` ya está fijado a otro id, no se reconoce y el dueño recibe un aviso, una
+vez por id. Un vínculo cuyo `@usuario` ya no está en la columna (el dueño lo cambió o
+quedó repetido) se borra con el siguiente mensaje. `doctor` muestra el check
+`roster:telegram` con las filas cuyo valor no vale o está repetido, sin el valor.
 
 Las líneas de aviso:
 
@@ -308,7 +325,8 @@ contraseña de la web:
 
 Es la única respuesta con un id de Telegram. La web lo pone en el formulario de la
 fila nueva y no lo guarda en otro lugar ni lo escribe en su log. La pasarela no
-anuncia ni reenvía este tipo.
+anuncia ni reenvía este tipo. Errores: `not_allowed` si `by` no es `web`, `not_found`
+para un hilo que no existe y `conflict` si esa persona ya está en el roster.
 
 #### `telegram.token_check` y `telegram.token_apply`
 
@@ -412,6 +430,8 @@ conectada, la pasarela cierra con `1012`, como con WhatsApp.
   `/telegram/catch-all`, enlazada desde «Mensajes de Telegram» junto a «Bot de
   Telegram». Guarda `rules/catch-all-telegram.md` con `catchall.save` y
   `channel: telegram`; `catchall.get`/`catchall.save` aceptan ese canal desde TG-3.
+  `SaveCatchAll` con `channel: telegram` en la API, y su permiso
+  `catchall.telegram.write`, llegan con TG-5.
 - Para trabajar sin el servicio, la web usa `telegram_source.py`: `ControlSocket` (el
   cliente de la sección 4) y un `Demo` en memoria que contesta los mismos JSON, con
   `PAYNANI_WEB_TELEGRAM=demo`. La prueba contra el servicio real usa `fake_api.py`

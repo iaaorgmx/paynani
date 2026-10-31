@@ -580,7 +580,7 @@ def sms_event(*, device_id, message_id, e164, raw_sender, sender_name, text, sen
 # El archivo es el del canal (`catch-all-sms.md`, `catch-all-whatsapp.md`, PRD #576) o
 # el único de antes (`catch-all.md`).
 _CATCH_ALL_LINE = re.compile(
-    r"\[(sms|whatsapp) ([^\]\n]*?)catch-all: rules/catch-all(?:-[a-z]+)?\.md([^\]\n]*)\] (.*?): .* "
+    r"\[(sms|whatsapp|telegram) ([^\]\n]*?)catch-all: rules/catch-all(?:-[a-z]+)?\.md([^\]\n]*)\] (.*?): .* "
     r"(\[[^\]\n]*paynani event show [^\]\n]+\])$", re.M)
 
 
@@ -597,13 +597,14 @@ def redact_catch_all(text, channels=None):
     sobre y los avisos que se repiten al iniciar una sesión tampoco vuelven a
     mostrar lo que decía el mensaje. Queda quién escribió y el comando, con
     `catch-all apagado` en lugar del archivo. Con `channels` (`{"sms"}`,
-    `{"whatsapp"}`) sólo se tocan los avisos de esos canales (PRD #576 FR-7).
+    `{"whatsapp"}`, `{"telegram"}`) sólo se tocan los avisos de esos canales (PRD #576 FR-7).
     """
     def repl(m):
         if channels is not None and m.group(1) not in channels:
             return m.group(0)
+        who = "alguien" if m.group(1) == "telegram" else "un número"
         return f"[{m.group(1)} {m.group(2)}catch-all apagado{m.group(3)}] {m.group(4)}: " \
-               f"mensaje de un número fuera del roster {m.group(5)}"
+               f"mensaje de {who} fuera del roster {m.group(5)}"
     return _CATCH_ALL_LINE.sub(repl, str(text or ""))
 
 
