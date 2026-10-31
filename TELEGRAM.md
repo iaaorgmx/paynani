@@ -268,7 +268,9 @@ Catch-All de Telegram activo.
 {"type": "result", "ref": "q_…", "ok": true, "data": {"ref": "tgo:…", "status": "sent", "at": "…"}}
 ```
 
-- `thread` o `contact` (el nombre o el email de la fila del roster). Uno de los dos.
+- `thread` o `contact` (el nombre o el email de la fila del roster). Uno de los dos. Un
+  nombre que está en más de una fila da `conflict` y no manda nada: hay que usar el
+  correo, que es único.
 - `file` sólo de la terminal y del agente, validado siempre contra `outbox/` y las
   carpetas permitidas (FR-20). La web y la pasarela nunca lo mandan.
 - El servicio aplica siempre FR-25 y FR-26: contacto del roster con un chat privado
@@ -282,7 +284,9 @@ Catch-All de Telegram activo.
   demás, hasta 50 MB, con `sendDocument`.
 - Un mensaje por segundo por chat: el servicio espera ese segundo, no lo rechaza. El
   límite del día (`TELEGRAM_SEND_PER_DAY`, 300) cuenta cada mensaje que queda en el
-  chat, en toda la instalación, y se reinicia a medianoche UTC; pasándolo,
+  chat, en toda la instalación, y se reinicia a medianoche UTC. Se reserva antes de
+  mandar y se devuelve lo que no salió: un envío que falla no gasta cupo, y uno que
+  falla a la mitad queda `partial` con `delivered` y `parts` en `outbox.jsonl`. Pasándolo,
   `rate_limited` con los segundos que faltan. Un 429 espera su `retry_after` y se
   reintenta una vez; si vuelve, `rate_limited`.
 - Al mandar, se apaga el «escribiendo…» de ese hilo (FR-21). El «escribiendo…» empieza

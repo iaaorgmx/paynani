@@ -332,6 +332,56 @@ async def fallback_and_limit_tests():
         api.stop()
 
 
+ALEX1, ALEX2 = 7771234601, 7771234602
+ROSTER_ALEX = """\
+| Name | Email | Telegram | Type |
+|---|---|---|---|
+| Alex | alex.uno@example.com | %d | Human |
+| Alex | alex.dos@example.com | %d | Human |
+""" % (ALEX1, ALEX2)
+
+
+async def review_619_tests():
+    """Revisión de Ximena en #619: el cupo sólo cuenta lo que quedó en el chat, y un nombre repetido no manda."""
+    state = pathlib.Path(tempfile.mkdtemp())
+    api = FakeBotAPI(token=TOKEN, bot_id=BOT_ID, username="NegocioBot").start()
+    s = await service(state, api, [], TELEGRAM_SEND_PER_DAY="3")
+    (state / "roster.md").write_text(ROSTER_ALEX, encoding="utf-8")
+    try:
+        api.private_message(ALEX1, "hola, soy Alex uno", first_name="Alex")
+        api.private_message(ALEX2, "hola, soy Alex dos", first_name="Alex")
+        await until(lambda: s.store and len(s.store.threads()) == 2)
+        before = len(methods(api, "sendMessage"))
+        r = await call(s, "telegram.send", contact="Alex", text="¿cuál Alex?")
+        check("#619: un nombre de dos filas no manda nada y pide el correo", r.get("code") == "conflict"
+              and r.get("field") == "contact" and len(methods(api, "sendMessage")) == before, str(r))
+        api.fail_next("sendMessage", 429, retry_after=1)
+        api.fail_next("sendMessage", 429, retry_after=1)
+        r = await call(s, "telegram.send", contact="alex.dos@example.com", text="no sale")
+        check("#619: fallo total: rate_limited y el cupo no se gasta", r.get("code") == "rate_limited"
+              and s.status()["counters"]["sent_today"] == 0, str(s.status()["counters"]))
+        r = await call(s, "telegram.send", contact="alex.dos@example.com", text="para Alex dos")
+        sm = methods(api, "sendMessage")
+        check("#619: el correo desambigua y llega al Alex correcto", r.get("ok") and int(sm[-1]["chat_id"]) == ALEX2
+              and sm[-1]["text"] == "para Alex dos", str(r))
+        outbox = state / "telegram" / "outbox"
+        outbox.mkdir(mode=0o700, exist_ok=True)
+        (outbox / "foto.jpg").write_bytes(JPEG)
+        api.fail_next("sendMessage", 429, retry_after=1)
+        api.fail_next("sendMessage", 429, retry_after=1)
+        r = await call(s, "telegram.send", by="agent", contact="alex.uno@example.com", text="t" * 1500,
+                       file=str(outbox / "foto.jpg"))
+        check("#619: fallo parcial: sólo cuenta el archivo que sí salió", r.get("code") == "rate_limited"
+              and len(methods(api, "sendPhoto")) == 1 and s.status()["counters"]["sent_today"] == 2,
+              str(s.status()["counters"]))
+        partial = [x for x in s.store.sent() if x.get("status") == "partial"]
+        check("#619: el envío queda como partial, con lo que salió", len(partial) == 1
+              and partial[0]["delivered"] == 1 and partial[0]["parts"] == 2, str(partial))
+    finally:
+        await s.stop()
+        api.stop()
+
+
 def unit_tests():
     parts = outbound.split_text("a" * 5000)
     check("split_text: 4096 + resto", [len(p) for p in parts] == [4096, 904])
@@ -346,6 +396,7 @@ def main():
     unit_tests()
     asyncio.run(main_tests())
     asyncio.run(fallback_and_limit_tests())
+    asyncio.run(review_619_tests())
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
 

@@ -133,9 +133,17 @@ class Outbound:
             return str(thread), chat, entry
         want = str(contact).strip().lower()
         rows = list(known["ids"].values()) + list(known["usernames"].values())
-        entry = next((e for e in rows if want and want in ((e.get("name") or "").lower(),
-                                                            (e.get("address") or "").lower())), None)
-        if entry is None:
+        # El correo es único; un nombre puede repetirse (Ximena, #619): un nombre de más
+        # de una fila no manda a nadie y pide el correo.
+        by_mail = [e for e in rows if want and (e.get("address") or "").lower() == want]
+        by_name = {contacts.row_key(e): e for e in rows if want and (e.get("name") or "").strip().lower() == want}
+        if by_mail:
+            entry = by_mail[0]
+        elif len(by_name) > 1:
+            raise _refused("conflict", "hay más de un contacto con ese nombre: usa su correo", field="contact")
+        elif by_name:
+            entry = next(iter(by_name.values()))
+        else:
             raise _refused("not_allowed", "no está en roster.md con la columna Telegram")
         key = contacts.row_key(entry)
         for t, info in self.store.threads().items():
@@ -162,6 +170,16 @@ class Outbound:
                 raise _refused("rate_limited", f"{limit} mensajes al día", retry_after_s=_seconds_to_utc_midnight())
             write_json(self._rate_path(), {"day": day, "count": used + n})
             self.counters["sent_today"] = used + n
+
+    async def _release(self, n: int) -> None:
+        """Devuelve `n` de lo reservado que no quedó en el chat (Ximena, #619)."""
+        if n <= 0:
+            return
+        async with self._rate_lock:
+            day = time.strftime("%Y-%m-%d", time.gmtime())
+            used = max(0, self._sent_today() - n)
+            write_json(self._rate_path(), {"day": day, "count": used})
+            self.counters["sent_today"] = used
 
     async def _pace(self, chat: int, every: float | None = None) -> None:
         """Un cambio por chat cada `TELEGRAM_SEND_INTERVAL_S` (o `every`): aquí se espera."""
@@ -268,7 +286,9 @@ class Outbound:
         path = self.check_file(file) if file else None
         caption = text if path and len(text) <= MAX_CAPTION else ""
         chunks = split_text(text) if text and not caption else []
-        await self._reserve(len(chunks) + (1 if path else 0))
+        reserved = len(chunks) + (1 if path else 0)
+        await self._reserve(reserved)              # atómico: dos envíos a la vez no pasan el límite
+        delivered = 0
         self._stop_typing(thread)
         ref = "tgo:" + secrets.token_hex(16)
         record = {"ref": ref, "thread": thread, "dir": "out", "by": author(by), "at": _now(),
@@ -278,6 +298,7 @@ class Outbound:
         try:
             if path:
                 await self._send_file(chat, path, caption)
+                delivered += 1
             draft = self._drafts.pop(thread, None)
             for i, chunk in enumerate(chunks):
                 await self._pace(chat)
@@ -286,8 +307,11 @@ class Outbound:
                                                         "text": chunk})
                 else:
                     await self._api("sendMessage", {"chat_id": chat, "text": chunk})
+                delivered += 1
         except Exception:
-            self.store.record_sent({"ref": ref, "status": "failed"})
+            await self._release(reserved - delivered)
+            self.store.record_sent({"ref": ref, "status": "failed" if not delivered else "partial",
+                                    "delivered": delivered, "parts": reserved})
             self._notify("threads")
             raise
         self.store.record_sent({"ref": ref, "status": "sent"})
@@ -406,12 +430,17 @@ class Outbound:
         """Una parte terminada: mensaje normal tras un borrador, o la última edición del mensaje."""
         chat = s["chat"]
         await self._reserve(1)
-        await self._pace(chat, CHAT_EDIT_EVERY_S)
         state = s["state"]
-        if state.get("mode") == "edit" and state.get("message_id"):
-            await self._api("editMessageText", {"chat_id": chat, "message_id": state["message_id"], "text": segment})
-        else:
-            await self._api("sendMessage", {"chat_id": chat, "text": segment})
+        try:
+            await self._pace(chat, CHAT_EDIT_EVERY_S)
+            if state.get("mode") == "edit" and state.get("message_id"):
+                await self._api("editMessageText", {"chat_id": chat, "message_id": state["message_id"],
+                                                    "text": segment})
+            else:
+                await self._api("sendMessage", {"chat_id": chat, "text": segment})
+        except Exception:
+            await self._release(1)
+            raise
         state["message_id"] = None
         s["segments"] += 1
 
