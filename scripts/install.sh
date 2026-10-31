@@ -59,8 +59,8 @@ Options:
   --roster-secret-file PATH  Pre-provisioned Hermes roster-route secret
   --with-sms                 Also install and supervise the SMS gateway (SMS_GATEWAY.md)
   --with-whatsapp            Also install and supervise WhatsApp (WHATSAPP_BRIDGE.md): uses this shell's Node 20+, or downloads the pinned Node 22 into ~/.local/lib/paynani (no sudo)
-  --with-telegram            Also install and supervise the Telegram bot (TELEGRAM.md). Standard library only;
-                             the token comes from `paynani telegram setup`, before or after this run
+  --with-telegram            Kept for compatibility: the Telegram service is always installed (TELEGRAM.md),
+                             stopped until PaynaniWeb or `paynani telegram setup` gives it a token
                              and PaynaniWeb behind it (PRD #434), which is only reachable
                              through the gateway. Optional: without it neither is installed,
                              upgraded or removed unless this installer already owns the
@@ -479,11 +479,13 @@ whatsapp_enabled() {
     ((with_whatsapp)) || [[ -n "${owned_digests[$unit_dir/paynani-whatsapp.service]+present}" ]]
 }
 
-# Telegram (PRD #609 FR-1) too: --with-telegram, or this installer already owns the
-# unit. No Node and nothing to download. The token is never the installer's:
+# Telegram (PRD #609 FR-1): since 0.20.0 the unit is always installed (#635, Q281 = A),
+# and it stays stopped until telegram.env has a token, so PaynaniWeb's «Telegram
+# account» can do the first setup on its own. --with-telegram is still accepted. No
+# Node and nothing to download. The token is never the installer's: PaynaniWeb or
 # `paynani telegram setup` writes telegram.env, before or after this run.
 telegram_enabled() {
-    ((with_telegram)) || [[ -n "${owned_digests[$unit_dir/paynani-telegram.service]+present}" ]]
+    return 0
 }
 
 # Whether telegram.env turns Telegram on (TELEGRAM_ENABLED=1 and a token), asked of

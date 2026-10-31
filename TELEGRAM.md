@@ -464,7 +464,11 @@ conectada, la pasarela cierra con `1012`, como con WhatsApp.
 
 - «Mensajes de Telegram» usa `telegram.threads`, `telegram.thread`, `telegram.send`,
   `telegram.image` y `telegram.watch`.
-- «Bot de Telegram» usa `telegram.status`, y para cambiar el token
+- «Cuenta de Telegram» (`/telegram`), sin token, es la configuración inicial (#635): no
+  pasa por el servicio, que todavía no corre. Llama a `telegram/setup.py`, lo mismo que
+  `setup` (§5): `getMe`, el `@usuario` escrito contra el de `getMe`, la casilla «sólo
+  de esta instalación» (que también autoriza `deleteWebhook`), `telegram.env` 0600 y
+  arrancar el servicio. Con token, la página usa `telegram.status`, y para cambiar el token
   `telegram.token_check` y `telegram.token_apply`, después de pedir la contraseña de la
   web. El campo del token es `type="password"`, con `autocomplete="off"`, y la página
   que lo recibe responde `Cache-Control: no-store`.
