@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- **`upgrade_plan.py`: un cambio en las dependencias del puente de WhatsApp pide el instalador, no un `npm ci` suelto.** Al preparar 0.18.0, el plan desde v0.17.1 imprimía `npm ci --ignore-scripts --prefix scripts/whatsapp_bridge` en todos los hosts, también en los que no tienen WhatsApp. Ese `npm` sale del PATH: en un host sin Node, o con sólo el Node que bajó el instalador en `~/.local/lib/paynani`, el comando falla, y `--apply` se detenía ahí, después de actualizar el código y antes de reiniciar los servicios, así que seguía corriendo el código anterior. Ahora `package.json` y `package-lock.json` piden `install.sh --upgrade`, que ya corre `npm ci --ignore-scripts` con su Node y sólo si es dueño de la unidad de WhatsApp. `UPGRADE.md` dice lo mismo.
 - **PaynaniWeb: la página inicial es un Dashboard con el estado de paynani (PRD #602, de #601).** `/` deja de ser sólo un saludo y muestra:
   - el estado general en verde, amarillo o rojo, con las revisiones de `doctor`: las locales con caché de 60 s y las de red del último `paynani doctor` guardado (#603);
   - cuatro indicadores del día (correo, avisos abiertos, SMS y roster), con un selector de cuenta;
