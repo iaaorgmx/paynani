@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- **Telegram, TG-2: el token (PRD #609 FR-8 a FR-10, #612).** `paynani telegram setup` lee el token de stdin (sin eco en una terminal), lo prueba con `getMe`, muestra el `@usuario` del bot y escribe `telegram.env` en `0600`. Si el bot tiene un webhook, lo borra sólo si el dueño lo confirma, y siempre pide confirmar que el token es sólo de esta instalación (`--dedicated` y `--delete-webhook` cuando no hay terminal). `paynani telegram token` (o PaynaniWeb, con `telegram.token_check` y `telegram.token_apply`) cambia de bot sin reiniciar el servicio. Guarda el token anterior en `telegram.env.bak`, espera una ronda de `getUpdates` sin 409, y si hay 409, el bot nuevo no queda listo en 60 s o Telegram deja de aceptar el token, regresa al anterior (`rollback`). Cada bot sigue con su propia carpeta. Al aplicar, el dueño recibe un correo con el `@usuario` nuevo. El token no sale en el log, `status`, los eventos ni las respuestas. `paynani telegram status` dice el estado del servicio.
 - **PaynaniWeb: Telegram (TG-7 de #612, PRD #609 FR-28).** Con Telegram activado, el menú agrega «Mensajes de Telegram»:
   - las conversaciones con el bot, con su foto y sus mensajes editados;
   - responder sólo donde la persona ya escribió, sin «Nuevo mensaje»;

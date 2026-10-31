@@ -327,7 +327,8 @@ anuncia ni reenvía este tipo.
   instalación (FR-10 paso 4). `confirm_delete_webhook` es obligatorio si `webhook` era
   `true`.
 - `result`: `applied`, `unchanged` (mismo token) o `rollback` (con `reason`: `409`,
-  `not_ready`, `getMe`). Un `check` vencido o desconocido: `not_found`.
+  `not_ready`, `getMe`, o `write` si no se pudo guardar el respaldo, `telegram.env` o la
+  carpeta del bot). Un `check` vencido o desconocido: `not_found`.
 - La pasarela no anuncia ni reenvía estos tipos (FR-29a: el token no se configura
   desde la app).
 
@@ -351,6 +352,20 @@ paynani telegram draft <contacto> "<texto>"
 paynani telegram token                   # cambio de token, lee de stdin (FR-10)
 paynani telegram disable
 ```
+
+- **El token sólo entra por stdin** (`setup` y `token`), nunca como argumento. En una
+  terminal se pide sin eco.
+- Las confirmaciones de FR-9 y FR-10 se preguntan en `/dev/tty`, porque stdin ya trae el
+  token. Sin terminal, se dan con `--dedicated` (el token es sólo de esta instalación) y
+  `--delete-webhook`. Sin ellas no se escribe ni se cambia nada.
+- `setup` escribe `telegram.env` (`0600`) sin necesitar el servicio. Con Telegram ya
+  configurado se niega y pide `paynani telegram token`, salvo con `--replace`, que es
+  para cambiar de token con el servicio parado.
+- `token` le pide el cambio al servicio (`token_check` y `token_apply`). Antes de escribir
+  el token nuevo guarda el anterior en `telegram.env.bak` (`0600`). Si hay rollback,
+  `telegram.env` vuelve a tener el token anterior.
+- Al aplicar un token nuevo, el dueño (la primera fila `Human` del roster) recibe un correo
+  con el `@usuario` nuevo, sin el token.
 
 Códigos de salida como `paynani whatsapp send`: 2 con el `code` en stderr para
 `not_allowed`, `not_started` y `rate_limited`; 1 si el servicio no corre.

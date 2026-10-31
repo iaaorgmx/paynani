@@ -46,6 +46,7 @@ class FakeBotAPI:
         self._cond = threading.Condition()
         self._server = None
         self._thread = None
+        self._bots = {}                  # token -> otro FakeBotAPI en el mismo servidor (add_bot)
 
     # --- ciclo de vida ---
     @property
@@ -66,12 +67,30 @@ class FakeBotAPI:
         return self
 
     def stop(self):
+        for bot in self._bots.values():
+            with bot._cond:
+                bot._cond.notify_all()
         if self._server:
             with self._cond:
                 self._cond.notify_all()
             self._server.shutdown()
             self._server.server_close()
             self._server = None
+
+    def add_bot(self, token, bot_id, username, *, drafts=True):
+        """
+        Otro bot en el mismo servidor, con su propio token, updates y webhook, para probar
+        el cambio de token (FR-10) contra una sola base. Regresa ese bot; sus métodos
+        (`private_message`, `set_webhook`, `fail_next`, `revoke`…) son los de siempre.
+        """
+        bot = FakeBotAPI(token=token, bot_id=bot_id, username=username, drafts=drafts)
+        self._bots[token] = bot
+        return bot
+
+    def _bot_for(self, token):
+        if token == self.token:
+            return self
+        return self._bots.get(token)
 
     # --- lo que hacen las pruebas ---
     def _push(self, update):
@@ -351,15 +370,17 @@ class _Handler(BaseHTTPRequestHandler):
         path, params = self._params()
         m = _FILE.match(path)
         if m:
-            data = self.fake.file_bytes(m.group("path"))
-            if m.group("token") != self.fake.token or data is None or self.fake.revoked:
+            bot = self.fake._bot_for(m.group("token"))
+            data = bot.file_bytes(m.group("path")) if bot else None
+            if bot is None or data is None or bot.revoked:
                 return self._reply(404, _err(404, "Not Found"))
             return self._reply(200, data, "application/octet-stream")
         m = _PATH.match(path)
-        if not m or m.group("token") != self.fake.token:
+        bot = self.fake._bot_for(m.group("token")) if m else None
+        if bot is None:
             return self._reply(404 if not m else 401, _err(404 if not m else 401,
                                "Not Found" if not m else "Unauthorized"))
-        status, body = self.fake.handle(m.group("method"), params)
+        status, body = bot.handle(m.group("method"), params)
         self._reply(status, body)
 
     do_GET = _dispatch

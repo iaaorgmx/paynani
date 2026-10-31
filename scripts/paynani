@@ -241,6 +241,18 @@ def main(argv: list[str] | None = None) -> int:
     wa_thread.add_argument("--limit", type=int, default=50, help="Messages to show (1 to 100, default 50).")
     wa_thread.add_argument("--json", action="store_true", help="Print the service's answer as JSON.")
 
+    tg_parser = subparsers.add_parser("telegram", help="Telegram bot: setup, status and token change (TELEGRAM.md).")
+    tg_sub = tg_parser.add_subparsers(dest="tg_command", required=True)
+    tg_setup = tg_sub.add_parser("setup", help="Save the bot token (read from stdin) to telegram.env, after getMe.")
+    tg_setup.add_argument("--dedicated", action="store_true", help="Confirm the token is only for this install.")
+    tg_setup.add_argument("--delete-webhook", action="store_true", help="Confirm deleting a webhook if the bot has one.")
+    tg_setup.add_argument("--replace", action="store_true", help="Replace a configured token while the service is stopped.")
+    tg_status = tg_sub.add_parser("status", help="Show the state of paynani-telegram and the bot's @username.")
+    tg_status.add_argument("--json", action="store_true", help="Print the service's answer as JSON.")
+    tg_token = tg_sub.add_parser("token", help="Change the bot token (read from stdin) with rollback if it does not work.")
+    tg_token.add_argument("--dedicated", action="store_true", help="Confirm the token is only for this install.")
+    tg_token.add_argument("--delete-webhook", action="store_true", help="Confirm deleting a webhook if the new bot has one.")
+
     account_parser = subparsers.add_parser(
         "account", help="Additional mail accounts in accounts.json (#276)."
     )
@@ -391,6 +403,10 @@ def main(argv: list[str] | None = None) -> int:
         from paynani_lib.whatsapp import cli as wa_cli
         return {"status": wa_cli.run_status, "link": wa_cli.run_link, "unlink": wa_cli.run_unlink,
                 "send": wa_cli.run_send, "thread": wa_cli.run_thread}[args.wa_command](args)
+    if args.command == "telegram":
+        from paynani_lib.telegram import cli as tg_cli
+        return {"setup": tg_cli.run_setup, "status": tg_cli.run_status,
+                "token": tg_cli.run_token}[args.tg_command](args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)

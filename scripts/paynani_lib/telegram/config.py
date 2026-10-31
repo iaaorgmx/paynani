@@ -14,11 +14,13 @@ y nada más.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import re
 import stat
 import sys
+import tempfile
 from pathlib import Path
 
 _HARNESS = Path(__file__).resolve().parents[3] / "harness"
@@ -105,3 +107,67 @@ def api_base(environ=None) -> str:
 def bot_dir_name(bot_id: int) -> str:
     """El nombre de la carpeta de un bot (FR-3a): un prefijo del hash, nunca el id."""
     return hashlib.sha256(f"paynani-telegram-bot:{int(bot_id)}".encode()).hexdigest()[:16]
+
+
+BACKUP_NAME = "telegram.env.bak"
+
+
+def _write_private(path: Path, text: str) -> None:
+    """Escribe completo o nada, 0600, sin seguir un enlace (archivo temporal, fsync, replace)."""
+    path = Path(path)
+    if path.is_symlink():
+        raise OSError(f"{path.name} es un enlace simbólico")
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-telegram-")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def render(values: dict[str, str]) -> str:
+    lines = ["# paynani-telegram (PRD #609). Lo escribe `paynani telegram setup`; 0600.",
+             "# El token nunca se copia a otro archivo, a un log ni a la línea de comandos."]
+    for name in sorted(values):
+        value = str(values[name])
+        if "\n" in value or not _LINE.match(f"{name}={value}"):
+            raise ValueError(f"valor inválido para {name}")
+        lines.append(f"{name}={value}")
+    return "\n".join(lines) + "\n"
+
+
+def write(values: dict[str, str], path: Path | None = None, environ=None) -> Path:
+    """`telegram.env` con estas claves, completo o nada, en 0600 (FR-8)."""
+    path = env_path(environ) if path is None else Path(path)
+    _write_private(path, render(values))
+    return path
+
+
+def backup_path(path: Path | None = None, environ=None) -> Path:
+    path = env_path(environ) if path is None else Path(path)
+    return path.with_name(BACKUP_NAME)
+
+
+def save_backup(path: Path | None = None, environ=None) -> Path | None:
+    """Copia el `telegram.env` actual a `telegram.env.bak` (0600) antes de cambiar el token (FR-10 paso 3)."""
+    values = read(path, environ)
+    if values is None:
+        return None
+    target = backup_path(path, environ)
+    _write_private(target, render(values))
+    return target
+
+
+def with_token(values: dict[str, str] | None, new_token: str) -> dict[str, str]:
+    if not TOKEN_RE.match(new_token or ""):
+        raise ValueError("el token no tiene la forma de un token de bot")
+    out = dict(values or {})
+    out[ENABLED] = "1"
+    out[TOKEN] = new_token
+    return out
