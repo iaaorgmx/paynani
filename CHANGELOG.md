@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- **Telegram, TG-6a: instalación, `disable`/`enable`, `upgrade_plan` y `doctor` (PRD #609 FR-1, #612).**
+  - `scripts/install.sh --with-telegram` (y `install_macos.py --with-telegram`) agrega `paynani-telegram.service` (LaunchAgent `com.paynani.telegram`), lo registra en el manifiesto y lo mantiene con `--upgrade`; `--uninstall` lo quita. No pide ni escribe el token. Sin `telegram.env` el servicio queda habilitado y detenido (`state=enabled-waiting-setup`); con él, arranca y tiene que seguir activo. `telegram.env` nunca se toca.
+  - El servicio sale con 0 cuando Telegram no está activado (antes, 2), así que ni systemd (`Restart=on-failure`) ni launchd lo reinician en bucle. `--check-configured` responde 0 o 3 para el instalador.
+  - `paynani telegram setup` arranca el servicio si ya está instalado. `paynani telegram disable` deja `TELEGRAM_ENABLED=0` y lo detiene, sin borrar el token; `paynani telegram enable` lo vuelve a encender.
+  - `upgrade_plan` reinicia `paynani-telegram` cuando cambia su código, `roster.py` o los módulos del arnés que importa; `telegram/config.py` reinicia también la pasarela y PaynaniWeb, y `sms/telegram_api.py`, la pasarela. Antes todo eso se leía como «se lee en cada llamada» y un upgrade no reiniciaba nada.
+  - `paynani doctor` tiene un check `telegram`: `running` es ok; `conflict`, `token_invalid`, `journal_mismatch` y el servicio caído bloquean, cada uno con su arreglo; sin token o sin el servicio instalado, avisa. Nunca muestra el token ni ids.
+  - La pasarela avisa `telegram.changed` `status` a PaynaniApp cuando pierde y cuando recupera la conexión con el servicio (sugerencia de Andy en #612).
+  - `INSTALL.md` 5.5 explica cómo instalarlo.
 - **Roster: la columna Telegram se guarda desde PaynaniWeb, PaynaniApp y la API (PRD #609 FR-11 y FR-15, #612).** «Agregar al roster» en «Mensajes de Telegram» llenaba el formulario con el id, pero `roster.save` lo descartaba: la celda quedaba vacía, y un contacto que sólo tenía Telegram se rechazaba con «hace falta un correo o un teléfono». Ahora `roster_edit`:
   - acepta `member.telegram`, lo valida y lo normaliza con `roster.telegram_value`, como el servicio;
   - cuenta Telegram como canal;

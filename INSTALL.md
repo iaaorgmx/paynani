@@ -1354,6 +1354,74 @@ Even when WhatsApp accepts, the phone can keep showing the device: in a field te
 it was still listed four minutes later (#578). Always check WhatsApp → Linked
 devices on the phone afterwards, and log the device out there if it is still listed.
 
+### 5.5 Optional: Telegram (a bot for direct messages)
+
+Skip this unless your human wants the agent to receive and answer Telegram direct
+messages through a bot (`TELEGRAM.md` is the design). Like WhatsApp it is
+**optional**: nothing about it is installed, upgraded or removed unless you ask.
+It needs nothing new: Python's standard library talks to the Bot API with
+`getUpdates`, so there is no port, webhook or tunnel.
+
+**1. A bot of its own.** Your human creates it with @BotFather in Telegram
+(`/newbot`) and gives you the token through a private channel. The token must be
+for this install only: two programs reading the same bot steal each other's
+messages.
+
+**2. The token**, read from stdin (never as an argument), checked with Telegram and
+written to `telegram.env` (0600) next to `runtime.env`:
+
+```bash
+scripts/paynani telegram setup             # asks for the token without echo, then asks you to confirm
+printf '%s\n' "$TOKEN" | scripts/paynani telegram setup --dedicated   # without a terminal
+```
+
+`--dedicated` confirms that the token is only for this install; add
+`--delete-webhook` if the bot had a webhook and your human agrees to remove it.
+Without them nothing is written.
+
+**3. The service**, with the same runtime you installed with:
+
+```bash
+scripts/install.sh --runtime <runtime> --with-telegram --dry-run   # what it would add
+scripts/install.sh --runtime <runtime> --with-telegram
+```
+
+On macOS, `scripts/install_macos.py --runtime <runtime> --with-telegram`. It adds
+`paynani-telegram.service` (LaunchAgent `com.paynani.telegram`), enables it and
+records it in the ownership manifest; `--upgrade` keeps it current and
+`--uninstall` removes it. The installer never asks for or writes the token, so
+steps 2 and 3 work in either order:
+
+- installed first, the service is enabled but stays stopped
+  (`state=enabled-waiting-setup`) until `setup` runs, and `setup` starts it;
+- token first, the installer starts it and requires it to stay up.
+
+`telegram.env` is yours: no install, upgrade or uninstall changes or removes it.
+
+A manual install copies the unit, replaces its placeholders (`/path/to/paynani`,
+`/path/to/state`, and `/path/to/service-path` with the folder of `himalaya`
+followed by `/usr/local/bin:/usr/bin:/bin`) and enables it. It starts once
+`telegram.env` exists:
+
+```bash
+install -Dm644 systemd/paynani-telegram.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable paynani-telegram.service
+systemctl --user restart paynani-telegram.service   # after paynani telegram setup
+```
+
+**Verifying it.** `scripts/paynani telegram status` says `running` with the bot's
+`@username`, and `scripts/paynani doctor` has a `telegram` check. The unit writes
+`state/telegram.log` (state changes, never the token, an id or a message text)
+and `state/telegram.err.log`. Have your human write to the bot: a roster contact
+(the `Telegram` column, `TELEGRAM.md` §3) reaches you as a `[telegram …]` notice.
+
+**Turning it off.** `scripts/paynani telegram disable` sets `TELEGRAM_ENABLED=0`
+and stops the service. The token stays in `telegram.env`, and
+`scripts/paynani telegram enable` turns it back on. PaynaniWeb and PaynaniApp stop
+showing Telegram as soon as they notice. To change bots, use
+`scripts/paynani telegram token`.
+
 ## 6. Harness wiring
 
 `harness/dispatch.py` and `harness/session_start.py` are in this repo and working.

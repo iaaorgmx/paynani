@@ -267,6 +267,8 @@ def main(argv: list[str] | None = None) -> int:
     tg_thread.add_argument("contact")
     tg_thread.add_argument("--limit", type=int, default=50, help="Messages to show (1 to 100, default 50).")
     tg_thread.add_argument("--json", action="store_true", help="Print the service's answer as JSON.")
+    tg_sub.add_parser("disable", help="Turn Telegram off (TELEGRAM_ENABLED=0) and stop the service; keeps the token.")
+    tg_sub.add_parser("enable", help="Turn Telegram back on with the token in telegram.env and start the service.")
 
     account_parser = subparsers.add_parser(
         "account", help="Additional mail accounts in accounts.json (#276)."
@@ -422,7 +424,8 @@ def main(argv: list[str] | None = None) -> int:
         from paynani_lib.telegram import cli as tg_cli
         return {"setup": tg_cli.run_setup, "status": tg_cli.run_status, "token": tg_cli.run_token,
                 "send": tg_cli.run_send, "draft": tg_cli.run_draft, "threads": tg_cli.run_threads,
-                "thread": tg_cli.run_thread}[args.tg_command](args)
+                "thread": tg_cli.run_thread, "disable": tg_cli.run_disable,
+                "enable": tg_cli.run_enable}[args.tg_command](args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)

@@ -395,7 +395,8 @@ paynani telegram send <contacto> "<texto>" [--file <ruta>]
 paynani telegram send <contacto> --stream < texto
 paynani telegram draft <contacto> "<texto>"
 paynani telegram token                   # cambio de token, lee de stdin (FR-10)
-paynani telegram disable                 # llega con TG-6
+paynani telegram disable                 # TELEGRAM_ENABLED=0 y detiene el servicio
+paynani telegram enable                  # lo vuelve a encender con el mismo token
 ```
 
 - **El token sólo entra por stdin** (`setup` y `token`), nunca como argumento. En una
@@ -411,6 +412,12 @@ paynani telegram disable                 # llega con TG-6
   `telegram.env` vuelve a tener el token anterior.
 - Al aplicar un token nuevo, el dueño (la primera fila `Human` del roster) recibe un correo
   con el `@usuario` nuevo, sin el token.
+- `setup` arranca el servicio si el instalador ya lo puso (`--with-telegram`); si no, dice
+  cómo instalarlo. Sin `telegram.env`, el servicio sale con 0 y se queda detenido.
+- `disable` deja `TELEGRAM_ENABLED=0` en `telegram.env` y detiene el servicio; el token se
+  queda en el archivo. `enable` lo vuelve a poner en `1` y arranca el servicio. La
+  pasarela (§6) y PaynaniWeb (§7) dejan de mostrar Telegram en cuanto lo ven. Ninguno de
+  los dos imprime el token.
 
 Códigos de salida como `paynani whatsapp send`: 2 con el `code` en stderr para
 `not_allowed`, `not_started` y `rate_limited`; 1 si el servicio no corre.

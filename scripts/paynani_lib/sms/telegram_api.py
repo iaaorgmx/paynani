@@ -88,17 +88,35 @@ class TelegramRelay:
 
     async def watch(self, device_id: str, on_change: Callable[[str], Awaitable[None]],
                     retry_s: float = 5.0) -> None:
-        """`telegram.watch` del servicio; cada `telegram.changed` llama a on_change(what). Para siempre."""
+        """
+        `telegram.watch` del servicio; cada `telegram.changed` llama a on_change(what). Para
+        siempre. Además, `status` cuando se pierde la conexión con el servicio y cuando
+        vuelve, para que la app no se entere sólo al pedir algo (Andy en #612). Al arrancar
+        con el servicio caído no avisa: la app ya lo ve en `telegram.status`.
+        """
+        up: bool | None = None
+
+        async def changed(now_up: bool) -> None:
+            nonlocal up
+            if up is not None and up != now_up:
+                await on_change("status")
+            up = now_up
+
         while True:
             try:
                 reader, writer = await asyncio.open_unix_connection(str(self.socket_path))
             except OSError:
+                await changed(False)
                 await asyncio.sleep(retry_s)
                 continue
             try:
                 msg = {"type": "telegram.watch", "id": "q_" + secrets.token_hex(16), "by": f"phone:{device_id}"}
                 writer.write((json.dumps(msg) + "\n").encode())
                 await writer.drain()
+                first = await reader.readline()
+                if not first or json.loads(first).get("type") != "result":
+                    raise ConnectionError("watch rechazado")
+                await changed(True)
                 while True:
                     line = await reader.readline()
                     if not line:
@@ -109,10 +127,11 @@ class TelegramRelay:
                         continue
                     if notice.get("type") == "telegram.changed" and notice.get("what") in ("threads", "status"):
                         await on_change(notice["what"])
-            except (OSError, ConnectionError):
+            except (OSError, ConnectionError, ValueError):
                 pass
             finally:
                 writer.close()
+            await changed(False)
             await asyncio.sleep(retry_s)
 
     # --- un pedido de la app -----------------------------------------------

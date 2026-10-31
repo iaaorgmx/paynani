@@ -306,6 +306,15 @@ systemctl --user enable paynani-whatsapp.service
 systemctl --user restart paynani-whatsapp.service
 ```
 
+The same for Telegram (`install.sh --with-telegram`, INSTALL.md 5.5). With
+`TELEGRAM_ENABLED=0`, or without `telegram.env`, the restart starts it and
+it exits at once; that is expected:
+
+```bash
+systemctl --user enable paynani-telegram.service
+systemctl --user restart paynani-telegram.service
+```
+
 With additional accounts (`MULTI_ACCOUNT.md`), restart their instances as well:
 
 ```bash
