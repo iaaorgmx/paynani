@@ -17,6 +17,7 @@ pone el túnel.
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import html
 import json
 import re
@@ -32,8 +33,8 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
-from . import catchall_strings, compose_strings, config_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (accounts_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import catchall_strings, compose_strings, config_strings, dashboard_strings, strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import (accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -48,6 +49,7 @@ STATIC = {
     "/assets/whatsapp.js": (ASSETS / "whatsapp.js", "application/javascript; charset=UTF-8"),
     "/assets/compose.js": (ASSETS / "compose.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
+    "/assets/dashboard.js": (ASSETS / "dashboard.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
@@ -263,7 +265,8 @@ class Context:
                  env_path: Path | None = None, imap_connect=None, imap_uidvalidity=None,
                  state_dir: Path | None = None, roster_path: Path | None = None, roster_notifier=None,
                  whatsapp_source: whatsapp_source.Source | None = None, whatsapp_root: Path | None = None,
-                 mailer: mail_compose.Mailer | None = None, updater: account_config.Updater | None = None):
+                 mailer: mail_compose.Mailer | None = None, updater: account_config.Updater | None = None,
+                 dashboard_source: dashboard.Source | None = None, now=None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -312,6 +315,10 @@ class Context:
         self.mailer = mailer or mail_compose.CoreMailer()
         # «Configuración» de la cuenta principal (#590 cambio 3): N2/N3 del núcleo (#591).
         self.updater = updater or account_config.CoreUpdater()
+        # El Dashboard de la página inicial (PRD #602): lo que lee de la instalación, o la
+        # fuente que pasen las pruebas, y la hora con la zona del host (Q6).
+        self.dashboard = dashboard_source or dashboard.Core(self, clock)
+        self.now = now or (lambda: dt.datetime.now().astimezone())
         self._whatsapp_root = whatsapp_root
         # La vinculación por QR o código de cada sesión del navegador: el link_id vive
         # sólo aquí, en memoria, nunca en una cookie, una URL ni la página (§11).
@@ -710,7 +717,10 @@ def make_handler(ctx: Context):
         def dispatch_get(self):
             t = i18n.t
             if self.route == "/":
-                self._page(200, title=t("web.home.title"), body=home_body(self.user), icon_name="home")
+                self._dashboard()
+                return
+            if self.route == "/dashboard.json":
+                self._dashboard_json()
                 return
             if self.route.startswith("/email/"):
                 self._email()
@@ -1152,6 +1162,22 @@ def make_handler(ctx: Context):
                 self._messages(values, message, 429 if exc.code == "rate_limited" else 400)
                 return
             self._redirect(f"/messages/ver?n={_quote(number, safe='')}&ok=queued#responder")
+
+        # ---- Dashboard (PRD #602) --------------------------------------------------
+        def _dashboard_model(self) -> dict:
+            account = self.query.get("cuenta", [""])[0][:64]
+            return dashboard.build(self.CTX.dashboard, self.CTX.now(), account)
+
+        def _dashboard(self):
+            """GET /: el Dashboard (FR-1). Sólo lee (FR-20)."""
+            model = self._dashboard_model()
+            self._page(200, title=i18n.t("web.home.title"), icon_name="home", wide=True,
+                       body=dashboard_pages.body(model, str(self.user.get("name") or "")))
+
+        def _dashboard_json(self):
+            """GET /dashboard.json (FR-18, FR-19): sólo números y estados, para dashboard.js."""
+            body = json.dumps(dashboard.numbers(self._dashboard_model()), ensure_ascii=False).encode("utf-8")
+            self._send(200, "application/json; charset=UTF-8", body)
 
         # ---- Nuevo correo (#590 cambio 2) ----------------------------------------
         def _compose(self, match: dict, *, values: dict | None = None, error: str = "", code: int = 200):

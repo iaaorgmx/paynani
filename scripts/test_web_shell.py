@@ -106,7 +106,8 @@ check("con sesión, el marco enlaza el favicon", True, 'rel="icon" type="image/s
 check("el menú lateral con la marca en línea", True, 'class="lateral"' in page and 'class="voluta"' in page)
 check("el nombre escapado", (True, False), ("John &lt;b&gt;Doe&lt;/b&gt;" in page, "<b>Doe</b>" in page))
 check("Email Accounts es un desplegable abierto", True, '<details class="cuentas" open>' in page)
-links = re.findall(r'href="(/email/[^"]+)"', page)
+# Sólo en el menú lateral: desde PRD #602 la página inicial es el Dashboard, con sus propios enlaces.
+links = re.findall(r'href="(/email/[^"]+)"', page.split('<aside class="lateral"', 1)[1].split("</aside>", 1)[0])
 check("una entrada por cuenta: la del agente primero, luego accounts.json en orden (un solo menú, PRD #537 FR-14)",
       ["/email/main", "/email/ventas", "/email/soporte"], links)
 check("la cuenta apagada va marcada", True, 'class="sub apagada"' in page and "apagada</span>" in page)
@@ -169,7 +170,8 @@ accounts_file.write_text("{roto", encoding="utf-8")
 status, _, page = get("/")
 check("accounts.json roto: la página sale igual", 200, status)
 check("con la cuenta del agente y el aviso", (["/email/main"], True),
-      (re.findall(r'href="(/email/[^"]+)"', page), "No se pudo leer accounts.json" in page))
+      (re.findall(r'href="(/email/[^"]+)"', page.split('<aside class="lateral"', 1)[1].split("</aside>", 1)[0]),
+       "No se pudo leer accounts.json" in page))
 accounts_file.unlink()
 agent["email"] = ""
 status, _, page = get("/")
