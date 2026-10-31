@@ -345,6 +345,10 @@ def network_checks(saved: dict | None, now: float) -> tuple[list[dict], str]:
             out.append(_check(str(c["name"]), "unknown", f"the last {c['name']} check is {days} old"))
         else:
             out.append(_check(str(c["name"]), str(c.get("status") or "unknown"), str(c.get("summary") or "")))
+    if not out:
+        # Un doctor.json sin la revisión `himalaya` (de una versión anterior, o que no llegó a
+        # ella) no deja el estado en verde sin revisión de red (revisión de Metis en #605).
+        out.append(_check("network", "unknown", "the network checks have no saved result"))
     return out, network_at
 
 

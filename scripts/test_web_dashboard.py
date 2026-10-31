@@ -163,6 +163,9 @@ old, _ = dashboard.network_checks(dict(saved, generated_at="2026-10-27T22:00:00Z
 check("un doctor de hace más de 24 h cuenta como unknown y dice su edad (revisión de Metis, #605)",
       [("himalaya", "unknown", "the last himalaya check is 3 day(s) old")],
       [(c["name"], c["status"], c["summary"]) for c in old])
+check("un doctor.json sin la revisión himalaya también deja network en unknown (revisión de Metis, #605)",
+      [("network", "unknown")], [(c["name"], c["status"]) for c in dashboard.network_checks(
+          {"generated_at": "2026-10-30T22:00:00Z", "checks": [{"name": "smtp", "status": "ok"}]}, t0)[0]])
 check("sin doctor guardado, una revisión network en unknown", ["network"],
       [c["name"] for c in dashboard.network_checks(None, t0)[0]])
 expired = dashboard.build(fake(tokens=[{"name": "Vencido", "expires_at": "2026-10-20T00:00:00Z", "revoked_at": None}]), NOW)
