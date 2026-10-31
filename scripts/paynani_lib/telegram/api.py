@@ -60,9 +60,12 @@ class BotAPI:
         return "BotAPI(<token>)"
 
     def call(self, method: str, params: dict | None = None, *, timeout: float = 15.0):
-        url = f"{self._base}/bot{self._token}/{method}"
         body = json.dumps({k: v for k, v in (params or {}).items() if v is not None}).encode()
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        return self._post(method, body, "application/json", timeout)
+
+    def _post(self, method: str, body: bytes, ctype: str, timeout: float):
+        url = f"{self._base}/bot{self._token}/{method}"
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": ctype})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 status, raw = resp.status, resp.read()
@@ -88,6 +91,24 @@ class BotAPI:
         retry = ((data or {}).get("parameters") or {}).get("retry_after")
         cls = {401: Unauthorized, 409: Conflict, 429: RetryAfter}.get(code, ApiError)
         raise cls(method, code, desc, int(retry) if retry else None) from None
+
+    def upload(self, method: str, params: dict, field: str, filename: str, data: bytes,
+               mime: str = "application/octet-stream", *, timeout: float = 120.0):
+        """`sendPhoto`/`sendDocument` con el archivo en multipart (FR-20). Mismos errores que call()."""
+        import secrets as _secrets
+
+        boundary = "paynani" + _secrets.token_hex(12)
+        parts = []
+        for key, value in params.items():
+            if value is None:
+                continue
+            parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n'
+                          f"{value}\r\n").encode("utf-8"))
+        safe_name = "".join(c for c in filename if c not in '"\r\n\\')[:120] or "archivo"
+        parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; '
+                      f'filename="{safe_name}"\r\nContent-Type: {mime}\r\n\r\n').encode("utf-8"))
+        body = b"".join(parts) + data + f"\r\n--{boundary}--\r\n".encode()
+        return self._post(method, body, f"multipart/form-data; boundary={boundary}", timeout)
 
     def download(self, file_path: str, limit_bytes: int, sink, *, timeout: float = 60.0) -> int:
         """Baja un archivo a `sink` (con .write) y corta al pasar `limit_bytes` (FR-18).

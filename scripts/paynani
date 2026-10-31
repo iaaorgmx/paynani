@@ -252,6 +252,21 @@ def main(argv: list[str] | None = None) -> int:
     tg_token = tg_sub.add_parser("token", help="Change the bot token (read from stdin) with rollback if it does not work.")
     tg_token.add_argument("--dedicated", action="store_true", help="Confirm the token is only for this install.")
     tg_token.add_argument("--delete-webhook", action="store_true", help="Confirm deleting a webhook if the new bot has one.")
+    tg_send = tg_sub.add_parser("send", help="Reply to a roster contact who already wrote to the bot (FR-20, FR-22).")
+    tg_send.add_argument("contact", help="The contact's name or email in roster.md.")
+    tg_send.add_argument("text", nargs="*", help="The message; without it (and without --file), read from stdin.")
+    tg_send.add_argument("--file", help="A file from state/telegram/outbox/ or TELEGRAM_ATTACH_DIRS.")
+    tg_send.add_argument("--stream", action="store_true", help="Read stdin as it arrives and show it while it is written.")
+    tg_draft = tg_sub.add_parser("draft", help="Show a progress draft that the next send replaces (FR-24).")
+    tg_draft.add_argument("contact")
+    tg_draft.add_argument("text", nargs="+")
+    tg_threads = tg_sub.add_parser("threads", help="List the Telegram conversations, newest first.")
+    tg_threads.add_argument("--limit", type=int, default=50, help="Conversations to show (1 to 100, default 50).")
+    tg_threads.add_argument("--json", action="store_true", help="Print the service's answer as JSON.")
+    tg_thread = tg_sub.add_parser("thread", help="Show the conversation with a roster contact (FR-27).")
+    tg_thread.add_argument("contact")
+    tg_thread.add_argument("--limit", type=int, default=50, help="Messages to show (1 to 100, default 50).")
+    tg_thread.add_argument("--json", action="store_true", help="Print the service's answer as JSON.")
 
     account_parser = subparsers.add_parser(
         "account", help="Additional mail accounts in accounts.json (#276)."
@@ -405,8 +420,9 @@ def main(argv: list[str] | None = None) -> int:
                 "send": wa_cli.run_send, "thread": wa_cli.run_thread}[args.wa_command](args)
     if args.command == "telegram":
         from paynani_lib.telegram import cli as tg_cli
-        return {"setup": tg_cli.run_setup, "status": tg_cli.run_status,
-                "token": tg_cli.run_token}[args.tg_command](args)
+        return {"setup": tg_cli.run_setup, "status": tg_cli.run_status, "token": tg_cli.run_token,
+                "send": tg_cli.run_send, "draft": tg_cli.run_draft, "threads": tg_cli.run_threads,
+                "thread": tg_cli.run_thread}[args.tg_command](args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)

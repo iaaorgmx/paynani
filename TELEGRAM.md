@@ -17,13 +17,15 @@ state/telegram/                      0700
   control.sock                       0600  interfaz local, sección 4
   status.json                        0600  último estado (para doctor y el cliente con el servicio caído)
   media/                             0700  archivos recibidos (FR-18), 0600 cada uno
+  outbox/                            0700  archivos que se pueden mandar (FR-20), con TELEGRAM_ATTACH_DIRS
+  rate.json                          0600  mensajes mandados hoy (UTC) en toda la instalación (FR-26)
   bots/<bot>/                        0700  estado de un bot (FR-3a); <bot> = sha256(bot_id)[:16]
     account.json                     0600  alias aleatorio del bot para `account` (sección 3)
     offset.json                      0600  siguiente offset de getUpdates (FR-4)
     journal.jsonl                    0600  update_id, ref, hash, written (FR-5)
     links.json                       0600  @usuario -> id fijado (FR-13) y a qué otros ids se avisó
     inbox/<ref>.json                 0600  texto y datos de cada mensaje recibido
-    outbox.jsonl                     0600  lo que se mandó, por hilo
+    outbox.jsonl                     0600  lo que se mandó, por hilo (una línea por cambio de estado)
     chats.json                       0600  hilo -> chat privado y nombre que muestra Telegram (FR-15, FR-25)
   active                             0600  el <bot> en uso; un cambio de token lo reemplaza (FR-10)
 ```
@@ -255,6 +257,7 @@ Catch-All de Telegram activo.
   PaynaniApp) o `api`. No es la etiqueta `by` de la petición: el servicio convierte
   `web` y `phone:<device_id>` en `owner`.
 - `edited: true` en un mensaje que la persona editó; `text` es el último.
+- La terminal y el agente pueden pedir el hilo con `contact` en lugar de `thread`.
 - Fuera del roster sin Catch-All activo: `messages` va vacío y `hidden: true`.
 
 #### `telegram.send`
@@ -265,15 +268,32 @@ Catch-All de Telegram activo.
 {"type": "result", "ref": "q_…", "ok": true, "data": {"ref": "tgo:…", "status": "sent", "at": "…"}}
 ```
 
-- `thread` o `contact` (el nombre o el email de la fila del roster). Uno de los dos.
+- `thread` o `contact` (el nombre o el email de la fila del roster). Uno de los dos. Un
+  nombre que está en más de una fila da `conflict` y no manda nada: hay que usar el
+  correo, que es único.
 - `file` sólo de la terminal y del agente, validado siempre contra `outbox/` y las
   carpetas permitidas (FR-20). La web y la pasarela nunca lo mandan.
 - El servicio aplica siempre FR-25 y FR-26: contacto del roster con un chat privado
   que la persona abrió, y los límites. Si no, `error` con `not_allowed`,
   `not_started` (la persona nunca le escribió al bot) o `rate_limited` con
   `retry_after_s`.
-- Texto de hasta 4096 caracteres por mensaje; más largo se parte en varios.
-- Al mandar, se apaga el «escribiendo…» de ese hilo (FR-21).
+- Texto de hasta 4096 caracteres por mensaje; más largo se parte en varios, cortando
+  en un salto de línea o un espacio. Más de 32768 en un `send` es `invalid`
+  (`too_long`). Con `file`, el texto va como pie (hasta 1024); si es más largo, sale
+  después del archivo. Un JPEG, PNG o WebP de hasta 10 MB sale con `sendPhoto`; lo
+  demás, hasta 50 MB, con `sendDocument`.
+- Un mensaje por segundo por chat: el servicio espera ese segundo, no lo rechaza. El
+  límite del día (`TELEGRAM_SEND_PER_DAY`, 300) cuenta cada mensaje que queda en el
+  chat, en toda la instalación, y se reinicia a medianoche UTC. Se reserva antes de
+  mandar y se devuelve lo que no salió, sólo al día de la reserva (un envío de antes de
+  medianoche que falla después no resta del día nuevo): un envío que falla no gasta cupo, y uno que
+  falla a la mitad queda `partial` con `delivered` y `parts` en `outbox.jsonl`. Pasándolo,
+  `rate_limited` con los segundos que faltan. Un 429 espera su `retry_after` y se
+  reintenta una vez; si vuelve, `rate_limited`.
+- Al mandar, se apaga el «escribiendo…» de ese hilo (FR-21). El «escribiendo…» empieza
+  con cada mensaje de un contacto del roster (no con ediciones ni con el Catch-All), se
+  repite cada 4 s y se apaga al mandar, al cerrar el agente el evento
+  (`handled`, `replied` o `closed`) o a los 2 minutos.
 
 #### Respuesta por partes: `telegram.stream_*`
 
@@ -294,6 +314,11 @@ Catch-All de Telegram activo.
 - Un `stream` sin `append` en 120 s se cierra solo con lo que tenga. Las mismas
   reglas de `telegram.send` se revisan en `stream_open`.
 - `paynani telegram send <contacto> --stream` lee stdin y usa estos tres tipos.
+- `stream_append` y `stream_close` no necesitan `by`: el stream lo tomó al abrirse.
+- El ritmo: se muestra lo nuevo cuando hay 24 caracteres o más y pasaron 0.8 s, o
+  cuando pasó 1 s, pero nunca más de un cambio por segundo en el chat. Lo que quede
+  pendiente se muestra en el siguiente cuarto de segundo libre. El borrador no cuenta
+  contra el límite del día; cada mensaje que queda al final, sí.
 
 #### `telegram.draft`
 
@@ -302,7 +327,8 @@ Catch-All de Telegram activo.
 ```
 
 Muestra un borrador que reemplaza el siguiente `send` en ese hilo (FR-24). No cuenta
-contra los 300 diarios.
+contra los 300 diarios. Si el chat no acepta `sendMessageDraft`, el borrador es un
+mensaje que el siguiente `send` edita (`transport: "edit"`).
 
 #### `telegram.image`
 
@@ -369,7 +395,7 @@ paynani telegram send <contacto> "<texto>" [--file <ruta>]
 paynani telegram send <contacto> --stream < texto
 paynani telegram draft <contacto> "<texto>"
 paynani telegram token                   # cambio de token, lee de stdin (FR-10)
-paynani telegram disable
+paynani telegram disable                 # llega con TG-6
 ```
 
 - **El token sólo entra por stdin** (`setup` y `token`), nunca como argumento. En una
