@@ -224,8 +224,15 @@ def selected_runtime(repo=ROOT):
     env = os.environ.get("PAYNANI_RUNTIME")
     if env and env != "auto":
         return env
+    # version.sh runs the target's planner from a temporary copy with --repo
+    # pointing back at the clone; runtime.env lives in that clone, not next to
+    # this file, the same as the manifest (manifest_path).
+    if pathlib.Path(repo) == ROOT:
+        path = harness_paths.runtime_env()
+    else:
+        path = pathlib.Path(repo) / "runtime.env"
     try:
-        text = harness_paths.runtime_env().read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
     except OSError:
         return None
     # The installer writes the value shell-quoted (PAYNANI_RUNTIME="openclaw"), so
