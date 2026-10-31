@@ -32,7 +32,7 @@ import paths  # noqa: E402
 from paynani_lib.sms import config as sms_config  # noqa: E402
 from paynani_lib.sms import gateway as gw  # noqa: E402
 from paynani_lib.sms import roster_api  # noqa: E402
-from paynani_lib.sms import whatsapp_api  # noqa: E402
+from paynani_lib.sms import telegram_api, whatsapp_api  # noqa: E402
 
 DEFAULT_PORT = 8770  # 8765 es del onboarding y de `sms pair --web`, que corren a la vez
 
@@ -109,7 +109,9 @@ def main(argv=None) -> int:
     gateway = gw.Gateway(state, state / "events.jsonl", Path(args.roster), public_url=args.public_url,
                          battery_warn_pct=warn, battery_critical_pct=critical,
                          roster_service=roster, web_port=web_port,
-                         api_tokens_path=api_tokens_path(), whatsapp=whatsapp_relay(state, roster))
+                         api_tokens_path=api_tokens_path(), whatsapp=whatsapp_relay(state, roster),
+                         # TELEGRAM.md §6: telegram.env dice si está configurado.
+                         telegram=telegram_api.TelegramRelay(state, log=gw.log))
 
     async def run():
         server = await gw.serve(gateway, args.host, args.port)

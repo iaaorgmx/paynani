@@ -436,7 +436,18 @@ conectada, la pasarela cierra con `1012`, como con WhatsApp.
   (sección 4, `telegram.send`). La app limita su cuadro de responder a 4096 para que lo que escribe el dueño
   salga en un solo mensaje.
 - `telegram.send`: sólo `thread` y `text`; nunca `contact` ni `file`. `by` lo pone la
-  pasarela (`phone:<device_id>`).
+  pasarela (`phone:<device_id>`), y el servicio lo guarda como `owner`. Un `send` con
+  `contact` o `file` es `invalid` con ese `field` y no llega al servicio. El reenvío con
+  el mismo `id` devuelve el mismo `result` con `replayed: true` y no manda otra vez;
+  con otro cuerpo es `invalid` (`id_reused`). Como un texto largo sale por partes, la
+  pasarela espera la respuesta del servicio hasta 90 s; el reenvío de la app a los 15 s
+  espera esa misma respuesta.
+- La pasarela no reenvía ningún otro tipo (`telegram.image`, `telegram.draft`,
+  `telegram.stream_*`, `telegram.roster_candidate`, `telegram.token_*`,
+  `telegram.watch`): responde `unknown_type`.
+- Servicio caído: `telegram.status` responde `state: "service_down"` y los demás,
+  `unavailable`.
+- Código: `scripts/paynani_lib/sms/telegram_api.py` (`TelegramRelay`).
 - **Aviso:** `{"type": "telegram.changed", "what": "threads"}` o `"status"`, sin datos,
   como `whatsapp.changed`.
 - Sin `telegram.threads` en `accepts`, la app no muestra «Mensajes de Telegram»; sin
@@ -457,8 +468,12 @@ conectada, la pasarela cierra con `1012`, como con WhatsApp.
   `/telegram/catch-all`, enlazada desde «Mensajes de Telegram» junto a «Bot de
   Telegram». Guarda `rules/catch-all-telegram.md` con `catchall.save` y
   `channel: telegram`; `catchall.get`/`catchall.save` aceptan ese canal desde TG-3.
-  `SaveCatchAll` con `channel: telegram` en la API, y su permiso
-  `catchall.telegram.write`, llegan con TG-5.
+  `SaveCatchAll` con `channel: telegram` en la API pide el permiso
+  `catchall.telegram.write` (TG-5).
+- La API de PaynaniWeb (`PAYNANI_API.md`, FR-30) lee con `ListTelegramConversations` y
+  `GetTelegramThread`, con el permiso `telegram.read` (no basta `read`). Pregunta por
+  `control.sock` con `by: api`, así que el servicio aplica las mismas reglas que a la web.
+  No manda mensajes.
 - Para trabajar sin el servicio, la web usa `telegram_source.py`: `ControlSocket` (el
   cliente de la sección 4) y un `Demo` en memoria que contesta los mismos JSON, con
   `PAYNANI_WEB_TELEGRAM=demo`. La prueba contra el servicio real usa `fake_api.py`

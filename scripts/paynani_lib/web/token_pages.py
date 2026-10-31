@@ -11,8 +11,8 @@ from . import api_tokens
 
 # Un permiso del Catch-All por canal (PRD #576 FR-13, FR-13b); se marcan a mano. El
 # viejo catchall.write ya no se ofrece: la API lo lee como catchall.sms.write.
-PERMISSIONS = ("read", "sms.send", "roster.write", "accounts.write", "catchall.sms.write",
-               "catchall.whatsapp.write")
+PERMISSIONS = ("read", "telegram.read", "sms.send", "roster.write", "accounts.write", "catchall.sms.write",
+               "catchall.whatsapp.write", "catchall.telegram.write")
 EXPIRIES = {"5m": dt.timedelta(minutes=5), "1h": dt.timedelta(hours=1),
             "1d": dt.timedelta(days=1), "7d": dt.timedelta(days=7),
             "30d": dt.timedelta(days=30)}
