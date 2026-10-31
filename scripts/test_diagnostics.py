@@ -474,5 +474,47 @@ with mock.patch.dict(os.environ, {"HOME": str(_hs_home), "CODEX_HOME": ""}):
     check("#474: the OpenClaw standing rule missing is blocked", rule and rule[0]["status"] == "blocked")
 shutil.rmtree(_hs_home, ignore_errors=True)
 
+# --- doctor.json for the PaynaniWeb dashboard (#603) ---------------------------------
+
+_dj = pathlib.Path(tempfile.mkdtemp(prefix="doctor-json-"))
+_data = {"schema_version": 1, "status": "warning", "generated_at": "2026-10-31T05:00:00Z",
+         "checks": [{"name": "himalaya", "status": "ok", "summary": "himalaya account check passed"}],
+         "paths": {"env": "/secret/path/.env"}}
+_saved = d.save_last(_data, _dj)
+check("#603: save_last writes state/doctor.json", _saved == _dj / "doctor.json" and _saved.exists())
+_loaded = json.loads((_dj / "doctor.json").read_text(encoding="utf-8"))
+check("#603: same schema as --json, without paths",
+      _loaded == {k: _data[k] for k in ("schema_version", "status", "generated_at", "checks")})
+check("#603: doctor.json is mode 0600", (os.stat(_dj / "doctor.json").st_mode & 0o777) == 0o600)
+check("#603: no temporary file is left behind", sorted(p.name for p in _dj.iterdir()) == ["doctor.json"])
+_data2 = dict(_data, status="ok", generated_at="2026-10-31T06:00:00Z")
+d.save_last(_data2, _dj)
+check("#603: a new run replaces the last result",
+      json.loads((_dj / "doctor.json").read_text(encoding="utf-8"))["generated_at"] == "2026-10-31T06:00:00Z")
+check("#603: without a state folder nothing is written", d.save_last(_data, _dj / "missing") is None)
+_real = _dj / "real"
+_real.mkdir()
+(_dj / "link").symlink_to(_real)
+check("#603: a symlinked state folder is not written to",
+      d.save_last(_data, _dj / "link") is None and not (_real / "doctor.json").exists())
+
+import io, contextlib  # noqa: E402,E401
+_out, _err = io.StringIO(), io.StringIO()
+with mock.patch.object(d, "doctor_data", return_value=_data), \
+     mock.patch.object(d, "state_dir", return_value=_dj), \
+     contextlib.redirect_stdout(_out), contextlib.redirect_stderr(_err):
+    _rc = d.print_doctor(True)
+check("#603: print_doctor saves the result it printed",
+      json.loads((_dj / "doctor.json").read_text(encoding="utf-8"))["generated_at"] == "2026-10-31T05:00:00Z")
+check("#603: --json output still includes paths", "paths" in json.loads(_out.getvalue()))
+_out, _err = io.StringIO(), io.StringIO()
+with mock.patch.object(d, "doctor_data", return_value=_data), \
+     mock.patch.object(d, "save_last", side_effect=PermissionError("denied")), \
+     contextlib.redirect_stdout(_out), contextlib.redirect_stderr(_err):
+    _rc2 = d.print_doctor(False)
+check("#603: a failed save only warns on stderr and keeps the exit code",
+      _rc2 == _rc == 0 and "could not save doctor.json" in _err.getvalue() and "paynani doctor: warning" in _out.getvalue())
+shutil.rmtree(_dj, ignore_errors=True)
+
 print(f"\n{passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

@@ -1020,8 +1020,47 @@ def print_paths(as_json: bool) -> int:
     return 0
 
 
+LAST_RESULT = "doctor.json"
+LAST_RESULT_KEYS = ("schema_version", "status", "generated_at", "checks")
+
+
+def save_last(data: dict, directory: Path | None = None) -> Path | None:
+    """
+    Guarda el último resultado de `doctor` en state/doctor.json (#603), para que
+    PaynaniWeb muestre las revisiones que tocan la red sin correrlas. El mismo esquema
+    que `--json`, sin `paths`. Se escribe completo o no se escribe (archivo temporal en
+    la misma carpeta y os.replace), en modo 0600. Sin carpeta de estado no escribe nada.
+    """
+    import tempfile
+    folder = Path(directory) if directory is not None else state_dir()
+    if not folder.is_dir() or folder.is_symlink():
+        return None
+    body = json.dumps({k: data[k] for k in LAST_RESULT_KEYS if k in data}, indent=2, sort_keys=True) + "\n"
+    target = folder / LAST_RESULT
+    fd, tmp = tempfile.mkstemp(dir=str(folder), prefix=".doctor.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(body)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return target
+
+
 def print_doctor(as_json: bool) -> int:
     data = doctor_data()
+    try:
+        save_last(data)
+    except OSError as exc:
+        # No guardar el resultado nunca cambia lo que doctor responde.
+        print(f"paynani doctor: could not save {LAST_RESULT} ({type(exc).__name__})", file=sys.stderr)
     if as_json:
         print(json.dumps(data, indent=2, sort_keys=True))
     else:
