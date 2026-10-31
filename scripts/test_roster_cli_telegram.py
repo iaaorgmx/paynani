@@ -116,5 +116,39 @@ code, _, err = run(roster_cli.run_edit, address="iris@example.com", name=None, t
                    phone=None, telegram="@beto_tienda")
 check("edit con un Telegram de otra fila: 1", (1, True), (code, "telegram" in err))
 
+# --- a write that keeps the e-mails but loses Telegram is reverted (Ximena in #629) ------
+before = path.read_bytes()
+real_write = roster_cli._write_atomic
+
+
+calls = []
+
+
+def lossy_write(target, text):
+    # The first write (the change) drops the Telegram column: same e-mails, no
+    # Telegram. Later writes (the revert) go through untouched.
+    calls.append(1)
+    if len(calls) > 1:
+        return real_write(target, text)
+    lines = text.splitlines(keepends=True)
+    out = []
+    for line in lines:
+        cells = line.rstrip("\n").split("|")
+        if line.startswith("|") and len(cells) > 2:
+            line = "|".join(cells[:-2] + [""]) + "\n"
+        out.append(line)
+    real_write(target, "".join(out))
+
+
+roster_cli._write_atomic = lossy_write
+try:
+    code, _, err = run(roster_cli.run_edit, address="iris@example.com", name=None, type=None, github=None,
+                       phone=None, telegram="@iris_bot")
+finally:
+    roster_cli._write_atomic = real_write
+check("una escritura que conserva los correos pero pierde Telegram: verify_failed, 1", (1, True),
+      (code, "did not read back" in err))
+check("y el roster vuelve byte por byte a como estaba", before, path.read_bytes())
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

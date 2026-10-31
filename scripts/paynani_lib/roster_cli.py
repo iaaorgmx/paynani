@@ -443,6 +443,25 @@ def _write_checked_core(path: Path, new_text: str, expected_addresses) -> tuple[
             )
         return "verify_failed", "the written file did not parse back to the expected address list. Reverted."
 
+    # Every field of every row, not only the addresses (Ximena in #629): a write
+    # that kept the e-mails but lost a Telegram, a phone or a name is not the
+    # change that was confirmed. Same row signature the gateway checks (roster_edit).
+    from . import roster_edit
+
+    try:
+        same = roster_edit._signature(_read(path)) == roster_edit._signature(new_text)
+    except Exception:  # noqa: BLE001 -- an unreadable result is a failed write
+        same = False
+    if not same:
+        revert_exc = _revert_write(path, original) if existed else _remove_created(path)
+        if revert_exc is not None:
+            return "verify_failed", (
+                "the written file did not read back with the rows that were confirmed, "
+                f"AND the revert itself failed ({revert_exc}) — roster.md at {path} may now "
+                "hold the rejected change."
+            )
+        return "verify_failed", "the written file did not read back with the rows that were confirmed. Reverted."
+
     return "ok", str(path)
 
 
