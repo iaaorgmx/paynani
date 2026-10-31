@@ -178,7 +178,7 @@ wa_env.write_text("# activado por la instalación\nWHATSAPP_ENABLED=1\n", encodi
 status, _, page = req("GET", "/messages?lang=es-MX", cookie=cookie)
 check("FR-24: con WhatsApp configurado, «Mensajes de WhatsApp» en el menú", (True, True),
       ('href="/whatsapp/messages"' in page, th("web.wa.nav") in page))
-check("«Mensajes» sigue en /messages", True, 'href="/messages"' in page)
+check("«Mensajes de texto» sigue en /messages", True, 'href="/messages"' in page)
 status, hdrs, page = req("GET", "/whatsapp?lang=es-MX", cookie=cookie)
 check("FR-7: /whatsapp abre, sin vincular", (200, True), (status, th("web.wa.state.unlinked") in page))
 check("FR-7: advierte del bloqueo de Meta antes de vincular", True, th("web.wa.risk") in page)
@@ -393,7 +393,7 @@ check("los nombres salen del roster; la más reciente primero", True,
 check("FR-16a: fuera del roster sólo el número, sin el texto", (True, False, True),
       ("+15550100099" in page, "123456" in page, th("web.wa.hidden_short") in page))
 check("un archivo se muestra por su tipo", True, th("web.wa.kind.image") in page or "Gracias" in page)
-check("«Mensajes» (SMS) no muestra los hilos de WhatsApp", False,
+check("«Mensajes de texto» (SMS) no muestra los hilos de WhatsApp", False,
       "Ana López" in req("GET", "/messages", cookie=cookie)[2])
 
 # ---- FR-24: un hilo y responder ------------------------------------------------------------------

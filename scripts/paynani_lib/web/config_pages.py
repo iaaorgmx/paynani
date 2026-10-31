@@ -2,7 +2,7 @@
 «Configuración» de la cuenta principal (#590 cambio 3), dentro del marco de shell.py.
 
 - El botón va en la lista de la cuenta principal (`/email/main`), junto a «Nuevo
-  correo», como «Catch-All» en «Mensajes». Las cuentas adicionales tienen su propio
+  correo», como «Catch-All» en «Mensajes de texto». Las cuentas adicionales tienen su propio
   alta y baja en «Agregar cuenta».
 - `/email/main/configuracion`: el correo, el nombre, los servidores IMAP y SMTP con sus
   puertos y una contraseña nueva opcional; la actual nunca se muestra. Guardar pide la

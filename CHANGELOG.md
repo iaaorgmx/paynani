@@ -2,6 +2,13 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: «Messages» ahora se llama «Text Messages» (#633).** El cambio aplica en todos los lugares donde «Messages» nombra la pantalla de SMS (Q273=A):
+  - el menú;
+  - el título;
+  - «Back to…»;
+  - los avisos del Catch-All de WhatsApp y de Telegram.
+
+  Por idioma (Q274=A): en-US «Text Messages», es-MX y es-ES «Mensajes de texto», fr-FR «SMS» y pt-BR «Mensagens de texto». La columna «Messages» (el número de mensajes) no cambia. PaynaniApp hace lo mismo en su propio issue.
 ## 0.19.0 (2026-10-31)
 
 Telegram (PRD #609, #612): un bot propio por instalación, para recibir y contestar mensajes de los contactos del roster, con Catch-All, multimedia, respuesta por partes, PaynaniWeb y PaynaniApp. Es opcional: sin `--with-telegram` nada cambia en tu instalación. La prueba real TG-9 pasó T9-01 a T9-09 en una instalación de Claude Code; las rondas con OpenClaw y Hermes vienen después de publicar.

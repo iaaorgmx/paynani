@@ -6,7 +6,7 @@ WhatsApp en PaynaniWeb (PRD #550 FR-7, FR-24; WA-5 #557), dentro del marco de sh
   se dibuja aquí, en memoria, con `sms/qr.py`; `whatsapp.js` lo cambia por el vigente
   cada pocos segundos (`GET /whatsapp/link/current`). El código se muestra una sola
   vez, en la respuesta del POST que lo pidió.
-- `/whatsapp/messages`: las conversaciones, como «Messages» las de SMS, sin botón de
+- `/whatsapp/messages`: las conversaciones, como «Text Messages» las de SMS, sin botón de
   mensaje nuevo (FR-24, Q189=A). `/whatsapp/messages/ver?n=<número>`: una, con el
   cuadro de responder sólo si el servicio dice `can_reply` (FR-20).
 - Fuera del roster (FR-16a) sólo se dibujan el número, la dirección y la hora: el

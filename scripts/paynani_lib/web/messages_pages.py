@@ -295,7 +295,7 @@ def catchall_body(state: dict, csrf: str, *, channel: str, notice: str = "", err
     El Catch-All de un canal (PRD #535 FR-1 a FR-7, PRD #576 FR-9 y FR-10, #588): qué
     hace, la advertencia de los códigos de verificación, qué abre, la casilla, las
     instrucciones y la contraseña, que se pide para activarlo o cambiar las
-    instrucciones con él activo (FR-4). El de SMS vive en «Mensajes» y el de WhatsApp
+    instrucciones con él activo (FR-4). El de SMS vive en «Mensajes de texto» y el de WhatsApp
     en «Mensajes de WhatsApp» (#588); cada página dice dónde está el otro. `state` es
     la respuesta de catchall.get de ese canal; `values` es lo que el dueño escribió
     si no se guardó.

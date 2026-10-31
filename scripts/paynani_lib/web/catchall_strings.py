@@ -1,4 +1,4 @@
-"""Five-language labels for the Catch-All screen in «Messages» (PRD #535 FR-1 to FR-8)."""
+"""Five-language labels for the Catch-All screen in «Text Messages» (PRD #535 FR-1 to FR-8)."""
 from ..i18n_data import CATALOGUES
 
 STRINGS = {
@@ -210,31 +210,31 @@ for _language, _words in {
 }.items():
     STRINGS[_language].update(_words)
 
-# #588: el de SMS vive en «Mensajes» y el de WhatsApp en «Mensajes de WhatsApp».
+# #588: el de SMS vive en «Mensajes de texto» y el de WhatsApp en «Mensajes de WhatsApp».
 for _language, _words in {
     'es-MX': {
         'elsewhere.sms': "El Catch-All de WhatsApp está en «Mensajes de WhatsApp».",
-        'elsewhere.whatsapp': "El Catch-All de SMS está en «Mensajes».",
+        'elsewhere.whatsapp': "El Catch-All de SMS está en «Mensajes de texto».",
         'err.wrong_page': "Este formulario era de otro canal. No se guardó nada; revisa y vuelve a guardar.",
     },
     'en-US': {
         'elsewhere.sms': "The WhatsApp Catch-All is in «WhatsApp messages».",
-        'elsewhere.whatsapp': "The SMS Catch-All is in «Messages».",
+        'elsewhere.whatsapp': "The SMS Catch-All is in «Text Messages».",
         'err.wrong_page': "This form belonged to another channel. Nothing was saved; check it and save again.",
     },
     'es-ES': {
         'elsewhere.sms': "El Catch-All de WhatsApp está en «Mensajes de WhatsApp».",
-        'elsewhere.whatsapp': "El Catch-All de SMS está en «Mensajes».",
+        'elsewhere.whatsapp': "El Catch-All de SMS está en «Mensajes de texto».",
         'err.wrong_page': "Este formulario era de otro canal. No se ha guardado nada; revísalo y vuelve a guardar.",
     },
     'fr-FR': {
         'elsewhere.sms': "Le Catch-All WhatsApp se trouve dans « Messages WhatsApp ».",
-        'elsewhere.whatsapp': "Le Catch-All SMS se trouve dans « Messages ».",
+        'elsewhere.whatsapp': "Le Catch-All SMS se trouve dans « SMS ».",
         'err.wrong_page': "Ce formulaire appartenait à un autre canal. Rien n’a été enregistré ; vérifiez puis enregistrez à nouveau.",
     },
     'pt-BR': {
         'elsewhere.sms': "O Catch-All de WhatsApp fica em «Mensagens do WhatsApp».",
-        'elsewhere.whatsapp': "O Catch-All de SMS fica em «Mensagens».",
+        'elsewhere.whatsapp': "O Catch-All de SMS fica em «Mensagens de texto».",
         'err.wrong_page': "Este formulário era de outro canal. Nada foi salvo; confira e salve de novo.",
     },
 }.items():

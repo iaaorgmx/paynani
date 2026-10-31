@@ -103,7 +103,7 @@ STRINGS = {
         "err.other": "No se pudo: {code}.",
         "catchall.section": "Telegram",
         "catchall.opens": "Abre los mensajes de Telegram de personas fuera del roster.",
-        "catchall.elsewhere": "Los Catch-All de SMS y de WhatsApp están en «Mensajes» y en «Mensajes de WhatsApp».",
+        "catchall.elsewhere": "Los Catch-All de SMS y de WhatsApp están en «Mensajes de texto» y en «Mensajes de WhatsApp».",
         "dash.svc": "Bot de Telegram",
     },
     "en-US": {
@@ -207,7 +207,7 @@ STRINGS = {
         "err.other": "It could not be done: {code}.",
         "catchall.section": "Telegram",
         "catchall.opens": "Opens Telegram messages from people who are not on the roster.",
-        "catchall.elsewhere": "The SMS and WhatsApp Catch-Alls are in «Messages» and «WhatsApp messages».",
+        "catchall.elsewhere": "The SMS and WhatsApp Catch-Alls are in «Text Messages» and «WhatsApp messages».",
         "dash.svc": "Telegram bot",
     },
     "es-ES": {
@@ -311,7 +311,7 @@ STRINGS = {
         "err.other": "No se ha podido: {code}.",
         "catchall.section": "Telegram",
         "catchall.opens": "Abre los mensajes de Telegram de personas fuera del roster.",
-        "catchall.elsewhere": "Los Catch-All de SMS y de WhatsApp están en «Mensajes» y en «Mensajes de WhatsApp».",
+        "catchall.elsewhere": "Los Catch-All de SMS y de WhatsApp están en «Mensajes de texto» y en «Mensajes de WhatsApp».",
         "dash.svc": "Bot de Telegram",
     },
     "fr-FR": {
@@ -415,7 +415,7 @@ STRINGS = {
         "err.other": "Impossible : {code}.",
         "catchall.section": "Telegram",
         "catchall.opens": "Ouvre les messages Telegram des personnes absentes du roster.",
-        "catchall.elsewhere": "Les Catch-All SMS et WhatsApp sont dans « Messages » et « Messages WhatsApp ».",
+        "catchall.elsewhere": "Les Catch-All SMS et WhatsApp sont dans « SMS » et « Messages WhatsApp ».",
         "dash.svc": "Bot Telegram",
     },
     "pt-BR": {
@@ -519,7 +519,7 @@ STRINGS = {
         "err.other": "Não foi possível: {code}.",
         "catchall.section": "Telegram",
         "catchall.opens": "Abre as mensagens do Telegram de pessoas fora do roster.",
-        "catchall.elsewhere": "Os Catch-All de SMS e de WhatsApp ficam em «Mensagens» e em «Mensagens do WhatsApp».",
+        "catchall.elsewhere": "Os Catch-All de SMS e de WhatsApp ficam em «Mensagens de texto» e em «Mensagens do WhatsApp».",
         "dash.svc": "Bot do Telegram",
     },
 }

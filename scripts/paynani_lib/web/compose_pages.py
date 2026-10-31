@@ -2,7 +2,7 @@
 «Nuevo correo» (#590 cambio 2), dentro del marco de shell.py.
 
 - El botón «Nuevo correo» va en la lista de cada cuenta (`/email/<cuenta>`), junto a
-  sus acciones, como «Catch-All» en «Mensajes».
+  sus acciones, como «Catch-All» en «Mensajes de texto».
 - `/email/<cuenta>/nuevo`: De (la cuenta de esa lista, Q7=A), Para, CC y CCO (Q6=B),
   asunto, mensaje y la contraseña, que sólo se pide si alguien está fuera del roster
   de esa cuenta (Q5). La libreta es el roster de esa cuenta; `compose.js` agrega el
