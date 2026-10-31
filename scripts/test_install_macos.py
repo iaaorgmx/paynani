@@ -271,7 +271,8 @@ class MacOSInstallTest(unittest.TestCase):
         self.assertEqual(["version\t1", "runtime\topenclaw"], lines[:2])
         agents = self.home / "Library" / "LaunchAgents"
         expected = {str(agents / f"{label}.plist")
-                    for label in ("com.paynani.idle", "com.paynani.dispatch", "com.paynani.logrotate")}
+                    for label in ("com.paynani.idle", "com.paynani.dispatch", "com.paynani.logrotate",
+                                  "com.paynani.telegram")}   # Telegram siempre desde 0.20.0 (#635)
         expected.add(str(self.clone / "runtime.env"))
         records = self.manifest_records()
         self.assertEqual(expected, set(records))
@@ -300,7 +301,7 @@ class MacOSInstallTest(unittest.TestCase):
         (self.clone / "install.manifest").unlink()
         completed = self.run_install("--runtime", "openclaw", "--upgrade")
         self.assertIn(completed.returncode, (0, 10), completed.stdout + completed.stderr)
-        self.assertEqual(4, len(self.manifest_records()))
+        self.assertEqual(5, len(self.manifest_records()))  # con com.paynani.telegram (#635)
 
     def test_rerun_keeps_the_manifest_and_tracks_a_changed_plist(self):
         self.assertEqual(10, self.run_install("--runtime", "openclaw").returncode)
@@ -319,7 +320,7 @@ class MacOSInstallTest(unittest.TestCase):
         self.assertIn(completed.returncode, (0, 10), completed.stdout + completed.stderr)
         lines = (self.clone / "install.manifest").read_text(encoding="utf-8").splitlines()
         self.assertEqual("runtime\topencode", lines[1])
-        self.assertEqual(4, len(self.manifest_records()))
+        self.assertEqual(5, len(self.manifest_records()))  # con com.paynani.telegram (#635)
 
     def test_dry_run_does_not_create_the_manifest(self):
         self.run_install("--runtime", "openclaw", "--dry-run")

@@ -1357,9 +1357,9 @@ devices on the phone afterwards, and log the device out there if it is still lis
 ### 5.5 Optional: Telegram (a bot for direct messages)
 
 Skip this unless your human wants the agent to receive and answer Telegram direct
-messages through a bot (`TELEGRAM.md` is the design). Like WhatsApp it is
-**optional**: nothing about it is installed, upgraded or removed unless you ask.
-It needs nothing new: Python's standard library talks to the Bot API with
+messages through a bot (`TELEGRAM.md` is the design). It stays off until it has a
+token: since 0.20.0 the installer always adds the service, stopped, so that your
+human can set it up from PaynaniWeb (#635). It needs nothing new: Python's standard library talks to the Bot API with
 `getUpdates`, so there is no port, webhook or tunnel.
 
 **1. A bot of its own.** Your human creates it with @BotFather in Telegram
@@ -1367,8 +1367,14 @@ It needs nothing new: Python's standard library talks to the Bot API with
 for this install only: two programs reading the same bot steal each other's
 messages.
 
-**2. The token**, read from stdin (never as an argument), checked with Telegram and
-written to `telegram.env` (0600) next to `runtime.env`:
+**2. The token.** The simplest way is PaynaniWeb: your human opens «Telegram
+messages» → «Telegram account», pastes the token and the bot's username, ticks
+«This bot is only for this install» and types the web password. PaynaniWeb checks
+the token with Telegram, checks that the username is that token's bot, writes
+`telegram.env` (0600) and starts the service. The token never reaches you.
+
+From a terminal instead, read from stdin (never as an argument), checked with
+Telegram and written to `telegram.env` (0600) next to `runtime.env`:
 
 ```bash
 scripts/paynani telegram setup             # asks for the token without echo, then asks you to confirm
@@ -1379,21 +1385,23 @@ printf '%s\n' "$TOKEN" | scripts/paynani telegram setup --dedicated   # without 
 `--delete-webhook` if the bot had a webhook and your human agrees to remove it.
 Without them nothing is written.
 
-**3. The service**, with the same runtime you installed with:
+**3. The service.** Since 0.20.0 every install and `--upgrade` adds it, with or
+without `--with-telegram` (still accepted):
 
 ```bash
-scripts/install.sh --runtime <runtime> --with-telegram --dry-run   # what it would add
-scripts/install.sh --runtime <runtime> --with-telegram
+scripts/install.sh --runtime <runtime> --dry-run   # paynani-telegram.service is in the plan
+scripts/install.sh --runtime <runtime>
 ```
 
-On macOS, `scripts/install_macos.py --runtime <runtime> --with-telegram`. It adds
+On macOS, `scripts/install_macos.py --runtime <runtime>`. It adds
 `paynani-telegram.service` (LaunchAgent `com.paynani.telegram`), enables it and
 records it in the ownership manifest; `--upgrade` keeps it current and
 `--uninstall` removes it. The installer never asks for or writes the token, so
 steps 2 and 3 work in either order:
 
 - installed first, the service is enabled but stays stopped
-  (`state=enabled-waiting-setup`) until `setup` runs, and `setup` starts it;
+  (`state=enabled-waiting-setup`) until PaynaniWeb or `setup` writes the token, and
+  either one starts it;
 - token first, the installer starts it and requires it to stay up.
 
 `telegram.env` is yours: no install, upgrade or uninstall changes or removes it.

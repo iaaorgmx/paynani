@@ -84,8 +84,9 @@ def whatsapp_wanted(args: argparse.Namespace) -> bool:
 
 
 def telegram_wanted(args: argparse.Namespace) -> bool:
-    """--with-telegram, or a Telegram LaunchAgent that is already here."""
-    return bool(getattr(args, "with_telegram", False)) or plist_path("telegram").exists()
+    """Always, since 0.20.0 (#635, Q281 = A): the LaunchAgent stays stopped until telegram.env
+    has a token, so PaynaniWeb can do the first setup. --with-telegram is still accepted."""
+    return True
 
 
 def telegram_configured() -> bool:

@@ -538,12 +538,13 @@ for state, fix in (("conflict", "paynani telegram status"), ("token_invalid", "p
     check(f"telegram: {state} is blocked with its own fix", c["status"] == "blocked" and c["next_command"].startswith(fix))
 check("telegram: offline is a warning", tg_check(dict(on, state="offline"))["status"] == "warning")
 c = tg_check({"unit_installed": True, "env_present": False, "enabled": False, "token_present": False})
-check("telegram: unit without a token asks for setup", c["status"] == "warning" and c["next_command"] == "paynani telegram setup")
+check("telegram: unit without a token is ok and points to PaynaniWeb (#635)",
+      c["status"] == "ok" and "Telegram account" in c["next_command"])
 c = tg_check({"unit_installed": True, "env_present": True, "enabled": False, "token_present": True})
 check("telegram: turned off is ok", c["status"] == "ok" and "turned off" in c["summary"])
 c = tg_check(dict(on, unit_installed=False))
-check("telegram: configured without the service asks for --with-telegram",
-      c["status"] == "warning" and "--with-telegram" in c["next_command"])
+check("telegram: configured without the service asks for --upgrade",
+      c["status"] == "warning" and c["next_command"].endswith("--upgrade"))
 c = tg_check(dict(on, token_present=False))
 check("telegram: enabled without a valid token is blocked", c["status"] == "blocked")
 c = tg_check(dict(on, state="something-new"))

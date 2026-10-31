@@ -297,4 +297,34 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
 
 
 def not_configured_body() -> str:
-    return f'<p class="lead">{_th("not_configured")}</p>\n'
+    """Sin bot: el aviso y la entrada a «Cuenta de Telegram» (#635)."""
+    return (f'<p class="acciones"><a class="secundario" href="/telegram">{_th("bot_link")}</a></p>'
+            f'<p class="lead">{_th("not_configured")}</p>\n')
+
+
+def setup_body(csrf: str, *, error: str = "", username: str = "") -> str:
+    """
+    «Cuenta de Telegram» sin bot (#635): el token (`type="password"`, nunca vuelve), el
+    usuario del bot, que se compara con `getMe` (Q282), la casilla «sólo de esta
+    instalación», que también autoriza borrar un webhook (Q283), y la contraseña de la web.
+    """
+    return f"""<p class="acciones"><a class="secundario" href="/telegram/messages">{_th("nav")}</a></p>
+<p class="lead">{_th("setup.lead")}</p>
+{_error(error)}
+<section class="tg-token" aria-labelledby="tg-setup-h">
+  <h3 id="tg-setup-h">{_th("bot_title")}</h3>
+  <form method="post" action="/telegram/setup" class="formulario" autocomplete="off">
+    <input type="hidden" name="csrf" value="{e(csrf)}">
+    <label for="tg-setup-token">{_th("setup.token")}</label>
+    <input id="tg-setup-token" name="token" type="password" autocomplete="off" spellcheck="false" maxlength="100" required>
+    <p class="hint">{_th("setup.token_help")}</p>
+    <label for="tg-setup-user">{_th("setup.username")}</label>
+    <input id="tg-setup-user" name="bot_username" type="text" autocomplete="off" spellcheck="false" maxlength="40"
+           value="{e(username)}" placeholder="@" required>
+    <p class="hint">{_th("setup.username_help")}</p>
+    <label class="casilla"><input type="checkbox" name="confirm_dedicated" value="1" required> {_th("setup.dedicated")}</label>
+    {_password("tg-setup-password")}
+    <button type="submit" class="primario">{_th("setup.save")}</button>
+  </form>
+</section>
+"""

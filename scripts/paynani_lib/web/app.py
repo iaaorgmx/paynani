@@ -454,6 +454,20 @@ class Context:
             return True
         return telegram_source.configured(self._telegram_root)
 
+    def telegram_env(self) -> Path:
+        """Dónde va telegram.env: junto a `runtime.env` (TELEGRAM.md §4), o en la carpeta
+        que pasen las pruebas."""
+        if self._telegram_root is not None:
+            return Path(self._telegram_root) / telegram_source.FILE_NAME
+        from ..telegram import config as telegram_config
+        return telegram_config.env_path()
+
+    def telegram_start(self) -> str:
+        """Arranca paynani-telegram después de la configuración inicial (#635):
+        `started`, `not-installed` o `failed`, como `paynani telegram setup`."""
+        from ..telegram import cli as telegram_cli
+        return telegram_cli.service_control("start")
+
     def tg_check_set(self, sid: str, data: dict) -> None:
         with self._tg_lock:
             self._tg_checks[sid] = dict(data, at=time.time())
@@ -768,7 +782,7 @@ def make_handler(ctx: Context):
                                         accounts=accounts, accounts_error=error,
                                         collapsed=shell.nav_collapsed(self.headers.get("Cookie", "")),
                                         whatsapp=self.CTX.whatsapp_configured(),
-                                        telegram=self.CTX.telegram_configured(), **kw))
+                                        telegram=True, **kw))
 
         def dispatch_get(self):
             t = i18n.t
@@ -1445,7 +1459,12 @@ def make_handler(ctx: Context):
 
         def _telegram_get(self):
             if not self.CTX.telegram_configured():
-                self._tg_page(404, telegram_pages.not_configured_body())
+                # Sin bot, /telegram es la configuración inicial (#635); lo demás avisa y
+                # lleva ahí.
+                if self.route == "/telegram":
+                    self._telegram_setup_page()
+                else:
+                    self._tg_page(404, telegram_pages.not_configured_body(), title_key="web.tg.messages_title")
                 return
             if self.route == "/telegram/media":
                 self._telegram_image()
@@ -1453,9 +1472,14 @@ def make_handler(ctx: Context):
             if self.route == "/telegram":
                 done = self.query.get("ok", [""])[0]
                 notice = ""
-                if done in ("applied", "unchanged", "canceled"):
-                    status = self.CTX.telegram().status()
-                    notice = i18n.t(f"web.tg.{done}", bot=status.get("bot_username") or "?")
+                if done in ("applied", "unchanged", "canceled", "setup_ok", "setup_not_installed", "setup_failed"):
+                    # Recién configurado el servicio puede seguir arrancando: el @usuario
+                    # viene en la URL (es público), sólo si tiene forma de usuario.
+                    from ..telegram import setup as tg_setup
+                    bot = tg_setup.normalize_username(self.query.get("bot", [""])[0]) if done.startswith("setup") else None
+                    if not bot:
+                        bot = self.CTX.telegram().status().get("bot_username") or "?"
+                    notice = i18n.t(f"web.tg.{done}", bot=bot)
                 self._telegram_bot(notice=notice)
                 return
             self._telegram_messages()
@@ -1540,8 +1564,11 @@ def make_handler(ctx: Context):
             la web con el bloqueo de la entrada antes de pedirle nada al servicio.
             """
             th = i18n.th
+            if self.route == "/telegram/setup":
+                self._telegram_setup(post)
+                return
             if not self.CTX.telegram_configured():
-                self._tg_page(404, telegram_pages.not_configured_body())
+                self._tg_page(404, telegram_pages.not_configured_body(), title_key="web.tg.messages_title")
                 return
             source = self.CTX.telegram()
             sid = self.session["sid"]
@@ -1656,6 +1683,49 @@ def make_handler(ctx: Context):
                 self._redirect(f"/telegram?ok={result}")
                 return
             self._telegram_bot(error=i18n.t("web.tg.rollback", reason=str(data.get("reason") or "?")), code=409)
+
+        # ---- La configuración inicial de Telegram (#635, Q279 y Q281 a Q283) -------
+        def _telegram_setup_page(self, *, error: str = "", username: str = "", code: int = 200):
+            """GET /telegram sin bot: el formulario de la cuenta. El token nunca vuelve a la
+            página; el usuario del bot sí, para no tener que escribirlo otra vez."""
+            self._tg_page(code, telegram_pages.setup_body(self.session["csrf"], error=error, username=username))
+
+        def _telegram_setup(self, post: dict):
+            """
+            POST /telegram/setup: lo mismo que `paynani telegram setup` (setup.initial): la
+            contraseña de la web primero, con el bloqueo de la entrada; luego el token con
+            getMe, el usuario del bot contra getMe (Q282), la casilla «sólo de esta
+            instalación» (Q283) y telegram.env 0600. Después arranca el servicio y avisa al
+            dueño. Si algo falla no se escribe nada.
+            """
+            from ..telegram import setup as tg_setup
+
+            if self.CTX.telegram_configured():
+                self._redirect("/telegram")
+                return
+            username = post.get("bot_username", "").strip()[:40]
+            password = post.get("password", "")[:users.MAX_PASSWORD]
+            problem = self._check_current(password) if password else i18n.th("web.tg.err.password")
+            if problem:
+                self._telegram_setup_page(error=problem, username=username, code=403 if password else 400)
+                return
+            token = post.get("token", "").strip()
+            try:
+                done = tg_setup.initial(token, username, dedicated=post.get("confirm_dedicated") == "1",
+                                        env=self.CTX.telegram_env())
+            except tg_setup.SetupError as exc:
+                code = 502 if exc.code == tg_setup.UNREACHABLE else 409 if exc.code == tg_setup.ALREADY else 400
+                self._telegram_setup_page(error=i18n.t("web.tg.setup.err." + exc.code), username=username, code=code)
+                return
+            finally:
+                token = ""
+                post.pop("token", None)
+            started = self.CTX.telegram_start()
+            bot = done["bot_username"] or "?"
+            self.CTX.notifier.owner(self.user, i18n.t("web.tg.setup.mail_subject"),
+                                    i18n.t("web.tg.setup.mail_body", ip=self.ip, bot=bot))
+            result = {"started": "setup_ok", "not-installed": "setup_not_installed"}.get(started, "setup_failed")
+            self._redirect(f"/telegram?ok={result}&bot={quote(bot, safe='')}")
 
         # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
         # Toda respuesta de aquí sale con Cache-Control: no-store (guard.SECURITY_HEADERS):
@@ -2260,7 +2330,7 @@ def make_handler(ctx: Context):
                 self._catchall_post(post)
                 return
             if self.route in ("/telegram/messages/enviar", "/telegram/roster", "/telegram/token/check",
-                              "/telegram/token/apply", "/telegram/token/cancel"):
+                              "/telegram/token/apply", "/telegram/token/cancel", "/telegram/setup"):
                 self._telegram_post(post)
                 return
             if self.route in ("/whatsapp/link", "/whatsapp/link/cancel", "/whatsapp/unlink", "/whatsapp/messages/enviar"):

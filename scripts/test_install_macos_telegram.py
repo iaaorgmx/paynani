@@ -87,13 +87,13 @@ try:
 except SystemExit as exc:
     check("--with-telegram con --uninstall se rechaza con 64", 64, exc.code)
 
-code, out, _ = run(["--runtime", "codex"])
-check("sin --with-telegram: ni LaunchAgent ni nada de Telegram", (False, False, False),
-      (tg.exists(), tg_env.exists(), "com.paynani.telegram" in out))
-
-code, out, _ = run(["--runtime", "codex", "--dry-run", "--with-telegram"])
-check("dry-run con --with-telegram: lo planea sin escribir", (True, False),
+code, out, _ = run(["--runtime", "codex", "--dry-run"])
+check("#635: dry-run sin --with-telegram también lo planea, sin escribir", (True, False),
       ("planned-launchagent=" + str(tg) in out, tg.exists()))
+
+code, out, _ = run(["--runtime", "codex"])
+check("#635 (Q281 = A): sin --with-telegram igual pone el LaunchAgent, sin telegram.env", (True, False, True),
+      (tg.exists(), tg_env.exists(), "com.paynani.telegram" in out))
 
 code, out, _ = run(["--runtime", "codex", "--with-telegram"])
 check("--with-telegram sin telegram.env: instala, carga y dice que falta setup", (True, True, True, False),
