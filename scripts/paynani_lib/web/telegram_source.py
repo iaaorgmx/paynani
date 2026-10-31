@@ -131,7 +131,7 @@ _DEMO_THREADS = [
     ]},
     {"name": "Julián Flores", "in_roster": True, "tg": "700000002", "messages": [
         ("in", None, 100, "text", "¿Ya quedó el pedido de mañana?", False),
-        ("out", "owner", 95, "text", "Sí, sale a las 9.", False),
+        ("out", "phone:d_demo01", 95, "text", "Sí, sale a las 9.", False),
     ]},
     {"name": "Pedro", "in_roster": False, "tg": "700000099", "messages": [
         ("in", None, 41, "text", "Hola, ¿hacen envíos?", False),
@@ -254,7 +254,8 @@ class Demo(Source):
                     raise Failed("not_allowed")
                 if not any(m["dir"] == "in" for m in t["messages"]):
                     raise Failed("not_started")
-                m = {"ref": "tgo:" + secrets.token_hex(6), "dir": "out", "by": "owner", "at": _iso(now),
+                # El `by` canónico de §4: lo que manda esta web va como `web`.
+                m = {"ref": "tgo:" + secrets.token_hex(6), "dir": "out", "by": "web", "at": _iso(now),
                      "kind": "text", "text": text, "status": "sent"}
                 t["messages"].append(m)
                 return {"ref": m["ref"], "status": "sent", "at": m["at"]}

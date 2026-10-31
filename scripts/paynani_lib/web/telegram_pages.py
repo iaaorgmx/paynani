@@ -239,6 +239,18 @@ def add_box(thread: dict, csrf: str, error: str = "") -> str:
 </section>"""
 
 
+def sender(by) -> str:
+    """Quién mandó un mensaje que salió, según el `by` de TELEGRAM.md §4: el dueño desde
+    PaynaniWeb (`web`) o desde PaynaniApp (`phone:<device_id>`), el agente (`agent` o
+    `terminal`) o la API (`api`). Cualquier otro valor no se adivina: ""."""
+    by = str(by or "")
+    if by in ("web", "owner") or by.startswith("phone:"):
+        return "owner"
+    if by in ("agent", "terminal"):
+        return "agent"
+    return "api" if by == "api" else ""
+
+
 def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> str:
     """Un hilo. `thread` es el `data` de `telegram.thread`: los mensajes llegan del más
     reciente al más viejo (como `whatsapp.thread`) y se dibujan en orden de hora."""
@@ -257,10 +269,10 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
     messages = sorted(thread.get("messages") or [], key=lambda m: str(m.get("at") or ""))
     for m in messages:
         out_dir = m.get("dir") == "out"
-        css = {"agent": "sms-agent", "owner": "sms-human", "api": "sms-agent"}.get(m.get("by"), "sms-agent") \
-            if out_dir else "sms-received"
+        who_sent = sender(m.get("by")) if out_dir else ""
+        css = ("sms-human" if who_sent == "owner" else "sms-agent") if out_dir else "sms-received"
         label = {"agent": _th("by_agent"), "owner": _th("by_owner"), "api": _th("by_api")}.get(
-            m.get("by"), _th("sent_prefix")) if out_dir else e(who)
+            who_sent, _th("sent_prefix")) if out_dir else e(who)
         if m.get("hidden"):
             body = f'<span class="quiet">{_th("hidden_short")}</span>'
         elif m.get("kind") == "image" and not out_dir:

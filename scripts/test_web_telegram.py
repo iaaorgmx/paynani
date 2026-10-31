@@ -235,8 +235,21 @@ status, hdrs, _ = req("POST", "/telegram/messages/enviar", form={"csrf": csrf, "
                                                                  "text": "Los esperamos."}, cookie=cookie)
 check("contestar → el hilo con ok=sent", (303, True),
       (status, hdrs.get("location", "").endswith("&ok=sent#responder")))
+status, _, page = req("GET", f"/telegram/messages/ver?t={roster_thread['thread']}&lang=es-MX", cookie=cookie)
+mine = page[page.index("Los esperamos.") - 400:page.index("Los esperamos.")]
+check("#615: lo que mandó esta web (by=web) se dibuja como del dueño, no del agente (revisión de Ximena)",
+      (True, True), ('class="sms sms-human"' in mine, th("web.tg.by_owner") in mine))
+julian = next(t for t in demo.threads if t["name"] == "Julián Flores")
+status, _, page = req("GET", f"/telegram/messages/ver?t={julian['thread']}&lang=es-MX", cookie=cookie)
+from_app = page[page.index("Sí, sale a las 9.") - 400:page.index("Sí, sale a las 9.")]
+check("#615: lo que mandó PaynaniApp (by=phone:<device_id>) también es del dueño",
+      (True, True), ('class="sms sms-human"' in from_app, th("web.tg.by_owner") in from_app))
+check("y el device_id no se muestra", False, "d_demo01" in page)
+check("sender(): web y phone:* → dueño; agent y terminal → agente; api; otro → \"\"",
+      ["owner", "owner", "owner", "agent", "agent", "api", ""],
+      [telegram_pages.sender(b) for b in ("web", "phone:d_x", "owner", "agent", "terminal", "api", "raro")])
 check("el servicio recibió el texto, sin archivo", ("telegram.send", "Los esperamos.", False),
-      (acts()[-1][0], acts()[-1][1]["text"], "file" in acts()[-1][1]))
+      next((c[0], c[1]["text"], "file" in c[1]) for c in reversed(acts()) if c[0] == "telegram.send"))
 
 status, _, page = req("GET", f"/telegram/messages/ver?t={outside['thread']}&lang=es-MX", cookie=cookie)
 check("fuera del roster: oculto, sin responder y con «Agregar al roster»", (200, True, False, True),
