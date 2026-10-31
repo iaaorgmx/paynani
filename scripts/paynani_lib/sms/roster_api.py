@@ -225,14 +225,18 @@ class RosterService:
                 if 1 <= row <= len(current):
                     before = current[row - 1]
             new_text, saved_row, clean = roster_edit.save_text(text, row, member)
+            if "telegram" not in clean:
+                # Sin `telegram` en el pedido la fila conserva el suyo (PRD #609): el aviso
+                # al dueño dice lo que quedó, no un vacío.
+                clean = dict(clean, telegram=before.get("telegram", ""))
             return new_text, {"row": saved_row, "member": clean}
 
         done = roster_edit.apply(path, msg.get("etag"), transform, state_dir=self.state_dir,
                                  label=self._label(account), template=self.template)
         info = done["info"]
         action = "add" if row is None else "edit"
-        changed = sorted(k for k in ("name", "email", "type", "github", "phones")
-                         if before.get(k) != info["member"][k]) if before else []
+        changed = sorted(k for k in ("name", "email", "type", "github", "phones", "telegram")
+                         if k in info["member"] and before.get(k) != info["member"][k]) if before else []
         self._changed(device_id, msg["type"], account, shown, info["row"], info["member"]["name"],
                       done, action=action, fields=changed, member=info["member"], before=before)
         listing = self._listing(path, account, roster_edit.read_bytes(path), done["text"])
@@ -633,7 +637,7 @@ class RosterService:
                 if seen[0] != digest:
                     return {"type": "error", "code": "invalid", "ref": rid, "field": "id", "reason": "id_reused",
                             "detail": "ese id ya se usó con otro pedido"}
-                return {**seen[1], "replayed": True}
+                return _for_device({**seen[1], "replayed": True}, device_id)
         handler = {"roster.accounts": self.roster_accounts, "roster.list": self.roster_list,
                    "roster.save": self.roster_save, "roster.delete": self.roster_delete,
                    "rules.get": self.rules_get, "rules.preview": self.rules_preview,
@@ -653,12 +657,33 @@ class RosterService:
                 self.replays[rid] = (digest, response, time.monotonic())
                 while len(self.replays) > REPLAY_MAX:
                     self.replays.popitem(last=False)
-        return response
+        return _for_device(response, device_id)
 
     def _expire(self) -> None:
         cutoff = time.monotonic() - REPLAY_TTL_S
         for rid in [r for r, (_, _, at) in self.replays.items() if at < cutoff]:
             del self.replays[rid]
+
+
+def _for_device(response: dict, device_id: str) -> dict:
+    """
+    El id de Telegram de cada fila sólo va a PaynaniWeb (PRD #609 FR-15, TELEGRAM.md §8):
+    a PaynaniApp y a la API les llega `has_telegram` en su lugar. Sin `telegram`, una
+    edición desde ellas conserva el de la fila (roster_edit).
+    """
+    if from_web(device_id) or response.get("type") != "result":
+        return response
+    data = response.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("members"), list):
+        return response
+    members = []
+    for m in data["members"]:
+        if isinstance(m, dict) and "telegram" in m:
+            has = bool(m["telegram"])
+            m = {k: v for k, v in m.items() if k != "telegram"}
+            m["has_telegram"] = has
+        members.append(m)
+    return {**response, "data": {**data, "members": members}}
 
 
 def unnotified(state_dir: Path, *, now: float | None = None, window_s: int = NOTIFY_WINDOW_S,
@@ -778,7 +803,9 @@ def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
     def show(m):
         return [f"  Nombre: {m.get('name', '')}", f"  Correo: {m.get('email', '') or '—'}",
                 f"  Tipo:   {m.get('type', '') or '—'}", f"  GitHub: {m.get('github', '') or '—'}",
-                f"  Teléfonos: {', '.join(m.get('phones') or []) or '—'}"]
+                f"  Teléfonos: {', '.join(m.get('phones') or []) or '—'}",
+                # El id de Telegram no va en el correo: sólo si la fila lo tiene (PRD #609 FR-15).
+                f"  Telegram: {'sí' if m.get('telegram') else '—'}"]
 
     if entry["action"] == "edit":
         lines += ["Antes:"] + show(before) + ["", "Ahora:"] + show(member)

@@ -294,6 +294,15 @@ status, body = api(reader, "ListAccounts")
 check("una excepción en la acción: 500 internal_error, sin detalles", (500, "internal_error"), (status, body["code"]))
 api_actions.ACTIONS["ListAccounts"] = original
 
+# --- La columna Telegram no sale por la API (PRD #609 FR-15, TELEGRAM.md §8; #622) --------
+roster.write_text("| Name | Email | Type | Telegram |\n|---|---|---|---|\n"
+                  "| Julián Flores | julian@example.com | Human |  |\n"
+                  "| Pedro |  | Human | 700000123 |\n", encoding="utf-8")
+status, body = api(reader, "ListRoster")
+pedro = next((m for m in body.get("members", []) if m["name"] == "Pedro"), {})
+check("ListRoster: el id de Telegram no sale; has_telegram sí", (200, False, True, False),
+      (status, "telegram" in pedro, pedro.get("has_telegram"), "700000123" in json.dumps(body)))
+
 httpd.shutdown()
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

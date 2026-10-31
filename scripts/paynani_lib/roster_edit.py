@@ -48,7 +48,7 @@ TEMPLATE = _REPO_ROOT / "roster.md.example"
 # Los nombres canónicos que ve la app (`columns` de roster.list), por el nombre
 # canónico de roster.py. `address` es el nombre viejo de `Email`.
 COLUMN_NAMES = {"name": "Name", "email": "Email", "address": "Email", "type": "Type",
-                "github": "GitHub", "phone": "Phone", "rules": "Rules"}
+                "github": "GitHub", "phone": "Phone", "rules": "Rules", "telegram": "Telegram"}
 TYPES = {"": "", "human": "Human", "ai agent": "AI Agent"}
 E164 = re.compile(r"^\+[1-9][0-9]{7,14}$")
 EMAIL = re.compile(r"^[^@\s|<>,;]+@[^@\s|<>,;]+\.[^@\s|<>,;]+$")
@@ -196,6 +196,7 @@ def members(text: str) -> tuple[list[str], list[dict]]:
         owner_seen = owner_seen or owner
         out.append({"row": n, "name": cells.get("name", ""), "email": email, "type": type_,
                     "github": cells.get("github", ""), "phones": _phones(cells.get("phone", "")),
+                    "telegram": cells.get(roster_mod.TELEGRAM_COLUMN, ""),
                     "owner": owner, "rules": cells.get("rules") or None})
     return columns(header_fields), out
 
@@ -204,7 +205,7 @@ def _signature(text: str) -> list[tuple]:
     """Lo que tiene que quedar igual al releer: cada fila, en orden."""
     _, rows = members(text)
     return [(m["name"], roster_mod.normalise(m["email"]), m["type"], m["github"],
-             tuple(m["phones"]), m["rules"]) for m in rows]
+             tuple(m["phones"]), m["telegram"], m["rules"]) for m in rows]
 
 
 # --- validación ------------------------------------------------------------
@@ -213,11 +214,13 @@ def _fail(field: str, reason: str, detail: str):
     raise EditError("invalid", field=field, reason=reason, detail=detail)
 
 
-def validate(member: dict, cols: list[str], others: list[dict], *, owner: bool) -> dict:
+def validate(member: dict, cols: list[str], others: list[dict], *, owner: bool, kept_telegram: str = "") -> dict:
     """
     El contacto que mandó la app, ya limpio, o `EditError("invalid")` con la
     primera regla que falla, en el orden de la tabla de SMS_GATEWAY.md §11.
-    `others` son las demás filas del mismo roster.
+    `others` son las demás filas del mismo roster. `kept_telegram` es el Telegram que
+    la fila ya tiene, en una edición sin la llave `telegram`: se conserva tal cual
+    (_render) y cuenta como canal (revisión de Ximena en #622).
     """
     if not isinstance(member, dict):
         _fail("member", "required", "falta member")
@@ -246,8 +249,20 @@ def validate(member: dict, cols: list[str], others: list[dict], *, owner: bool) 
             _fail("phones", "phone_e164", f"«{number}» no está en E.164 (+525511112222)")
         if number not in phones:
             phones.append(number)
-    if not email and not phones:
-        _fail("email", "no_channel", "hace falta un correo o un teléfono")
+    # Telegram (PRD #609 FR-11, FR-15): un id numérico o un @usuario, con la misma regla
+    # que lee el servicio (roster.telegram_value). Sin la llave en `member`, una edición
+    # conserva lo que la fila ya tenía (ver _render).
+    has_telegram = "telegram" in member
+    telegram = text("telegram") if has_telegram else ""
+    tg = None
+    if telegram:
+        tg = roster_mod.telegram_value(telegram)
+        if tg is None:
+            # Sin repetir lo que se escribió: un id de Telegram no va en el detalle (#612).
+            _fail("telegram", "telegram", "no es un id de Telegram ni un @usuario")
+        telegram = tg[1] if tg[0] == "id" else "@" + tg[1]
+    if not email and not phones and not telegram and not (not has_telegram and kept_telegram):
+        _fail("email", "no_channel", "hace falta un correo, un teléfono o Telegram")
     norm = roster_mod.normalise(email)
     for other in others:
         if norm and roster_mod.normalise(other["email"]) == norm:
@@ -256,6 +271,11 @@ def validate(member: dict, cols: list[str], others: list[dict], *, owner: bool) 
     for number in phones:
         if number in taken:
             _fail("phones", "duplicate_phone", f"{number} ya es de {taken[number] or 'otra fila'}")
+    if tg is not None:
+        for other in others:
+            if roster_mod.telegram_value(other.get("telegram", "")) == tg:
+                # El valor no va en el detalle: el id de Telegram sólo se ve en el formulario (FR-15).
+                _fail("telegram", "duplicate_telegram", f"ese Telegram ya es de {other['name'] or 'otra fila'}")
     type_raw = text("type")
     if type_raw.lower() not in TYPES:
         _fail("type", "type", f"«{type_raw}» no es Human ni AI Agent")
@@ -273,7 +293,13 @@ def validate(member: dict, cols: list[str], others: list[dict], *, owner: bool) 
         _fail("type", "no_type_column", "este roster no tiene columna Type")
     if "Email" not in cols and email:
         _fail("email", "no_email_column", "este roster no tiene columna Email")
-    return {"name": name, "email": email, "type": type_, "github": github, "phones": phones}
+    if telegram and "Telegram" not in cols:
+        # No se agrega la columna sola: cambiar la forma del roster es decisión del dueño.
+        _fail("telegram", "no_telegram_column", "este roster no tiene columna Telegram")
+    clean = {"name": name, "email": email, "type": type_, "github": github, "phones": phones}
+    if has_telegram:
+        clean["telegram"] = telegram
+    return clean
 
 
 def _render(header_fields, values: dict, old_fields=None) -> str:
@@ -294,6 +320,8 @@ def _render(header_fields, values: dict, old_fields=None) -> str:
             cells.append(values.get(key, ""))
         elif key == "rules" and "rules" in values:
             cells.append(values["rules"] or "")
+        elif key == roster_mod.TELEGRAM_COLUMN and "telegram" in values:
+            cells.append(values["telegram"] or "")
         else:
             cells.append(old[i].strip() if i < len(old) else "")
     return "| " + " | ".join(cells) + " |"
@@ -332,7 +360,8 @@ def save_text(text: str, row, member: dict) -> tuple[str, int, dict]:
         return _join(lines, text), len(rows) + 1, clean
     line_idx, fields = _row(rows, row)
     others = [m for m in current if m["row"] != row]
-    clean = validate(member, cols, others, owner=current[row - 1]["owner"])
+    kept = current[row - 1]["telegram"] if isinstance(member, dict) and "telegram" not in member else ""
+    clean = validate(member, cols, others, owner=current[row - 1]["owner"], kept_telegram=kept)
     lines[line_idx] = _render(header_fields, clean, fields)
     return _join(lines, text), row, clean
 

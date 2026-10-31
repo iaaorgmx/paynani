@@ -2136,8 +2136,9 @@ def make_handler(ctx: Context):
                 member = {"name": post.get("name", "").strip(), "email": post.get("email", "").strip(),
                           "type": post.get("type", "").strip(), "github": post.get("github", "").strip(),
                           "phones": phones}
-                # La columna Telegram (PRD #609 FR-13, TG-3): sólo si el formulario la trae.
-                if post.get("telegram", "").strip():
+                # La columna Telegram (PRD #609 FR-13, FR-15): sólo si el formulario trae el
+                # campo; vacío la borra. Sin el campo, la fila conserva la suya.
+                if "telegram" in post:
                     member["telegram"] = post.get("telegram", "").strip()[:64]
                 res = self._rq("roster.save", account=account, row=row, member=member, etag=post.get("etag", ""))
                 if res["type"] == "result":
