@@ -22,6 +22,8 @@
 
   Lee lo mismo que el Dashboard y no escribe nada. `dashboard_pages` comparte las filas de canales y de actividad. Textos en los cinco idiomas; `test_web_agent.py`.
 
+- **WhatsApp: los audios `.ogg` que manda el agente ahora llegan (#646).** `paynani whatsapp send --file` mandaba un OGG/Opus como `audio/ogg`, sin el códec, y WhatsApp lo dejaba en `sent` sin entregarlo nunca. Ahora el puente lo manda como `audio/ogg; codecs=opus` y como nota de voz (`ptt`). Los MP3, M4A y demás audios se mandan igual que antes.
+
 ## 0.20.0 (2026-10-31)
 
 Telegram se configura desde PaynaniWeb (#635): «Mensajes de Telegram» → «Cuenta de Telegram» pide el token y el usuario del bot, sin terminal. Para eso el instalador pone ahora el servicio de Telegram en todas las instalaciones, detenido hasta que haya un token. PaynaniWeb trae además la página «Acerca de» (#636) y «Messages» pasa a llamarse «Text Messages» (#633). Una instalación que no use Telegram no cambia en nada más.

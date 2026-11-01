@@ -217,6 +217,8 @@ export function sendContent(text, file) {
   const caption = text || undefined;
   if (mime.startsWith('image/')) return { image: src, caption, mimetype: mime };
   if (mime.startsWith('video/')) return { video: src, caption, mimetype: mime };
+  // WhatsApp sólo entrega un OGG/Opus si el tipo dice el códec; con ptt llega como nota de voz (#646).
+  if (/^audio\/(ogg|opus)\b/.test(mime)) return { audio: src, mimetype: 'audio/ogg; codecs=opus', ptt: true };
   if (mime.startsWith('audio/')) return { audio: src, mimetype: mime };
   return { document: src, caption, mimetype: mime, fileName: cleanFilename(file.filename) || 'archivo' };
 }

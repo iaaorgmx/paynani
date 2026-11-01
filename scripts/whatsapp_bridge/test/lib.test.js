@@ -77,6 +77,12 @@ test('sendContent', () => {
   assert.deepEqual(sendContent('hola', null), { text: 'hola' });
   assert.equal(sendContent('', { path: '/x.jpg', mime: 'image/jpeg' }).image.url, '/x.jpg');
   assert.equal(sendContent('pie', { path: '/x.pdf', mime: 'application/pdf', filename: 'a/b.pdf' }).fileName, 'a_b.pdf');
+  // #646: OGG/Opus va con el códec y como nota de voz; los demás audios no cambian.
+  assert.deepEqual(sendContent('', { path: '/v.ogg', mime: 'audio/ogg' }),
+    { audio: { url: '/v.ogg' }, mimetype: 'audio/ogg; codecs=opus', ptt: true });
+  assert.equal(sendContent('', { path: '/v.opus', mime: 'audio/opus' }).mimetype, 'audio/ogg; codecs=opus');
+  assert.deepEqual(sendContent('', { path: '/v.mp3', mime: 'audio/mpeg' }), { audio: { url: '/v.mp3' }, mimetype: 'audio/mpeg' });
+  assert.equal(sendContent('', { path: '/v.mp3', mime: 'audio/mpeg' }).ptt, undefined);
 });
 
 test('makeLogger: sólo errores y sólo el texto, nunca el objeto', () => {
