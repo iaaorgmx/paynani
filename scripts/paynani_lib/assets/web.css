@@ -184,6 +184,18 @@ body.web-shell {
 .web-shell .usuario .perfil.activo { color: #d8887f; }
 .web-shell .usuario b { display: block; color: #fff; font-size: 1.15rem; font-weight: 600; }
 .web-shell .usuario small { color: var(--menu-texto); }
+/* #644: la sección «AI Agent» del menú (Q303): una entrada con el robot arriba, el nombre del
+   agente y, abajo, el harness y el estado (Q293). Lleva a /agent. */
+.web-shell .agente-nav a.agente-entrada { align-items: flex-start; min-height: 54px; padding-top: 8px; padding-bottom: 8px; }
+.web-shell .agente-entrada > svg.i { flex: none; width: 22px; height: 22px; margin-top: -2px; }
+.web-shell .agente-texto { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.web-shell .agente-nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-shell .agente-chips { display: flex; flex-wrap: nowrap; gap: 5px; }
+.web-shell .agente-chip { display: inline-flex; align-items: center; gap: 5px; font-size: .68rem; padding: 2px 7px; border-radius: 999px; white-space: nowrap; background: var(--menu-borde); color: var(--menu-texto); }
+.web-shell .agente-chip i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.web-shell .agente-chip.agente-ok { background: rgba(63, 179, 107, .16); color: #8fdcab; }
+.web-shell .agente-chip.agente-warn { background: rgba(217, 164, 65, .18); color: #f0c97a; }
+.web-shell .agente-chip.agente-bad { background: rgba(214, 90, 80, .2); color: #f2a39b; }
 .web-shell .grupo { padding: 14px 16px 6px; font-size: .85rem; color: var(--menu-tenue); }
 .web-shell .grupo.separa { border-top: 1px solid var(--menu-borde); margin-top: 6px; }
 .web-shell nav a, .web-shell nav summary, .web-shell .salir button {
@@ -633,3 +645,16 @@ body.web-shell {
 .web-shell .about-txt small { color: var(--quiet); font-size: .82rem; }
 .web-shell .about-flecha { color: var(--quiet); }
 .web-shell .about-copy { text-align: center; color: var(--quiet); font-size: .8rem; margin-top: 1.4rem; }
+
+/* #644: la página «AI Agent», con las clases del Dashboard. */
+.web-shell .agente-pag .agente-id { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.web-shell .agente-pag .agente-id > div { min-width: 0; }
+.web-shell .agente-pag .agente-id p { overflow-wrap: anywhere; }
+.web-shell .agente-pag .agente-grande { flex: none; display: grid; place-items: center; width: 56px; height: 56px; color: var(--accent); }
+.web-shell .agente-pag .agente-grande svg { width: 52px; height: 52px; }
+.web-shell .agente-pag .agente-id h2 { margin: 0 0 4px; }
+.web-shell .agente-pag .agente-ayuda h3 { display: flex; align-items: center; gap: 8px; }
+.web-shell .agente-pag .agente-ayuda h3 svg { width: 18px; height: 18px; }
+.web-shell .agente-pag .agente-ayuda dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 14px; align-items: start; }
+.web-shell .agente-pag .agente-ayuda dd { margin: 0; color: var(--quiet); font-size: .92rem; line-height: 1.45; }
+@media (max-width: 700px) { .web-shell .agente-pag .agente-ayuda dl { grid-template-columns: 1fr; } }

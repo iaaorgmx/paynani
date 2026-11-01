@@ -34,8 +34,8 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
-from . import about_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (about_pages, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import about_strings, agent_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import (about_pages, agent, agent_pages, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -373,6 +373,17 @@ class Context:
                 self._dash_cache.clear()
             self._dash_cache[account] = (self._clock(), model)
         return model
+
+    def agent_summary(self) -> dict | None:
+        """El bloque del agente en el menú (#644). Lee lo mismo que el Dashboard, con su caché
+        de 60 s; si algo falla no hay bloque, y la página se dibuja igual."""
+        try:
+            return agent.summary(self.dashboard, self.now())
+        except Exception:  # noqa: BLE001 -- sólo es para mostrar
+            return None
+
+    def agent_model(self) -> dict:
+        return agent.build(self.dashboard, self.now())
 
     def state_dir(self) -> Path:
         if self._state_dir is not None:
@@ -793,11 +804,12 @@ def make_handler(ctx: Context):
 
         def _page(self, code: int, *, title: str, body: str, **kw):
             accounts, error = self.CTX.mail_accounts()
+            block = agent_pages.block(self.CTX.agent_summary(), active=kw.get("active") == "agent")
             self._html(code, shell.page(self.lang, self.user, self.session["csrf"], title=title, body=body,
                                         accounts=accounts, accounts_error=error,
                                         collapsed=shell.nav_collapsed(self.headers.get("Cookie", "")),
                                         whatsapp=self.CTX.whatsapp_configured(),
-                                        telegram=True, **kw))
+                                        telegram=True, agent=block, **kw))
 
         def dispatch_get(self):
             t = i18n.t
@@ -842,6 +854,11 @@ def make_handler(ctx: Context):
                 return
             if self.route in ("/profile", "/profile/info", "/profile/password"):
                 self._profile_get()
+                return
+            if self.route == "/agent":
+                # #644: sólo se llega picando el bloque del agente (Q298). Sólo lee.
+                self._page(200, title=i18n.t("web.agent.title"), body=agent_pages.body(self.CTX.agent_model()),
+                           active="agent", icon_name="agent", wide=True)
                 return
             if self.route == "/about":
                 version, commit = self.CTX.version

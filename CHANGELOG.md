@@ -2,6 +2,26 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el agente de IA en el menú y su página (#644).**
+  - **La sección «AI Agent»:** va debajo de tu nombre y arriba de «Management», como esa sección (Q303). Tiene una entrada con el robot, el nombre del agente y, abajo, el harness y el estado (Q293):
+    - verde «Online»;
+    - ámbar «No session»;
+    - rojo «Offline»;
+    - gris «No data», cuando todavía no hay evidencia (Q300).
+
+    Cada runtime tiene su propia evidencia: la vigilancia en Claude Code, el spool en Codex y OpenCode, y lo último que aceptó o rechazó en OpenClaw y Hermes, siempre del runtime actual.
+  - **La página `/agent`:** se abre al picar el bloque (Q292, Q298). Muestra:
+    - el estado del agente;
+    - los atendidos hoy, de correo, SMS, WhatsApp y Telegram;
+    - la cola;
+    - la última respuesta, sin contar los avisos de PaynaniWeb al dueño;
+    - el tiempo típico de respuesta (la mediana de hoy, Q297);
+    - «The agent» y «Channels»;
+    - lo que hizo hoy;
+    - qué hacer si cambia el estado (Q296).
+
+  Lee lo mismo que el Dashboard y no escribe nada. `dashboard_pages` comparte las filas de canales y de actividad. Textos en los cinco idiomas; `test_web_agent.py`.
+
 - **Webchat, el almacén (#648, W-1).** `scripts/paynani_lib/webchat/store.py` guarda la conversación del dueño con su agente en `state/webchat/`, revisa los adjuntos por sus bytes y escribe el evento `webchat.received` (`[webchat …, roster] <dueño> (PaynaniWeb): …`). El contrato está en `WEBCHAT.md`. Todavía no hay página ni comando: la página `/webchat` la hace Iris y `paynani webchat` va en W-2. **Hermes:** las dos rutas de `examples/hermes-routes.yaml` ya llevan `webchat.received`; si copiaste las rutas de 0.20.0 o antes, cópialas otra vez antes de usar Webchat (`HERMES.md`), o el primer mensaje detiene la cola.
 
 - **WhatsApp: los audios `.ogg` que manda el agente ahora llegan (#646).** `paynani whatsapp send --file` mandaba un OGG/Opus como `audio/ogg`, sin el códec, y WhatsApp lo dejaba en `sent` sin entregarlo nunca. Ahora el puente lo manda como `audio/ogg; codecs=opus` y como nota de voz (`ptt`). Los MP3, M4A y demás audios se mandan igual que antes.
