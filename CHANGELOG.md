@@ -22,6 +22,8 @@
 
   `web/multipart.py` lee los formularios con archivos con `email.parser`, porque `cgi` ya no está en Python 3.13. Textos en los cinco idiomas; `test_web_webchat.py`.
 
+- **La pasarela deja pasar el WebSocket de PaynaniWeb (#648).** Antes quitaba `Upgrade` y `Connection` y agregaba `Connection: close`, así que un WebSocket de la web (como `/webchat/ws`) no podía abrirse por el túnel. Ahora un `GET` con `Upgrade: websocket` llega a la web con esos encabezados y, si la web contesta `101`, la pasarela copia los bytes en los dos sentidos. El plazo de 120 s sin actividad cuenta ahora en los dos sentidos juntos: antes cada sentido tenía el suyo, y uno callado se cortaba aunque el otro siguiera hablando. Lo demás no cambia.
+
 - **PaynaniWeb: el agente de IA en el menú y su página (#644).**
   - **La sección «AI Agent»:** va debajo de tu nombre y arriba de «Management», como esa sección (Q303). Tiene una entrada con el robot, el nombre del agente y, abajo, el harness y el estado (Q293):
     - verde «Online»;
