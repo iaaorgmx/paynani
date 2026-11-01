@@ -73,6 +73,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. Se abre con el ícono que está junto a tu nombre en el menú lateral, como en el /dash de ServiceButton (#626). Ya no hay avatar arriba a la derecha: «Cerrar sesión» está en el menú lateral. |
 | **Acerca de** | Como el About de PaynaniApp (#636), debajo de «API Tokens». Muestra la versión con su commit, con un botón que la copia, y el aviso de código abierto bajo la licencia MIT. Debajo, tres grupos: **Proyecto** (sitio, código y licencia); **Ayuda** (reportar un problema, que abre un issue en paynani con la versión ya escrita, las novedades y esta guía); y **Créditos**. Los enlaces abren en otra pestaña. El estado de la instalación está en el Dashboard. |
+| **Agente de IA** | En el menú lateral, debajo de tu nombre y arriba de «Management» (#644), va la sección «AI Agent». Tiene una entrada con el robot, el nombre del agente y, abajo, el harness (Claude Code, OpenClaw, Hermes, Codex u OpenCode) y su estado. Al picarla se abre la página del agente (`/agent`), que no tiene otra entrada en el menú (ver abajo). |
 
 Cuentas de correo no cierra ni responde avisos: eso sigue siendo trabajo del agente.
 Desde «Nuevo correo» el dueño sí manda sus propios correos (#590, ver abajo).
@@ -295,6 +296,48 @@ no marca avisos, no abre IMAP y no escribe en `state/`. La lectura está en
   estados: ni direcciones, ni teléfonos, ni asuntos, ni nombres. El modelo se guarda
   30 s en memoria, así que el ledger no se relee en cada petición. Sin script, la
   página se ve completa al cargarla.
+
+### El agente de IA
+
+El bloque del menú y la página `/agent` (#644) leen lo mismo que el Dashboard, con su
+caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
+
+- **El estado** (Q293). Cada runtime tiene su propia evidencia (revisión de Ximena en #645):
+  - verde «Online»: hay evidencia de que el agente recibe los mensajes;
+  - ámbar «No session»: el servicio funciona, pero ninguna sesión del agente lee los mensajes,
+    que esperan;
+  - rojo «Offline»: no le llega nada, porque el despachador está detenido o el runtime los
+    rechaza;
+  - gris «No data»: todavía no hay evidencia, porque no se le ha entregado nada o el runtime
+    no se conoce. No se afirma que esté en línea.
+
+  La evidencia de cada runtime:
+  - **Claude Code:** una sesión con la vigilancia viva (`watch_registry_facts`).
+  - **Codex y OpenCode:** la sesión lee el spool. Un evento despachado a ese runtime que
+    nadie toma en 10 min es «No session». Los que se quedaron con otro runtime no cuentan.
+  - **OpenClaw y Hermes:** lo que el runtime contestó al entregarle el último evento
+    (`state/delivery.json`). Sólo cuenta lo que dijo el runtime actual: al cambiar de
+    runtime, lo que dijo el anterior no es evidencia. Un rechazo más nuevo que la última aceptación, o una cola atorada
+    más de 10 min, es «Offline».
+- **La sección «AI Agent»** va como «Management» (Q303). Su entrada tiene el robot a la
+  izquierda, alineado arriba; a la derecha va el nombre del agente (`AGENT_EMAIL_FROM_NAME`,
+  o su correo si no hay nombre), y abajo, el harness y el estado. Si no se puede leer el
+  agente, la página sale sin la sección.
+- **La página** muestra:
+  - el agente y su estado: desde cuándo vigila y cuándo se renueva la vigilancia;
+  - cuatro cifras de hoy, en la zona del host:
+    - los atendidos, respondidos y cerrados sin respuesta, de correo, SMS, WhatsApp y
+      Telegram (los eventos del ledger);
+    - lo que espera en la cola;
+    - la última respuesta: la última transición `replied` del ledger, en cualquier canal,
+      aunque el evento se haya cerrado después, o el último SMS que mandó el agente. No sale de `sent.log`, que también tiene los
+      avisos de PaynaniWeb al dueño (revisión de Metis en #645);
+    - el tiempo típico de respuesta: la mediana, entre que llega un mensaje y que el
+      agente lo responde, de lo respondido hoy;
+  - «The agent»: el harness, la vigilancia, el despachador y la versión;
+  - «Channels»: el correo, los mensajes de texto, WhatsApp y Telegram;
+  - lo que el agente hizo hoy;
+  - qué hacer si el estado cambia.
 
 ## Lo que guarda y lo que no
 

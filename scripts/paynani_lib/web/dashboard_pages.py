@@ -102,6 +102,36 @@ def _row(ico: str, name: str, detail: str, pill: str) -> str:
 </li>"""
 
 
+def phone_row(phone: dict | None, name: str = "") -> str:
+    """La pasarela SMS. También la usa la página del agente (#644), con otro nombre."""
+    name = name or _th("svc.phone")
+    if phone is None:
+        return _row("inbox", name, _t("svc.no_phone"), _pill("off", _t("state.unpaired"), "svc.phone"))
+    battery = f"{phone['battery']} %" if phone.get("battery") is not None else "—"
+    detail = _t("svc.phone_detail", model=phone.get("model") or "—", version=phone.get("app_version") or "—",
+                battery=battery, age=ago(phone.get("last_seen_age_s")))
+    return _row("inbox", name, detail,
+                _pill("ok", _t("state.online"), "svc.phone") if phone["online"]
+                else _pill("bad", _t("state.offline"), "svc.phone"))
+
+
+def whatsapp_row(wa: str) -> str:
+    label = i18n.t(f"web.dash.state.wa.{wa}")
+    if label.startswith("web."):
+        label = wa or _t("state.unknown")
+    tone = "ok" if wa == "connected" else "bad" if wa == "service_down" else "warn"
+    return _row("chat", _th("svc.whatsapp"), "", _pill(tone, label, "svc.whatsapp"))
+
+
+def telegram_row(tg: dict, name: str = "") -> str:
+    from . import telegram_pages
+    state = tg.get("state", "")
+    tone = {"ok": "ok", "warn": "warn", "bad": "bad"}[telegram_pages.state_tone(state)]
+    detail = f"@{tg['bot_username']}" if tg.get("bot_username") else ""
+    return _row("chat", name or i18n.th("web.tg.dash.svc"), detail,
+                _pill(tone, i18n.t("web.tg.state." + state) if state else _t("state.unknown"), "svc.telegram"))
+
+
 def services(model: dict) -> str:
     svc = model["services"]
     now = model["now"]
@@ -120,31 +150,11 @@ def services(model: dict) -> str:
     else:
         rows.append(_row("profile", _th("svc.session"), _t("svc.no_session"),
                          _pill("warn", _t("state.none"), "svc.session")))
-    phone = svc.get("phone")
-    if phone is None:
-        rows.append(_row("inbox", _th("svc.phone"), _t("svc.no_phone"), _pill("off", _t("state.unpaired"), "svc.phone")))
-    else:
-        battery = f"{phone['battery']} %" if phone.get("battery") is not None else "—"
-        detail = _t("svc.phone_detail", model=phone.get("model") or "—", version=phone.get("app_version") or "—",
-                    battery=battery, age=ago(phone.get("last_seen_age_s")))
-        rows.append(_row("inbox", _th("svc.phone"), detail,
-                         _pill("ok", _t("state.online"), "svc.phone") if phone["online"]
-                         else _pill("bad", _t("state.offline"), "svc.phone")))
-    wa = model.get("whatsapp")
-    if wa is not None:
-        label = i18n.t(f"web.dash.state.wa.{wa}")
-        if label.startswith("web."):
-            label = wa or _t("state.unknown")
-        tone = "ok" if wa == "connected" else "bad" if wa == "service_down" else "warn"
-        rows.append(_row("chat", _th("svc.whatsapp"), "", _pill(tone, label, "svc.whatsapp")))
-    tg = model.get("telegram")
-    if tg is not None:
-        from . import telegram_pages
-        state = tg.get("state", "")
-        tone = {"ok": "ok", "warn": "warn", "bad": "bad"}[telegram_pages.state_tone(state)]
-        detail = f"@{tg['bot_username']}" if tg.get("bot_username") else ""
-        rows.append(_row("chat", i18n.th("web.tg.dash.svc"), detail,
-                         _pill(tone, i18n.t("web.tg.state." + state) if state else _t("state.unknown"), "svc.telegram")))
+    rows.append(phone_row(svc.get("phone")))
+    if model.get("whatsapp") is not None:
+        rows.append(whatsapp_row(model["whatsapp"]))
+    if model.get("telegram") is not None:
+        rows.append(telegram_row(model["telegram"]))
     for extra in svc.get("additional") or []:
         if extra.get("enabled"):
             rows.append(_row("mail", _th("svc.account"), extra.get("email", ""), _unit_pill(extra.get("unit", ""), "")))
@@ -252,12 +262,15 @@ def _day_label(day: dt.date) -> str:
     return f"{day.day} {months[day.month - 1]}"
 
 
-ACT_ICONS = {"mail": "mail", "sent": "mail", "sms": "inbox", "call": "inbox", "whatsapp": "chat", "roster": "roster"}
+ACT_ICONS = {"mail": "mail", "sent": "mail", "sms": "inbox", "call": "inbox", "whatsapp": "chat", "telegram": "chat",
+             "roster": "roster"}
 
 
 def _act_state(a: dict) -> str:
     channel, state = a["channel"], a["state"]
-    if channel == "mail":
+    # WhatsApp y Telegram cerrados por el agente: la página del agente (#644) los muestra
+    # con el mismo estado que un correo.
+    if channel == "mail" or (channel in ("whatsapp", "telegram") and state in ("handled", "replied", "closed")):
         label = i18n.t(f"web.state.{state}")
         return f'<span class="estado estado-{e(state)}">{e(label if not label.startswith("web.") else state)}</span>'
     if channel == "sent":
@@ -278,20 +291,27 @@ def _act_what(a: dict) -> str:
         return _th("act." + a["state"])
     if channel == "whatsapp":
         return _th("act.whatsapp")
+    if channel == "telegram":
+        return _th("act.telegram")
     action = a["what"] if a["what"] in ("add", "edit", "delete") else "other"
     return _th(f"act.roster.{action}")
 
 
-def activity(model: dict) -> str:
-    now = model["now"]
+def activity_rows(items: list[dict], now: dt.datetime) -> list[str]:
+    """Los renglones de una lista de actividad. También los usa la página del agente (#644)."""
     rows = []
-    for a in model["activity"]:
+    for a in items:
         rows.append(f"""<li>
   <span class="act-ico">{icon(ACT_ICONS.get(a["channel"], "home"))}</span>
   <a class="act-txt" href="{e(a["href"])}"><b>{e(a["who"])}</b> <span>{_act_what(a)}</span></a>
   {_act_state(a)}
   <time datetime="{e(a["at"].isoformat(timespec="seconds"))}">{e(clock(a["at"], now))}</time>
 </li>""")
+    return rows
+
+
+def activity(model: dict) -> str:
+    rows = activity_rows(model["activity"], model["now"])
     content = f"<ul>{''.join(rows)}</ul>" if rows else f'<p class="quiet nada">{_th("activity.none")}</p>'
     return f"""<section class="tarjeta-d actividad" aria-labelledby="dash-act">
   <h3 id="dash-act">{_th("activity")}</h3>
