@@ -100,6 +100,8 @@ def _href(event: dict) -> str:
         return "/messages/ver?n=" + quote(event.get("sender_address", ""), safe="")
     if channel == "whatsapp":
         return "/whatsapp/messages/ver?n=" + quote(event.get("sender_address", ""), safe="")
+    if channel == "webchat":
+        return "/webchat"
     return "/telegram/messages"
 
 

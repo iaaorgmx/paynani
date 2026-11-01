@@ -263,14 +263,14 @@ def _day_label(day: dt.date) -> str:
 
 
 ACT_ICONS = {"mail": "mail", "sent": "mail", "sms": "inbox", "call": "inbox", "whatsapp": "chat", "telegram": "chat",
-             "roster": "roster"}
+             "webchat": "webchat", "roster": "roster"}
 
 
 def _act_state(a: dict) -> str:
     channel, state = a["channel"], a["state"]
     # WhatsApp y Telegram cerrados por el agente: la página del agente (#644) los muestra
     # con el mismo estado que un correo.
-    if channel == "mail" or (channel in ("whatsapp", "telegram") and state in ("handled", "replied", "closed")):
+    if channel == "mail" or (channel in ("whatsapp", "telegram", "webchat") and state in ("handled", "replied", "closed")):
         label = i18n.t(f"web.state.{state}")
         return f'<span class="estado estado-{e(state)}">{e(label if not label.startswith("web.") else state)}</span>'
     if channel == "sent":
@@ -293,6 +293,8 @@ def _act_what(a: dict) -> str:
         return _th("act.whatsapp")
     if channel == "telegram":
         return _th("act.telegram")
+    if channel == "webchat":
+        return i18n.th("web.wc.nav")
     action = a["what"] if a["what"] in ("add", "edit", "delete") else "other"
     return _th(f"act.roster.{action}")
 

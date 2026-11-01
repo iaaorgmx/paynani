@@ -300,7 +300,7 @@ class Core(Source):
 
 
 CHANNELS = {"email.received": "mail", "sms.received": "sms", "whatsapp.received": "whatsapp",
-            "telegram.received": "telegram", "telegram.edited": "telegram"}
+            "telegram.received": "telegram", "telegram.edited": "telegram", "webchat.received": "webchat"}
 
 
 def ledger_events(ledger_path: Path, known_ids: set[str]) -> list[dict]:

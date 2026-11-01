@@ -74,6 +74,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Perfil** | El nombre, el correo y la contraseña del dueño. Se abre con el ícono que está junto a tu nombre en el menú lateral, como en el /dash de ServiceButton (#626). Ya no hay avatar arriba a la derecha: «Cerrar sesión» está en el menú lateral. |
 | **Acerca de** | Como el About de PaynaniApp (#636), debajo de «API Tokens». Muestra la versión con su commit, con un botón que la copia, y el aviso de código abierto bajo la licencia MIT. Debajo, tres grupos: **Proyecto** (sitio, código y licencia); **Ayuda** (reportar un problema, que abre un issue en paynani con la versión ya escrita, las novedades y esta guía); y **Créditos**. Los enlaces abren en otra pestaña. El estado de la instalación está en el Dashboard. |
 | **Agente de IA** | En el menú lateral, debajo de tu nombre y arriba de «Management» (#644), va la sección «AI Agent». Tiene una entrada con el robot, el nombre del agente y, abajo, el harness (Claude Code, OpenClaw, Hermes, Codex u OpenCode) y su estado. Al picarla se abre la página del agente (`/agent`), que no tiene otra entrada en el menú (ver abajo). |
+| **Webchat** | En la sección «AI Agent», debajo del agente (#648): platicas con tu agente desde el navegador, con archivos y fotos. Sólo con tu sesión de PaynaniWeb (ver abajo). |
 
 Cuentas de correo no cierra ni responde avisos: eso sigue siendo trabajo del agente.
 Desde «Nuevo correo» el dueño sí manda sus propios correos (#590, ver abajo).
@@ -338,6 +339,29 @@ caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
   - «Channels»: el correo, los mensajes de texto, WhatsApp y Telegram;
   - lo que el agente hizo hoy;
   - qué hacer si el estado cambia.
+
+### Webchat
+
+Tú le escribes al agente desde PaynaniWeb, y él te contesta ahí mismo (#648). La
+conversación la guarda el núcleo en `state/webchat/` (`WEBCHAT.md`); la web la lee y
+escribe con `paynani_lib/webchat/store.py`, sin un servicio aparte.
+
+- **Sólo para ti** (Q307): pide la sesión de PaynaniWeb y no tiene API externa.
+- **Cada mensaje tuyo** es un evento `webchat.received`. Le llega al agente como
+  trabajo, con tu nombre y tu correo, y él contesta con `paynani webchat send`.
+- **Adjuntos:** varios archivos o fotos por mensaje, hasta 20 MB cada uno y 25 MB en
+  total. El texto puede tener hasta 4000 caracteres. El tipo se revisa por los bytes.
+  El POST es `multipart/form-data`, con CSRF y Origin como todo POST, y un cuerpo más
+  grande que el límite se rechaza (413) antes de leerlo.
+- **Las fotos y los archivos** salen por `/webchat/file?ref=f_…`, nunca por una ruta del
+  disco: las fotos `inline` y lo demás como descarga, siempre en sandbox y con `nosniff`.
+- **Sin recargar:** `assets/webchat.js` pide `/webchat/updates?after=<id>` cada 3 s,
+  sólo con la pestaña visible. La respuesta trae los mensajes nuevos ya dibujados y si
+  el agente está escribiendo. Sin script, la página funciona igual y se recarga a mano.
+- **Lo que hace el agente** por Webchat cuenta en la página del agente: atendidos hoy,
+  tiempo de respuesta, última respuesta y actividad.
+- **Sin el almacén:** si la instalación todavía no trae `webchat/store.py`, la página lo
+  dice y no ofrece escribir.
 
 ## Lo que guarda y lo que no
 

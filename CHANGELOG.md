@@ -2,6 +2,21 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: Webchat, platicar con tu agente desde el navegador (#648).** Va en la sección «AI Agent», debajo del agente (Q304 a Q308):
+  - **Cómo se ve:**
+    - la conversación en burbujas, con fotos y archivos y un separador por día;
+    - «escribiendo…» mientras el agente responde;
+    - un cuadro con clip para adjuntar varios archivos, con vista previa y la × para quitar.
+  - **Cómo se actualiza:** `/webchat/updates` cada 3 s trae lo nuevo sin recargar.
+  - **Seguridad:**
+    - sólo con tu sesión;
+    - `multipart/form-data` con CSRF y un límite que se revisa antes de leer el cuerpo;
+    - los adjuntos salen por `ref` en sandbox, las fotos inline y lo demás como descarga.
+  - **Lo que lee:** el almacén es el del núcleo (`webchat/store.py`); sin él, la página lo dice.
+  - **La página del agente** cuenta también Webchat.
+
+  `web/multipart.py` lee los formularios con archivos con `email.parser`, porque `cgi` ya no está en Python 3.13. Textos en los cinco idiomas; `test_web_webchat.py`.
+
 - **PaynaniWeb: el agente de IA en el menú y su página (#644).**
   - **La sección «AI Agent»:** va debajo de tu nombre y arriba de «Management», como esa sección (Q303). Tiene una entrada con el robot, el nombre del agente y, abajo, el harness y el estado (Q293):
     - verde «Online»;
