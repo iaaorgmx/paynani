@@ -2579,6 +2579,10 @@ def make_handler(ctx: Context):
 class Server(ThreadingHTTPServer):
     """Sin la búsqueda de DNS inversa de server_bind(), como onboard.py."""
     daemon_threads = True
+    # socketserver deja 5 conexiones en espera. Una página con sus scripts, el WebSocket de
+    # Webchat y varios intentos de entrar a la vez lo pasan, y el kernel corta las demás
+    # (en CI, test_web_auth: 20 intentos a la vez, «Connection reset by peer»).
+    request_queue_size = 64
 
     def server_bind(self):
         import socketserver

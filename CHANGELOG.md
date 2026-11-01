@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: hasta 64 conexiones en espera.** El servidor dejaba 5 (lo de `socketserver`). Con la página, sus scripts, el WebSocket de Webchat y varios intentos de entrar a la vez, el kernel cortaba las demás con «Connection reset by peer» (CI de `main` en cd4d4d8, `test_web_auth`).
+
 - **PaynaniWeb: Webchat, platicar con tu agente desde el navegador (#648).** Va en la sección «AI Agent», debajo del agente (Q304 a Q308):
   - **Cómo se ve:**
     - la conversación en burbujas, con fotos y archivos y un separador por día;
