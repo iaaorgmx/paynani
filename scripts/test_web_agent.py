@@ -60,14 +60,18 @@ def utc(local: str) -> str:
     return value.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def ev(event_id, seen, state, at, who="Metis", subject="Hola", channel="mail", address=None, replied=None):
+RT = {"now": ""}   # el runtime de la prueba en curso
+
+
+def ev(event_id, seen, state, at, who="Metis", subject="Hola", channel="mail", address=None, replied=None, runtime=None):
     """Un evento como lo da `ledger_events`. Respondido y luego cerrado, como en el ledger real:
     `state` es el último estado y `replied_at` la hora de la respuesta."""
     if state == "replied":
         replied, state = at, "closed"
     return {"event_id": event_id, "channel": channel, "account": "main" if channel == "mail" else "",
             "observed_at": utc(seen), "state": state, "state_at": utc(at),
-            "replied_at": utc(replied) if replied else "", "sender_name": who,
+            "replied_at": utc(replied) if replied else "", "runtime": runtime if runtime is not None else RT["now"],
+            "sender_name": who,
             "sender_address": address if address is not None else f"{who.lower()}@example.com",
             "subject": subject if channel == "mail" else ""}
 
@@ -80,8 +84,6 @@ def services(dispatcher="active", live=True, pending=0, oldest=None, accepted=""
             "delivery": {"last_accepted": {"at": accepted, "runtime": by or RT["now"]},
                          "last_error": {"at": error, "runtime": by or RT["now"]}}}
 
-
-RT = {"now": ""}
 
 
 # ---- El semáforo (Q293, con evidencia por runtime: revisión de Ximena en #645) ------
@@ -99,10 +101,13 @@ for rt in ("openclaw", "hermes"):
     check(f"{rt}: la cola atorada más de 10 min: offline", "offline",
           agent.status(services(accepted=A9, pending=3, oldest=900), rt, now=NOW))
     check(f"{rt}: nunca se le ha entregado nada: unknown, no online", "unknown", agent.status(services(), rt, now=NOW))
-STUCK = [ev("x:1", "2026-11-01T08:40:00", "dispatched", "2026-11-01T08:40:01")]
-FRESH = [ev("x:2", "2026-11-01T08:58:00", "dispatched", "2026-11-01T08:58:01")]
 for rt in ("codex", "opencode"):
     RT["now"] = rt
+    STUCK = [ev("x:1", "2026-11-01T08:40:00", "dispatched", "2026-11-01T08:40:01")]
+    FRESH = [ev("x:2", "2026-11-01T08:58:00", "dispatched", "2026-11-01T08:58:01")]
+    OLD_OTHER = [ev("x:3", "2026-10-30T08:40:00", "dispatched", "2026-10-30T08:40:01", runtime="openclaw")]
+    check(f"{rt}: eventos viejos despachados a OpenClaw no lo ponen en no_session", "online",
+          agent.status(services(accepted=A9), rt, OLD_OTHER, NOW))
     check(f"{rt}: un evento sin tomar más de 10 min: no_session", "no_session",
           agent.status(services(accepted=A9), rt, STUCK, NOW))
     check(f"{rt}: lo pendiente es reciente y ya aceptó antes: online", "online",
@@ -169,12 +174,14 @@ envelope = {"event_type": "email.received", "event_id": "imap:INBOX:9:1", "obser
 lines = [{"schema_version": 1, "event_id": "imap:INBOX:9:1", "state": "observed", "at": utc("2026-11-01T08:00:00"),
           "envelope": envelope}]
 for st, hm in (("dispatched", "08:00:01"), ("handled", "08:01:00"), ("replied", "08:03:00"), ("closed", "08:04:00")):
-    lines.append({"schema_version": 1, "event_id": "imap:INBOX:9:1", "state": st, "at": utc(f"2026-11-01T{hm}")})
+    lines.append({"schema_version": 1, "event_id": "imap:INBOX:9:1", "state": st, "at": utc(f"2026-11-01T{hm}"),
+                  **({"runtime": "openclaw"} if st == "dispatched" else {})})
 LEDGER.write_text("".join(_json.dumps(x) + "\n" for x in lines), encoding="utf-8")
 real = dashboard.ledger_events(LEDGER, set())
 check("ledger_events guarda la hora de la respuesta aunque el último estado sea closed",
       [("closed", utc("2026-11-01T08:04:00"), utc("2026-11-01T08:03:00"))],
       [(e["state"], e["state_at"], e["replied_at"]) for e in real])
+check("ledger_events guarda el runtime al que se despachó", "openclaw", real[0]["runtime"])
 full = agent.build(dashboard.Fake(events=real), NOW)
 check("historial completo: cuenta como respondido, con mediana de 3 min y última respuesta a las 08:03",
       ({"replied": 1, "closed": 0}, 180.0, "08:03"),

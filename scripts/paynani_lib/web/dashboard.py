@@ -132,7 +132,8 @@ class Source:
         """Lo que le llegó al agente por cualquier canal, del ledger (#644): `{event_id, channel,
         account, observed_at, state, state_at, sender_name, sender_address, subject}`.
         `channel` es `mail`, `sms`, `whatsapp` o `telegram`. `replied_at` es la hora en que el
-        agente lo respondió, aunque después lo haya cerrado (revisión de Ximena en #645)."""
+        agente lo respondió, aunque después lo haya cerrado, y `runtime` el que lo recibió
+        (revisión de Ximena en #645)."""
         return []
 
     def agent(self) -> dict:
@@ -309,6 +310,7 @@ def ledger_events(ledger_path: Path, known_ids: set[str]) -> list[dict]:
     envelopes: dict[str, dict] = {}
     state: dict[str, tuple[str, str]] = {}
     replied: dict[str, str] = {}
+    runtime: dict[str, str] = {}
     for record in mail_mod.ledger.records(ledger_path):
         event_id = str(record.get("event_id") or "")
         envelope = record.get("envelope")
@@ -319,6 +321,10 @@ def ledger_events(ledger_path: Path, known_ids: set[str]) -> list[dict]:
         # último estado ya no dice que hubo respuesta.
         if record.get("state") == "replied":
             replied[event_id] = str(record.get("at") or "")
+        # A quién se lo entregó el despachador: un evento de otro runtime no dice nada del
+        # actual (revisión de Ximena en #645).
+        if record.get("state") == "dispatched" and record.get("runtime"):
+            runtime[event_id] = str(record["runtime"])
     out = []
     for event_id, envelope in envelopes.items():
         channel = CHANNELS.get(str(envelope.get("event_type") or ""))
@@ -334,7 +340,7 @@ def ledger_events(ledger_path: Path, known_ids: set[str]) -> list[dict]:
         last, last_at = state.get(event_id, ("", ""))
         out.append({"event_id": event_id, "channel": channel, "account": account,
                     "observed_at": str(envelope.get("observed_at") or ""), "state": last, "state_at": last_at,
-                    "replied_at": replied.get(event_id, ""),
+                    "replied_at": replied.get(event_id, ""), "runtime": runtime.get(event_id, ""),
                     "sender_name": str(sender.get("name") or ""), "sender_address": str(sender.get("address") or ""),
                     "subject": str(envelope.get("subject") or "") if channel == "mail" else ""})
     return out

@@ -23,7 +23,8 @@ RUNTIMES = {"claudecode": "Claude Code", "openclaw": "OpenClaw", "hermes": "Herm
 WATCH_RUNTIME = "claudecode"
 # Codex y OpenCode: el despachador escribe en un spool y la sesión lo lee; «aceptado» sólo
 # quiere decir que quedó en el spool. La evidencia es que la sesión lo tome (`presented`):
-# un evento `dispatched` que nadie toma en STUCK_S es que no hay sesión.
+# un evento que el despachador le dio a este runtime y nadie toma en STUCK_S es que no hay
+# sesión. Los que se quedaron `dispatched` con otro runtime no cuentan.
 SPOOL_RUNTIMES = ("codex", "opencode")
 # OpenClaw y Hermes: el runtime contesta al entregarle el evento; lo que dijo queda en
 # state/delivery.json (healthcheck.delivery_facts). Un rechazo más nuevo que la última
@@ -66,7 +67,8 @@ def status(services: dict, runtime: str, events: list[dict] | None = None,
         now = now or dt.datetime.now(dt.timezone.utc)
         for event in events or ():
             at = parse(event.get("state_at"))
-            if event.get("state") == "dispatched" and at is not None and (now - at).total_seconds() > STUCK_S:
+            if (event.get("state") == "dispatched" and event.get("runtime") == runtime and at is not None
+                    and (now - at).total_seconds() > STUCK_S):
                 return "no_session"
         return "online" if accepted else "unknown"
     if runtime in PUSH_RUNTIMES:
