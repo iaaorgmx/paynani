@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **Webchat: el agente contesta (#648, W-2).** `paynani webchat send` (con `--file` desde `state/webchat/outbox/` y `--stream`), `paynani webchat typing` y `paynani webchat thread`. `event show wc:… --body` da el texto completo y la ruta local de cada adjunto. `send` marca `replied` los `webchat.received` abiertos. Con `--stream`, el borrador queda en `state/webchat/draft.json` para que PaynaniWeb lo muestre mientras el agente escribe. `AGENTS.md` explica cómo contestar.
+
 - **Webchat, el almacén (#648, W-1).** `scripts/paynani_lib/webchat/store.py` guarda la conversación del dueño con su agente en `state/webchat/`, revisa los adjuntos por sus bytes y escribe el evento `webchat.received` (`[webchat …, roster] <dueño> (PaynaniWeb): …`). El contrato está en `WEBCHAT.md`. Todavía no hay página ni comando: la página `/webchat` la hace Iris y `paynani webchat` va en W-2. **Hermes:** las dos rutas de `examples/hermes-routes.yaml` ya llevan `webchat.received`; si copiaste las rutas de 0.20.0 o antes, cópialas otra vez antes de usar Webchat (`HERMES.md`), o el primer mensaje detiene la cola.
 
 - **WhatsApp: los audios `.ogg` que manda el agente ahora llegan (#646).** `paynani whatsapp send --file` mandaba un OGG/Opus como `audio/ogg`, sin el códec, y WhatsApp lo dejaba en `sent` sin entregarlo nunca. Ahora el puente lo manda como `audio/ogg; codecs=opus` y como nota de voz (`ptt`). Los MP3, M4A y demás audios se mandan igual que antes.

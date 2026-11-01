@@ -285,6 +285,20 @@ def main(argv: list[str] | None = None) -> int:
     tg_sub.add_parser("disable", help="Turn Telegram off (TELEGRAM_ENABLED=0) and stop the service; keeps the token.")
     tg_sub.add_parser("enable", help="Turn Telegram back on with the token in telegram.env and start the service.")
 
+    wc_parser = subparsers.add_parser("webchat", help="Webchat: answer the owner in PaynaniWeb (WEBCHAT.md).")
+    wc_sub = wc_parser.add_subparsers(dest="wc_command", required=True)
+    wc_send = wc_sub.add_parser("send", help="Answer the owner; marks the open webchat.received events replied.")
+    wc_send.add_argument("text", nargs="*", help="The message; without it (and without --file), read from stdin.")
+    wc_send.add_argument("--file", action="append", help="A file from state/webchat/outbox/ (repeatable).")
+    wc_send.add_argument("--stream", action="store_true",
+                         help="Read stdin as it arrives; PaynaniWeb shows it while it is written.")
+    wc_typing = wc_sub.add_parser("typing", help="Show «writing…» in PaynaniWeb for a while.")
+    wc_typing.add_argument("--seconds", type=int, default=60, help="1 to 600, default 60.")
+    wc_typing.add_argument("--off", action="store_true", help="Stop showing it.")
+    wc_thread = wc_sub.add_parser("thread", help="Show the conversation, the agent's messages included.")
+    wc_thread.add_argument("--limit", type=int, default=50, help="Messages to show (1 to 100, default 50).")
+    wc_thread.add_argument("--json", action="store_true", help="Print it as JSON.")
+
     account_parser = subparsers.add_parser(
         "account", help="Additional mail accounts in accounts.json (#276)."
     )
@@ -454,6 +468,10 @@ def main(argv: list[str] | None = None) -> int:
                 "send": tg_cli.run_send, "draft": tg_cli.run_draft, "threads": tg_cli.run_threads,
                 "thread": tg_cli.run_thread, "disable": tg_cli.run_disable,
                 "enable": tg_cli.run_enable}[args.tg_command](args)
+    if args.command == "webchat":
+        from paynani_lib.webchat import cli as wc_cli
+        return {"send": wc_cli.run_send, "typing": wc_cli.run_typing,
+                "thread": wc_cli.run_thread}[args.wc_command](args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)
