@@ -85,6 +85,12 @@ included (#582). That is why both lists are exact:
   `whatsapp.received`, `telegram.received`, `telegram.edited`, `webchat.received`,
   `call.missed` and `call.answered`.
 
+**A webchat is answered with the CLI, never with `deliver`.** `paynani-roster`
+delivers the agent's final answer to the route's `deliver` target (Telegram, for
+example). For `webchat.received` the owner is waiting in PaynaniWeb, so the roster
+prompt tells the agent to answer only with `scripts/paynani webchat send` (or
+`--stream`), which also marks the event `replied`.
+
 `scripts/test_hermes_examples.py` fails if a new event type in
 `harness/event.py` is missing from the notify list.
 
