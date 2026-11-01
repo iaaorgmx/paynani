@@ -43,6 +43,13 @@ def _newer(a: str, b: str) -> bool:
     return ta is not None and (tb is None or ta > tb)
 
 
+def delivered(services: dict, key: str, runtime: str) -> str:
+    """La hora de `last_accepted` o `last_error` sólo si la dio este runtime: al cambiar de
+    runtime, lo que dijo el anterior no es evidencia del nuevo (revisión de Ximena en #645)."""
+    entry = (services.get("delivery") or {}).get(key) or {}
+    return str(entry.get("at") or "") if entry.get("runtime") == runtime and runtime else ""
+
+
 def status(services: dict, runtime: str, events: list[dict] | None = None,
            now: dt.datetime | None = None) -> str:
     """
@@ -52,8 +59,7 @@ def status(services: dict, runtime: str, events: list[dict] | None = None,
     """
     if (services.get("dispatcher") or {}).get("unit") != "active":
         return "offline"
-    delivery = services.get("delivery") or {}
-    accepted, error = delivery.get("last_accepted") or "", delivery.get("last_error") or ""
+    accepted, error = delivered(services, "last_accepted", runtime), delivered(services, "last_error", runtime)
     if runtime == WATCH_RUNTIME:
         return "online" if (services.get("session") or {}).get("live") else "no_session"
     if runtime in SPOOL_RUNTIMES:
@@ -109,10 +115,15 @@ def build(source: Source, now: dt.datetime) -> dict:
     activity = []
     last = None
     for event in events:
-        state = event.get("state", "")
-        if state not in CLOSED:
+        # Respondido es haber tenido una transición `replied`, aunque después se cerrara;
+        # su hora es la de la respuesta (revisión de Ximena en #645).
+        replied_at = parse(event.get("replied_at"))
+        if replied_at is not None:
+            state, at = "replied", replied_at
+        elif event.get("state", "") in CLOSED:
+            state, at = event["state"], parse(event.get("state_at"))
+        else:
             continue
-        at = parse(event.get("state_at"))
         if at is None:
             continue
         at = at.astimezone(tz)
@@ -160,7 +171,7 @@ def build(source: Source, now: dt.datetime) -> dict:
         "status": status(services, runtime, events, now),
         "session": {"live": bool(session.get("live")), "armed_at": parse(session.get("armed_at")),
                     "expires_at": parse(session.get("expires_at"))},
-        "last_accepted": parse((services.get("delivery") or {}).get("last_accepted")),
+        "last_accepted": parse(delivered(services, "last_accepted", runtime)),
         "dispatcher": (services.get("dispatcher") or {}).get("unit", "unknown"),
         "listener": (services.get("listener") or {}).get("unit", "unknown"),
         "handled": handled,

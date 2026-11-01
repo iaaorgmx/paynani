@@ -60,18 +60,28 @@ def utc(local: str) -> str:
     return value.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def ev(event_id, seen, state, at, who="Metis", subject="Hola", channel="mail", address=None):
+def ev(event_id, seen, state, at, who="Metis", subject="Hola", channel="mail", address=None, replied=None):
+    """Un evento como lo da `ledger_events`. Respondido y luego cerrado, como en el ledger real:
+    `state` es el último estado y `replied_at` la hora de la respuesta."""
+    if state == "replied":
+        replied, state = at, "closed"
     return {"event_id": event_id, "channel": channel, "account": "main" if channel == "mail" else "",
-            "observed_at": utc(seen), "state": state, "state_at": utc(at), "sender_name": who,
+            "observed_at": utc(seen), "state": state, "state_at": utc(at),
+            "replied_at": utc(replied) if replied else "", "sender_name": who,
             "sender_address": address if address is not None else f"{who.lower()}@example.com",
             "subject": subject if channel == "mail" else ""}
 
 
-def services(dispatcher="active", live=True, pending=0, oldest=None, accepted="", error=""):
+def services(dispatcher="active", live=True, pending=0, oldest=None, accepted="", error="", by=None):
+    """`accepted`/`error` son horas; `by` es el runtime que las dio (si no, el de la prueba)."""
     return {"listener": {"unit": "active", "heartbeat_age_s": 5}, "dispatcher": {"unit": dispatcher},
             "session": {"live": live, "armed_at": utc("2026-11-01T08:46:00"), "expires_at": utc("2026-11-01T09:16:00")},
             "phone": None, "additional": [], "queue": {"pending": pending, "oldest_age_s": oldest},
-            "delivery": {"last_accepted": accepted, "last_error": error}}
+            "delivery": {"last_accepted": {"at": accepted, "runtime": by or RT["now"]},
+                         "last_error": {"at": error, "runtime": by or RT["now"]}}}
+
+
+RT = {"now": ""}
 
 
 # ---- El semáforo (Q293, con evidencia por runtime: revisión de Ximena en #645) ------
@@ -81,6 +91,7 @@ check("Claude Code sin sesión: no_session", "no_session", agent.status(services
 check("despachador detenido: offline aunque haya sesión", "offline", agent.status(services(dispatcher="inactive"), "claudecode"))
 check("despachador que no se puede consultar: offline", "offline", agent.status(services(dispatcher="unknown"), "claudecode"))
 for rt in ("openclaw", "hermes"):
+    RT["now"] = rt
     check(f"{rt}: aceptó lo último y nada lo rechazó después: online", "online",
           agent.status(services(accepted=A9, error=A8), rt, now=NOW))
     check(f"{rt}: un rechazo más nuevo que la última aceptación (runtime caído): offline", "offline",
@@ -91,11 +102,21 @@ for rt in ("openclaw", "hermes"):
 STUCK = [ev("x:1", "2026-11-01T08:40:00", "dispatched", "2026-11-01T08:40:01")]
 FRESH = [ev("x:2", "2026-11-01T08:58:00", "dispatched", "2026-11-01T08:58:01")]
 for rt in ("codex", "opencode"):
+    RT["now"] = rt
     check(f"{rt}: un evento sin tomar más de 10 min: no_session", "no_session",
           agent.status(services(accepted=A9), rt, STUCK, NOW))
     check(f"{rt}: lo pendiente es reciente y ya aceptó antes: online", "online",
           agent.status(services(accepted=A9), rt, FRESH, NOW))
     check(f"{rt}: nada entregado todavía: unknown", "unknown", agent.status(services(), rt, [], NOW))
+RT["now"] = ""
+check("cambio de Hermes a OpenClaw: la aceptación de Hermes no hace online a OpenClaw", "unknown",
+      agent.status(services(accepted=A9, by="hermes"), "openclaw", now=NOW))
+check("cambio de OpenClaw a Hermes: el rechazo de OpenClaw no hace offline a Hermes", "online",
+      agent.status({**services(accepted=A8, by="hermes"),
+                    "delivery": {"last_accepted": {"at": A8, "runtime": "hermes"},
+                                 "last_error": {"at": A9, "runtime": "openclaw"}}}, "hermes", now=NOW))
+check("cambio de OpenClaw a Codex: sin entregas propias de Codex, unknown", "unknown",
+      agent.status(services(accepted=A9, by="openclaw"), "codex", [], NOW))
 check("un runtime que no se conoce: unknown aunque el despachador esté activo", ("unknown", "unknown"),
       (agent.status(services(accepted=A9), "", now=NOW), agent.status(services(accepted=A9), "otro", now=NOW)))
 check("etiquetas de los cinco runtimes", ("Claude Code", "OpenClaw", "Hermes", "Codex", "OpenCode", "?"),
@@ -140,6 +161,24 @@ check("el modelo trae el estado, el runtime y el tipo", ("online", "Claude Code"
 late = dashboard.Fake(events=EVENTS, sms=[dict(SMS[0], epoch=dt.datetime(2026, 11, 1, 8, 45, tzinfo=CST).timestamp())])
 check("un SMS del agente más nuevo que todo: es la última respuesta", ("sms", "08:45"),
       (agent.build(late, NOW)["last_reply"]["channel"], agent.build(late, NOW)["last_reply"]["at"].strftime("%H:%M")))
+import json as _json
+ledger_dir = Path(tempfile.mkdtemp())
+LEDGER = ledger_dir / "lifecycle.jsonl"
+envelope = {"event_type": "email.received", "event_id": "imap:INBOX:9:1", "observed_at": utc("2026-11-01T08:00:00"),
+            "sender": {"name": "Julian", "address": "julian@example.com"}, "subject": "Clima"}
+lines = [{"schema_version": 1, "event_id": "imap:INBOX:9:1", "state": "observed", "at": utc("2026-11-01T08:00:00"),
+          "envelope": envelope}]
+for st, hm in (("dispatched", "08:00:01"), ("handled", "08:01:00"), ("replied", "08:03:00"), ("closed", "08:04:00")):
+    lines.append({"schema_version": 1, "event_id": "imap:INBOX:9:1", "state": st, "at": utc(f"2026-11-01T{hm}")})
+LEDGER.write_text("".join(_json.dumps(x) + "\n" for x in lines), encoding="utf-8")
+real = dashboard.ledger_events(LEDGER, set())
+check("ledger_events guarda la hora de la respuesta aunque el último estado sea closed",
+      [("closed", utc("2026-11-01T08:04:00"), utc("2026-11-01T08:03:00"))],
+      [(e["state"], e["state_at"], e["replied_at"]) for e in real])
+full = agent.build(dashboard.Fake(events=real), NOW)
+check("historial completo: cuenta como respondido, con mediana de 3 min y última respuesta a las 08:03",
+      ({"replied": 1, "closed": 0}, 180.0, "08:03"),
+      (full["handled"], full["reply_median_s"], full["last_reply"]["at"].strftime("%H:%M")))
 empty = agent.build(dashboard.Fake(), NOW)
 check("sin respuestas: sin mediana ni última respuesta", (None, None), (empty["reply_median_s"], empty["last_reply"]))
 check("sin nombre del agente, la parte de su correo antes de la @", "agent",
@@ -246,6 +285,7 @@ SOURCE["fake"] = dashboard.Fake(services=services(),
 _, _, page = req("GET", "/agent?lang=en-US", cookie=cookie)
 check("Hermes sin evidencia: gris «No data» en el bloque y en la página", (True, True, True),
       ('agente-chip agente-off' in menu(page), "salud salud-off" in page, "Nothing has been delivered to the agent yet" in page))
+RT["now"] = "hermes"
 SOURCE["fake"] = dashboard.Fake(services=services(accepted=A8, error=A9),
                                 agent={"name": "Iris", "email": "iris@example.com", "runtime": "hermes"})
 _, _, page = req("GET", "/agent?lang=en-US", cookie=cookie)

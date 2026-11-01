@@ -131,7 +131,8 @@ class Source:
     def events(self) -> list[dict]:
         """Lo que le llegó al agente por cualquier canal, del ledger (#644): `{event_id, channel,
         account, observed_at, state, state_at, sender_name, sender_address, subject}`.
-        `channel` es `mail`, `sms`, `whatsapp` o `telegram`."""
+        `channel` es `mail`, `sms`, `whatsapp` o `telegram`. `replied_at` es la hora en que el
+        agente lo respondió, aunque después lo haya cerrado (revisión de Ximena en #645)."""
         return []
 
     def agent(self) -> dict:
@@ -307,12 +308,17 @@ def ledger_events(ledger_path: Path, known_ids: set[str]) -> list[dict]:
     from . import mail as mail_mod
     envelopes: dict[str, dict] = {}
     state: dict[str, tuple[str, str]] = {}
+    replied: dict[str, str] = {}
     for record in mail_mod.ledger.records(ledger_path):
         event_id = str(record.get("event_id") or "")
         envelope = record.get("envelope")
         if isinstance(envelope, dict) and event_id not in envelopes:
             envelopes[event_id] = envelope
         state[event_id] = (str(record.get("state") or ""), str(record.get("at") or ""))
+        # La respuesta se guarda aparte: lo habitual es `handled > replied > closed`, y el
+        # último estado ya no dice que hubo respuesta.
+        if record.get("state") == "replied":
+            replied[event_id] = str(record.get("at") or "")
     out = []
     for event_id, envelope in envelopes.items():
         channel = CHANNELS.get(str(envelope.get("event_type") or ""))
@@ -328,6 +334,7 @@ def ledger_events(ledger_path: Path, known_ids: set[str]) -> list[dict]:
         last, last_at = state.get(event_id, ("", ""))
         out.append({"event_id": event_id, "channel": channel, "account": account,
                     "observed_at": str(envelope.get("observed_at") or ""), "state": last, "state_at": last_at,
+                    "replied_at": replied.get(event_id, ""),
                     "sender_name": str(sender.get("name") or ""), "sender_address": str(sender.get("address") or ""),
                     "subject": str(envelope.get("subject") or "") if channel == "mail" else ""})
     return out
@@ -493,7 +500,9 @@ def local_services(state_dir: Path) -> dict:
             "battery": (phone.get("battery") or {}).get("pct")},
         "additional": additional,
         "queue": {"pending": int(queue.get("pending") or 0), "oldest_age_s": queue.get("oldest_age_seconds")},
-        "delivery": {key: (value or {}).get("at") or "" for key, value in hc.delivery_facts().items()},
+        # Con el runtime que la produjo: la evidencia de otro runtime no cuenta (Ximena en #645).
+        "delivery": {key: {"at": (value or {}).get("at") or "", "runtime": (value or {}).get("runtime") or ""}
+                     for key, value in hc.delivery_facts().items()},
     }
 
 
@@ -509,7 +518,7 @@ class Fake(Source):
                      "services": {"listener": {"unit": "active", "heartbeat_age_s": 5},
                                   "dispatcher": {"unit": "active"}, "session": {"live": True, "armed_at": ""},
                                   "phone": None, "additional": [], "queue": {"pending": 0, "oldest_age_s": None},
-                                  "delivery": {"last_accepted": "", "last_error": ""}},
+                                  "delivery": {"last_accepted": {}, "last_error": {}}},
                      "events": [],
                      "agent": {"name": "Agente", "email": "agent@example.com", "runtime": "claudecode"}}
         self.data.update(data)

@@ -316,7 +316,8 @@ caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
   - **Codex y OpenCode:** la sesión lee el spool. Un evento `dispatched` que nadie toma en
     10 min es «No session».
   - **OpenClaw y Hermes:** lo que el runtime contestó al entregarle el último evento
-    (`state/delivery.json`). Un rechazo más nuevo que la última aceptación, o una cola atorada
+    (`state/delivery.json`). Sólo cuenta lo que dijo el runtime actual: al cambiar de
+    runtime, lo que dijo el anterior no es evidencia. Un rechazo más nuevo que la última aceptación, o una cola atorada
     más de 10 min, es «Offline».
 - **El bloque** tiene el estilo del bloque del usuario: el nombre del agente
   (`AGENT_EMAIL_FROM_NAME`, o su correo si no hay nombre) va en 16 px y sin negritas.
@@ -328,8 +329,8 @@ caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
     - los atendidos, respondidos y cerrados sin respuesta, de correo, SMS, WhatsApp y
       Telegram (los eventos del ledger);
     - lo que espera en la cola;
-    - la última respuesta: el último evento que el agente marcó `replied`, en cualquier
-      canal, o el último SMS que mandó. No sale de `sent.log`, que también tiene los
+    - la última respuesta: la última transición `replied` del ledger, en cualquier canal,
+      aunque el evento se haya cerrado después, o el último SMS que mandó el agente. No sale de `sent.log`, que también tiene los
       avisos de PaynaniWeb al dueño (revisión de Metis en #645);
     - el tiempo típico de respuesta: la mediana, entre que llega un mensaje y que el
       agente lo responde, de lo respondido hoy;
