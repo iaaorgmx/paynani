@@ -156,6 +156,27 @@ def roster_phones(path: Path) -> dict[str, str]:
     return out
 
 
+def _websocket_upgrade(request_line: str, lines: list) -> str:
+    """
+    El valor de `Upgrade` si la petición pide un WebSocket (RFC 6455 §4.1: `GET`,
+    `Upgrade: websocket` y `upgrade` entre los tokens de `Connection`); si no, "".
+    """
+    if not request_line.startswith("GET "):
+        return ""
+    upgrade, connection = "", ""
+    for line in lines:
+        if ":" not in line:
+            continue
+        name, value = line.split(":", 1)
+        name = name.strip().lower()
+        if name == "upgrade":
+            upgrade = value.strip()
+        elif name == "connection":
+            connection += "," + value.lower()
+    tokens = {token.strip() for token in connection.split(",")}
+    return upgrade if upgrade.lower() == "websocket" and "upgrade" in tokens else ""
+
+
 class Gateway:
     def __init__(self, state_dir: Path, journal: Path, roster_path: Path, *,
                  public_url: str = "", heartbeat_s: int = HEARTBEAT_S,
@@ -294,6 +315,12 @@ class Gateway:
         `X-Forwarded-*` del túnel, llegan como vinieron: decidir si se les cree es de
         la web. Si la web no acepta la conexión, 503 (FR-2); si la acepta y cierra
         sin responder, 502.
+
+        Un WebSocket de la web (`GET` con `Upgrade: websocket` y `Connection: upgrade`,
+        como `/webchat/ws` de #648) es la excepción: esos dos encabezados sí pasan, no
+        se agrega `Connection: close`, y si la web contesta 101 el proxy queda como
+        túnel de bytes hasta que cualquiera de los dos lados cierra. En los dos casos
+        se corta tras WEB_IDLE_TIMEOUT_S sin un byte en ningún sentido.
         """
         try:
             up_reader, up_writer = await asyncio.wait_for(
@@ -311,30 +338,55 @@ class Gateway:
         self.clients.add(up_writer)
         kept = [line for line in lines
                 if line and ":" in line and line.split(":", 1)[0].strip().lower() not in HOP_BY_HOP]
-        head = "\r\n".join([request_line, *kept, "Connection: close"]) + "\r\n\r\n"
+        upgrade = _websocket_upgrade(request_line, lines)
+        tail = [f"Upgrade: {upgrade}", "Connection: Upgrade"] if upgrade else ["Connection: close"]
+        head = "\r\n".join([request_line, *kept, *tail]) + "\r\n\r\n"
         answered = False
+        loop = asyncio.get_running_loop()
+        last = loop.time()
 
         async def pump(src, dst, from_web: bool):
-            nonlocal answered
+            nonlocal answered, last
             while True:
-                chunk = await asyncio.wait_for(src.read(WEB_CHUNK), WEB_IDLE_TIMEOUT_S)
+                # El plazo cuenta desde el último byte en cualquier sentido: un
+                # WebSocket donde sólo habla la web no se corta del lado del navegador.
+                left = WEB_IDLE_TIMEOUT_S - (loop.time() - last)
+                if left <= 0:
+                    raise asyncio.TimeoutError
+                try:
+                    chunk = await asyncio.wait_for(src.read(WEB_CHUNK), left)
+                except asyncio.TimeoutError:
+                    continue
                 if not chunk:
                     return
+                last = loop.time()
                 if from_web:
                     answered = True
                 dst.write(chunk)
                 await dst.drain()
 
+        to_web = None
         try:
             up_writer.write(head.encode("latin-1"))
             await up_writer.drain()
             to_web = asyncio.ensure_future(pump(reader, up_writer, False))
-            try:
-                await pump(up_reader, writer, True)
-            finally:
-                to_web.cancel()
+            from_web = asyncio.ensure_future(pump(up_reader, writer, True))
+            # Una petición normal termina cuando la web cierra; un WebSocket, cuando
+            # cierra cualquiera de los dos lados.
+            if upgrade:
+                await asyncio.wait({to_web, from_web}, return_when=asyncio.FIRST_COMPLETED)
+            else:
+                await asyncio.wait({from_web})
+            for task in (to_web, from_web):
+                task.cancel()
+            for task in (to_web, from_web):
+                try:
+                    await task
+                except (asyncio.CancelledError, asyncio.TimeoutError, ConnectionError, OSError):
+                    pass
         except (asyncio.TimeoutError, ConnectionError, OSError):
-            pass
+            if to_web is not None:
+                to_web.cancel()
         finally:
             self.clients.discard(up_writer)
             up_writer.close()

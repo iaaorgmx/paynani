@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **La pasarela deja pasar el WebSocket de PaynaniWeb (#648).** Antes quitaba `Upgrade` y `Connection` y agregaba `Connection: close`, así que un WebSocket de la web (como `/webchat/ws`) no podía abrirse por el túnel. Ahora un `GET` con `Upgrade: websocket` llega a la web con esos encabezados y, si la web contesta `101`, la pasarela copia los bytes en los dos sentidos. El plazo de 120 s sin actividad cuenta ahora en los dos sentidos juntos: antes cada sentido tenía el suyo, y uno callado se cortaba aunque el otro siguiera hablando. Lo demás no cambia.
+
 - **WhatsApp: los audios `.ogg` que manda el agente ahora llegan (#646).** `paynani whatsapp send --file` mandaba un OGG/Opus como `audio/ogg`, sin el códec, y WhatsApp lo dejaba en `sent` sin entregarlo nunca. Ahora el puente lo manda como `audio/ogg; codecs=opus` y como nota de voz (`ptt`). Los MP3, M4A y demás audios se mandan igual que antes.
 
 ## 0.20.0 (2026-10-31)
