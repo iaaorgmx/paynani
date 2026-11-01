@@ -42,6 +42,10 @@
 
   Lee lo mismo que el Dashboard y no escribe nada. `dashboard_pages` comparte las filas de canales y de actividad. Textos en los cinco idiomas; `test_web_agent.py`.
 
+- **Webchat, el almacén (#648, W-1).** `scripts/paynani_lib/webchat/store.py` guarda la conversación del dueño con su agente en `state/webchat/`, revisa los adjuntos por sus bytes y escribe el evento `webchat.received` (`[webchat …, roster] <dueño> (PaynaniWeb): …`). El contrato está en `WEBCHAT.md`. Todavía no hay página ni comando: la página `/webchat` la hace Iris y `paynani webchat` va en W-2. **Hermes:** las dos rutas de `examples/hermes-routes.yaml` ya llevan `webchat.received`; si copiaste las rutas de 0.20.0 o antes, cópialas otra vez antes de usar Webchat (`HERMES.md`), o el primer mensaje detiene la cola.
+
+- **WhatsApp: los audios `.ogg` que manda el agente ahora llegan (#646).** `paynani whatsapp send --file` mandaba un OGG/Opus como `audio/ogg`, sin el códec, y WhatsApp lo dejaba en `sent` sin entregarlo nunca. Ahora el puente lo manda como `audio/ogg; codecs=opus` y como nota de voz (`ptt`). Los MP3, M4A y demás audios se mandan igual que antes.
+
 ## 0.20.0 (2026-10-31)
 
 Telegram se configura desde PaynaniWeb (#635): «Mensajes de Telegram» → «Cuenta de Telegram» pide el token y el usuario del bot, sin terminal. Para eso el instalador pone ahora el servicio de Telegram en todas las instalaciones, detenido hasta que haya un token. PaynaniWeb trae además la página «Acerca de» (#636) y «Messages» pasa a llamarse «Text Messages» (#633). Una instalación que no use Telegram no cambia en nada más.
