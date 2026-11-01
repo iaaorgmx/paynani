@@ -2,6 +2,20 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el agente de IA en el menú y su página (#644).**
+  - **El bloque:** va debajo de tu nombre y arriba de «Management», con el mismo estilo (Q294). Muestra el nombre del agente en 16 px y sin negritas (Q295), el harness y el estado: verde «Online», ámbar «No session» (sólo Claude Code, sin sesión vigilando) o rojo «Offline» (despachador detenido) (Q293). Lleva un robot en el lugar del ícono de Perfil.
+  - **La página `/agent`:** se abre al picar el bloque (Q292, Q298). Muestra:
+    - el estado del agente;
+    - los atendidos hoy;
+    - la cola;
+    - la última respuesta;
+    - el tiempo típico de respuesta (la mediana de hoy, Q297);
+    - «The agent» y «Channels»;
+    - lo que hizo hoy;
+    - qué hacer si cambia el estado (Q296).
+
+  Lee lo mismo que el Dashboard y no escribe nada. `dashboard_pages` comparte las filas de canales y de actividad. Textos en los cinco idiomas; `test_web_agent.py`.
+
 ## 0.20.0 (2026-10-31)
 
 Telegram se configura desde PaynaniWeb (#635): «Mensajes de Telegram» → «Cuenta de Telegram» pide el token y el usuario del bot, sin terminal. Para eso el instalador pone ahora el servicio de Telegram en todas las instalaciones, detenido hasta que haya un token. PaynaniWeb trae además la página «Acerca de» (#636) y «Messages» pasa a llamarse «Text Messages» (#633). Una instalación que no use Telegram no cambia en nada más.

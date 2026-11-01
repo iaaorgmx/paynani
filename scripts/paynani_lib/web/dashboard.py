@@ -85,8 +85,8 @@ class Source:
         raise NotImplementedError
 
     def mail(self, account_id: str) -> list[dict]:
-        """Los recibidos de una cuenta: `{event_id, observed_at, state, roster, sender_name,
-        sender_address, subject}`."""
+        """Los recibidos de una cuenta: `{event_id, observed_at, state, state_at, roster,
+        sender_name, sender_address, subject}`. `state_at` es la hora del último estado."""
         raise NotImplementedError
 
     def sent(self, account_id: str) -> list[dict]:
@@ -124,8 +124,14 @@ class Source:
         raise NotImplementedError
 
     def services(self) -> dict:
-        """`{listener, dispatcher, session, phone, additional: [...]}` (FR-10)."""
+        """`{listener, dispatcher, session, phone, additional: [...], queue}` (FR-10). `session`
+        lleva `expires_at` y `queue` es `{pending}`, para la página del agente (#644)."""
         raise NotImplementedError
+
+    def agent(self) -> dict:
+        """El agente (#644): `{name, email, runtime}`. `runtime` es `claudecode`, `openclaw`,
+        `hermes` o "" si no se sabe. Nunca secretos ni rutas."""
+        return {"name": "", "email": "", "runtime": ""}
 
 
 # ---- La de la instalación ----------------------------------------------------------
@@ -138,6 +144,7 @@ class Core(Source):
         self.clock = clock
         self._health: tuple[float, dict] | None = None
         self._services: tuple[float, dict] | None = None
+        self._agent: tuple[float, dict] | None = None
         self._lock = threading.Lock()
 
     def accounts(self):
@@ -147,7 +154,7 @@ class Core(Source):
     def mail(self, account_id):
         from . import mail as mail_mod
         rows = mail_mod.mail_events(self.ctx.ledger_path(), account_id, self.ctx.known_ids())
-        return [{k: r[k] for k in ("event_id", "observed_at", "state", "roster", "sender_name",
+        return [{k: r[k] for k in ("event_id", "observed_at", "state", "state_at", "roster", "sender_name",
                                   "sender_address", "subject")} for r in rows]
 
     def sent(self, account_id):
@@ -252,6 +259,35 @@ class Core(Source):
             value = local_services(self.ctx.state_dir())
             self._services = (self.clock(), value)
             return value
+
+    def agent(self):
+        """El nombre con que firma (`AGENT_EMAIL_FROM_NAME`), su cuenta y el runtime que
+        elige el despachador, sin cargar `runtime.env` ni tocar la red: el servicio web ya
+        lo trae en su entorno (EnvironmentFile)."""
+        with self._lock:
+            if self._agent and self.clock() - self._agent[0] < HEALTH_TTL_S:
+                return self._agent[1]
+        name = ""
+        try:
+            import idle_listener
+            name = idle_listener.load_env(self.ctx.env_path()).get("AGENT_EMAIL_FROM_NAME", "")
+        except Exception:  # noqa: BLE001 -- sólo es para mostrar
+            pass
+        value = {"name": name, "email": self.ctx.agent_email(), "runtime": selected_runtime()}
+        with self._lock:
+            self._agent = (self.clock(), value)
+        return value
+
+
+def selected_runtime() -> str:
+    """El runtime que elegiría el despachador (`PAYNANI_RUNTIME`, o `auto` si sólo hay
+    uno), o "" si no se puede decir. `detect()` de cada adaptador sólo mira el host."""
+    import os
+    try:
+        import healthcheck as hc      # pone harness/ en sys.path, como para local_services
+        return hc.dsp.select_runtime(os.environ.get("PAYNANI_RUNTIME", "auto"))
+    except (SystemExit, Exception):  # noqa: BLE001 -- ambiguo o sin adaptador: no se sabe
+        return ""
 
 
 def _jsonl(path: Path) -> list[dict]:
@@ -394,12 +430,14 @@ def local_services(state_dir: Path) -> dict:
     return {
         "listener": {"unit": listener["unit"], "heartbeat_age_s": listener.get("heartbeat_age_seconds")},
         "dispatcher": {"unit": hc.dispatcher_facts()["unit"]},
-        "session": {"live": bool(live), "armed_at": str(live.get("armed_at") or "")},
+        "session": {"live": bool(live), "armed_at": str(live.get("armed_at") or ""),
+                    "expires_at": str(live.get("expires_at") or "")},
         "phone": None if phone is None else {
             "online": bool(phone["online"]), "model": phone.get("model", ""),
             "app_version": phone.get("app_version", ""), "last_seen_age_s": phone.get("last_seen_age_s"),
             "battery": (phone.get("battery") or {}).get("pct")},
         "additional": additional,
+        "queue": {"pending": int(hc.queue_facts().get("pending") or 0)},
     }
 
 
@@ -414,7 +452,8 @@ class Fake(Source):
                      "health": {"checks": [_check("listener", "ok", "listener service is active")], "network_at": ""},
                      "services": {"listener": {"unit": "active", "heartbeat_age_s": 5},
                                   "dispatcher": {"unit": "active"}, "session": {"live": True, "armed_at": ""},
-                                  "phone": None, "additional": []}}
+                                  "phone": None, "additional": [], "queue": {"pending": 0}},
+                     "agent": {"name": "Agente", "email": "agent@example.com", "runtime": "claudecode"}}
         self.data.update(data)
         self.calls: list[str] = []
 
@@ -454,6 +493,9 @@ class Fake(Source):
 
     def services(self):
         return self._get("services")
+
+    def agent(self):
+        return self._get("agent")
 
 
 # ---- El modelo de la página ------------------------------------------------------

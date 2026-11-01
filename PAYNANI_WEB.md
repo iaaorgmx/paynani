@@ -73,6 +73,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. Se abre con el ícono que está junto a tu nombre en el menú lateral, como en el /dash de ServiceButton (#626). Ya no hay avatar arriba a la derecha: «Cerrar sesión» está en el menú lateral. |
 | **Acerca de** | Como el About de PaynaniApp (#636), debajo de «API Tokens». Muestra la versión con su commit, con un botón que la copia, y el aviso de código abierto bajo la licencia MIT. Debajo, tres grupos: **Proyecto** (sitio, código y licencia); **Ayuda** (reportar un problema, que abre un issue en paynani con la versión ya escrita, las novedades y esta guía); y **Créditos**. Los enlaces abren en otra pestaña. El estado de la instalación está en el Dashboard. |
+| **Agente de IA** | En el menú lateral, debajo de tu nombre y arriba de «Management» (#644), va el bloque del agente: su nombre, el harness (Claude Code, OpenClaw o Hermes) y su estado. Al picarlo se abre la página del agente (`/agent`), que no tiene otra entrada en el menú (ver abajo). |
 
 Cuentas de correo no cierra ni responde avisos: eso sigue siendo trabajo del agente.
 Desde «Nuevo correo» el dueño sí manda sus propios correos (#590, ver abajo).
@@ -295,6 +296,36 @@ no marca avisos, no abre IMAP y no escribe en `state/`. La lectura está en
   estados: ni direcciones, ni teléfonos, ni asuntos, ni nombres. El modelo se guarda
   30 s en memoria, así que el ledger no se relee en cada petición. Sin script, la
   página se ve completa al cargarla.
+
+### El agente de IA
+
+El bloque del menú y la página `/agent` (#644) leen lo mismo que el Dashboard, con su
+caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
+
+- **El estado** (Q293):
+  - verde «Online»: el agente recibe los mensajes;
+  - ámbar «No session»: sólo en Claude Code. El servicio funciona, pero ninguna sesión
+    está vigilando el correo. Los mensajes esperan en la cola hasta que se abra una;
+  - rojo «Offline»: el despachador está detenido y no le llega nada.
+
+  OpenClaw y Hermes escuchan todo el tiempo y no tienen sesión que vigilar: con el
+  despachador activo están «Online».
+- **El bloque** tiene el estilo del bloque del usuario: el nombre del agente
+  (`AGENT_EMAIL_FROM_NAME`, o su correo si no hay nombre) va en 16 px y sin negritas.
+  Debajo van el harness y el estado, y a la derecha un robot en el lugar del ícono de
+  Perfil. Si no se puede leer el agente, la página sale sin el bloque.
+- **La página** muestra:
+  - el agente y su estado: desde cuándo vigila y cuándo se renueva la vigilancia;
+  - cuatro cifras de hoy, en la zona del host:
+    - los atendidos, respondidos y cerrados sin respuesta;
+    - lo que espera en la cola;
+    - la última respuesta, por correo o por SMS;
+    - el tiempo típico de respuesta: la mediana, entre que llega un correo y que el
+      agente lo responde, de lo respondido hoy;
+  - «The agent»: el harness, la vigilancia, el despachador y la versión;
+  - «Channels»: el correo, los mensajes de texto, WhatsApp y Telegram;
+  - lo que el agente hizo hoy;
+  - qué hacer si el estado cambia.
 
 ## Lo que guarda y lo que no
 
