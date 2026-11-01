@@ -32,7 +32,7 @@ def chips(runtime_label: str, status: str) -> str:
             f'{_th("status." + status)}</span></span>')
 
 
-def block(summary: dict | None, active: bool = False) -> str:
+def block(summary: dict | None, active: bool = False, active_key: str = "") -> str:
     """
     La sección «AI Agent» del menú, arriba de «Management» (Q303): una entrada como las del
     menú, con el robot a la izquierda (alineado arriba), el nombre del agente y, abajo, el
@@ -45,7 +45,14 @@ def block(summary: dict | None, active: bool = False) -> str:
   <nav aria-label="{_th("section")}" class="agente-nav">
     <a href="/agent" class="agente-entrada{' activo' if active else ''}"{current} title="{_th('block', name=summary['name'])}">{icon("agent")}<span class="agente-texto"><span class="agente-nombre">{e(summary["name"])}</span>
       {chips(summary["runtime_label"], summary["status"])}</span></a>
+    {_webchat_entry(active_key == "webchat")}
   </nav>"""
+
+
+def _webchat_entry(active: bool) -> str:
+    """Webchat (#648), debajo del agente en la sección «AI Agent»."""
+    current = ' class="activo" aria-current="page"' if active else ""
+    return f'<a href="/webchat"{current}>{icon("webchat")}<span>{i18n.th("web.wc.nav")}</span></a>'
 
 
 def _status_box(model: dict) -> str:

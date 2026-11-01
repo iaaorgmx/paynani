@@ -182,6 +182,18 @@ check("ledger_events guarda la hora de la respuesta aunque el último estado sea
       [("closed", utc("2026-11-01T08:04:00"), utc("2026-11-01T08:03:00"))],
       [(e["state"], e["state_at"], e["replied_at"]) for e in real])
 check("ledger_events guarda el runtime al que se despachó", "openclaw", real[0]["runtime"])
+WC = ledger_dir / "webchat.jsonl"
+wc_env = {"event_type": "webchat.received", "event_id": "wc:" + "a" * 32, "observed_at": utc("2026-11-01T08:30:00"),
+          "sender": {"name": "Julian Flores", "address": "julian@example.com"}}
+WC.write_text(_json.dumps({"schema_version": 1, "event_id": wc_env["event_id"], "state": "observed",
+                           "at": wc_env["observed_at"], "envelope": wc_env}) + "\n"
+              + _json.dumps({"schema_version": 1, "event_id": wc_env["event_id"], "state": "replied",
+                             "at": utc("2026-11-01T08:31:00")}) + "\n", encoding="utf-8")
+wc_events = dashboard.ledger_events(WC, set())
+wc_model = agent.build(dashboard.Fake(events=wc_events), NOW)
+check("Webchat (#648) cuenta en la página del agente, con enlace a /webchat", ("webchat", 1, "/webchat", "webchat"),
+      (wc_events[0]["channel"], wc_model["handled"]["replied"], wc_model["activity"][0]["href"],
+       wc_model["last_reply"]["channel"]))
 full = agent.build(dashboard.Fake(events=real), NOW)
 check("historial completo: cuenta como respondido, con mediana de 3 min y última respuesta a las 08:03",
       ({"replied": 1, "closed": 0}, 180.0, "08:03"),

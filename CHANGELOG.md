@@ -2,6 +2,26 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: Webchat, platicar con tu agente desde el navegador (#648).** Va en la sección «AI Agent», debajo del agente (Q304 a Q308):
+  - **Cómo se ve:**
+    - la conversación en burbujas, con fotos y archivos y un separador por día;
+    - «escribiendo…» mientras el agente responde;
+    - un cuadro con clip para adjuntar varios archivos, con vista previa y la × para quitar.
+  - **En vivo, por WebSocket** (Q309 = A): `/webchat/ws`, hecho con la biblioteca estándar (`web/websocket.py`, `web/webchat_ws.py`) y con el protocolo de NiceBot:
+    - `request_id`, `message.accepted` y errores con código;
+    - `message.delta` con el borrador de `webchat send --stream`;
+    - 20 mensajes por minuto y un ping cada 30 s.
+
+    Si no conecta, polling de `/webchat/updates` cada 3 s.
+  - **Seguridad:**
+    - sólo con tu sesión;
+    - `multipart/form-data` con CSRF y un límite que se revisa antes de leer el cuerpo;
+    - los adjuntos salen por `ref` en sandbox, las fotos inline y lo demás como descarga.
+  - **Lo que lee:** el almacén es el del núcleo (`webchat/store.py`); sin él, la página lo dice.
+  - **La página del agente** cuenta también Webchat.
+
+  `web/multipart.py` lee los formularios con archivos con `email.parser`, porque `cgi` ya no está en Python 3.13. Textos en los cinco idiomas; `test_web_webchat.py`.
+
 - **Webchat: el agente contesta (#648, W-2).** `paynani webchat send` (con `--file` desde `state/webchat/outbox/` y `--stream`), `paynani webchat typing` y `paynani webchat thread`. `event show wc:… --body` da el texto completo y la ruta local de cada adjunto. `send` marca `replied` los `webchat.received` abiertos. Con `--stream`, el borrador queda en `state/webchat/draft.json` para que PaynaniWeb lo muestre mientras el agente escribe. `AGENTS.md` explica cómo contestar.
 
 - **La pasarela deja pasar el WebSocket de PaynaniWeb (#648).** Antes quitaba `Upgrade` y `Connection` y agregaba `Connection: close`, así que un WebSocket de la web (como `/webchat/ws`) no podía abrirse por el túnel. Ahora un `GET` con `Upgrade: websocket` llega a la web con esos encabezados y, si la web contesta `101`, la pasarela copia los bytes en los dos sentidos. El plazo de 120 s sin actividad cuenta ahora en los dos sentidos juntos: antes cada sentido tenía el suyo, y uno callado se cortaba aunque el otro siguiera hablando. Lo demás no cambia.
