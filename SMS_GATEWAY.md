@@ -785,6 +785,12 @@ paynani sms revoke     # su token deja de abrir la pasarela
   web no contesta, `503` con una página corta (FR-2); los SMS siguen. `--web-port 0`
   apaga el reenvío y fuera de `/sms/` responde `404`. Un `PAYNANI_WEB_PORT` igual al de
   la pasarela también lo apaga, para no reenviarse a sí misma.
+- **Un WebSocket de PaynaniWeb también pasa** (#648, para `/webchat/ws`): un `GET` con
+  `Upgrade: websocket` y `upgrade` en `Connection` llega a la web con esos dos
+  encabezados y sin `Connection: close`. Si la web contesta `101`, la pasarela copia los
+  bytes en los dos sentidos hasta que uno de los lados cierra. La conexión, WebSocket o
+  no, se corta tras 120 s sin un byte en ningún sentido, así que la web manda un ping
+  antes de eso. `/sms/ws` sigue siendo de la pasarela y nunca llega a la web.
 - `GET /sms/health` responde `{"ok": true, "phone_connected": …}` sin secretos, para
   comprobar el túnel.
 - Cada SMS y llamada sale también en stdout con la misma línea que le llega al agente.
