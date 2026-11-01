@@ -2,9 +2,9 @@
 «AI Agent» (#644): el bloque del agente en el menú lateral y la página `/agent`, dentro
 del marco de shell.py y con las clases del Dashboard (kpis, tarjeta-d, srv, pill).
 
-- `block(summary, active)` va debajo del bloque del usuario, con su mismo estilo (Q294):
-  el nombre del agente en 16 px y sin negritas (Q295), el harness y el estado (Q293), y el
-  ícono de robot en el lugar del de Perfil. Es un enlace a `/agent` (Q292, Q298).
+- `block(summary, active)` es la sección «AI Agent» del menú, arriba de «Management»
+  (Q303): una entrada con el robot, el nombre del agente y, abajo, el harness y el estado
+  (Q293). Lleva a `/agent` (Q292, Q298).
 - `body(model)` es la página (Q296): el agente y su estado, las cuatro cifras de hoy,
   «The agent», «Channels» (Julian), lo que hizo hoy y qué hacer si cambia el estado.
 """
@@ -33,18 +33,19 @@ def chips(runtime_label: str, status: str) -> str:
 
 
 def block(summary: dict | None, active: bool = False) -> str:
-    """El bloque del menú. Sin datos del agente no se dibuja."""
+    """
+    La sección «AI Agent» del menú, arriba de «Management» (Q303): una entrada como las del
+    menú, con el robot a la izquierda (alineado arriba), el nombre del agente y, abajo, el
+    harness y el estado. Lleva a /agent. Sin datos del agente no se dibuja.
+    """
     if not summary:
         return ""
     current = ' aria-current="page"' if active else ""
-    return f"""<a class="usuario agente-usuario{' activo' if active else ''}" href="/agent"{current}
-     title="{_th('block', name=summary['name'])}">
-    <div class="usuario-datos">
-      <b>{e(summary["name"])}</b>
-      {chips(summary["runtime_label"], summary["status"])}
-    </div>
-    <span class="perfil agente-icono" aria-hidden="true">{icon("agent")}</span>
-  </a>"""
+    return f"""<div class="grupo">{_th("section")}</div>
+  <nav aria-label="{_th("section")}" class="agente-nav">
+    <a href="/agent" class="agente-entrada{' activo' if active else ''}"{current} title="{_th('block', name=summary['name'])}">{icon("agent")}<span class="agente-texto"><span class="agente-nombre">{e(summary["name"])}</span>
+      {chips(summary["runtime_label"], summary["status"])}</span></a>
+  </nav>"""
 
 
 def _status_box(model: dict) -> str:

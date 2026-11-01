@@ -73,7 +73,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. Se abre con el ícono que está junto a tu nombre en el menú lateral, como en el /dash de ServiceButton (#626). Ya no hay avatar arriba a la derecha: «Cerrar sesión» está en el menú lateral. |
 | **Acerca de** | Como el About de PaynaniApp (#636), debajo de «API Tokens». Muestra la versión con su commit, con un botón que la copia, y el aviso de código abierto bajo la licencia MIT. Debajo, tres grupos: **Proyecto** (sitio, código y licencia); **Ayuda** (reportar un problema, que abre un issue en paynani con la versión ya escrita, las novedades y esta guía); y **Créditos**. Los enlaces abren en otra pestaña. El estado de la instalación está en el Dashboard. |
-| **Agente de IA** | En el menú lateral, debajo de tu nombre y arriba de «Management» (#644), va el bloque del agente: su nombre, el harness (Claude Code, OpenClaw o Hermes) y su estado. Al picarlo se abre la página del agente (`/agent`), que no tiene otra entrada en el menú (ver abajo). |
+| **Agente de IA** | En el menú lateral, debajo de tu nombre y arriba de «Management» (#644), va la sección «AI Agent». Tiene una entrada con el robot, el nombre del agente y, abajo, el harness (Claude Code, OpenClaw, Hermes, Codex u OpenCode) y su estado. Al picarla se abre la página del agente (`/agent`), que no tiene otra entrada en el menú (ver abajo). |
 
 Cuentas de correo no cierra ni responde avisos: eso sigue siendo trabajo del agente.
 Desde «Nuevo correo» el dueño sí manda sus propios correos (#590, ver abajo).
@@ -319,10 +319,10 @@ caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
     (`state/delivery.json`). Sólo cuenta lo que dijo el runtime actual: al cambiar de
     runtime, lo que dijo el anterior no es evidencia. Un rechazo más nuevo que la última aceptación, o una cola atorada
     más de 10 min, es «Offline».
-- **El bloque** tiene el estilo del bloque del usuario: el nombre del agente
-  (`AGENT_EMAIL_FROM_NAME`, o su correo si no hay nombre) va en 16 px y sin negritas.
-  Debajo van el harness y el estado, y a la derecha un robot en el lugar del ícono de
-  Perfil. Si no se puede leer el agente, la página sale sin el bloque.
+- **La sección «AI Agent»** va como «Management» (Q303). Su entrada tiene el robot a la
+  izquierda, alineado arriba; a la derecha va el nombre del agente (`AGENT_EMAIL_FROM_NAME`,
+  o su correo si no hay nombre), y abajo, el harness y el estado. Si no se puede leer el
+  agente, la página sale sin la sección.
 - **La página** muestra:
   - el agente y su estado: desde cuándo vigila y cuándo se renueva la vigilancia;
   - cuatro cifras de hoy, en la zona del host:

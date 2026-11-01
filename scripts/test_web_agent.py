@@ -248,23 +248,25 @@ cookie = next(c for c in hdrs["set-cookie-all"] if c.startswith(auth.SESSION_COO
 for path in ("/?lang=en-US", "/about?lang=en-US", "/roster?lang=en-US"):
     _, _, page = req("GET", path, cookie=cookie)
     side = menu(page)
-    order = [side.find(mark) for mark in ('<div class="usuario">', 'href="/profile"', '<a class="usuario agente-usuario"',
-                                          '<div class="grupo">Management</div>')]
-    check(f"{path.split('?')[0]}: el bloque va debajo del usuario y arriba de «Management»", True,
+    order = [side.find(mark) for mark in ('<div class="usuario">', 'href="/profile"', '<div class="grupo">AI Agent</div>',
+                                          '<a href="/agent" class="agente-entrada"', '<div class="grupo">Management</div>')]
+    check(f"{path.split('?')[0]}: la sección «AI Agent» va debajo del usuario y arriba de «Management» (Q303)", True,
           -1 not in order and order == sorted(order))
 _, _, page = req("GET", "/?lang=en-US", cookie=cookie)
 side = menu(page)
-check("el nombre del agente va escapado", True, "<b>Iris &lt;Agente&gt;</b>" in side)
+check("el nombre del agente va escapado", True, '<span class="agente-nombre">Iris &lt;Agente&gt;</span>' in side)
 check("debajo del nombre, el harness y el estado (Q293)", True,
       '<span class="agente-chip">Claude Code</span><span class="agente-chip agente-ok"><i aria-hidden="true"></i>Online</span>' in side)
-check("el ícono de robot en el lugar del de Perfil", True, 'class="perfil agente-icono"' in side)
-check("fuera de /agent el bloque no está activo", False, 'agente-usuario activo' in side)
+check("la entrada empieza con el ícono del robot, como las del menú", True,
+      bool(re.search(r'<a href="/agent" class="agente-entrada"[^>]*><svg class="i"', side)))
+check("la sección tiene su propio nav con su nombre", True, '<nav aria-label="AI Agent" class="agente-nav">' in side)
+check("fuera de /agent la entrada no está activa", False, 'agente-entrada activo' in side)
 check("no hay entrada «AI Agent» en Management (Q298)", 1, side.count('href="/agent"'))
 
 status, _, page = req("GET", "/agent?lang=en-US", cookie=cookie)
 check("/agent: 200 con el título «AI Agent»", (200, True), (status, "<h1>AI Agent</h1>" in page))
 check("en /agent el bloque queda marcado", True,
-      bool(re.search(r'<a class="usuario agente-usuario activo" href="/agent" aria-current="page"', page)))
+      bool(re.search(r'<a href="/agent" class="agente-entrada activo" aria-current="page"', page)))
 check("el encabezado: estado, desde cuándo vigila y la próxima renovación", (True, True, True),
       ('salud salud-ok' in page, "Watching the mail since 08:46" in page, "next at 09:16" in page))
 check("las cuatro cifras: 5 atendidos, 1 en cola, 08:21 por Telegram y 2 min", (True, True, True, True, True),
@@ -307,7 +309,8 @@ class Broken(dashboard.Fake):
 
 SOURCE["fake"] = Broken()
 status, _, page = req("GET", "/?lang=en-US", cookie=cookie)
-check("si leer el agente falla, la página sale sin el bloque", (200, False), (status, "agente-usuario" in page))
+check("si leer el agente falla, la página sale sin la sección", (200, False, False),
+      (status, "agente-entrada" in page, '<div class="grupo">AI Agent</div>' in page))
 
 SOURCE["fake"] = fake
 for lang in agent_strings.STRINGS:

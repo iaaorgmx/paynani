@@ -3,6 +3,7 @@ from ..i18n_data import CATALOGUES
 
 STRINGS = {
     "es-MX": {
+        "section": "Agente de IA",
         "title": "Agente de IA",
         "block": "Tu agente de IA: {name}. Ver el agente",
         "status.online": "Online",
@@ -63,6 +64,7 @@ STRINGS = {
         "help.offline": "No le llega nada al agente: el servicio de paynani que le pasa los mensajes está detenido, o el agente no los está aceptando. Pídele a quien administra paynani que corra paynani doctor.",
     },
     "en-US": {
+        "section": "AI Agent",
         "title": "AI Agent",
         "block": "Your AI agent: {name}. View the agent",
         "status.online": "Online",
@@ -123,6 +125,7 @@ STRINGS = {
         "help.offline": "Nothing reaches the agent: the paynani service that hands it messages is stopped, or the agent is not taking them. Ask whoever runs paynani to run paynani doctor.",
     },
     "es-ES": {
+        "section": "Agente de IA",
         "title": "Agente de IA",
         "block": "Tu agente de IA: {name}. Ver el agente",
         "status.online": "En línea",
@@ -183,6 +186,7 @@ STRINGS = {
         "help.offline": "No le llega nada al agente: el servicio de paynani que le pasa los mensajes está detenido, o el agente no los está aceptando. Pide a quien administra paynani que ejecute paynani doctor.",
     },
     "fr-FR": {
+        "section": "Agent IA",
         "title": "Agent IA",
         "block": "Votre agent IA : {name}. Voir l’agent",
         "status.online": "En ligne",
@@ -243,6 +247,7 @@ STRINGS = {
         "help.offline": "Rien ne parvient à l’agent : le service de paynani qui lui transmet les messages est arrêté, ou l’agent ne les accepte pas. Demandez à la personne qui administre paynani de lancer paynani doctor.",
     },
     "pt-BR": {
+        "section": "Agente de IA",
         "title": "Agente de IA",
         "block": "Seu agente de IA: {name}. Ver o agente",
         "status.online": "Online",
