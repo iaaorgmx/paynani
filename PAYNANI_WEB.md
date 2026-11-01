@@ -302,14 +302,22 @@ no marca avisos, no abre IMAP y no escribe en `state/`. La lectura está en
 El bloque del menú y la página `/agent` (#644) leen lo mismo que el Dashboard, con su
 caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
 
-- **El estado** (Q293):
-  - verde «Online»: el agente recibe los mensajes;
-  - ámbar «No session»: sólo en Claude Code. El servicio funciona, pero ninguna sesión
-    está vigilando el correo. Los mensajes esperan en la cola hasta que se abra una;
-  - rojo «Offline»: el despachador está detenido y no le llega nada.
+- **El estado** (Q293). Cada runtime tiene su propia evidencia (revisión de Ximena en #645):
+  - verde «Online»: hay evidencia de que el agente recibe los mensajes;
+  - ámbar «No session»: el servicio funciona, pero ninguna sesión del agente lee los mensajes,
+    que esperan;
+  - rojo «Offline»: no le llega nada, porque el despachador está detenido o el runtime los
+    rechaza;
+  - gris «No data»: todavía no hay evidencia, porque no se le ha entregado nada o el runtime
+    no se conoce. No se afirma que esté en línea.
 
-  OpenClaw y Hermes escuchan todo el tiempo y no tienen sesión que vigilar: con el
-  despachador activo están «Online».
+  La evidencia de cada runtime:
+  - **Claude Code:** una sesión con la vigilancia viva (`watch_registry_facts`).
+  - **Codex y OpenCode:** la sesión lee el spool. Un evento `dispatched` que nadie toma en
+    10 min es «No session».
+  - **OpenClaw y Hermes:** lo que el runtime contestó al entregarle el último evento
+    (`state/delivery.json`). Un rechazo más nuevo que la última aceptación, o una cola atorada
+    más de 10 min, es «Offline».
 - **El bloque** tiene el estilo del bloque del usuario: el nombre del agente
   (`AGENT_EMAIL_FROM_NAME`, o su correo si no hay nombre) va en 16 px y sin negritas.
   Debajo van el harness y el estado, y a la derecha un robot en el lugar del ícono de
@@ -317,10 +325,13 @@ caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
 - **La página** muestra:
   - el agente y su estado: desde cuándo vigila y cuándo se renueva la vigilancia;
   - cuatro cifras de hoy, en la zona del host:
-    - los atendidos, respondidos y cerrados sin respuesta;
+    - los atendidos, respondidos y cerrados sin respuesta, de correo, SMS, WhatsApp y
+      Telegram (los eventos del ledger);
     - lo que espera en la cola;
-    - la última respuesta, por correo o por SMS;
-    - el tiempo típico de respuesta: la mediana, entre que llega un correo y que el
+    - la última respuesta: el último evento que el agente marcó `replied`, en cualquier
+      canal, o el último SMS que mandó. No sale de `sent.log`, que también tiene los
+      avisos de PaynaniWeb al dueño (revisión de Metis en #645);
+    - el tiempo típico de respuesta: la mediana, entre que llega un mensaje y que el
       agente lo responde, de lo respondido hoy;
   - «The agent»: el harness, la vigilancia, el despachador y la versión;
   - «Channels»: el correo, los mensajes de texto, WhatsApp y Telegram;

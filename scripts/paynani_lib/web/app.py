@@ -378,7 +378,7 @@ class Context:
         """El bloque del agente en el menú (#644). Lee lo mismo que el Dashboard, con su caché
         de 60 s; si algo falla no hay bloque, y la página se dibuja igual."""
         try:
-            return agent.summary(self.dashboard)
+            return agent.summary(self.dashboard, self.now())
         except Exception:  # noqa: BLE001 -- sólo es para mostrar
             return None
 

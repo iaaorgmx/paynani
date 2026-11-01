@@ -15,7 +15,7 @@ from . import dashboard_pages as dp
 from .dashboard import _version_tuple
 from .shell import e, icon
 
-TONES = {"online": "ok", "no_session": "warn", "offline": "bad"}
+TONES = {"online": "ok", "no_session": "warn", "offline": "bad", "unknown": "off"}   # gris: sin evidencia
 
 
 def _th(key: str, **kw) -> str:
@@ -51,12 +51,19 @@ def _status_box(model: dict) -> str:
     now = model["now"]
     status = model["status"]
     lines = []
+    runtime = model["runtime_label"]
+    accepted = model["last_accepted"]
     if status == "offline":
-        lines.append(_th("offline_detail"))
-    elif not model["watches"]:
-        lines.append(_th("online_other", runtime=model["runtime_label"]))
+        lines.append(_th("offline_push", runtime=runtime) if model["kind"] == "push"
+                     and model["dispatcher"] == "active" else _th("offline_detail"))
+    elif status == "unknown":
+        lines.append(_th("unknown_detail"))
     elif status == "no_session":
-        lines.append(_th("no_session_detail"))
+        lines.append(_th("no_session_spool", runtime=runtime) if model["kind"] == "spool" else _th("no_session_detail"))
+    elif model["kind"] != "watch":
+        lines.append(_th("online_other", runtime=runtime))
+        if accepted:
+            lines.append(_th("accepted_at", when=dp.clock(accepted.astimezone(now.tzinfo), now)))
     else:
         session = model["session"]
         if session["armed_at"]:
@@ -103,7 +110,7 @@ def _agent_rows(model: dict) -> str:
     status = model["status"]
     rows = [dp._row("agent", _th("row.harness"), model["runtime_label"],
                     dp._pill(TONES[status], _t("status." + status)))]
-    if model["watches"]:
+    if model["kind"] == "watch":
         session = model["session"]
         if session["live"]:
             armed = session["armed_at"]
@@ -112,8 +119,12 @@ def _agent_rows(model: dict) -> str:
         else:
             rows.append(dp._row("clock", _th("row.watch"), _t("row.watch.none"), dp._pill("warn", _t("pill.not_armed"))))
     else:
-        rows.append(dp._row("clock", _th("row.watch"), _t("row.watch.other", runtime=model["runtime_label"]),
-                            dp._pill("ok", _t("pill.always"))))
+        # Sin vigilancia: lo que se sabe es cuándo el runtime aceptó lo último.
+        accepted = model["last_accepted"]
+        detail = (_t("row.delivery.at", when=dp.clock(accepted.astimezone(now.tzinfo), now)) if accepted
+                  else _t("row.delivery.none"))
+        rows.append(dp._row("clock", _th("row.delivery"), detail,
+                            dp._pill(TONES[status], _t("status." + status))))
     rows.append(dp._row("inbox", _th("row.dispatcher"), _t("row.dispatcher.detail"),
                         dp._unit_pill(model["dispatcher"], "")))
     version = model["version"]
@@ -142,7 +153,7 @@ def body(model: dict) -> str:
     activity = f"<ul>{''.join(rows)}</ul>" if rows else f'<p class="quiet nada">{_th("activity.none")}</p>'
     help_rows = "".join(
         f"<dt>{dp._pill(TONES[key], _t('status.' + key))}</dt><dd>{_th('help.' + key)}</dd>"
-        for key in ("no_session", "offline"))
+        for key in ("no_session", "offline", "unknown"))
     return f"""<div class="dash agente-pag">
   <div class="saludo">
     <div class="agente-id">

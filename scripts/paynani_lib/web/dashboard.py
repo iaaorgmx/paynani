@@ -128,6 +128,12 @@ class Source:
         lleva `expires_at` y `queue` es `{pending}`, para la página del agente (#644)."""
         raise NotImplementedError
 
+    def events(self) -> list[dict]:
+        """Lo que le llegó al agente por cualquier canal, del ledger (#644): `{event_id, channel,
+        account, observed_at, state, state_at, sender_name, sender_address, subject}`.
+        `channel` es `mail`, `sms`, `whatsapp` o `telegram`."""
+        return []
+
     def agent(self) -> dict:
         """El agente (#644): `{name, email, runtime}`. `runtime` es `claudecode`, `openclaw`,
         `hermes` o "" si no se sabe. Nunca secretos ni rutas."""
@@ -145,6 +151,7 @@ class Core(Source):
         self._health: tuple[float, dict] | None = None
         self._services: tuple[float, dict] | None = None
         self._agent: tuple[float, dict] | None = None
+        self._events: tuple[float, list] | None = None
         self._lock = threading.Lock()
 
     def accounts(self):
@@ -156,6 +163,17 @@ class Core(Source):
         rows = mail_mod.mail_events(self.ctx.ledger_path(), account_id, self.ctx.known_ids())
         return [{k: r[k] for k in ("event_id", "observed_at", "state", "state_at", "roster", "sender_name",
                                   "sender_address", "subject")} for r in rows]
+
+    def events(self):
+        """Con la caché del modelo (30 s): el bloque del menú lo pide en cada página en Codex
+        y OpenCode, y el ledger no se relee cada vez."""
+        with self._lock:
+            if self._events and self.clock() - self._events[0] < MODEL_TTL_S:
+                return self._events[1]
+        value = ledger_events(self.ctx.ledger_path(), self.ctx.known_ids())
+        with self._lock:
+            self._events = (self.clock(), value)
+        return value
 
     def sent(self, account_id):
         from . import thread
@@ -277,6 +295,42 @@ class Core(Source):
         with self._lock:
             self._agent = (self.clock(), value)
         return value
+
+
+CHANNELS = {"email.received": "mail", "sms.received": "sms", "whatsapp.received": "whatsapp",
+            "telegram.received": "telegram", "telegram.edited": "telegram"}
+
+
+def ledger_events(ledger_path: Path, known_ids: set[str]) -> list[dict]:
+    """Los eventos de conversación del ledger con su último estado y su hora (#644). Los
+    avisos del sistema (la batería del teléfono, el bot caído) no son conversaciones."""
+    from . import mail as mail_mod
+    envelopes: dict[str, dict] = {}
+    state: dict[str, tuple[str, str]] = {}
+    for record in mail_mod.ledger.records(ledger_path):
+        event_id = str(record.get("event_id") or "")
+        envelope = record.get("envelope")
+        if isinstance(envelope, dict) and event_id not in envelopes:
+            envelopes[event_id] = envelope
+        state[event_id] = (str(record.get("state") or ""), str(record.get("at") or ""))
+    out = []
+    for event_id, envelope in envelopes.items():
+        channel = CHANNELS.get(str(envelope.get("event_type") or ""))
+        if channel is None:
+            continue
+        account = ""
+        if channel == "mail":
+            try:
+                account = str(envelope.get("account_id") or "") or accounts.parse_event_id(event_id, known_ids=known_ids)[0]
+            except accounts.AccountsError:
+                account = accounts.MAIN
+        sender = envelope.get("sender") or {}
+        last, last_at = state.get(event_id, ("", ""))
+        out.append({"event_id": event_id, "channel": channel, "account": account,
+                    "observed_at": str(envelope.get("observed_at") or ""), "state": last, "state_at": last_at,
+                    "sender_name": str(sender.get("name") or ""), "sender_address": str(sender.get("address") or ""),
+                    "subject": str(envelope.get("subject") or "") if channel == "mail" else ""})
+    return out
 
 
 def selected_runtime() -> str:
@@ -422,6 +476,7 @@ def local_services(state_dir: Path) -> dict:
     watch = hc.watch_registry_facts()
     live = watch.get("watch_live") or {}
     phone = hc.sms_phone_facts()
+    queue = hc.queue_facts()
     additional = []
     for entry in hc.accounts_facts().get("accounts", []):
         unit = entry["listener"]["unit"] if entry.get("enabled") else "off"
@@ -437,7 +492,8 @@ def local_services(state_dir: Path) -> dict:
             "app_version": phone.get("app_version", ""), "last_seen_age_s": phone.get("last_seen_age_s"),
             "battery": (phone.get("battery") or {}).get("pct")},
         "additional": additional,
-        "queue": {"pending": int(hc.queue_facts().get("pending") or 0)},
+        "queue": {"pending": int(queue.get("pending") or 0), "oldest_age_s": queue.get("oldest_age_seconds")},
+        "delivery": {key: (value or {}).get("at") or "" for key, value in hc.delivery_facts().items()},
     }
 
 
@@ -452,7 +508,9 @@ class Fake(Source):
                      "health": {"checks": [_check("listener", "ok", "listener service is active")], "network_at": ""},
                      "services": {"listener": {"unit": "active", "heartbeat_age_s": 5},
                                   "dispatcher": {"unit": "active"}, "session": {"live": True, "armed_at": ""},
-                                  "phone": None, "additional": [], "queue": {"pending": 0}},
+                                  "phone": None, "additional": [], "queue": {"pending": 0, "oldest_age_s": None},
+                                  "delivery": {"last_accepted": "", "last_error": ""}},
+                     "events": [],
                      "agent": {"name": "Agente", "email": "agent@example.com", "runtime": "claudecode"}}
         self.data.update(data)
         self.calls: list[str] = []
@@ -496,6 +554,9 @@ class Fake(Source):
 
     def agent(self):
         return self._get("agent")
+
+    def events(self):
+        return self._get("events")
 
 
 # ---- El modelo de la página ------------------------------------------------------

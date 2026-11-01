@@ -3,12 +3,12 @@
 ## Sin publicar
 
 - **PaynaniWeb: el agente de IA en el menú y su página (#644).**
-  - **El bloque:** va debajo de tu nombre y arriba de «Management», con el mismo estilo (Q294). Muestra el nombre del agente en 16 px y sin negritas (Q295), el harness y el estado: verde «Online», ámbar «No session» (sólo Claude Code, sin sesión vigilando) o rojo «Offline» (despachador detenido) (Q293). Lleva un robot en el lugar del ícono de Perfil.
+  - **El bloque:** va debajo de tu nombre y arriba de «Management», con el mismo estilo (Q294). Muestra el nombre del agente en 16 px y sin negritas (Q295), el harness y el estado (Q293): verde «Online», ámbar «No session», rojo «Offline» o gris «No data» cuando todavía no hay evidencia. Cada runtime tiene la suya: la vigilancia en Claude Code, el spool en Codex y OpenCode, y lo último que aceptó o rechazó en OpenClaw y Hermes. Lleva un robot en el lugar del ícono de Perfil.
   - **La página `/agent`:** se abre al picar el bloque (Q292, Q298). Muestra:
     - el estado del agente;
-    - los atendidos hoy;
+    - los atendidos hoy, de correo, SMS, WhatsApp y Telegram;
     - la cola;
-    - la última respuesta;
+    - la última respuesta, sin contar los avisos de PaynaniWeb al dueño;
     - el tiempo típico de respuesta (la mediana de hoy, Q297);
     - «The agent» y «Channels»;
     - lo que hizo hoy;

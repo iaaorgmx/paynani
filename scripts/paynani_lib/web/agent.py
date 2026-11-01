@@ -1,13 +1,14 @@
 """
 El agente de IA en PaynaniWeb (#644): el bloque del menú lateral y la página «AI Agent».
 Como el Dashboard, sólo lee lo que ya existe, por medio de `dashboard.Source`; nada de
-aquí escribe en `state/`, marca un aviso ni abre IMAP.
+aquí escribe en `state/`, marca un aviso ni abre IMAP o la red.
 
-- `status(services, runtime)` es el semáforo (Q293): `online` (verde), `no_session`
-  (ámbar) u `offline` (rojo).
+- `status(...)` es el semáforo (Q293): `online` (verde), `no_session` (ámbar), `offline`
+  (rojo) o `unknown` (gris, cuando todavía no hay evidencia; revisión de Ximena en #645).
 - `summary(source)` es lo del bloque del menú: nombre, runtime y estado.
 - `build(source, now)` es el modelo de la página: el agente, las cuatro cifras de hoy,
-  los canales y lo que el agente hizo hoy.
+  los canales y lo que el agente hizo hoy, por correo, SMS, WhatsApp y Telegram
+  (revisión de Metis en #645).
 """
 from __future__ import annotations
 
@@ -16,8 +17,19 @@ import statistics
 
 from .dashboard import CLOSED, Source, parse
 
-RUNTIMES = {"claudecode": "Claude Code", "openclaw": "OpenClaw", "hermes": "Hermes"}
-WATCH_RUNTIME = "claudecode"     # el único que vigila con una sesión (watch_registry_facts)
+RUNTIMES = {"claudecode": "Claude Code", "openclaw": "OpenClaw", "hermes": "Hermes",
+            "codex": "Codex", "opencode": "OpenCode"}
+# Claude Code: la sesión arma una vigilancia (watch_registry_facts), y eso es la evidencia.
+WATCH_RUNTIME = "claudecode"
+# Codex y OpenCode: el despachador escribe en un spool y la sesión lo lee; «aceptado» sólo
+# quiere decir que quedó en el spool. La evidencia es que la sesión lo tome (`presented`):
+# un evento `dispatched` que nadie toma en STUCK_S es que no hay sesión.
+SPOOL_RUNTIMES = ("codex", "opencode")
+# OpenClaw y Hermes: el runtime contesta al entregarle el evento; lo que dijo queda en
+# state/delivery.json (healthcheck.delivery_facts). Un rechazo más nuevo que la última
+# aceptación, o una cola atorada más de STUCK_S, es que no le llega nada.
+PUSH_RUNTIMES = ("openclaw", "hermes")
+STUCK_S = 600
 ACTIVITY = 10
 
 
@@ -25,27 +37,62 @@ def runtime_label(runtime: str) -> str:
     return RUNTIMES.get(runtime, runtime or "?")
 
 
-def status(services: dict, runtime: str) -> str:
+def _newer(a: str, b: str) -> bool:
+    """¿La hora `a` es posterior a la `b`? Una que falta nunca es más nueva."""
+    ta, tb = parse(a), parse(b)
+    return ta is not None and (tb is None or ta > tb)
+
+
+def status(services: dict, runtime: str, events: list[dict] | None = None,
+           now: dt.datetime | None = None) -> str:
     """
-    Q293. Con el despachador detenido no le llega nada al agente: `offline`. En Claude Code
-    el agente es una sesión que vigila el correo: sin una vigilancia viva, `no_session`.
-    OpenClaw y Hermes no tienen sesión que vigilar (siempre escuchan): con el despachador
-    activo, `online`.
+    Q293, con una señal observable para cada runtime (revisión de Ximena en #645). Con el
+    despachador detenido no le llega nada al agente: `offline`. Si no hay evidencia todavía
+    (nada entregado, o un runtime que no se conoce), `unknown`: no se afirma que esté en línea.
     """
     if (services.get("dispatcher") or {}).get("unit") != "active":
         return "offline"
-    if runtime == WATCH_RUNTIME and not (services.get("session") or {}).get("live"):
-        return "no_session"
-    return "online"
+    delivery = services.get("delivery") or {}
+    accepted, error = delivery.get("last_accepted") or "", delivery.get("last_error") or ""
+    if runtime == WATCH_RUNTIME:
+        return "online" if (services.get("session") or {}).get("live") else "no_session"
+    if runtime in SPOOL_RUNTIMES:
+        now = now or dt.datetime.now(dt.timezone.utc)
+        for event in events or ():
+            at = parse(event.get("state_at"))
+            if event.get("state") == "dispatched" and at is not None and (now - at).total_seconds() > STUCK_S:
+                return "no_session"
+        return "online" if accepted else "unknown"
+    if runtime in PUSH_RUNTIMES:
+        oldest = (services.get("queue") or {}).get("oldest_age_s")
+        if _newer(error, accepted) or (oldest is not None and oldest > STUCK_S):
+            return "offline"
+        return "online" if accepted else "unknown"
+    return "unknown"
 
 
-def summary(source: Source) -> dict:
-    """El bloque del menú: `{name, runtime, runtime_label, status}`."""
+def summary(source: Source, now: dt.datetime | None = None) -> dict:
+    """El bloque del menú: `{name, runtime, runtime_label, status}`. Sólo lee el ledger
+    cuando el runtime lo necesita (Codex y OpenCode)."""
     info = source.agent()
     runtime = info.get("runtime", "")
+    events = source.events() if runtime in SPOOL_RUNTIMES else None
     name = info.get("name") or (info.get("email") or "").split("@")[0]
     return {"name": name, "runtime": runtime, "runtime_label": runtime_label(runtime),
-            "status": status(source.services(), runtime)}
+            "status": status(source.services(), runtime, events, now)}
+
+
+def _href(event: dict) -> str:
+    from urllib.parse import quote
+    channel = event["channel"]
+    if channel == "mail":
+        from .dashboard import mail_href
+        return mail_href(event.get("account") or "main", event["event_id"])
+    if channel == "sms":
+        return "/messages/ver?n=" + quote(event.get("sender_address", ""), safe="")
+    if channel == "whatsapp":
+        return "/whatsapp/messages/ver?n=" + quote(event.get("sender_address", ""), safe="")
+    return "/telegram/messages"
 
 
 def build(source: Source, now: dt.datetime) -> dict:
@@ -55,34 +102,35 @@ def build(source: Source, now: dt.datetime) -> dict:
     info = source.agent()
     services = source.services()
     runtime = info.get("runtime", "")
+    events = source.events()
 
     handled = {"replied": 0, "closed": 0}
     reply_seconds = []
     activity = []
-    for account in source.accounts():
-        for row in source.mail(account["id"]):
-            state = row.get("state", "")
-            if state not in CLOSED:
-                continue
-            at = parse(row.get("state_at"))
-            if at is None or at.astimezone(tz).date() != today:
-                continue
-            handled["replied" if state == "replied" else "closed"] += 1
-            seen = parse(row.get("observed_at"))
-            if state == "replied" and seen is not None and at >= seen:
-                reply_seconds.append((at - seen).total_seconds())
-            activity.append({"at": at.astimezone(tz), "channel": "mail", "state": state,
-                             "who": row.get("sender_name") or row.get("sender_address", ""),
-                             "what": row.get("subject", ""),
-                             "href": _mail_href(account["id"], row.get("event_id", ""))})
-
-    # La última respuesta: lo último que el agente mandó, por correo o por SMS.
     last = None
-    for account in source.accounts():
-        for rec in source.sent(account["id"]):
-            at = parse(rec.get("at"))
-            if at is not None and (last is None or at > last["at"]):
-                last = {"at": at.astimezone(tz), "who": rec.get("to", ""), "channel": "mail"}
+    for event in events:
+        state = event.get("state", "")
+        if state not in CLOSED:
+            continue
+        at = parse(event.get("state_at"))
+        if at is None:
+            continue
+        at = at.astimezone(tz)
+        who = event.get("sender_name") or event.get("sender_address", "")
+        # La última respuesta: lo último que el agente respondió, en cualquier canal. No
+        # sale de sent.log, que también tiene los avisos de PaynaniWeb al dueño (Metis).
+        if state == "replied" and (last is None or at > last["at"]):
+            last = {"at": at, "who": who, "channel": event["channel"]}
+        if at.date() != today:
+            continue
+        handled["replied" if state == "replied" else "closed"] += 1
+        seen = parse(event.get("observed_at"))
+        if state == "replied" and seen is not None and at >= seen:
+            reply_seconds.append((at - seen).total_seconds())
+        activity.append({"at": at, "channel": event["channel"], "state": state, "who": who,
+                         "what": event.get("subject", ""), "href": _href(event)})
+
+    # Los SMS que el agente mandó: no tienen un evento propio en el ledger.
     for item in source.sms():
         if item.get("kind") != "agent":
             continue
@@ -90,11 +138,12 @@ def build(source: Source, now: dt.datetime) -> dict:
             at = dt.datetime.fromtimestamp(float(item.get("epoch")), tz)
         except (TypeError, ValueError, OverflowError, OSError):
             continue
+        who = item.get("name") or item.get("number", "")
         if last is None or at > last["at"]:
-            last = {"at": at, "who": item.get("name") or item.get("number", ""), "channel": "sms"}
+            last = {"at": at, "who": who, "channel": "sms"}
         if at.date() == today:
-            activity.append({"at": at, "channel": "sms", "state": "sent", "who": item.get("name") or item.get("number", ""),
-                             "what": "", "href": "/messages/ver?n=" + _q(item.get("number", ""))})
+            activity.append({"at": at, "channel": "sms", "state": "sent", "who": who, "what": "",
+                             "href": "/messages/ver?n=" + _q(item.get("number", ""))})
     activity.sort(key=lambda a: a["at"], reverse=True)
 
     session = services.get("session") or {}
@@ -106,10 +155,12 @@ def build(source: Source, now: dt.datetime) -> dict:
         "email": info.get("email", ""),
         "runtime": runtime,
         "runtime_label": runtime_label(runtime),
-        "watches": runtime == WATCH_RUNTIME,
-        "status": status(services, runtime),
+        "kind": ("watch" if runtime == WATCH_RUNTIME else "spool" if runtime in SPOOL_RUNTIMES
+                 else "push" if runtime in PUSH_RUNTIMES else ""),
+        "status": status(services, runtime, events, now),
         "session": {"live": bool(session.get("live")), "armed_at": parse(session.get("armed_at")),
                     "expires_at": parse(session.get("expires_at"))},
+        "last_accepted": parse((services.get("delivery") or {}).get("last_accepted")),
         "dispatcher": (services.get("dispatcher") or {}).get("unit", "unknown"),
         "listener": (services.get("listener") or {}).get("unit", "unknown"),
         "handled": handled,
@@ -125,12 +176,6 @@ def build(source: Source, now: dt.datetime) -> dict:
     }
 
 
-def _mail_href(account_id: str, event_id: str) -> str:
-    from .dashboard import mail_href
-    return mail_href(account_id, event_id)
-
-
 def _q(value: str) -> str:
     from urllib.parse import quote
     return quote(str(value or ""), safe="")
-
