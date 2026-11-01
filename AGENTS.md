@@ -702,6 +702,26 @@ private message to the bot:
   token`). Never run `paynani telegram setup`, `token`, `disable` or `enable` on
   your own: the token is your human's credential.
 
+**Webchat is your human talking to you from PaynaniWeb** (#648, `WEBCHAT.md`).
+It needs no service: PaynaniWeb writes the message and a line for it:
+
+- `[webchat 10:20:05, roster] Ana López (PaynaniWeb): <excerpt> [scripts/paynani event show wc:…]`
+  is your human, logged in to PaynaniWeb. It is work, like any `, roster]` line.
+  Read the whole message, and the local path of every photo or file, with
+  `scripts/paynani event show <id> --body`; open those files to read them.
+- Answer with `scripts/paynani webchat send "<text>"`. `--file <path>` (repeat it
+  for several) sends a file from `state/webchat/outbox/`: copy it there first.
+  Sending marks every open `webchat.received` before it `replied`, so you do not
+  need `event mark` after it.
+- **Stream when your harness can**, as for Telegram: pipe the text into
+  `scripts/paynani webchat send --stream` and PaynaniWeb shows it while you write.
+  For a long task, `scripts/paynani webchat typing --seconds 300` shows
+  «escribiendo…» until you send (`--off` stops it).
+- `scripts/paynani webchat thread` shows the conversation, your answers included.
+- Exit 2 means nothing was saved; the code says why: `empty`, `too_long` (over
+  4000 characters: split it), `too_big` (20 MB a file, 25 MB a message) or
+  `bad_type`.
+
 **Say "no new mail" only when something checked.** `scripts/healthcheck.py`
 answers whether mail could arrive; silence does not. Reporting a quiet mailbox
 from a dead listener is the one failure this whole tool exists to prevent, and it

@@ -10,6 +10,7 @@ la terminal, en el mismo host y con el mismo usuario. Las dos partes usan este m
       files/f_<32 hex>             0600  los adjuntos, con nombre opaco
       outbox/                      0700  de aquí toma archivos `paynani webchat send --file`
       typing.json                  0600  {"until": "…Z"} mientras el agente escribe
+      draft.json                   0600  {"text", "at"} el borrador de `webchat send --stream`
 
 El nombre original de un archivo sólo vive en `files[].name`; nunca llega a una ruta.
 Cada mensaje del dueño escribe además el evento `webchat.received` (harness/event.py)
@@ -243,6 +244,7 @@ def append(by: str, text: str, files: list[tuple[str, bytes]] | None = None, *,
         _append_line(r / "messages.jsonl", message)
         if by == "agent":
             _typing_write(r, None)
+            _draft_write(r, None)
     if envelope is not None:
         state = r.parent
         ev.append(state / "events.jsonl", envelope)
@@ -346,7 +348,8 @@ def typing_off(*, state_dir: Path | None = None) -> None:
 
 def is_typing(now: dt.datetime | None = None, *, state_dir: Path | None = None) -> bool:
     """
-    «escribiendo…» (WEBCHAT.md §4): mientras `typing.json` siga vigente, o mientras el
+    «escribiendo…» (WEBCHAT.md §4): mientras `typing.json` siga vigente o haya un
+    borrador de `--stream`, o mientras el
     último mensaje sea del dueño y su evento esté `dispatched`/`presented`, por
     10 minutos como máximo.
     """
@@ -358,6 +361,8 @@ def is_typing(now: dt.datetime | None = None, *, state_dir: Path | None = None) 
         until = None
     if until is not None and until > now:
         return True
+    if draft(now, state_dir=state_dir) is not None:
+        return True
     rows = _all(state_dir)
     if not rows or rows[-1].get("by") != "owner":
         return False
@@ -367,3 +372,65 @@ def is_typing(now: dt.datetime | None = None, *, state_dir: Path | None = None) 
         return False
     state = ledger.latest(r.parent / "lifecycle.jsonl").get(last.get("event_id", ""), {})
     return state.get("state") in ("dispatched", "presented")
+
+
+# --- la respuesta por partes (`webchat send --stream`) ------------------------------
+
+def _draft_write(r: Path, text: str | None) -> None:
+    path = r / "draft.json"
+    if text is None:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+        return
+    _write_private(path, json.dumps({"text": text, "at": _now_z()}, ensure_ascii=False).encode("utf-8"))
+
+
+def draft_set(text: str, *, state_dir: Path | None = None) -> None:
+    """
+    El borrador completo de la respuesta que el agente va escribiendo (no sólo lo
+    nuevo), para que un lector que llega tarde vea todo. `append("agent", …)` lo borra.
+    """
+    text = str(text or "").replace("\r\n", "\n")
+    if len(text) > MAX_TEXT:
+        raise Rejected("too_long", f"{len(text)} > {MAX_TEXT}")
+    r = _dirs(state_dir)
+    with _locked(r):
+        _draft_write(r, text)
+
+
+def draft_clear(*, state_dir: Path | None = None) -> None:
+    r = _dirs(state_dir)
+    with _locked(r):
+        _draft_write(r, None)
+
+
+def draft(now: dt.datetime | None = None, *, state_dir: Path | None = None) -> dict | None:
+    """
+    `{"text", "at"}` del borrador, o None si no hay. Uno sin cambios por más de
+    10 minutos cuenta como None, por si el agente se cayó a medias.
+    """
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        data = json.loads((root(state_dir) / "draft.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    at = _parse_z(data.get("at"))
+    if at is None or now - at > dt.timedelta(seconds=TYPING_GUESS_S):
+        return None
+    return {"text": str(data.get("text") or ""), "at": data["at"]}
+
+
+def message_for_event(event_id: str, *, state_dir: Path | None = None) -> dict | None:
+    """El mensaje del dueño de un evento `wc:<hex>`, con el `type` interno de cada archivo."""
+    event_id = str(event_id or "")
+    if not event_id.startswith("wc:"):
+        return None
+    msg_id = "w_" + event_id[3:]
+    if not _MSG_ID.match(msg_id):
+        return None
+    for message in _all(state_dir):
+        if message.get("id") == msg_id and message.get("by") == "owner":
+            return message
+    return None

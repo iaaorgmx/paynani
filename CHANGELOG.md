@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **Webchat: el agente contesta (#648, W-2).** `paynani webchat send` (con `--file` desde `state/webchat/outbox/` y `--stream`), `paynani webchat typing` y `paynani webchat thread`. `event show wc:… --body` da el texto completo y la ruta local de cada adjunto. `send` marca `replied` los `webchat.received` abiertos. Con `--stream`, el borrador queda en `state/webchat/draft.json` para que PaynaniWeb lo muestre mientras el agente escribe. `AGENTS.md` explica cómo contestar.
+
 - **La pasarela deja pasar el WebSocket de PaynaniWeb (#648).** Antes quitaba `Upgrade` y `Connection` y agregaba `Connection: close`, así que un WebSocket de la web (como `/webchat/ws`) no podía abrirse por el túnel. Ahora un `GET` con `Upgrade: websocket` llega a la web con esos encabezados y, si la web contesta `101`, la pasarela copia los bytes en los dos sentidos. El plazo de 120 s sin actividad cuenta ahora en los dos sentidos juntos: antes cada sentido tenía el suyo, y uno callado se cortaba aunque el otro siguiera hablando. Lo demás no cambia.
 
 - **PaynaniWeb: el agente de IA en el menú y su página (#644).**

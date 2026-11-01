@@ -80,6 +80,9 @@ check("roster prompt reads texts, WhatsApp, Telegram and Webchat messages with e
       "scripts/paynani event show {event_id} --body." in raw_prompt)
 # A call has no body: `event show --body` exits 2 for it (test_sms_gateway.py,
 # test_whatsapp_service.py), so the prompt must send calls to plain event show.
+check("roster prompt answers a webchat only with webchat send (#648)",
+      "Answer a webchat message only with scripts/paynani webchat send" in raw_prompt
+      and "never answer it through the route's delivery" in raw_prompt)
 check("roster prompt reads calls with event show and without --body",
       "For call.missed and call.answered: a call has no body; read it only with "
       "scripts/paynani event show {event_id}, without --body." in raw_prompt)

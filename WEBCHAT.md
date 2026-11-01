@@ -23,6 +23,7 @@ state/webchat/                 0700
   files/f_<32 hex>             0600  los adjuntos de los dos lados, con nombre opaco
   outbox/                      0700  de aquí toma archivos `paynani webchat send --file`
   typing.json                  0600  {"until": "…Z"} mientras el agente escribe
+  draft.json                   0600  {"text", "at"} el borrador de `webchat send --stream`
 ```
 
 - **Nada de esto se sirve directo por la web.** Las fotos y los archivos salen por
@@ -71,6 +72,10 @@ store.file_path(ref, *, state_dir=None) -> tuple[Path, str, str] | None
 store.typing(seconds=60, *, state_dir=None) -> None
 store.typing_off(*, state_dir=None) -> None
 store.is_typing(now=None, *, state_dir=None) -> bool
+store.draft(now=None, *, state_dir=None) -> dict | None
+store.draft_set(text, *, state_dir=None) -> None
+store.draft_clear(*, state_dir=None) -> None
+store.message_for_event(event_id, *, state_dir=None) -> dict | None
 ```
 
 - **`append(by, text, files)`**: `files` es `[(nombre, bytes)]`. Con `by="owner"` pide
@@ -86,7 +91,13 @@ store.is_typing(now=None, *, state_dir=None) -> bool
   imágenes `inline` y lo demás como `attachment`, las dos con `nosniff` y `no-store`.
 - **`is_typing()`**: «escribiendo…» mientras `typing.json` siga vigente, o mientras el
   último mensaje sea del dueño y su evento esté `dispatched` o `presented`, por 10
-  minutos como máximo. `typing(seconds)` acepta de 1 a 600 s.
+  minutos como máximo. `typing(seconds)` acepta de 1 a 600 s. Un borrador vigente
+  también cuenta.
+- **`draft()`**: `{"text", "at"}` de la respuesta que el agente va escribiendo con
+  `--stream`, o `None`. Es el texto completo hasta ese momento, no sólo lo nuevo: el
+  servidor del WebSocket manda como `message.delta` lo que cambió desde su último envío.
+  `append("agent", …)` lo borra bajo el mismo lock en que guarda el mensaje final, y uno
+  sin cambios por más de 10 minutos cuenta como `None`.
 
 La web ya validó la sesión y el CSRF antes de llamar: el módulo confía en ese llamado y no
 vuelve a pedir contraseña. `state_dir` sale de `paths.state_dir()`; las pruebas lo pasan.
@@ -117,7 +128,11 @@ vuelve a pedir contraseña. `state_dir` sale de `paths.state_dir()`; las pruebas
 ## 6. Lo que hace el agente (W-2)
 
 - `scripts/paynani webchat send "<texto>" [--file <ruta>]…`: contesta, quita
-  «escribiendo…» y marca `replied` el último `webchat.received` sin respuesta.
+  «escribiendo…» y marca `replied` cada `webchat.received` abierto que llegó antes
+  (si el dueño mandó tres y el agente contesta una vez, la respuesta es de los tres).
+  Los que ya están `handled`, `replied` o `closed` no se tocan. Sin texto lee stdin.
+- `scripts/paynani webchat send --stream`: lee stdin mientras llega, lo deja en
+  `draft.json` cada 0.3 s y al final guarda el mensaje.
 - `scripts/paynani webchat typing [--seconds N] [--off]`.
 - `scripts/paynani webchat thread [--limit N]`: la conversación, con los mensajes del
   agente.
