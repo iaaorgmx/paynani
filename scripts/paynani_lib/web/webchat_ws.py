@@ -21,7 +21,7 @@ Del servidor:
 - `{"type": "error", "request_id", "code", "message", "retryable"}`.
 - `{"type": "pong"}`.
 
-El servidor mira el almacén cada segundo y manda un ping cada 30 s, para que el proxy del
+El servidor mira cada segundo si el almacén cambió (por `mtime`) y manda un ping cada 30 s, para que el proxy del
 gateway no corte la conexión por inactividad (revisión de Metis en #648).
 """
 from __future__ import annotations
@@ -32,11 +32,32 @@ import time
 from . import websocket as ws
 
 POLL_S = 1.0
+REFRESH_S = 5.0                     # aunque nada cambie: typing y el borrador vencen con el tiempo
 PING_S = 30.0
 CONNECT_S = 10.0
 RATE_PER_MIN = 20
 MAX_TEXT = 4000
 ERRORS = {"empty": "EMPTY", "too_long": "MESSAGE_TOO_LARGE", "too_big": "MESSAGE_TOO_LARGE", "bad_type": "INVALID_FIELD"}
+
+
+def signature(store):
+    """`mtime` y tamaño de lo que puede cambiar (revisión de Metis en #650): la conversación,
+    typing, el borrador y el ledger. Con el almacén del núcleo (`root()`); con otro, None,
+    y entonces se relee en cada vuelta."""
+    if not hasattr(store, "root"):
+        return None
+    try:
+        r = store.root()
+    except Exception:  # noqa: BLE001 -- sin firma, se relee
+        return None
+    out = []
+    for path in (r / "messages.jsonl", r / "typing.json", r / "draft.json", r.parent / "lifecycle.jsonl"):
+        try:
+            st = path.stat()
+            out.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append(None)
+    return tuple(out)
 
 
 def _send(conn: ws.Conn, **data) -> None:
@@ -69,11 +90,18 @@ def serve(conn: ws.Conn, store, *, csrf_ok, owner: dict, render, texts: dict, cl
     typing = None
     draft = None
     next_poll = next_ping = 0.0
+    seen_sig, refreshed = object(), 0.0
     try:
         while True:
             now = clock()
+            refresh = False
             if now >= next_poll:
                 next_poll = now + POLL_S
+                # Releer sólo si algo cambió en disco, o cada REFRESH_S por los plazos.
+                sig = signature(store)
+                if sig is None or sig != seen_sig or now - refreshed >= REFRESH_S:
+                    seen_sig, refreshed, refresh = sig, now, True
+            if refresh:
                 # Sin `after`, la página no tenía mensajes: todo lo que haya es nuevo para ella.
                 new = store.messages(after=after, limit=50) if after else store.messages(limit=50)
                 if new:

@@ -76,24 +76,30 @@ class Conn:
             pass
         self.closed = True
 
-    def _need(self, n: int, timeout: float | None) -> bytes | None:
+    def _need(self, n: int, timeout: float | None, started: bool = False) -> bytes | None:
+        """`n` bytes, o None si no llegó nada en `timeout`. Con `started` (ya empezó un frame
+        o un mensaje partido), quedarse sin bytes es `Closed`: devolver None dejaría el
+        frame a medias y lo que siga en `buf` desalineado (revisión de Metis en #650)."""
         while len(self.buf) < n:
             self.sock.settimeout(timeout)
             try:
                 chunk = self.sock.recv(65536)
             except socket.timeout:
+                if started:
+                    raise Closed() from None
                 return None
             except OSError as exc:
                 raise Closed() from exc
             if not chunk:
                 raise Closed()
             self.buf += chunk
-            timeout = 10.0           # empezado un frame, el resto tiene que llegar
+            if self.buf:
+                started, timeout = True, 10.0    # empezado un frame, el resto tiene que llegar
         out, self.buf = self.buf[:n], self.buf[n:]
         return out
 
-    def _frame(self, timeout: float | None):
-        head = self._need(2, timeout)
+    def _frame(self, timeout: float | None, started: bool = False):
+        head = self._need(2, timeout, started)
         if head is None:
             return None
         fin, opcode = head[0] & 0x80, head[0] & 0x0F
@@ -101,13 +107,13 @@ class Conn:
         if head[0] & 0x70 or not masked:
             raise Closed()            # extensiones sin negociar, o un frame sin máscara
         if n == 126:
-            n = struct.unpack("!H", self._need(2, 10.0))[0]
+            n = struct.unpack("!H", self._need(2, 10.0, True))[0]
         elif n == 127:
-            n = struct.unpack("!Q", self._need(8, 10.0))[0]
+            n = struct.unpack("!Q", self._need(8, 10.0, True))[0]
         if n > self.max_message:
             raise Closed()
-        mask = self._need(4, 10.0)
-        data = bytes(b ^ mask[i % 4] for i, b in enumerate(self._need(n, 10.0))) if n else b""
+        mask = self._need(4, 10.0, True)
+        data = bytes(b ^ mask[i % 4] for i, b in enumerate(self._need(n, 10.0, True))) if n else b""
         return bool(fin), opcode, data
 
     def recv(self, timeout: float | None):
@@ -115,7 +121,7 @@ class Conn:
         los ping y el close; un pong se devuelve para que quien llama sepa que hay vida."""
         parts, kind = [], None
         while True:
-            got = self._frame(timeout if not parts else 10.0)
+            got = self._frame(timeout if not parts else 10.0, started=bool(parts))
             if got is None:
                 return None
             fin, opcode, data = got

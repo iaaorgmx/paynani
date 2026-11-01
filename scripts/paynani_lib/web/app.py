@@ -1440,7 +1440,7 @@ def make_handler(ctx: Context):
                 return
             self._redirect("/webchat")
 
-                # ---- Nuevo correo (#590 cambio 2) ----------------------------------------
+        # ---- Nuevo correo (#590 cambio 2) ----------------------------------------
         def _compose(self, match: dict, *, values: dict | None = None, error: str = "", code: int = 200):
             """GET /email/<cuenta>/nuevo, y el formulario otra vez si no salió."""
             account_id = match["id"]

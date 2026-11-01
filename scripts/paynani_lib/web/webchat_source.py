@@ -119,13 +119,14 @@ class Fake:
         return msg
 
     def messages(self, after: str | None = None, limit: int = 50, before: str | None = None) -> list[dict]:
+        # Como el del núcleo: un `after` desconocido da todo, y siempre los últimos `limit`.
         ids = [m["id"] for m in self.items]
         items = self.items
         if after:
-            items = items[ids.index(after) + 1:] if after in ids else []
-        elif before:
+            items = items[ids.index(after) + 1:] if after in ids else items
+        if before:
             items = items[:ids.index(before)] if before in ids else []
-        return items[-limit:] if not after else items[:limit]
+        return items[-max(1, int(limit)):]
 
     def file_path(self, ref: str):
         return self.blobs.get(ref) if REF_RE.match(ref or "") else None

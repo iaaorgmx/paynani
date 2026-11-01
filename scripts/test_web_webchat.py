@@ -296,6 +296,48 @@ def types(frames):
     return [f[1].get("type") for f in frames if f[0] == 1]
 
 
+# Un frame a medias (revisión de Metis en #650): `Closed`, nunca TypeError ni None.
+for label, partial in (("la longitud de 16 bits", bytes([0x81, 0xFE])), ("la máscara", bytes([0x81, 0x85, 1, 2])),
+                       ("los datos", bytes([0x81, 0x85]) + b"\x00\x00\x00\x00" + b"ab")):
+    a, b = _socket.socketpair()
+    conn = wsmod.Conn(a)
+    b.sendall(partial)
+    t0 = _time.time()
+    try:
+        conn.recv(1.0)
+        result = "sin error"
+    except wsmod.Closed:
+        result = "Closed"
+    except Exception as exc:  # noqa: BLE001
+        result = type(exc).__name__
+    check(f"frame cortado en {label}: Closed", "Closed", result)
+    a.close(); b.close()
+a, b = _socket.socketpair()
+conn = wsmod.Conn(a)
+mask = b"\x00\x00\x00\x00"
+b.sendall(bytes([0x01, 0x82]) + mask + b"ho")          # primer fragmento, sin FIN, y nada más
+try:
+    conn.recv(1.0)
+    result = "sin error"
+except wsmod.Closed:
+    result = "Closed"
+check("un mensaje partido que no termina: Closed (no se pierden partes en silencio)", "Closed", result)
+a.close(); b.close()
+a, b = _socket.socketpair()
+conn = wsmod.Conn(a)
+check("sin bytes en el plazo, entre mensajes: None (no es un error)", None, conn.recv(0.2))
+a.close(); b.close()
+
+from paynani_lib.web import webchat_ws  # noqa: E402
+sig_root = Path(tempfile.mkdtemp()) / "webchat"
+sig_root.mkdir()
+sig_store = type("S", (), {"root": staticmethod(lambda: sig_root)})()
+first = webchat_ws.signature(sig_store)
+check("la firma no cambia si nada cambió", first, webchat_ws.signature(sig_store))
+(sig_root / "messages.jsonl").write_text("{}\n")
+check("y cambia cuando cambia messages.jsonl", True, webchat_ws.signature(sig_store) != first)
+check("un almacén sin root(): sin firma (se relee siempre)", None, webchat_ws.signature(webchat_source.Fake()))
+
 status, _, s1, _ = ws_open(cookie_value="")
 check("WebSocket sin sesión: no hay 101 (va a la entrada)", True, status != 101)
 s1.close()
