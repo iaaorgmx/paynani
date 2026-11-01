@@ -22,6 +22,7 @@ STRINGS = {
         "err.bad_type": "Ese tipo de archivo no se puede mandar. Prueba con una foto, un PDF o un documento.",
         "err.failed": "No se pudo guardar el mensaje. Inténtalo de nuevo.",
         "err.malformed": "No se pudo leer lo que mandaste. Inténtalo de nuevo.",
+        "err.rate": "Demasiados mensajes seguidos. Espera un minuto.",
     },
     "en-US": {
         "nav": "Webchat",
@@ -43,6 +44,7 @@ STRINGS = {
         "err.bad_type": "That kind of file cannot be sent. Try a photo, a PDF or a document.",
         "err.failed": "The message could not be saved. Try again.",
         "err.malformed": "What you sent could not be read. Try again.",
+        "err.rate": "Too many messages in a row. Wait a minute.",
     },
     "es-ES": {
         "nav": "Webchat",
@@ -64,6 +66,7 @@ STRINGS = {
         "err.bad_type": "Ese tipo de archivo no se puede enviar. Prueba con una foto, un PDF o un documento.",
         "err.failed": "No se ha podido guardar el mensaje. Inténtalo de nuevo.",
         "err.malformed": "No se ha podido leer lo que has enviado. Inténtalo de nuevo.",
+        "err.rate": "Demasiados mensajes seguidos. Espera un minuto.",
     },
     "fr-FR": {
         "nav": "Webchat",
@@ -85,6 +88,7 @@ STRINGS = {
         "err.bad_type": "Ce type de fichier ne peut pas être envoyé. Essayez une photo, un PDF ou un document.",
         "err.failed": "Le message n’a pas pu être enregistré. Réessayez.",
         "err.malformed": "Votre envoi n’a pas pu être lu. Réessayez.",
+        "err.rate": "Trop de messages à la suite. Attendez une minute.",
     },
     "pt-BR": {
         "nav": "Webchat",
@@ -106,6 +110,7 @@ STRINGS = {
         "err.bad_type": "Esse tipo de arquivo não pode ser enviado. Tente uma foto, um PDF ou um documento.",
         "err.failed": "Não foi possível salvar a mensagem. Tente de novo.",
         "err.malformed": "Não foi possível ler o que você enviou. Tente de novo.",
+        "err.rate": "Mensagens demais seguidas. Espere um minuto.",
     },
 }
 

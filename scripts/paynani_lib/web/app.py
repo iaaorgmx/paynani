@@ -35,7 +35,7 @@ from .. import guard, i18n
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
 from . import about_strings, agent_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (about_pages, agent, agent_pages, multipart, webchat_pages, webchat_source, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (about_pages, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -68,6 +68,7 @@ MAX_BODY_BYTES = 64 * 1024
 CATCHALL_BODY_BYTES = 6 * 32 * 1024 + 16 * 1024
 # Webchat (#648): 25 MB de adjuntos por mensaje más el texto y lo que agrega multipart.
 WEBCHAT_BODY_BYTES = webchat_source.MAX_MESSAGE + 256 * 1024
+WEBCHAT_WS_MAX = 20                 # conexiones de /webchat/ws a la vez (cada una es un hilo)
 # La CSP de guard.py más `connect-src 'self'`: sin ella el `fetch()` de los scripts de la
 # misma página cae en `default-src 'none'` y el navegador lo bloquea. Lo necesitan
 # whatsapp.js (el QR vigente, WHATSAPP_BRIDGE.md §11) y sms.js (los estados de
@@ -354,6 +355,8 @@ class Context:
         self.version = version if version is not None else _running_version()
         # El almacén de Webchat (#648) es del núcleo; sin él la página lo dice.
         self.webchat = webchat_store if webchat_store is not None else webchat_source.load()
+        self.webchat_ws = 0
+        self._webchat_ws_lock = threading.Lock()
         self._telegram_root = telegram_root
         # El `check` de un cambio de token, por sesión del navegador y sólo en memoria
         # (TELEGRAM.md §4: vale 5 min). La página nunca lo trae ni trae el token.
@@ -861,6 +864,9 @@ def make_handler(ctx: Context):
             if self.route in ("/profile", "/profile/info", "/profile/password"):
                 self._profile_get()
                 return
+            if self.route == "/webchat/ws":
+                self._webchat_socket()
+                return
             if self.route in ("/webchat", "/webchat/updates", "/webchat/file"):
                 self._webchat_get()
                 return
@@ -1364,6 +1370,54 @@ def make_handler(ctx: Context):
             self._send(200, mime if inline else "application/octet-stream", data,
                        [("Content-Disposition", f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{filename}"),
                         ("Content-Security-Policy", "default-src 'none'; sandbox")])
+
+        def _webchat_socket(self):
+            """
+            GET /webchat/ws (Q309 = A): la conversación en vivo (webchat_ws.py). Pide la sesión
+            como toda página, el mismo Origin que un POST y, en el primer frame, el CSRF de
+            la página. Si algo no cuadra, una respuesta HTTP normal y webchat.js vuelve al
+            polling de /webchat/updates.
+            """
+            store = self.CTX.webchat
+            h = self.headers
+            key = h.get("Sec-WebSocket-Key", "")
+            upgrade = h.get("Upgrade", "").lower() == "websocket"
+            connection = "upgrade" in {t.strip().lower() for t in h.get("Connection", "").split(",")}
+            if store is None:
+                self._send(404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            if not (upgrade and connection and h.get("Sec-WebSocket-Version") == "13" and websocket.valid_key(key)):
+                self._send(400, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            if not self._same_origin():
+                self._send(403, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            with self.CTX._webchat_ws_lock:
+                if self.CTX.webchat_ws >= WEBCHAT_WS_MAX:
+                    self._send(503, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                    return
+                self.CTX.webchat_ws += 1
+            try:
+                self.wfile.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                                  f"Sec-WebSocket-Accept: {websocket.accept_key(key)}\r\n\r\n").encode("ascii"))
+                self.wfile.flush()
+                session = self.session
+                name = (self.CTX.agent_summary() or {}).get("name") or "AI agent"
+                owner = {"name": str(self.user.get("name") or ""), "email": str(self.user.get("email") or "")}
+                t = i18n.t
+                texts = {"malformed": t("web.wc.err.malformed"), "rate": t("web.wc.err.rate"),
+                         "failed": t("web.wc.err.failed"), "empty": t("web.wc.err.empty"),
+                         "too_long": t("web.wc.err.too_big"), "too_big": t("web.wc.err.too_big"),
+                         "bad_type": t("web.wc.err.bad_type")}
+                webchat_ws.serve(websocket.Conn(self.connection), store,
+                                 csrf_ok=lambda token: auth.check_csrf(session, token), owner=owner, texts=texts,
+                                 render=lambda new, day: webchat_pages.render(new, self.CTX.now(), name, day))
+            except OSError:
+                pass
+            finally:
+                with self.CTX._webchat_ws_lock:
+                    self.CTX.webchat_ws -= 1
+                self.close_connection = True
 
         def _webchat_post(self, post: dict):
             """POST /webchat/enviar: el mensaje del dueño, con sus adjuntos (#648)."""

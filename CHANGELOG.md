@@ -7,7 +7,12 @@
     - la conversación en burbujas, con fotos y archivos y un separador por día;
     - «escribiendo…» mientras el agente responde;
     - un cuadro con clip para adjuntar varios archivos, con vista previa y la × para quitar.
-  - **Cómo se actualiza:** `/webchat/updates` cada 3 s trae lo nuevo sin recargar.
+  - **En vivo, por WebSocket** (Q309 = A): `/webchat/ws`, hecho con la biblioteca estándar (`web/websocket.py`, `web/webchat_ws.py`) y con el protocolo de NiceBot:
+    - `request_id`, `message.accepted` y errores con código;
+    - `message.delta` con el borrador de `webchat send --stream`;
+    - 20 mensajes por minuto y un ping cada 30 s.
+
+    Si no conecta, polling de `/webchat/updates` cada 3 s.
   - **Seguridad:**
     - sólo con tu sesión;
     - `multipart/form-data` con CSRF y un límite que se revisa antes de leer el cuerpo;

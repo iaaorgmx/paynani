@@ -10,6 +10,8 @@ De dónde lee y a dónde escribe la página de Webchat (#648). El almacén es de
   by, text, files: [{name, kind: "image"|"document", size, ref: "f_…"}], event_id}`.
 - `file_path(ref)` → `(ruta, mime, nombre)` de un adjunto, o None.
 - `is_typing(now=None)` → True mientras el agente escribe.
+- `draft(now=None)` → `{"text", "at"}` de la respuesta que va escribiendo `webchat send
+  --stream` (#652), o None.
 
 `load()` da el del núcleo, o None si esta instalación todavía no lo trae: la página lo dice
 y no ofrece escribir. `Fake` es el de las pruebas y las capturas, en una carpeta temporal.
@@ -82,6 +84,7 @@ class Fake:
         self.typing_until: dt.datetime | None = None
         self.now = now or (lambda: dt.datetime.now(dt.timezone.utc))
         self.events: list[dict] = []
+        self.draft_text: str | None = None
 
     def append(self, by: str, text: str, files: list[tuple[str, bytes]], *, owner: dict | None = None) -> dict:
         if by == "owner" and not owner:
@@ -111,6 +114,7 @@ class Fake:
             self.events.append({"event_id": msg["event_id"], "owner": owner})
         else:
             self.typing_until = None
+            self.draft_text = None
         self.items.append(msg)
         return msg
 
@@ -135,3 +139,15 @@ class Fake:
     def is_typing(self, now=None) -> bool:
         now = now or self.now()
         return self.typing_until is not None and now < self.typing_until
+
+    def draft_set(self, text: str) -> None:
+        """Lo que haría `webchat send --stream` mientras escribe (#652)."""
+        self.draft_text = text
+
+    def draft_clear(self) -> None:
+        self.draft_text = None
+
+    def draft(self, now=None) -> dict | None:
+        if self.draft_text is None:
+            return None
+        return {"text": self.draft_text, "at": self.now().astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}

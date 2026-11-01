@@ -80,10 +80,27 @@ def bubbles(messages: list[dict], now: dt.datetime, agent_name: str, last_day: d
     return "".join(rows)
 
 
+def render(messages: list[dict], now: dt.datetime, agent_name: str, day: str) -> tuple[str, str]:
+    """Para /webchat/ws: los mensajes nuevos dibujados y el día del último separador."""
+    try:
+        last_day = dt.date.fromisoformat(day) if day else None
+    except ValueError:
+        last_day = None
+    html = bubbles(messages, now, agent_name, last_day)
+    at = parse(messages[-1].get("at")) if messages else None
+    return html, (at.astimezone(now.tzinfo).date().isoformat() if at else day)
+
+
 def typing_row(agent_name: str, on: bool) -> str:
     return (f'<li class="wc wc-agente wc-escribe" id="wc-escribe"{"" if on else " hidden"}><div class="globo">'
             f'<span class="wc-puntos" aria-hidden="true"><i></i><i></i><i></i></span> {_th("writing", name=agent_name)}'
             f'</div></li>')
+
+
+def draft_row(agent_name: str) -> str:
+    """La respuesta que el agente va escribiendo (`message.delta`, Q309); vacía hasta que llega."""
+    return (f'<li class="wc wc-agente wc-borrador" id="wc-borrador" hidden><div class="globo">'
+            f'<div class="de">{e(agent_name)}</div><div class="texto"></div></div></li>')
 
 
 def _error(text: str) -> str:
@@ -120,7 +137,7 @@ def body(messages: list[dict], now: dt.datetime, summary: dict | None, csrf: str
     last = messages[-1]["id"] if messages else ""
     return f"""<div class="wc-pag" data-after="{e(last)}">
   {head}
-  <ol class="wc-hilo" id="wc-hilo" aria-live="polite">{empty}{convo}{typing_row(name, typing)}</ol>
+  <ol class="wc-hilo" id="wc-hilo" aria-live="polite">{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
   {composer(csrf, name, text, error)}
 </div>
 <script src="/assets/webchat.js" defer></script>

@@ -355,9 +355,24 @@ escribe con `paynani_lib/webchat/store.py`, sin un servicio aparte.
   grande que el límite se rechaza (413) antes de leerlo.
 - **Las fotos y los archivos** salen por `/webchat/file?ref=f_…`, nunca por una ruta del
   disco: las fotos `inline` y lo demás como descarga, siempre en sandbox y con `nosniff`.
-- **Sin recargar:** `assets/webchat.js` pide `/webchat/updates?after=<id>` cada 3 s,
-  sólo con la pestaña visible. La respuesta trae los mensajes nuevos ya dibujados y si
-  el agente está escribiendo. Sin script, la página funciona igual y se recarga a mano.
+- **En vivo, por WebSocket** (Q309 = A): `assets/webchat.js` abre `/webchat/ws`, en el
+  mismo puerto y origen.
+  - **Al abrir:** pide la sesión y el mismo Origin que un POST, y el CSRF de la página en
+    el primer frame.
+  - **Lo que manda el servidor:**
+    - los mensajes nuevos ya dibujados;
+    - «escribiendo…»;
+    - la respuesta mientras el agente la escribe (`message.delta`, del borrador de
+      `paynani webchat send --stream`).
+
+    Mira el almacén cada segundo y manda un ping cada 30 s, para que el proxy del
+    gateway no corte la conexión.
+  - **Lo que manda el navegador:** el texto solo, por el WebSocket (`message.create`, con
+    `request_id` para no duplicar, `message.accepted` y errores con código). El límite es
+    de 20 por minuto. Los adjuntos van por el formulario.
+  - **Si no conecta:** el script vuelve a pedir `/webchat/updates?after=<id>` cada 3 s,
+    sólo con la pestaña visible. Sin script, la página funciona igual y se recarga a mano.
+  - **Límite:** como mucho 20 conexiones a la vez.
 - **Lo que hace el agente** por Webchat cuenta en la página del agente: atendidos hoy,
   tiempo de respuesta, última respuesta y actividad.
 - **Sin el almacén:** si la instalación todavía no trae `webchat/store.py`, la página lo

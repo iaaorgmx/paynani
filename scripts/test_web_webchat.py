@@ -230,6 +230,131 @@ check("el PDF: como descarga (attachment) y octet-stream, con su nombre", (200, 
 for bad in ("../../etc/passwd", "f_123", "f_" + "a" * 32):
     check(f"un ref inválido o desconocido ({bad[:12]}…): 404", 404, req("GET", f"/webchat/file?ref={bad}", cookie=cookie)[0])
 
+# ---- /webchat/ws (Q309 = A) -----------------------------------------------------------
+import base64 as _b64
+import os as _os
+import socket as _socket
+import struct as _struct
+import time as _time
+from paynani_lib.web import websocket as wsmod  # noqa: E402
+
+
+def ws_open(cookie_value=cookie, origin=f"https://{HOST}", key=None, version="13"):
+    """Abre /webchat/ws a mano. Devuelve (status, headers, socket) del handshake."""
+    key = key if key is not None else _b64.b64encode(_os.urandom(16)).decode()
+    sock = _socket.create_connection(("127.0.0.1", port), timeout=5)
+    lines = ["GET /webchat/ws HTTP/1.1", f"Host: {HOST}", "Upgrade: websocket", "Connection: Upgrade",
+             f"Sec-WebSocket-Key: {key}", f"Sec-WebSocket-Version: {version}", "X-Forwarded-For: 203.0.113.5"]
+    if cookie_value:
+        lines.append(f"Cookie: {cookie_value}")
+    if origin:
+        lines.append(f"Origin: {origin}")
+    sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
+    head = b""
+    while b"\r\n\r\n" not in head:
+        chunk = sock.recv(1)
+        if not chunk:
+            break
+        head += chunk
+    first, *rest = head.decode("latin-1").split("\r\n")
+    hdrs = {l.split(":", 1)[0].lower(): l.split(":", 1)[1].strip() for l in rest if ":" in l}
+    return int(first.split()[1]) if first else 0, hdrs, sock, key
+
+
+def ws_send(sock, obj, op=1):
+    payload = json.dumps(obj).encode() if not isinstance(obj, bytes) else obj
+    mask = _os.urandom(4)
+    n = len(payload)
+    head = bytes([0x80 | op]) + (bytes([0x80 | n]) if n < 126 else bytes([0x80 | 126]) + _struct.pack("!H", n))
+    sock.sendall(head + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+
+
+def ws_read(sock, seconds=3.0):
+    """Los frames del servidor que lleguen en `seconds`: [(opcode, dict|bytes)]."""
+    out, buf, end = [], b"", _time.time() + seconds
+    sock.settimeout(0.2)
+    while _time.time() < end:
+        try:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+        except _socket.timeout:
+            pass
+        while len(buf) >= 2:
+            op, n, i = buf[0] & 0x0F, buf[1] & 0x7F, 2
+            if n == 126:
+                n, i = _struct.unpack("!H", buf[2:4])[0], 4
+            if len(buf) < i + n:
+                break
+            data, buf = buf[i:i + n], buf[i + n:]
+            out.append((op, json.loads(data) if op == 1 else data))
+    return out
+
+
+def types(frames):
+    return [f[1].get("type") for f in frames if f[0] == 1]
+
+
+status, _, s1, _ = ws_open(cookie_value="")
+check("WebSocket sin sesión: no hay 101 (va a la entrada)", True, status != 101)
+s1.close()
+status, _, s1, _ = ws_open(origin="https://otro.example")
+check("WebSocket desde otro Origin: 403", 403, status)
+s1.close()
+status, _, s1, _ = ws_open(key="corta")
+check("WebSocket con una llave inválida: 400", 400, status)
+s1.close()
+status, hdrs, sock, key = ws_open()
+check("handshake: 101 con el Sec-WebSocket-Accept del RFC", (101, wsmod.accept_key(key)),
+      (status, hdrs.get("sec-websocket-accept")))
+ws_send(sock, {"type": "connect", "csrf": "malo"})
+frames = ws_read(sock, 1.0)
+check("connect con un CSRF malo: el servidor cierra (1008)", True, any(op == 8 for op, _ in frames))
+sock.close()
+
+status, _, sock, _ = ws_open()
+last = store.items[-1]["id"]
+ws_send(sock, {"type": "connect", "csrf": csrf, "after": last, "day": "2026-11-01"})
+frames = ws_read(sock, 1.5)
+check("connect bueno: connected y el estado de typing", ["connected", "typing"], types(frames)[:2])
+n = len(store.items)
+ws_send(sock, {"type": "message.create", "request_id": "r1", "content": "  Hola <ws>  "})
+frames = ws_read(sock, 2.0)
+acc = [f[1] for f in frames if f[0] == 1 and f[1].get("type") == "message.accepted"]
+msgs = [f[1] for f in frames if f[0] == 1 and f[1].get("type") == "messages"]
+check("message.create: se guarda una vez como del dueño, con accepted y su burbuja empujada", (n + 1, "owner", "Hola <ws>", True, True),
+      (len(store.items), store.items[-1]["by"], store.items[-1]["text"], bool(acc) and acc[0]["message_id"] == store.items[-1]["id"],
+       bool(msgs) and "Hola &lt;ws&gt;" in msgs[0]["html"]))
+ws_send(sock, {"type": "message.create", "request_id": "r1", "content": "Hola <ws>"})
+frames = ws_read(sock, 1.0)
+check("el mismo request_id otra vez: accepted con el mismo id y nada nuevo guardado", (n + 1, ["message.accepted"]),
+      (len(store.items), types(frames)))
+ws_send(sock, {"type": "message.create", "request_id": "r2", "content": "   "})
+err = [f[1] for f in ws_read(sock, 1.0) if f[0] == 1 and f[1].get("type") == "error"]
+check("vacío: error EMPTY, no reintentable", ("EMPTY", False), (err[0]["code"], err[0]["retryable"]) if err else None)
+ws_send(sock, b"no es json")
+err = [f[1] for f in ws_read(sock, 1.0) if f[0] == 1 and f[1].get("type") == "error"]
+check("un frame que no es JSON: INVALID_JSON", "INVALID_JSON", err[0]["code"] if err else None)
+ws_send(sock, {"type": "ping"})
+check("ping de la aplicación: pong", True, "pong" in types(ws_read(sock, 1.0)))
+store.draft_set("Voy a<")
+frames = ws_read(sock, 2.0)
+check("el borrador del agente llega como message.delta (texto plano, el navegador lo pone con textContent)",
+      True, any(f[1].get("type") == "message.delta" and f[1].get("text") == "Voy a<" for f in frames if f[0] == 1))
+store.append("agent", "Voy a revisar", [])
+frames = ws_read(sock, 2.0)
+check("la respuesta final: messages con la burbuja y el borrador se quita (delta null)", (True, True),
+      (any(f[1].get("type") == "messages" and "Voy a revisar" in f[1]["html"] for f in frames if f[0] == 1),
+       any(f[1].get("type") == "message.delta" and f[1].get("text") is None for f in frames if f[0] == 1)))
+for i in range(25):
+    ws_send(sock, {"type": "message.create", "request_id": f"rate{i}", "content": f"m{i}"})
+frames = ws_read(sock, 3.0)
+check("más de 20 mensajes en un minuto: RATE_LIMITED, reintentable", True,
+      any(f[1].get("code") == "RATE_LIMITED" and f[1].get("retryable") for f in frames if f[0] == 1))
+ws_send(sock, b"", op=8)
+sock.close()
+
 # ---- Sin el almacén del núcleo --------------------------------------------------------
 STORE["now"] = None
 ctx.webchat = None
