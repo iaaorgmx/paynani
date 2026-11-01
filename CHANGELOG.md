@@ -4,6 +4,8 @@
 
 - **La pasarela deja pasar el WebSocket de PaynaniWeb (#648).** Antes quitaba `Upgrade` y `Connection` y agregaba `Connection: close`, así que un WebSocket de la web (como `/webchat/ws`) no podía abrirse por el túnel. Ahora un `GET` con `Upgrade: websocket` llega a la web con esos encabezados y, si la web contesta `101`, la pasarela copia los bytes en los dos sentidos. El plazo de 120 s sin actividad cuenta ahora en los dos sentidos juntos: antes cada sentido tenía el suyo, y uno callado se cortaba aunque el otro siguiera hablando. Lo demás no cambia.
 
+- **Webchat, el almacén (#648, W-1).** `scripts/paynani_lib/webchat/store.py` guarda la conversación del dueño con su agente en `state/webchat/`, revisa los adjuntos por sus bytes y escribe el evento `webchat.received` (`[webchat …, roster] <dueño> (PaynaniWeb): …`). El contrato está en `WEBCHAT.md`. Todavía no hay página ni comando: la página `/webchat` la hace Iris y `paynani webchat` va en W-2. **Hermes:** las dos rutas de `examples/hermes-routes.yaml` ya llevan `webchat.received`; si copiaste las rutas de 0.20.0 o antes, cópialas otra vez antes de usar Webchat (`HERMES.md`), o el primer mensaje detiene la cola.
+
 - **WhatsApp: los audios `.ogg` que manda el agente ahora llegan (#646).** `paynani whatsapp send --file` mandaba un OGG/Opus como `audio/ogg`, sin el códec, y WhatsApp lo dejaba en `sent` sin entregarlo nunca. Ahora el puente lo manda como `audio/ogg; codecs=opus` y como nota de voz (`ptt`). Los MP3, M4A y demás audios se mandan igual que antes.
 
 ## 0.20.0 (2026-10-31)
