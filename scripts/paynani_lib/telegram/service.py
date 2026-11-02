@@ -284,7 +284,8 @@ class TelegramService(Outbound):
         out = {"state": self.state, "bot_username": self.bot_username, "since": self.since,
                "last_poll_at": self.last_poll_at,
                "counters": dict(self.counters, sent_today=self._sent_today(),
-                                send_limit_day=config.setting("TELEGRAM_SEND_PER_DAY", self.settings))}
+                                send_limit_day=config.setting("TELEGRAM_SEND_PER_DAY", self.settings)),
+               "web_files": True}          # #662: telegram.send acepta `uploads` de PaynaniWeb
         if self.reason:
             out["reason"] = self.reason
         return out
