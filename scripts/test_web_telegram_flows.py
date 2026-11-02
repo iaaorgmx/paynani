@@ -18,9 +18,11 @@ configuración de Himalaya de la instalación no cambiaron.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import http.client
 import re
+import socket
 import sys
 import tempfile
 import threading
@@ -108,12 +110,27 @@ threading.Thread(target=httpd.serve_forever, daemon=True).start()
 pages: list[tuple[str, str]] = []
 
 
-def req(method, path, form=None, cookie=""):
+def multipart_body(fields: dict, files: list[tuple[str, bytes]]) -> tuple[bytes, str]:
+    """Un multipart/form-data como el del navegador: los campos y cada archivo en `files`."""
+    boundary = "----flujos" + "7" * 16
+    out = b""
+    for k, v in fields.items():
+        out += f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+    for name, data in files:
+        out += (f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="{name}"\r\n'
+                f'Content-Type: application/octet-stream\r\n\r\n').encode() + data + b"\r\n"
+    return out + f"--{boundary}--\r\n".encode(), f"multipart/form-data; boundary={boundary}"
+
+
+def req(method, path, form=None, cookie="", files=None):
     h = {"Host": "agente.test", "X-Forwarded-For": "203.0.113.9"}
     body = None
     if cookie:
         h["Cookie"] = cookie
-    if form is not None:
+    if form is not None and files is not None:
+        body, h["Content-Type"] = multipart_body(form, files)
+        h["Origin"] = "https://agente.test"
+    elif form is not None:
         body = urlencode(form)
         h["Content-Type"] = "application/x-www-form-urlencoded"
         h["Origin"] = "https://agente.test"
@@ -173,6 +190,88 @@ try:
     st, _, page = req("GET", f"/telegram/messages/ver?t={ana['thread']}&lang=es-MX", cookie=ck)
     mine = page[page.index("Sí, a las 8.") - 400:page.index("Sí, a las 8.")] if "Sí, a las 8." in page else ""
     check("y vuelve en el hilo como del dueño", (True, True), ('class="sms sms-human"' in mine, th("web.tg.by_owner") in mine))
+
+    # #662 (Q337 = B): el clip. El servicio anuncia web_files y la web sube los archivos
+    # con uploads.save; telegram.send los manda con `uploads`.
+    check("el servicio anuncia web_files y la barra trae el clip, multipart", (True, True, True, True),
+          (src.status().get("web_files") is True, 'class="wc-adjuntar"' in page,
+           'enctype="multipart/form-data"' in page, '<script src="/assets/adjuntos.js" defer></script>' in page))
+    PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+    PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+    before_photos, before_docs = len(api.sent_of("sendPhoto")), len(api.sent_of("sendDocument"))
+    st, h, _ = req("POST", "/telegram/messages/enviar", {"csrf": csrf, "t": ana["thread"], "text": "La foto y el menú"}, ck,
+                   files=[("terraza.png", PNG), ("menu.pdf", PDF)])
+    check("foto y PDF con texto → ok=sent", (303, True), (st, h.get("location", "").endswith("&ok=sent#responder")))
+    photos = until(lambda: api.sent_of("sendPhoto")[before_photos:]) or []
+    docs = until(lambda: api.sent_of("sendDocument")[before_docs:]) or []
+    check("salen un sendPhoto con el texto de caption y un sendDocument", (1, "La foto y el menú", 1),
+          (len(photos), (photos[0] if photos else {}).get("caption"), len(docs)))
+    check("los up_ se consumieron: no queda nada en state/telegram/uploads", [],
+          sorted(p.name for p in (state / "telegram" / "uploads").glob("up_*")))
+    st, _, page = req("GET", f"/telegram/messages/ver?t={ana['thread']}&lang=es-MX", cookie=ck)
+    src_img = re.search(r'<img src="(/telegram/media\?ref=tgo%3A[0-9a-f]{32}&amp;i=0)"', page)
+    check("en el hilo: la foto por /telegram/media con su índice y el PDF por su nombre", (True, True),
+          (bool(src_img), '<span class="tg-archivo">' in page and "menu.pdf" in page))
+    if src_img:
+        st, hh, _ = req("GET", src_img.group(1).replace("&amp;", "&"), cookie=ck)
+        check("/telegram/media sirve la foto que mandó el dueño", (200, "image/png"), (st, hh.get("content-type")))
+    check("un índice que no existe o mal formado: 404", (404, 404),
+          (req("GET", src_img.group(1).replace("&amp;", "&").replace("i=0", "i=7"), cookie=ck)[0] if src_img else 0,
+           req("GET", "/telegram/media?ref=tgo%3A" + "0" * 32 + "&i=x", cookie=ck)[0]))
+    st, h, _ = req("POST", "/telegram/messages/enviar", {"csrf": csrf, "t": ana["thread"], "text": ""}, ck,
+                   files=[("solo.png", PNG)])
+    check("sólo una foto, sin texto, también sale", (303, True), (st, h.get("location", "").endswith("ok=sent#responder")))
+    st, _, page = req("POST", "/telegram/messages/enviar", {"csrf": csrf, "t": ana["thread"], "text": "x"}, ck,
+                      files=[("virus.exe", b"MZ\x90\x00" + b"\x00" * 64)])
+    check("un tipo que no se acepta: 400 con su mensaje, y no queda ningún up_", (400, True, []),
+          (st, th("web.tg.err.bad_type") in page, sorted(p.name for p in (state / "telegram" / "uploads").glob("up_*"))))
+    st, _, page = req("POST", "/telegram/messages/enviar", {"csrf": csrf, "t": ana["thread"], "text": "x"}, ck,
+                      files=[(f"f{i}.png", PNG) for i in range(11)])
+    check("11 archivos: too_many antes de subir nada", (400, True, []),
+          (st, th("web.tg.err.too_many") in page, sorted(p.name for p in (state / "telegram" / "uploads").glob("up_*"))))
+    # Subir 20 MB puede tardar más que una consulta: el envío con archivos espera más
+    # (request_slow) y, si aun así se corta, no se invita a mandarlo otra vez a ciegas.
+    silent = tmp / "mudo.sock"
+    mudo = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    mudo.bind(str(silent))
+    mudo.listen(1)
+    try:
+        telegram_source.ControlSocket(silent, timeout=0.3).request("telegram.status")
+        timed = None
+    except telegram_source.Failed as exc:
+        timed = (exc.code, exc.fields.get("timed_out"))
+    mudo.close()
+    check("ControlSocket: un servicio que no contesta a tiempo es unavailable con timed_out", ("unavailable", True), timed)
+    check("y request_slow espera más que una consulta", True,
+          telegram_source.ControlSocket(silent).SLOW_TIMEOUT > telegram_source.ControlSocket(silent).timeout)
+    real_slow = src.request_slow
+
+    def cut(kind, **fields):
+        raise telegram_source.Failed("unavailable", timed_out=True)
+
+    src.request_slow = cut
+    st, _, page = req("POST", "/telegram/messages/enviar", {"csrf": csrf, "t": ana["thread"], "text": "x"}, ck,
+                      files=[("tarde.png", PNG)])
+    src.request_slow = real_slow
+    check("con archivos, un corte por tiempo dice que revises el hilo antes de reenviar, y no borra el up_",
+          (503, True, 1), (st, th("web.tg.err.send_unknown") in page,
+                           len(list((state / "telegram" / "uploads").glob("up_*[0-9a-f]")))))
+
+    seen_ups = []
+
+    def partial(kind, **fields):
+        seen_ups.extend(fields["uploads"])
+        raise telegram_source.Failed("rate_limited", retry_after_s=3, sent_uploads=fields["uploads"][:1])
+
+    src.request_slow = partial
+    st, _, page = req("POST", "/telegram/messages/enviar", {"csrf": csrf, "t": ana["thread"], "text": "x"}, ck,
+                      files=[("salio.png", PNG), ("falto.pdf", PDF)])
+    src.request_slow = real_slow
+    check("envío parcial (#667): dice cuáles ya salieron, para no repetirlos", (429, True, False),
+          (st, "Ya salieron: salio.png." in page, "falto.pdf." in page))
+    # El que salió lo borra el núcleo (aquí el falso no lo hace); el que no salió lo borra la web.
+    check("un fallo definitivo borra el up_ que no salió (revisión de Metis en #666)", (2, False),
+          (len(seen_ups), (state / "telegram" / "uploads" / seen_ups[-1]).exists() if seen_ups else None))
 
     st, _, page = req("GET", f"/telegram/messages/ver?t={pedro['thread']}&lang=es-MX", cookie=ck)
     check("Pedro: oculto, sin responder y con «Agregar al roster»", (200, True, False, True),

@@ -32,6 +32,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from .. import guard, i18n
+from ..telegram import uploads as tg_uploads
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
 from . import about_strings, agent_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
@@ -51,6 +52,7 @@ STATIC = {
     "/assets/compose.js": (ASSETS / "compose.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
     "/assets/about.js": (ASSETS / "about.js", "application/javascript; charset=UTF-8"),
+    "/assets/adjuntos.js": (ASSETS / "adjuntos.js", "application/javascript; charset=UTF-8"),
     "/assets/webchat.js": (ASSETS / "webchat.js", "application/javascript; charset=UTF-8"),
     "/assets/tg_barra.js": (ASSETS / "tg_barra.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
@@ -82,6 +84,9 @@ SERVER_NAME = "paynani-web"
 # /telegram/media, y el id opaco de un hilo (`t_` + 32 hex). Nunca un id de Telegram.
 TG_REF = re.compile(r"^tg:[A-Za-z0-9_.:-]{1,120}$")
 TG_THREAD = re.compile(r"^t_[0-9a-f]{32}$")
+# Lo que mandó el dueño desde la web (#662): `tgo:` + 32 hex, y la foto por su índice.
+TG_OUT_REF = re.compile(r"^tgo:[0-9a-f]{32}$")
+TG_FILE_INDEX = re.compile(r"^[0-9]$")
 # El id de un mensaje de WhatsApp recibido (`wa:<cuenta>:<hash>`), para /whatsapp/media (#573).
 WA_MESSAGE_ID = re.compile(r"^wa:[0-9A-Za-z_.+-]{1,40}:[0-9a-f]{64}$")
 
@@ -1696,12 +1701,18 @@ def make_handler(ctx: Context):
             """GET /telegram/media?ref=<tg:…>: la foto de un mensaje recibido. El servicio
             decide en cada pedido (FR-17) y cualquier rechazo es el mismo 404."""
             ref = self.query.get("ref", [""])[0]
+            index = self.query.get("i", [""])[0]
             not_found = (404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
-            if not TG_REF.match(ref):
+            # Una foto recibida (`tg:…`) o una que mandó el dueño desde la web (`tgo:…` y su
+            # índice, #662).
+            if not (TG_REF.match(ref) and not index) and not (TG_OUT_REF.match(ref) and TG_FILE_INDEX.match(index)):
                 self._send(*not_found)
                 return
             try:
-                data = self.CTX.telegram().request("telegram.image", ref=ref)
+                if ref.startswith("tgo:"):
+                    data = self.CTX.telegram().request("telegram.image", ref=ref, index=int(index))
+                else:
+                    data = self.CTX.telegram().request("telegram.image", ref=ref)
             except telegram_source.Failed as exc:
                 if exc.code == "unavailable":
                     self._send(503, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
@@ -1749,8 +1760,10 @@ def make_handler(ctx: Context):
                 self._tg_page(status, back + f'<p class="lead">{html.escape(telegram_pages.error_text(exc.code, exc.fields))}</p>',
                               title_key="web.tg.messages_title", back="/telegram/messages")
                 return
-            running = source.status().get("state") == "running"
-            reply = telegram_pages.reply_box(thread_data, self.session["csrf"], running, values, error)
+            status = source.status()
+            running = status.get("state") == "running"
+            reply = telegram_pages.reply_box(thread_data, self.session["csrf"], running, values, error,
+                                             web_files=status.get("web_files") is True)
             add = telegram_pages.add_box(thread_data, self.session["csrf"], add_error)
             notice = t("web.tg.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
             self._tg_page(code, telegram_pages.thread_body(thread_data, reply, add, notice),
@@ -1777,16 +1790,54 @@ def make_handler(ctx: Context):
                 if not TG_THREAD.match(values["t"]):
                     self._telegram_messages(values=values, error=telegram_pages.error_text("not_found"), code=404)
                     return
-                if not values["text"].strip() or len(values["text"]) > telegram_source.MAX_TEXT:
+                if self.files is None:
+                    self._telegram_messages(values=values, error=telegram_pages.error_text("malformed"), code=400)
+                    return
+                files = self.files[:tg_uploads.MAX_FILES + 1]
+                if (not values["text"].strip() and not files) or len(values["text"]) > telegram_source.MAX_TEXT:
                     self._telegram_messages(values=values, error=telegram_pages.error_text("invalid", {"field": "text"}),
                                             code=400)
                     return
+                # Los archivos van primero al núcleo (#662): `uploads.save` los revisa por los
+                # bytes y da un `up_…` de un solo uso; la web nunca elige una ruta.
+                ups, names = [], {}
                 try:
-                    source.request("telegram.send", thread=values["t"], text=values["text"])
+                    if len(files) > tg_uploads.MAX_FILES:
+                        raise tg_uploads.Rejected("too_many")
+                    for f in files:
+                        saved = tg_uploads.save(self.CTX.state_dir() / "telegram", f["name"][:200], f["data"])
+                        ups.append(saved["upload"])
+                        names[saved["upload"]] = saved["name"]
+                except tg_uploads.Rejected as exc:
+                    for ref in ups:
+                        tg_uploads.drop(self.CTX.state_dir() / "telegram", ref)
+                    self._telegram_messages(values=values, error=telegram_pages.error_text(exc.code), code=400)
+                    return
+                try:
+                    if ups:
+                        source.request_slow("telegram.send", thread=values["t"], text=values["text"], uploads=ups)
+                    else:
+                        source.request("telegram.send", thread=values["t"], text=values["text"])
                 except telegram_source.Failed as exc:
                     code = {"rate_limited": 429, "unavailable": 503}.get(exc.code, 400)
-                    self._telegram_messages(values=values, error=telegram_pages.error_text(exc.code, exc.fields),
-                                            code=code)
+                    # Con archivos, un corte por tiempo no dice si salieron: no se invita a
+                    # mandarlos otra vez sin revisar el hilo (#662).
+                    key = "send_unknown" if ups and exc.fields.get("timed_out") else exc.code
+                    error = telegram_pages.error_text(key, exc.fields)
+                    # Un envío parcial (#667): los que salieron vienen en `sent_uploads`. Como
+                    # cada POST sube todo otra vez, se dice cuáles ya llegaron.
+                    sent = [names[u] for u in exc.fields.get("sent_uploads") or [] if u in names]
+                    # Un fallo definitivo (no un corte por tiempo, que pudo seguir mandando):
+                    # los que no salieron se borran ya, para no llenar los 20 pendientes con
+                    # reintentos (revisión de Metis en #666). El siguiente POST sube otra vez.
+                    if ups and not exc.fields.get("timed_out"):
+                        done = set(exc.fields.get("sent_uploads") or [])
+                        for ref in ups:
+                            if ref not in done:
+                                tg_uploads.drop(self.CTX.state_dir() / "telegram", ref)
+                    if sent:
+                        error += " " + i18n.t("web.tg.err.partial", names=", ".join(sent))
+                    self._telegram_messages(values=values, error=error, code=code)
                     return
                 self._redirect(f"/telegram/messages/ver?t={values['t']}&ok=sent#responder")
                 return
@@ -2481,7 +2532,8 @@ def make_handler(ctx: Context):
                 length = -1
             limit = (CATCHALL_BODY_BYTES if urlparse(self.path).path in ("/messages/catch-all", "/whatsapp/catch-all",
                                                                          "/telegram/catch-all")
-                     else WEBCHAT_BODY_BYTES if urlparse(self.path).path == "/webchat/enviar"
+                     else WEBCHAT_BODY_BYTES if urlparse(self.path).path in ("/webchat/enviar",
+                                                                             "/telegram/messages/enviar")
                      else MAX_BODY_BYTES)
             if length < 0 or length > limit:
                 if urlparse(self.path).path == "/api/agent":
@@ -2503,8 +2555,10 @@ def make_handler(ctx: Context):
                 return
             self.files = []
             content_type = self.headers.get("Content-Type", "")
-            if self.route == "/webchat/enviar" and content_type.lower().startswith("multipart/form-data"):
-                # Sólo Webchat acepta archivos (#648); cualquier otra ruta sigue con form_fields.
+            if (self.route in ("/webchat/enviar", "/telegram/messages/enviar")
+                    and content_type.lower().startswith("multipart/form-data")):
+                # Sólo Webchat (#648) y contestar en Telegram (#662) aceptan archivos; cualquier
+                # otra ruta sigue con form_fields.
                 try:
                     post, self.files = multipart.parse(raw, content_type)
                 except (multipart.Malformed, ValueError):

@@ -464,8 +464,14 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   marcado «no verificado», y la hora; el texto sólo con el Catch-All de Telegram
   activo.
 - **Contestar** usa la barra de Webchat (Q337): el cuadro de una línea, que crece hasta
-  unas 6 (`tg_barra.js`), y «Enviar» redondo, pegada abajo. Por ahora sólo manda texto;
-  el clip llega cuando el servicio acepte archivos de la web (#662).
+  unas 6 (`tg_barra.js`), y «Enviar» redondo, pegada abajo. Si el servicio anuncia
+  `web_files` (#662), lleva el clip de Webchat («Foto», «Archivo»; `adjuntos.js`):
+  - **El envío:** hasta 10 archivos y 20 MB por mensaje; el texto puede ir vacío. La web
+    sube cada archivo con `telegram.uploads.save` y manda los `up_…` en
+    `telegram.send`.
+  - **En el hilo:** las fotos que mandaste se ven por `/telegram/media?ref=tgo:…&i=<n>`
+    y los demás archivos sólo con su nombre.
+  - **Con un servicio anterior,** la barra queda sólo con texto.
 - **Responder** sólo aparece en la conversación de un contacto del roster que ya le
   escribió al bot, con el servicio funcionando. No hay «Nuevo mensaje»: Telegram no
   deja que un bot escriba primero.
