@@ -1540,7 +1540,7 @@ la misma pasarela, con el token del teléfono (ver «Archivos»).
        {"n": 0, "name": "foto.jpg", "kind": "image", "size": 48213, "ref": "f_…"}]},
     {"id": "w_…", "dir": "out", "by": "agent", "at": "2026-11-02T03:11:40Z",
      "text": "Van 12 hoy.", "files": []}],
-  "more": false, "typing": true, "draft": null}}
+  "next_before": null, "typing": true, "draft": null}}
 ```
 
 - **Orden:** del más viejo al más nuevo, como `store.messages()` y la web (distinto de
@@ -1551,7 +1551,8 @@ la misma pasarela, con el token del teléfono (ver «Archivos»).
     `webchat.changed`.
   - `before` y `after` juntos responden `invalid`. Un id que no existe responde
     `not_found`.
-  - `more` dice si hay mensajes anteriores al primero que llegó.
+  - `next_before` es el id que se manda en `before` para la página anterior, o `null`
+    si no hay más, como en `whatsapp.thread`.
 - **Mensajes:** `dir` `in` es del dueño y `out` del agente. `agent` es el nombre del
   agente para las burbujas, o `null`.
 - **Archivos:** cada uno trae `ref`, nombre, `kind` (`image` o `document`) y tamaño,
@@ -1590,9 +1591,9 @@ Las dos rutas piden `Authorization: Bearer <token del teléfono>` y el `grant`
 `webchat.owner`; sin él, `403`.
 
 - `POST /sms/webchat/upload`
-  - Un archivo por petición, como cuerpo crudo, con `X-Filename` (el nombre en UTF-8,
-    codificado con `%XX`) y `Content-Length`.
-  - Hasta 20 MB. El tamaño se revisa antes de leer el cuerpo.
+  - Un archivo por petición, en `multipart/form-data` con el campo `file` (el mismo
+    lector que la web, `web/multipart.py`).
+  - Hasta 20 MB. El `Content-Length` se revisa antes de leer el cuerpo.
   - El tipo se decide por los bytes, igual que el almacén (`bad_type` si no coincide
     con la extensión o no es de los permitidos).
   - Responde `{"upload": "up_…", "name": "…", "kind": "image", "size": 48213}`.
