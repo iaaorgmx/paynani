@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 
 import ledger  # noqa: E402
 from paynani_lib.telegram import outbound  # noqa: E402
+from paynani_lib.telegram import uploads as tg_uploads  # noqa: E402
 from paynani_lib.telegram.fake_api import FakeBotAPI  # noqa: E402
 from paynani_lib.telegram.service import TelegramService  # noqa: E402
 
@@ -407,6 +408,111 @@ async def review_619_tests():
         api.stop()
 
 
+async def web_uploads_tests():
+    """#662: el dueño manda fotos y archivos desde PaynaniWeb (`uploads`)."""
+    state = pathlib.Path(tempfile.mkdtemp())
+    api = FakeBotAPI(token=TOKEN, bot_id=BOT_ID, username="NegocioBot").start()
+    logs = []
+    s = await service(state, api, logs)
+    root = state / "telegram"
+    PDF = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+    try:
+        r = await call(s, "telegram.status", by="web")
+        check("#662: el estado anuncia web_files", r.get("data", {}).get("web_files") is True, str(r))
+        api.private_message(ANA, "hola", first_name="Ana")
+        await until(lambda: any(e.get("text") == "hola" for e in s.store.received()))
+
+        # --- save ------------------------------------------------------------------------
+        foto = tg_uploads.save(root, "foto.jpg", JPEG)
+        doc = tg_uploads.save(root, "../../menú.pdf", PDF)
+        d = root / "uploads"
+        check("#662: save da up_ con nombre limpio, kind y tamaño",
+              foto["upload"].startswith("up_") and foto["kind"] == "image" and foto["size"] == len(JPEG)
+              and doc["name"] == "menú.pdf" and doc["kind"] == "document", str((foto, doc)))
+        check("#662: carpeta 0700 y archivos 0600",
+              oct(d.stat().st_mode & 0o777) == "0o700"
+              and all(oct(p.stat().st_mode & 0o777) == "0o600" for p in d.iterdir()))
+        for name, data, code in (("x.pdf", JPEG, "bad_type"), ("x.exe", b"MZ" + b"\0" * 50, "bad_type"),
+                                 ("grande.jpg", JPEG + b"\0" * (20 * 1024 * 1024), "too_big")):
+            try:
+                tg_uploads.save(root, name, data)
+                got = None
+            except tg_uploads.Rejected as exc:
+                got = exc.code
+            check(f"#662: save {name}: {code}", got == code, str(got))
+        check("#662: lo rechazado no queda en uploads/", len(list(d.glob("up_*.json"))) == 2)
+
+        # --- quién puede mandar uploads --------------------------------------------------
+        r = await call(s, "telegram.send", by="agent", contact="Ana López", text="x", uploads=[foto["upload"]])
+        check("#662: el agente no manda uploads", r.get("code") == "invalid" and r.get("field") == "uploads", str(r))
+        thread = next(t for t, i in s.store.threads().items() if i["user"] == ANA)
+        for bad, code in (([], "bad_upload"), ("up_x", "bad_upload"), (["up_" + "0" * 32], "bad_upload"),
+                          ([foto["upload"], foto["upload"]], "bad_upload"), (["up_%032x" % i for i in range(11)], "too_many")):
+            r = await call(s, "telegram.send", by="web", thread=thread, text="x", uploads=bad)
+            check(f"#662: uploads {str(bad)[:30]}: {code}", r.get("code") == code and r.get("field") == "uploads", str(r))
+
+        # --- un envío que falla no gasta el up_ ------------------------------------------
+        api.fail_next("sendPhoto", 400)
+        r = await call(s, "telegram.send", by="web", thread=thread, text="la foto", uploads=[foto["upload"]])
+        check("#662: si Telegram falla, error y el up_ sigue", r.get("code") == "invalid"
+              and (d / foto["upload"]).exists(), str(r))
+
+        # --- el envío --------------------------------------------------------------------
+        nphoto, ndoc = len(methods(api, "sendPhoto")), len(methods(api, "sendDocument"))
+        r = await call(s, "telegram.send", by="web", thread=thread, text="el menú y la foto",
+                       uploads=[foto["upload"], doc["upload"]])
+        photos, docs = methods(api, "sendPhoto")[nphoto:], methods(api, "sendDocument")[ndoc:]
+        check("#662: la foto sale con sendPhoto y el texto de pie", r.get("ok") and len(photos) == 1
+              and photos[0].get("caption") == "el menú y la foto", str((r, photos)))
+        check("#662: el PDF sale con sendDocument, sin pie", len(docs) == 1 and not docs[0].get("caption")
+              and docs[0].get("document", {}).get("file_bytes") == len(PDF), str(docs))
+        check("#662: los up_ se borran al salir", not (d / foto["upload"]).exists() and not (d / doc["upload"]).exists())
+        r2 = await call(s, "telegram.send", by="web", thread=thread, text="otra vez", uploads=[foto["upload"]])
+        check("#662: un up_ ya usado: bad_upload", r2.get("code") == "bad_upload", str(r2))
+
+        th = await call(s, "telegram.thread", by="web", thread=thread)
+        msg = next(m for m in th["data"]["messages"] if m["ref"] == r["data"]["ref"])
+        check("#662: en el hilo, by owner, kind file y los dos archivos",
+              msg["by"] == "owner" and msg["kind"] == "file" and [f["name"] for f in msg["files"]] == ["foto.jpg", "menú.pdf"]
+              and msg["files"][0].get("media", {}).get("mime") == "image/jpeg" and "media" not in msg["files"][1], str(msg))
+        check("#662: el hilo no trae rutas", "path" not in json.dumps(th))
+        img = await call(s, "telegram.image", by="web", ref=r["data"]["ref"], index=0)
+        check("#662: telegram.image da la foto enviada", img.get("ok") and img["data"]["mime"] == "image/jpeg"
+              and img["data"]["bytes"] == len(JPEG), str(img)[:200])
+        for idx in (1, 5, "0", True):
+            img = await call(s, "telegram.image", by="web", ref=r["data"]["ref"], index=idx)
+            check(f"#662: telegram.image index {idx!r}: not_found", img.get("code") == "not_found", str(img)[:120])
+
+        # --- texto largo: los archivos y luego el texto -----------------------------------
+        foto2 = tg_uploads.save(root, "otra.png", b"\x89PNG\r\n\x1a\n" + b"\0" * 100)
+        nphoto, nmsg = len(methods(api, "sendPhoto")), len(methods(api, "sendMessage"))
+        r = await call(s, "telegram.send", by="web", thread=thread, text="x" * 1500, uploads=[foto2["upload"]])
+        check("#662: más de 1024: la foto sin pie y el texto aparte", r.get("ok")
+              and not methods(api, "sendPhoto")[nphoto].get("caption")
+              and methods(api, "sendMessage")[nmsg]["text"] == "x" * 1500, str(r))
+
+        # --- 20 MB entre todos y 20 pendientes ----------------------------------------------
+        big = [tg_uploads.save(root, f"b{i}.jpg", JPEG + b"\0" * (11 * 1024 * 1024)) for i in range(2)]
+        r = await call(s, "telegram.send", by="web", thread=thread, text="", uploads=[b["upload"] for b in big])
+        check("#662: más de 20 MB entre todos: too_big", r.get("code") == "too_big", str(r))
+        for b in big:
+            tg_uploads.drop(root, b["upload"])
+        for i in range(tg_uploads.MAX_PENDING):
+            tg_uploads.save(root, f"p{i}.jpg", JPEG)
+        try:
+            tg_uploads.save(root, "uno-mas.jpg", JPEG)
+            got = None
+        except tg_uploads.Rejected as exc:
+            got = exc.code
+        check("#662: 20 pendientes: too_many", got == "too_many", str(got))
+        later = time.time() + tg_uploads.TTL_S + 1
+        tg_uploads.save(root, "nuevo.jpg", JPEG, clock=lambda: later)
+        check("#662: los vencidos se borran al subir otro", len(list(d.glob("up_*.json"))) == 1)
+    finally:
+        await s.stop()
+        api.stop()
+
+
 def unit_tests():
     parts = outbound.split_text("a" * 5000)
     check("split_text: 4096 + resto", [len(p) for p in parts] == [4096, 904])
@@ -422,6 +528,7 @@ def main():
     asyncio.run(main_tests())
     asyncio.run(fallback_and_limit_tests())
     asyncio.run(review_619_tests())
+    asyncio.run(web_uploads_tests())
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
 
