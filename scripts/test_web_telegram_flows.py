@@ -253,10 +253,14 @@ try:
     st, _, page = req("POST", "/telegram/messages/enviar", {"csrf": csrf, "t": ana["thread"], "text": "x"}, ck,
                       files=[("tarde.png", PNG)])
     src.request_slow = real_slow
-    check("con archivos, un corte por tiempo dice que revises el hilo antes de reenviar", (503, True),
-          (st, th("web.tg.err.send_unknown") in page))
+    check("con archivos, un corte por tiempo dice que revises el hilo antes de reenviar, y no borra el up_",
+          (503, True, 1), (st, th("web.tg.err.send_unknown") in page,
+                           len(list((state / "telegram" / "uploads").glob("up_*[0-9a-f]")))))
+
+    seen_ups = []
 
     def partial(kind, **fields):
+        seen_ups.extend(fields["uploads"])
         raise telegram_source.Failed("rate_limited", retry_after_s=3, sent_uploads=fields["uploads"][:1])
 
     src.request_slow = partial
@@ -265,6 +269,9 @@ try:
     src.request_slow = real_slow
     check("envío parcial (#667): dice cuáles ya salieron, para no repetirlos", (429, True, False),
           (st, "Ya salieron: salio.png." in page, "falto.pdf." in page))
+    # El que salió lo borra el núcleo (aquí el falso no lo hace); el que no salió lo borra la web.
+    check("un fallo definitivo borra el up_ que no salió (revisión de Metis en #666)", (2, False),
+          (len(seen_ups), (state / "telegram" / "uploads" / seen_ups[-1]).exists() if seen_ups else None))
 
     st, _, page = req("GET", f"/telegram/messages/ver?t={pedro['thread']}&lang=es-MX", cookie=ck)
     check("Pedro: oculto, sin responder y con «Agregar al roster»", (200, True, False, True),

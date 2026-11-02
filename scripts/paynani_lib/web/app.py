@@ -1801,6 +1801,14 @@ def make_handler(ctx: Context):
                     # Un envío parcial (#667): los que salieron vienen en `sent_uploads`. Como
                     # cada POST sube todo otra vez, se dice cuáles ya llegaron.
                     sent = [names[u] for u in exc.fields.get("sent_uploads") or [] if u in names]
+                    # Un fallo definitivo (no un corte por tiempo, que pudo seguir mandando):
+                    # los que no salieron se borran ya, para no llenar los 20 pendientes con
+                    # reintentos (revisión de Metis en #666). El siguiente POST sube otra vez.
+                    if ups and not exc.fields.get("timed_out"):
+                        done = set(exc.fields.get("sent_uploads") or [])
+                        for ref in ups:
+                            if ref not in done:
+                                tg_uploads.drop(self.CTX.state_dir() / "telegram", ref)
                     if sent:
                         error += " " + i18n.t("web.tg.err.partial", names=", ".join(sent))
                     self._telegram_messages(values=values, error=error, code=code)
