@@ -56,6 +56,15 @@ def _pending(d: Path, now: float) -> list[str]:
             drop(d.parent, ref)
             continue
         alive.append(ref)
+    for path in d.glob("up_*"):
+        # Andy en #665: un up_ sin .json (el proceso murió entre los dos) no vence solo.
+        if path.suffix != ".json" and not (d / (path.name + ".json")).exists():
+            try:
+                old = now - path.stat().st_mtime > TTL_S
+            except OSError:
+                continue
+            if old:
+                drop(d.parent, path.name)
     return alive
 
 
