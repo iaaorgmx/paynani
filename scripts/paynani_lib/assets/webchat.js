@@ -30,6 +30,23 @@
   var polling = null;
 
   function bottom() { window.scrollTo(0, document.body.scrollHeight); }
+  // ¿Se está viendo el final de la conversación? Lo dice el último scroll del usuario: una
+  // foto que termina de cargar alarga la página sin mover el scroll, y no cuenta como «subir».
+  var follow = true;
+  function nearBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 160; }
+  window.addEventListener("scroll", function () { follow = nearBottom(); }, {passive: true});
+  // Una foto nueva crece al cargar: si se veía el final, se vuelve a bajar.
+  hilo.addEventListener("load", function (ev) {
+    if (ev.target.tagName === "IMG" && follow) { bottom(); }
+  }, true);
+
+  // «Escribiendo…» aparece al final: si se veía el final, la página baja para que la barra de
+  // escribir no lo tape (Julian, al mandar una foto desde su celular); si se lee más arriba, no.
+  function showTyping(on) {
+    var was = escribe.hidden;
+    escribe.hidden = !on;
+    if (on && was && follow) { bottom(); }
+  }
 
   function lastDay() {
     var days = hilo.querySelectorAll(".wc-dia");
@@ -78,7 +95,7 @@
     }).then(function (data) {
       if (!data) { return; }
       addHtml(data.html, data.after);
-      escribe.hidden = !data.typing;
+      showTyping(!!data.typing);
     }).catch(function () {});
   }
   function startPolling() {
@@ -100,7 +117,7 @@
       try { data = JSON.parse(ev.data); } catch (e) { return; }
       if (data.type === "connected" && polling) { clearInterval(polling); polling = null; }
       else if (data.type === "messages") { showDraft(null); addHtml(data.html, data.after); }
-      else if (data.type === "typing") { escribe.hidden = !data.on || (borrador && !borrador.hidden); }
+      else if (data.type === "typing") { showTyping(!!data.on && !(borrador && !borrador.hidden)); }
       else if (data.type === "message.delta") { showDraft(data.text); }
       else if (data.type === "message.accepted") {
         delete pending[data.request_id];
