@@ -189,6 +189,27 @@ la web y la API lo leen para pedir «Actualiza PaynaniApp» cuando falta.
 {"type": "hello", …, "accepts_owner_out": true, "accepts_api_out": true}
 ```
 
+`sms` es opcional (PaynaniApp-Agentic#175). La PaynaniApp pública, la de Google Play, sólo
+hace Webchat (sección 13): no tiene permisos de SMS ni de llamadas, y su conexión vive
+mientras la app está abierta. Su saludo trae `"sms": false`. Sólo cuenta el booleano
+`false`: la ausencia del campo, `"false"`, `0` o cualquier otro valor valen como `true`,
+así que una PaynaniApp-Agentic no cambia en nada. La pasarela lo guarda en `device.json` y,
+con `false`:
+
+- no le manda `sms.out`; las órdenes que ya estaban en cola vencen a su hora;
+- `paynani sms send`, PaynaniWeb y la API no crean órdenes nuevas: fallan con
+  `no_sms_phone`;
+- no escribe `sms.gateway.offline` ni `sms.gateway.online` cuando la app se cierra, ni avisos
+  de batería (sección 7): cerrar la app no es un apagón;
+- `paynani status`, `healthcheck` y `paynani sms check` lo muestran como «Webchat only», sin
+  advertir que está desconectado; `phone_facts` trae `"sms": false`;
+- Webchat no cambia: el `welcome` es el mismo y la app empareja, platica y manda archivos
+  igual que siempre.
+
+```json
+{"type": "hello", …, "sms": false}
+```
+
 La pasarela contesta:
 
 ```json

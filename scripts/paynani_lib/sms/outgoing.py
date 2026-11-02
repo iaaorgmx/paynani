@@ -151,6 +151,9 @@ def queue(store: Store, *, to: str, text: str, origin: str = "agent", ttl_min: i
     if origin not in ORDER_PREFIX:
         raise ValueError(f"origen desconocido: {origin!r}")
     # Todo rechazo pasa aquí arriba, antes de escribir nada en outbox/ u orders.jsonl.
+    if not store.sms_enabled():
+        raise Refused("no_sms_phone", "no_sms_phone: the paired phone runs PaynaniApp for Webchat only; "
+                                      "it does not send texts (SMS_GATEWAY.md §2).")
     check_text(text)
     if ttl_min < 1:
         raise Refused("invalid_ttl", "--ttl must be at least 1 minute.")

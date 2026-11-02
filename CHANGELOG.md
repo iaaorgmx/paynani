@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **El teléfono «solo Webchat» (PaynaniApp-Agentic#175, Q343 = A).** La PaynaniApp pública para Google Play sólo hace Webchat y dice `"sms": false` en su saludo. Con ese teléfono emparejado, la pasarela no le manda `sms.out`, las órdenes nuevas fallan con `no_sms_phone`, cerrar la app no escribe `sms.gateway.offline` ni avisos de batería, y `paynani status`, `healthcheck` y `paynani sms check` lo muestran como «Webchat only». Sin el campo, todo sigue igual que antes (`SMS_GATEWAY.md` §2).
+
 - **PaynaniWeb, «Mensajes de Telegram»: fotos y archivos con el clip (#662, Q337 = B).** La barra de contestar lleva el clip de Webchat, con «Foto» y «Archivo»: hasta 10 archivos y 20 MB por mensaje, y el texto como pie de foto. Si el envío falla, la página dice qué archivos ya salieron. Si se corta por tiempo, pide revisar la conversación antes de reenviar. Y si el fallo es definitivo, borra los archivos que no salieron. Las fotos que mandas se ven en el hilo; de los demás archivos queda el nombre. Usa el núcleo de #665 (`telegram/uploads.py` y `uploads` en `telegram.send`) y sólo aparece si el servicio anuncia `web_files`. El clip, las fichas y la copia a memoria (#657) ahora viven en `assets/adjuntos.js`, compartido con Webchat.
 
 - **PaynaniWeb, «Mensajes de Telegram»: el cuadro de contestar es la barra de Webchat (Q337).** Lo pidió Julian con un mockup que aprobó. Ya no lleva el título «Responder» ni la etiqueta «Mensaje», que siguen para lectores de pantalla. Es una sola barra pegada abajo: el cuadro empieza en una línea y crece hasta unas 6 mientras se escribe, y «Enviar» es el botón redondo. Un segundo toque no lo manda dos veces. Por ahora sólo texto: el clip para fotos y archivos llega con #662.
