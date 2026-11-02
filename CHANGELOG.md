@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, Webchat: «escribiendo…» con animación.** Lo pidió Julian. Los tres puntos suben y se encienden uno tras otro, en el color de la marca, para que se note que el agente está trabajando. Con «reducir movimiento» en el sistema sólo cambian de intensidad.
+
 - **PaynaniWeb, Webchat: el nombre del agente en el encabezado.** Lo pidió Julian: el título de la página dice «Webchat - <nombre del agente>», por ejemplo «Webchat - Iris Claude-Tob». Sin datos del agente queda «Webchat».
 
 - **PaynaniWeb: dos detalles de «Cuenta de Telegram» sin bot (#641, seguimiento de #639).**
