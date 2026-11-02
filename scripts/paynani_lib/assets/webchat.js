@@ -120,7 +120,13 @@
   if (form) {
     form.addEventListener("submit", function (ev) {
       var hasFiles = inputs.some(function (i) { return i.files && i.files.length; });
-      if (!socket || socket.readyState !== 1 || hasFiles || !texto || !texto.value.trim()) { return; }
+      if (!socket || socket.readyState !== 1 || hasFiles || !texto || !texto.value.trim()) {
+        // Por el formulario (con archivos, o sin WebSocket): una sola vez. Subir una foto
+        // por datos móviles tarda, y un segundo toque la mandaba dos veces (#656).
+        if (form.classList.contains("wc-enviando")) { ev.preventDefault(); return; }
+        form.classList.add("wc-enviando");
+        return;
+      }
       ev.preventDefault();
       var id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random();
       pending[id] = true;
