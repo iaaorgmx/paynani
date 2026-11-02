@@ -1491,3 +1491,164 @@ Ningún error cierra la conexión.
   hilo, como un SMS del dueño desde PaynaniWeb.
 - La pasarela no escribe en su log el texto de los mensajes, el código de
   vinculación ni el número completo: igual que con los SMS (sección 8).
+
+## 13. Webchat desde PaynaniApp (PRD #653)
+
+El dueño platica con su agente desde PaynaniApp en la misma conversación que ve en
+PaynaniWeb (`WEBCHAT.md`): lo que escribe en el teléfono aparece en la web y al revés.
+El almacén es el mismo (`state/webchat/`, `webchat/store.py`) y el agente contesta igual
+que siempre, con `paynani webchat send`.
+
+### Cómo se habla
+
+Igual que las secciones 11 y 12: sólo el teléfono emparejado, por su WebSocket
+autenticado, con `id` `q_` + 32 hex, una sola respuesta `result` o `error` con `ref`,
+espera de 15 segundos y reenvío seguro con el mismo `id`. Sin conexión, la app no
+muestra la conversación de memoria: muestra «Sin conexión con paynani».
+
+Los archivos no van por el WebSocket (el tope es de 256 KB por mensaje). Van por HTTP en
+la misma pasarela, con el token del teléfono (ver «Archivos»).
+
+### Anuncio en el `welcome`
+
+```json
+"accepts": ["sms.in", …, "webchat.thread", "webchat.send"],
+"grants": ["webchat.owner"]
+```
+
+- La pasarela pone `webchat.thread` y `webchat.send` en `accepts` **sólo si** la
+  instalación tiene el almacén de Webchat y un usuario de PaynaniWeb (el dueño). Sin
+  ellos no los anuncia y la app no muestra la sección «AI Agent».
+- `webchat.owner` va sólo al teléfono emparejado (el `device_id` de `device.json`). Sin
+  ese `grant`, la app no muestra Webchat y la pasarela responde `forbidden` a todo lo
+  de esta sección, también en las rutas HTTP de archivos.
+- Si se crea o se borra el usuario de PaynaniWeb con la app conectada, la pasarela cierra
+  con `1012`, como en la sección 12, para que llegue un `welcome` nuevo.
+
+### `webchat.thread`: la conversación
+
+```json
+{"type": "webchat.thread", "id": "q_…", "limit": 50, "before": null, "after": null}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "agent": "Metis",
+  "messages": [
+    {"id": "w_…", "dir": "in", "by": "owner", "at": "2026-11-02T03:10:02Z",
+     "text": "¿Cómo vamos con los pedidos?", "files": [
+       {"n": 0, "name": "foto.jpg", "kind": "image", "size": 48213, "ref": "f_…"}]},
+    {"id": "w_…", "dir": "out", "by": "agent", "at": "2026-11-02T03:11:40Z",
+     "text": "Van 12 hoy.", "files": []}],
+  "more": false, "typing": true, "draft": null}}
+```
+
+- **Orden:** del más viejo al más nuevo, como `store.messages()` y la web (distinto de
+  `whatsapp.thread`). `limit` de 1 a 100 (50 por omisión).
+- **Paginación:**
+  - `before` (un id `w_…`) trae los anteriores a ese, para «Mensajes anteriores».
+  - `after` (un id `w_…`) trae sólo los posteriores, para refrescar al recibir
+    `webchat.changed`.
+  - `before` y `after` juntos responden `invalid`. Un id que no existe responde
+    `not_found`.
+  - `more` dice si hay mensajes anteriores al primero que llegó.
+- **Mensajes:** `dir` `in` es del dueño y `out` del agente. `agent` es el nombre del
+  agente para las burbujas, o `null`.
+- **Archivos:** cada uno trae `ref`, nombre, `kind` (`image` o `document`) y tamaño,
+  nunca una ruta. Se descargan con `GET /sms/webchat/file`.
+- **Estado:** `typing` es «escribiendo…». `draft` es el borrador de
+  `webchat send --stream`, `{"text": "…", "at": "…"}` o `null`.
+
+### `webchat.send`: escribirle al agente
+
+```json
+{"type": "webchat.send", "id": "q_…", "text": "Mándame el reporte", "uploads": ["up_…"]}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "message": {"id": "w_…", "dir": "in", "by": "owner", "at": "…",
+              "text": "Mándame el reporte", "files": []}}}
+```
+
+- **Contenido:** texto de hasta 4,000 caracteres y, opcionalmente, hasta 10 `uploads`
+  ya subidos. Lo mismo que el almacén: hasta 20 MB por archivo y 25 MB por mensaje.
+  Texto vacío y sin archivos responde `empty`.
+- **Quién escribe:** se guarda como del dueño (`append("owner", …)`) con el nombre y el
+  correo del usuario de PaynaniWeb, y escribe el evento `webchat.received`. El aviso al
+  agente dice «(PaynaniApp)».
+- **Tope:** 20 mensajes por minuto, como la web. Pasado el tope, `rate_limited` con
+  `retry_after_s`.
+- **Reenvío seguro:** con el mismo `id`, no se guarda dos veces y responde el mismo
+  `result` con `"replayed": true`.
+- **Uploads:** un `up_…` se consume sólo cuando el mensaje se guarda. Si el envío falla,
+  sigue vigente hasta que vence y la app reintenta sin volver a subir.
+
+### Archivos
+
+Las dos rutas piden `Authorization: Bearer <token del teléfono>` y el `grant`
+`webchat.owner`; sin él, `403`.
+
+- `POST /sms/webchat/upload`
+  - Un archivo por petición, como cuerpo crudo, con `X-Filename` (el nombre en UTF-8,
+    codificado con `%XX`) y `Content-Length`.
+  - Hasta 20 MB. El tamaño se revisa antes de leer el cuerpo.
+  - El tipo se decide por los bytes, igual que el almacén (`bad_type` si no coincide
+    con la extensión o no es de los permitidos).
+  - Responde `{"upload": "up_…", "name": "…", "kind": "image", "size": 48213}`.
+  - El `up_…` vence a los 10 minutos, se usa una sola vez y sólo lo puede usar el mismo
+    teléfono. Los no usados se borran al vencer.
+  - Hay un máximo de 20 pendientes por teléfono; pasado eso, `429`.
+- `GET /sms/webchat/file?ref=f_…`
+  - Devuelve el archivo con el mismo filtro que `/webchat/file` de la web: las fotos
+    con su tipo y lo demás como descarga (`Content-Disposition: attachment`).
+  - Con `nosniff` y `Cache-Control: private, no-store`.
+  - Un `ref` que no existe responde `404`.
+
+Los errores HTTP traen `{"error": "<code>"}` con los mismos códigos de abajo.
+
+### `webchat.changed`: aviso de la pasarela
+
+```json
+{"type": "webchat.changed", "what": "messages"}
+{"type": "webchat.changed", "what": "typing", "typing": true}
+{"type": "webchat.changed", "what": "draft", "draft": {"text": "Van 12 hoy y …", "at": "…"}}
+```
+
+- **Sin `id` ni `ref`.** `what` es `messages` (hay un mensaje nuevo, del agente o del
+  dueño desde la web), `typing` o `draft`.
+- **A quién llega:** a toda conexión con `webchat.owner`, aunque no haya pedido
+  `webchat.thread`. Así la app puede avisar con la pantalla cerrada (FR-11).
+- **Qué hace la app con `messages`:** pide `webchat.thread` con `after` = el último id
+  que tiene. Con eso arma la notificación sin otra llamada.
+- **Contenido:** `messages` no lleva contenido. `draft` lleva el texto del borrador (o
+  `null` cuando se borra), porque la conexión es la del teléfono del dueño.
+- **Frecuencia:** la pasarela no manda más de un `draft` cada 300 ms.
+- **Sin cola:** no pasa por la cola de la app ni recibe `ack`. Si se pierde, la app lo
+  nota al volver a pedir `webchat.thread`.
+
+### Errores de esta sección
+
+Además de los de las secciones 5 y 11:
+
+| `code` | Cuándo |
+|---|---|
+| `forbidden` | Sin `webchat.owner` |
+| `unavailable` | La instalación no tiene almacén de Webchat o usuario de PaynaniWeb |
+| `empty` | `webchat.send` sin texto ni archivos |
+| `too_long` | Texto de más de 4,000 caracteres |
+| `too_big` | Un archivo de más de 20 MB, o más de 25 MB en el mensaje |
+| `bad_type` | El tipo real del archivo no está permitido o no coincide con el nombre |
+| `bad_upload` | Un `up_…` que no existe, venció, ya se usó o es de otro teléfono |
+| `rate_limited` | Más de 20 mensajes por minuto. Va `retry_after_s` |
+| `not_found` | `before` o `after` con un id que no existe |
+| `invalid` | Un campo no pasa la validación. Van `field` y `reason` |
+
+Ningún error cierra la conexión.
+
+### Lo que se registra
+
+- Un `webchat.send` queda en `state/webchat/messages.jsonl` como del dueño, con el mismo
+  evento `webchat.received` que la web, marcado como venido de PaynaniApp.
+- La pasarela no escribe en su log el texto de los mensajes, los nombres de archivo ni
+  el borrador, igual que con los SMS (sección 8).
