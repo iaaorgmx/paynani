@@ -348,11 +348,13 @@ class Outbound:
                 else:
                     await self._api("sendMessage", {"chat_id": chat, "text": chunk})
                 delivered += 1
-        except Exception:
+        except Exception as exc:
             await self._release(reserved - delivered, day)
-            for f in files[:delivered]:
-                if f.get("upload"):
-                    tg_uploads.drop(self.root, f["upload"])    # lo que ya salió no se repite al reintentar
+            gone = [f["upload"] for f in files[:delivered] if f.get("upload")]
+            for up in gone:
+                tg_uploads.drop(self.root, up)    # lo que ya salió no se repite al reintentar
+            if gone and isinstance(exc, _Refused):
+                exc.extra["sent_uploads"] = gone  # Andy en #665: la web sabe cuáles quitar de la lista
             self.store.record_sent({"ref": ref, "status": "failed" if not delivered else "partial",
                                     "delivered": delivered, "parts": reserved})
             self._notify("threads")
