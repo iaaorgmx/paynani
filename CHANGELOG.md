@@ -10,6 +10,15 @@
 
   `sms/webchat_api.py`; `test_sms_webchat.py`. La app es PaynaniApp#174.
 
+- **PaynaniWeb, Webchat: una foto de Google Fotos ya no termina en el error de Chrome «ERR_UPLOAD_FILE_CHANGED».** Pasaba en Chrome de Android con una foto que estaba en la nube: el archivo cambiaba mientras se bajaba, entre elegirlo y mandarlo. Ahora, al elegir, cada archivo se copia a memoria y se manda esa copia; si se toca «Enviar» mientras copia, se manda al terminar. También: si el WebSocket se cierra antes de la respuesta, el texto regresa al cuadro (las dos, revisión de Metis en #656).
+
+- **PaynaniWeb: el cuadro de escribir de Webchat, como Telegram (Q321).** Lo pidió Julian en la prueba real desde su celular, donde el cuadro era de 2 líneas. Ahora es una sola barra:
+  - el clip pequeño a la izquierda abre «Foto» y «Archivo», con un `<details>` que funciona sin script;
+  - el cuadro ocupa todo el ancho y crece solo mientras se escribe, hasta unas 6 líneas;
+  - «Enviar» es un botón redondo.
+
+  Los límites de los adjuntos van en texto chico dentro del menú del clip.
+
 - **PaynaniWeb: hasta 64 conexiones en espera.** El servidor dejaba 5 (lo de `socketserver`). Con la página, sus scripts, el WebSocket de Webchat y varios intentos de entrar a la vez, el kernel cortaba las demás con «Connection reset by peer» (CI de `main` en cd4d4d8, `test_web_auth`).
 
 - **PaynaniWeb: Webchat, platicar con tu agente desde el navegador (#648).** Va en la sección «AI Agent», debajo del agente (Q304 a Q308):
