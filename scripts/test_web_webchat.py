@@ -162,6 +162,8 @@ check("sin atributos style", [], re.findall(r'\sstyle="', page))
 check("Q321: una sola barra; el clip abre «Photo» y «File», dos inputs de archivos", (True, 2, True, True),
       ('<details class="wc-adjuntar">' in page, page.count('name="files" class="wc-archivos"'),
        'accept="image/jpeg,image/png,image/webp,image/gif"' in page, '<span>File</span>' in page))
+check("los límites se ven dentro del menú del clip (en el celular no hay hover)", True,
+      '<p class="wc-menu-nota">Files and photos up to 20 MB per message.' in page)
 check("Q321: el cuadro empieza en una línea y «Send» es un botón redondo con su nombre", (True, True),
       ('<textarea name="text" rows="1"' in page, 'class="wc-enviar" aria-label="Send"' in page))
 

@@ -713,6 +713,7 @@ body.web-shell {
 .web-shell .wc-opcion { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
 .web-shell .wc-opcion:hover, .web-shell .wc-opcion:focus-within { background: var(--bg); }
 .web-shell .wc-opcion svg { width: 20px; height: 20px; color: var(--accent); }
+.web-shell .wc-menu-nota { margin: 4px 12px 6px; font-size: .72rem; line-height: 1.35; color: var(--quiet); max-width: 220px; }
 .web-shell .wc-opcion input[type=file] { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 .web-shell .wc-clip { display: grid; place-items: center; width: 36px; height: 40px; border-radius: 50%; color: var(--quiet); cursor: pointer; flex: none; }
 .web-shell .wc-clip:hover { background: var(--bg); }

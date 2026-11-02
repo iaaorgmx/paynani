@@ -112,7 +112,8 @@ def composer(csrf: str, agent_name: str, text: str = "", error: str = "") -> str
     Una sola barra, como Telegram (Julian, Q321): el clip pequeño dentro, a la izquierda, que
     abre «Foto» y «Archivo» (un `<details>`, sin script); el
     cuadro de escribir con todo el espacio, que crece solo hasta unas 6 líneas (webchat.js);
-    y «Enviar» como botón redondo. Los límites de los adjuntos van en el título del clip.
+    y «Enviar» como botón redondo. Los límites de los adjuntos van en texto chico dentro
+    del menú del clip (en el celular no hay hover; revisión de Metis en #656).
     """
     return f"""<form class="wc-escribir" method="post" action="/webchat/enviar" enctype="multipart/form-data">
     {_error(error)}
@@ -126,6 +127,7 @@ def composer(csrf: str, agent_name: str, text: str = "", error: str = "") -> str
             <input type="file" name="files" class="wc-archivos" multiple accept="image/jpeg,image/png,image/webp,image/gif"></label>
           <label class="wc-opcion">{icon("file")}<span>{_th("opt_file")}</span>
             <input type="file" name="files" class="wc-archivos" multiple accept=".pdf,.txt,.csv,.docx,.xlsx,.zip,application/pdf,text/plain,text/csv,application/zip"></label>
+          <p class="wc-menu-nota">{_th("note")}</p>
         </div>
       </details>
       <textarea name="text" rows="1" maxlength="4000" placeholder="{_th('placeholder', name=agent_name)}"
