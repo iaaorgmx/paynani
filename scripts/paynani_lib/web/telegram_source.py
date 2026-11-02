@@ -75,6 +75,10 @@ class Source:
     def request(self, kind: str, **fields) -> dict:  # pragma: no cover -- interfaz
         raise NotImplementedError
 
+    def request_slow(self, kind: str, **fields) -> dict:
+        """Como `request`, para lo que puede tardar: un `telegram.send` con archivos (#662)."""
+        return self.request(kind, **fields)
+
     def status(self) -> dict:
         """`telegram.status`; sin servicio, `state: "service_down"`, que según §4
         contesta el propio cliente."""
@@ -89,15 +93,24 @@ class Source:
 
 # ---- El servicio, por control.sock (TELEGRAM.md §4) -------------------------------
 class ControlSocket(Source):
+    # Subir 20 MB a Telegram puede tardar más que los 20 s de una consulta (#662).
+    SLOW_TIMEOUT = 180.0
+
     def __init__(self, path: Path, timeout: float = 20.0):
         self.path = Path(path)
         self.timeout = timeout
 
+    def request_slow(self, kind: str, **fields) -> dict:
+        return self._request(kind, max(self.timeout, self.SLOW_TIMEOUT), fields)
+
     def request(self, kind: str, **fields) -> dict:
+        return self._request(kind, self.timeout, fields)
+
+    def _request(self, kind: str, timeout: float, fields: dict) -> dict:
         rid = "q_" + secrets.token_hex(16)
         line = json.dumps({"type": kind, "id": rid, "by": "web", **fields}, ensure_ascii=False) + "\n"
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(self.timeout)
+        sock.settimeout(timeout)
         try:
             sock.connect(str(self.path))
             sock.sendall(line.encode("utf-8"))
@@ -112,6 +125,9 @@ class ControlSocket(Source):
                     return msg.get("data") or {}
                 extra = {k: v for k, v in msg.items() if k not in ("type", "ref", "code", "ok")}
                 raise Failed(str(msg.get("code") or "unavailable"), **extra)
+        except TimeoutError:
+            # Se pidió y no contestó a tiempo: el servicio pudo haberlo hecho de todos modos.
+            raise Failed("unavailable", timed_out=True) from None
         except OSError:
             raise Failed("unavailable")
         finally:

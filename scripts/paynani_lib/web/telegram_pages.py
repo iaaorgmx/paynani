@@ -49,7 +49,7 @@ def error_text(code: str, fields: dict | None = None) -> str:
     if code in ("invalid", "missing_field"):
         return i18n.t(f"web.tg.err.{code}", field=fields.get("field", "?"))
     if code in ("unavailable", "not_allowed", "not_started", "not_found", "conflict", "too_big", "bad_type",
-                "too_many", "bad_upload", "malformed"):
+                "too_many", "bad_upload", "malformed", "send_unknown"):
         return i18n.t("web.tg.err." + code)
     return i18n.t("web.tg.err.other", code=code)
 

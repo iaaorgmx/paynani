@@ -22,6 +22,7 @@ import base64
 import hashlib
 import http.client
 import re
+import socket
 import sys
 import tempfile
 import threading
@@ -228,6 +229,32 @@ try:
                       files=[(f"f{i}.png", PNG) for i in range(11)])
     check("11 archivos: too_many antes de subir nada", (400, True, []),
           (st, th("web.tg.err.too_many") in page, sorted(p.name for p in (state / "telegram" / "uploads").glob("up_*"))))
+    # Subir 20 MB puede tardar más que una consulta: el envío con archivos espera más
+    # (request_slow) y, si aun así se corta, no se invita a mandarlo otra vez a ciegas.
+    silent = tmp / "mudo.sock"
+    mudo = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    mudo.bind(str(silent))
+    mudo.listen(1)
+    try:
+        telegram_source.ControlSocket(silent, timeout=0.3).request("telegram.status")
+        timed = None
+    except telegram_source.Failed as exc:
+        timed = (exc.code, exc.fields.get("timed_out"))
+    mudo.close()
+    check("ControlSocket: un servicio que no contesta a tiempo es unavailable con timed_out", ("unavailable", True), timed)
+    check("y request_slow espera más que una consulta", True,
+          telegram_source.ControlSocket(silent).SLOW_TIMEOUT > telegram_source.ControlSocket(silent).timeout)
+    real_slow = src.request_slow
+
+    def cut(kind, **fields):
+        raise telegram_source.Failed("unavailable", timed_out=True)
+
+    src.request_slow = cut
+    st, _, page = req("POST", "/telegram/messages/enviar", {"csrf": csrf, "t": ana["thread"], "text": "x"}, ck,
+                      files=[("tarde.png", PNG)])
+    src.request_slow = real_slow
+    check("con archivos, un corte por tiempo dice que revises el hilo antes de reenviar", (503, True),
+          (st, th("web.tg.err.send_unknown") in page))
 
     st, _, page = req("GET", f"/telegram/messages/ver?t={pedro['thread']}&lang=es-MX", cookie=ck)
     check("Pedro: oculto, sin responder y con «Agregar al roster»", (200, True, False, True),

@@ -1787,12 +1787,15 @@ def make_handler(ctx: Context):
                     return
                 try:
                     if ups:
-                        source.request("telegram.send", thread=values["t"], text=values["text"], uploads=ups)
+                        source.request_slow("telegram.send", thread=values["t"], text=values["text"], uploads=ups)
                     else:
                         source.request("telegram.send", thread=values["t"], text=values["text"])
                 except telegram_source.Failed as exc:
                     code = {"rate_limited": 429, "unavailable": 503}.get(exc.code, 400)
-                    self._telegram_messages(values=values, error=telegram_pages.error_text(exc.code, exc.fields),
+                    # Con archivos, un corte por tiempo no dice si salieron: no se invita a
+                    # mandarlos otra vez sin revisar el hilo (#662).
+                    key = "send_unknown" if ups and exc.fields.get("timed_out") else exc.code
+                    self._telegram_messages(values=values, error=telegram_pages.error_text(key, exc.fields),
                                             code=code)
                     return
                 self._redirect(f"/telegram/messages/ver?t={values['t']}&ok=sent#responder")
