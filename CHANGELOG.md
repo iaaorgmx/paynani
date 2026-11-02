@@ -4,6 +4,15 @@
 
 - **PaynaniWeb, Webchat: «Mensajes anteriores» (Q336 = A).** La página sigue trayendo los últimos 50 mensajes. Si hay más, arriba de la conversación aparece «Mensajes anteriores», que carga los 50 de antes cada vez, con sus separadores de día y sin mover lo que se está leyendo. Cuando ya no quedan más, el botón se esconde. `GET /webchat/updates?before=<id>` los da ya dibujados.
 
+- **Telegram: el dueño puede mandar fotos y archivos desde PaynaniWeb, en el núcleo (#662, Q337 = B).** Lo pidió Julian: que el cuadro de «Mensajes de Telegram» tenga el clip, como Webchat. Antes `telegram.send` rechazaba archivos que no vinieran del agente o de la terminal. Ahora:
+  - PaynaniWeb sube cada archivo con `paynani_lib.telegram.uploads.save()`, en su proceso y sin elegir rutas, y recibe un `up_…`. Se guarda en `state/telegram/uploads/` (0700/0600), vale 10 minutos y una sola vez, y se revisa el tipo por los bytes con las reglas de Webchat;
+  - `telegram.send` acepta `uploads` (hasta 10, 20 MB entre todos) sólo del dueño. El texto va como pie del primero, o después si pasa de 1024;
+  - errores con código: `too_big`, `bad_type`, `too_many` y `bad_upload`;
+  - en el hilo, el mensaje trae `files`; las fotos quedan copiadas en `media/` y `telegram.image` las da con `ref` e `index`;
+  - `telegram.status` anuncia `web_files: true`, para que la web muestre el clip.
+
+  El clip en la web lo hace Iris en otro PR. `telegram/uploads.py`; `test_telegram_send.py`.
+
 ## 0.21.0 (2026-11-01)
 
 ### Si actualizas desde 0.20.0
