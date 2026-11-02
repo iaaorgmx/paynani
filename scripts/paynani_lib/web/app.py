@@ -34,8 +34,8 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
-from . import about_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (about_pages, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import about_strings, agent_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import (about_pages, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -51,6 +51,7 @@ STATIC = {
     "/assets/compose.js": (ASSETS / "compose.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
     "/assets/about.js": (ASSETS / "about.js", "application/javascript; charset=UTF-8"),
+    "/assets/webchat.js": (ASSETS / "webchat.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
@@ -65,6 +66,9 @@ MAX_BODY_BYTES = 64 * 1024
 # urlencoded: a byte becomes %XX, and a newline becomes CRLF, %0D%0A, six bytes. This
 # allows the worst case plus room for the password and the other fields.
 CATCHALL_BODY_BYTES = 6 * 32 * 1024 + 16 * 1024
+# Webchat (#648): 25 MB de adjuntos por mensaje más el texto y lo que agrega multipart.
+WEBCHAT_BODY_BYTES = webchat_source.MAX_MESSAGE + 256 * 1024
+WEBCHAT_WS_MAX = 20                 # conexiones de /webchat/ws a la vez (cada una es un hilo)
 # La CSP de guard.py más `connect-src 'self'`: sin ella el `fetch()` de los scripts de la
 # misma página cae en `default-src 'none'` y el navegador lo bloquea. Lo necesitan
 # whatsapp.js (el QR vigente, WHATSAPP_BRIDGE.md §11) y sms.js (los estados de
@@ -284,7 +288,7 @@ class Context:
                  mailer: mail_compose.Mailer | None = None, updater: account_config.Updater | None = None,
                  dashboard_source: dashboard.Source | None = None, now=None,
                  telegram_source: telegram_source.Source | None = None, telegram_root: Path | None = None,
-                 version: tuple[str, str] | None = None):
+                 version: tuple[str, str] | None = None, webchat_store=None):
         self.user_file = user_file
         self.sessions = auth.Sessions(clock)
         self.lockout = auth.Lockout(clock)
@@ -349,6 +353,10 @@ class Context:
         # «Acerca de» (#636): la versión y el commit del código que corre, leídos una vez al
         # arrancar (como idle.json), o los que pasen las pruebas.
         self.version = version if version is not None else _running_version()
+        # El almacén de Webchat (#648) es del núcleo; sin él la página lo dice.
+        self.webchat = webchat_store if webchat_store is not None else webchat_source.load()
+        self.webchat_ws = 0
+        self._webchat_ws_lock = threading.Lock()
         self._telegram_root = telegram_root
         # El `check` de un cambio de token, por sesión del navegador y sólo en memoria
         # (TELEGRAM.md §4: vale 5 min). La página nunca lo trae ni trae el token.
@@ -373,6 +381,17 @@ class Context:
                 self._dash_cache.clear()
             self._dash_cache[account] = (self._clock(), model)
         return model
+
+    def agent_summary(self) -> dict | None:
+        """El bloque del agente en el menú (#644). Lee lo mismo que el Dashboard, con su caché
+        de 60 s; si algo falla no hay bloque, y la página se dibuja igual."""
+        try:
+            return agent.summary(self.dashboard, self.now())
+        except Exception:  # noqa: BLE001 -- sólo es para mostrar
+            return None
+
+    def agent_model(self) -> dict:
+        return agent.build(self.dashboard, self.now())
 
     def state_dir(self) -> Path:
         if self._state_dir is not None:
@@ -793,11 +812,13 @@ def make_handler(ctx: Context):
 
         def _page(self, code: int, *, title: str, body: str, **kw):
             accounts, error = self.CTX.mail_accounts()
+            block = agent_pages.block(self.CTX.agent_summary(), active=kw.get("active") == "agent",
+                                      active_key=kw.get("active", ""))
             self._html(code, shell.page(self.lang, self.user, self.session["csrf"], title=title, body=body,
                                         accounts=accounts, accounts_error=error,
                                         collapsed=shell.nav_collapsed(self.headers.get("Cookie", "")),
                                         whatsapp=self.CTX.whatsapp_configured(),
-                                        telegram=True, **kw))
+                                        telegram=True, agent=block, **kw))
 
         def dispatch_get(self):
             t = i18n.t
@@ -842,6 +863,17 @@ def make_handler(ctx: Context):
                 return
             if self.route in ("/profile", "/profile/info", "/profile/password"):
                 self._profile_get()
+                return
+            if self.route == "/webchat/ws":
+                self._webchat_socket()
+                return
+            if self.route in ("/webchat", "/webchat/updates", "/webchat/file"):
+                self._webchat_get()
+                return
+            if self.route == "/agent":
+                # #644: sólo se llega picando el bloque del agente (Q298). Sólo lee.
+                self._page(200, title=i18n.t("web.agent.title"), body=agent_pages.body(self.CTX.agent_model()),
+                           active="agent", icon_name="agent", wide=True)
                 return
             if self.route == "/about":
                 version, commit = self.CTX.version
@@ -1286,6 +1318,127 @@ def make_handler(ctx: Context):
             """GET /dashboard.json (FR-18, FR-19): sólo números y estados, para dashboard.js."""
             body = json.dumps(dashboard.numbers(self._dashboard_model()), ensure_ascii=False).encode("utf-8")
             self._send(200, "application/json; charset=UTF-8", body)
+
+        # ---- Webchat (#648) -----------------------------------------------------------
+        # El dueño platica con su agente, sólo con su sesión (Q307). El almacén es del núcleo
+        # (webchat/store.py); la web nunca arma una ruta del disco: los adjuntos salen por
+        # `file_path(ref)` con un ref `f_…` que se valida antes.
+        def _webchat_page(self, code: int = 200, *, text: str = "", error: str = ""):
+            store = self.CTX.webchat
+            summary = self.CTX.agent_summary()
+            messages = store.messages(limit=50) if store else []
+            typing = bool(store and store.is_typing())
+            self._page(code, title=i18n.t("web.wc.title"), icon_name="webchat", active="webchat", wide=True,
+                       body=webchat_pages.body(messages, self.CTX.now(), summary, self.session["csrf"],
+                                               typing=typing, available=store is not None, text=text, error=error))
+
+        def _webchat_get(self):
+            store = self.CTX.webchat
+            if self.route == "/webchat":
+                self._webchat_page()
+                return
+            if store is None:
+                self._send(404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            if self.route == "/webchat/updates":
+                after = self.query.get("after", [""])[0][:40]
+                if after and not webchat_source.ID_RE.match(after):
+                    after = ""
+                try:
+                    day = dt.date.fromisoformat(self.query.get("day", [""])[0][:10])
+                except ValueError:
+                    day = None
+                new = store.messages(after=after or None, limit=50) if after else []
+                name = (self.CTX.agent_summary() or {}).get("name") or "AI agent"
+                data = {"html": webchat_pages.bubbles(new, self.CTX.now(), name, day) if new else "",
+                        "after": new[-1]["id"] if new else after, "typing": bool(store.is_typing())}
+                self._send(200, "application/json; charset=UTF-8", json.dumps(data, ensure_ascii=False).encode("utf-8"))
+                return
+            ref = self.query.get("ref", [""])[0]
+            found = store.file_path(ref) if webchat_source.REF_RE.match(ref) else None
+            if not found:
+                self._send(404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            path, mime, name = found
+            try:
+                data = Path(path).read_bytes()
+            except OSError:
+                self._send(404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            inline = mime in ("image/jpeg", "image/png", "image/webp", "image/gif")
+            filename = quote(str(name or "archivo"), safe="")
+            self._send(200, mime if inline else "application/octet-stream", data,
+                       [("Content-Disposition", f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{filename}"),
+                        ("Content-Security-Policy", "default-src 'none'; sandbox")])
+
+        def _webchat_socket(self):
+            """
+            GET /webchat/ws (Q309 = A): la conversación en vivo (webchat_ws.py). Pide la sesión
+            como toda página, el mismo Origin que un POST y, en el primer frame, el CSRF de
+            la página. Si algo no cuadra, una respuesta HTTP normal y webchat.js vuelve al
+            polling de /webchat/updates.
+            """
+            store = self.CTX.webchat
+            h = self.headers
+            key = h.get("Sec-WebSocket-Key", "")
+            upgrade = h.get("Upgrade", "").lower() == "websocket"
+            connection = "upgrade" in {t.strip().lower() for t in h.get("Connection", "").split(",")}
+            if store is None:
+                self._send(404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            if not (upgrade and connection and h.get("Sec-WebSocket-Version") == "13" and websocket.valid_key(key)):
+                self._send(400, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            if not self._same_origin():
+                self._send(403, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            with self.CTX._webchat_ws_lock:
+                if self.CTX.webchat_ws >= WEBCHAT_WS_MAX:
+                    self._send(503, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                    return
+                self.CTX.webchat_ws += 1
+            try:
+                self.wfile.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                                  f"Sec-WebSocket-Accept: {websocket.accept_key(key)}\r\n\r\n").encode("ascii"))
+                self.wfile.flush()
+                session = self.session
+                name = (self.CTX.agent_summary() or {}).get("name") or "AI agent"
+                owner = {"name": str(self.user.get("name") or ""), "email": str(self.user.get("email") or "")}
+                t = i18n.t
+                texts = {"malformed": t("web.wc.err.malformed"), "rate": t("web.wc.err.rate"),
+                         "failed": t("web.wc.err.failed"), "empty": t("web.wc.err.empty"),
+                         "too_long": t("web.wc.err.too_big"), "too_big": t("web.wc.err.too_big"),
+                         "bad_type": t("web.wc.err.bad_type")}
+                webchat_ws.serve(websocket.Conn(self.connection), store,
+                                 csrf_ok=lambda token: auth.check_csrf(session, token), owner=owner, texts=texts,
+                                 render=lambda new, day: webchat_pages.render(new, self.CTX.now(), name, day))
+            except OSError:
+                pass
+            finally:
+                with self.CTX._webchat_ws_lock:
+                    self.CTX.webchat_ws -= 1
+                self.close_connection = True
+
+        def _webchat_post(self, post: dict):
+            """POST /webchat/enviar: el mensaje del dueño, con sus adjuntos (#648)."""
+            store = self.CTX.webchat
+            text = post.get("text", "")[:webchat_source.MAX_TEXT + 1]
+            if store is None:
+                self._webchat_page(404)
+                return
+            if self.files is None:
+                self._webchat_page(400, text=text, error=i18n.t("web.wc.err.malformed"))
+                return
+            files = [(f["name"][:200], f["data"]) for f in self.files[:webchat_pages.MAX_FILES]]
+            owner = {"name": str(self.user.get("name") or ""), "email": str(self.user.get("email") or "")}
+            try:
+                store.append("owner", text.strip(), files, owner=owner)
+            except Exception as exc:  # noqa: BLE001 -- el Rejected del almacén, o un fallo al guardar
+                code = webchat_source.rejected_code(exc)
+                key = {"too_long": "too_big"}.get(code, code) if code else "failed"
+                self._webchat_page(400 if code else 500, text=text, error=i18n.t("web.wc.err." + key))
+                return
+            self._redirect("/webchat")
 
         # ---- Nuevo correo (#590 cambio 2) ----------------------------------------
         def _compose(self, match: dict, *, values: dict | None = None, error: str = "", code: int = 200):
@@ -2307,6 +2460,7 @@ def make_handler(ctx: Context):
                 length = -1
             limit = (CATCHALL_BODY_BYTES if urlparse(self.path).path in ("/messages/catch-all", "/whatsapp/catch-all",
                                                                          "/telegram/catch-all")
+                     else WEBCHAT_BODY_BYTES if urlparse(self.path).path == "/webchat/enviar"
                      else MAX_BODY_BYTES)
             if length < 0 or length > limit:
                 if urlparse(self.path).path == "/api/agent":
@@ -2326,7 +2480,16 @@ def make_handler(ctx: Context):
             if not self._same_origin():
                 self._html(403, message_page(self.lang, "web.title", "web.forbidden.h1", "web.forbidden.lead"))
                 return
-            post = form_fields(raw)
+            self.files = []
+            content_type = self.headers.get("Content-Type", "")
+            if self.route == "/webchat/enviar" and content_type.lower().startswith("multipart/form-data"):
+                # Sólo Webchat acepta archivos (#648); cualquier otra ruta sigue con form_fields.
+                try:
+                    post, self.files = multipart.parse(raw, content_type)
+                except (multipart.Malformed, ValueError):
+                    post, self.files = {}, None
+            else:
+                post = form_fields(raw)
             if self.route == "/login":
                 self._login(post)
                 return
@@ -2343,6 +2506,9 @@ def make_handler(ctx: Context):
             self.dispatch_post(post)
 
         def dispatch_post(self, post: dict):
+            if self.route == "/webchat/enviar":
+                self._webchat_post(post)
+                return
             if self.route in ("/api-tokens/new", "/api-tokens/revoke", "/api-tokens/agent-replies"):
                 self._tokens_post(post)
                 return
@@ -2419,6 +2585,10 @@ def make_handler(ctx: Context):
 class Server(ThreadingHTTPServer):
     """Sin la búsqueda de DNS inversa de server_bind(), como onboard.py."""
     daemon_threads = True
+    # socketserver deja 5 conexiones en espera. Una página con sus scripts, el WebSocket de
+    # Webchat y varios intentos de entrar a la vez lo pasan, y el kernel corta las demás
+    # (en CI, test_web_auth: 20 intentos a la vez, «Connection reset by peer»).
+    request_queue_size = 64
 
     def server_bind(self):
         import socketserver

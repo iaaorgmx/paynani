@@ -845,6 +845,65 @@ _TG_HEALTH_TEXT = {
 }
 
 
+# --- Webchat (#648, WEBCHAT.md) ---------------------------------------------
+
+WEBCHAT_RECEIVED = "webchat.received"
+_WC_KIND_LABEL = {"image": "foto", "document": "documento"}
+
+
+def webchat_event(*, message_id, owner_name, owner_email, text, files, sent_at, local_time,
+                  observed_at=None, rules=None, origin="web"):
+    """
+    Un mensaje que el dueño escribió en el Webchat de PaynaniWeb (WEBCHAT.md §5).
+    `event_id` es `wc:` + los mismos 32 hex del mensaje (`w_…`). Lo escribe el dueño con
+    su sesión, así que el aviso termina en `, roster]`: cada runtime lo trata como
+    trabajo con las reglas que ya tiene. El texto completo y los adjuntos salen con
+    `paynani event show --body`. `origin` es `web` (PaynaniWeb) o `app` (PaynaniApp, por
+    la pasarela, SMS_GATEWAY.md §13): sólo cambia lo que dice el aviso.
+    """
+    hexpart = message_id.split("_", 1)[1]
+    ref = "wc:" + hexpart
+    who = owner_name or owner_email or "el dueño"
+    labels = []
+    for f in files or []:
+        label = _WC_KIND_LABEL.get(f.get("kind"), "documento")
+        if f.get("kind") == "document" and f.get("name"):
+            labels.append(f"[{label}: {safe_excerpt(str(f['name']), 60)}]")
+        else:
+            labels.append(f"[{label}]")
+    excerpt = " ".join(p for p in (" ".join(labels), safe_excerpt(text or "")) if p)
+    kinds = {f.get("kind") for f in files or []}
+    if not files:
+        kind = "text"
+    elif text or len(kinds) > 1:
+        kind = "mixed"
+    else:
+        kind = kinds.pop()
+    note = f", {_rules_tag(rules)}" if rules else ""
+    where = "PaynaniApp" if origin == "app" else "PaynaniWeb"
+    line = f"[webchat {local_time}{note}, roster] {who} ({where}): {excerpt}"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": WEBCHAT_RECEIVED,
+        "event_id": ref,
+        "source": "paynani",
+        "channel": "webchat",
+        "account": "webchat",
+        "observed_at": observed_at or _now(),
+        "sent_at": sent_at or "",
+        "kind": kind,
+        "sender": {"name": owner_name or "", "address": owner_email or ""},
+        "roster_match": True,
+        "authenticated_sender": True,
+        "provider_id": "webchat:" + hexpart,
+        "inspection_command": f"scripts/paynani event show {ref}",
+    }
+    if rules:
+        record["rules"] = {"file": rules["file"], "status": rules["status"]}
+    record["notification_text"] = f"{line} [{record['inspection_command']}]"
+    return record
+
+
 def telegram_health_event(*, state, account, local_time, reason=None, observed_at=None):
     """De la instalación, sin remitente (TELEGRAM.md §3). Nunca el token ni un id."""
     if state not in _TG_HEALTH_TEXT:

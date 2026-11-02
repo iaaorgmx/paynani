@@ -55,6 +55,18 @@ ICONS = {
     "warn": '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
     # «Acerca de» (#636): el menú y los renglones de la página, con el mismo trazo.
     "info": '<circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/>',
+    # #644: el agente de IA (un robot en un círculo, como el de Perfil) y su página.
+    "agent": ('<circle cx="12" cy="12" r="10"/><rect x="7" y="9.5" width="10" height="7" rx="2"/>'
+              '<path d="M12 9.5V7"/><circle cx="12" cy="6.5" r=".6"/><circle cx="10" cy="13" r=".9"/>'
+              '<circle cx="14" cy="13" r=".9"/>'),
+    "send": '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+    "clock": '<circle cx="12" cy="12" r="10"/><path d="M12 7v5l3 2"/>',
+    "help": '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>',
+    # #648: Webchat (un globo de chat), el clip de adjuntar y un archivo.
+    "webchat": '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/>',
+    "clip": '<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
+    "file": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+    "photo": '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
     "web": '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/>',
     "code": '<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',
     "license": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/>',
@@ -171,11 +183,12 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
 def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str = "",
          active_account: str = "", accounts: list[dict] | None = None, accounts_error: str = "",
          icon_name: str = "home", back: str = "", wide: bool = False, collapsed: bool = False,
-         whatsapp: bool = False, telegram: bool = False) -> str:
+         whatsapp: bool = False, telegram: bool = False, agent: str = "") -> str:
     """Una página con sesión. `body` ya viene escapado. `wide` deja que el panel use todo el ancho
     (la lista de correos, como Orders en el /dash). `collapsed` dibuja el menú colapsado
     (PRD #537 FR-11); en el celular no cuenta, ahí el menú siempre empieza escondido. `whatsapp`
-    agrega «WhatsApp messages» al menú, sólo con WhatsApp configurado (PRD #550 FR-24)."""
+    agrega «WhatsApp messages» al menú, sólo con WhatsApp configurado (PRD #550 FR-24). `agent` es
+    el bloque del agente de IA (#644, `agent_pages.block`), ya dibujado, o "" sin él."""
     th = i18n.th
     accounts = accounts or []
     logo = brand_svg("paynani-horizontal.svg")
@@ -215,6 +228,7 @@ def page(lang: str, user: dict, csrf: str, *, title: str, body: str, active: str
     <a class="perfil{' activo' if active == 'profile' else ''}" href="/profile" aria-label="{th('web.nav.profile')}"
        title="{th('web.nav.profile')}"{' aria-current="page"' if active == 'profile' else ''}>{icon('profile')}</a>
   </div>
+  {agent}
   {nav}
 </aside>
 <a class="velo" href="#menu-cerrado" tabindex="-1" aria-hidden="true"></a>

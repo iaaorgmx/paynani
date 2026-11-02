@@ -78,15 +78,25 @@ included (#582). That is why both lists are exact:
 
 - `paynani-notify` takes every event type paynani writes: mail, `listener.error`,
   the SMS gateway (`sms.*`), WhatsApp (`whatsapp.received`, `whatsapp.health`),
-  Telegram (`telegram.received`, `telegram.edited`, `telegram.health`) and calls
-  (`call.missed`, `call.answered`).
+  Telegram (`telegram.received`, `telegram.edited`, `telegram.health`), Webchat
+  (`webchat.received`) and calls (`call.missed`, `call.answered`).
 - `paynani-roster` takes only the types that have a sender and can carry
   `roster_match=true`: `email.received`, `sms.received`, `sms.human_sent`,
-  `whatsapp.received`, `telegram.received`, `telegram.edited`, `call.missed` and
-  `call.answered`.
+  `whatsapp.received`, `telegram.received`, `telegram.edited`, `webchat.received`,
+  `call.missed` and `call.answered`.
+
+**A webchat is answered with the CLI, never with `deliver`.** `paynani-roster`
+delivers the agent's final answer to the route's `deliver` target (Telegram, for
+example). For `webchat.received` the owner is waiting in PaynaniWeb, so the roster
+prompt tells the agent to answer only with `scripts/paynani webchat send` (or
+`--stream`), which also marks the event `replied`.
 
 `scripts/test_hermes_examples.py` fails if a new event type in
 `harness/event.py` is missing from the notify list.
+
+**Routes from paynani 0.20.0 or earlier** lack `webchat.received` on both routes, so
+the first Webchat message from PaynaniWeb would hold the queue. Copy both `events`
+lists and the roster `prompt` from the example, and restart the gateway as below.
 
 **Routes from paynani 0.18.0 or earlier** lack `telegram.received` and
 `telegram.edited` on `paynani-roster`, so the first Telegram message from a

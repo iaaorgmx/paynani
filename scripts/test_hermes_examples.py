@@ -45,12 +45,12 @@ NOTIFY_EVENTS = ["email.received", "listener.error", "sms.received", "sms.human_
                  "sms.gateway.battery_low", "sms.gateway.battery_ok",
                  "whatsapp.received", "whatsapp.health",
                  "telegram.received", "telegram.edited", "telegram.health",
-                 "call.missed", "call.answered"]
+                 "webchat.received", "call.missed", "call.answered"]
 # telegram.received and telegram.edited carry roster_match=true for a roster contact,
 # and the adapter sends those to the roster route (TG-6, #612).
 ROSTER_EVENTS = ["email.received", "sms.received", "sms.human_sent",
                  "whatsapp.received", "telegram.received", "telegram.edited",
-                 "call.missed", "call.answered"]
+                 "webchat.received", "call.missed", "call.answered"]
 check("notify route accepts every event type, roster only the ones with a sender",
       notify.get("events") == NOTIFY_EVENTS and roster.get("events") == ROSTER_EVENTS)
 written = set(re.findall(r'^[A-Z_]+ = "([a-z_]+\.[a-z_.]+)"$',
@@ -74,12 +74,15 @@ check("roster prompt says the webhook includes no body", "no message body" in pr
 check("roster prompt keeps tools constrained", "only the tools" in prompt)
 check("roster prompt names the event type", "{event_type}" in roster.get("prompt", ""))
 raw_prompt = roster.get("prompt", "")
-check("roster prompt reads texts, WhatsApp and Telegram messages with event show --body",
-      "For sms.received, sms.human_sent, whatsapp.received, telegram.received and telegram.edited: "
+check("roster prompt reads texts, WhatsApp, Telegram and Webchat messages with event show --body",
+      "For sms.received, sms.human_sent, whatsapp.received, telegram.received, telegram.edited and webchat.received: "
       "read it only with "
       "scripts/paynani event show {event_id} --body." in raw_prompt)
 # A call has no body: `event show --body` exits 2 for it (test_sms_gateway.py,
 # test_whatsapp_service.py), so the prompt must send calls to plain event show.
+check("roster prompt answers a webchat only with webchat send (#648)",
+      "Answer a webchat message only with scripts/paynani webchat send" in raw_prompt
+      and "never answer it through the route's delivery" in raw_prompt)
 check("roster prompt reads calls with event show and without --body",
       "For call.missed and call.answered: a call has no body; read it only with "
       "scripts/paynani event show {event_id}, without --body." in raw_prompt)

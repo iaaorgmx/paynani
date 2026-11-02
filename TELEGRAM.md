@@ -16,8 +16,9 @@ state/telegram/                      0700
   lock                               candado de instancia (flock), FR-3
   control.sock                       0600  interfaz local, sección 4
   status.json                        0600  último estado (para doctor y el cliente con el servicio caído)
-  media/                             0700  archivos recibidos (FR-18), 0600 cada uno
+  media/                             0700  archivos recibidos (FR-18) y copias de las fotos que mandó el dueño desde la web (#662), 0600 cada uno
   outbox/                            0700  archivos que se pueden mandar (FR-20), con TELEGRAM_ATTACH_DIRS
+  uploads/                           0700  archivos que subió PaynaniWeb para un `telegram.send` (#662): up_<hex> y su .json, 0600, 10 min
   rate.json                          0600  mensajes mandados hoy (UTC) en toda la instalación (FR-26)
   bots/<bot>/                        0700  estado de un bot (FR-3a); <bot> = sha256(bot_id)[:16]
     account.json                     0600  alias aleatorio del bot para `account` (sección 3)
@@ -207,8 +208,12 @@ servicio asigna y guarda en `chats.json`. Nunca es un id de Telegram.
   "state": "running", "bot_username": "MiNegocioBot", "since": "2026-11-02T18:00:00Z",
   "last_poll_at": "2026-11-02T19:10:30Z",
   "counters": {"received_today": 12, "sent_today": 9, "send_limit_day": 300,
-               "edits_ignored": 0, "media_rejected": 1, "groups_left": 0}}}
+               "edits_ignored": 0, "media_rejected": 1, "groups_left": 0},
+  "web_files": true}}
 ```
+
+`web_files: true`: `telegram.send` acepta `uploads` de PaynaniWeb (#662). Un servicio
+sin el campo no los acepta, y la web deja la barra sólo con texto.
 
 `state`: `starting`, `running`, `offline`, `conflict`, `token_invalid`,
 `journal_mismatch`, `stopped` o `service_down`. `conflict` trae
@@ -257,6 +262,10 @@ Catch-All de Telegram activo.
   PaynaniApp) o `api`. No es la etiqueta `by` de la petición: el servicio convierte
   `web` y `phone:<device_id>` en `owner`.
 - `edited: true` en un mensaje que la persona editó; `text` es el último.
+- Un mensaje que salió con archivos trae `kind: "file"` y `files`: `[{"name", "kind",
+  "size", "media"}]`. `media` (`{"mime", "bytes"}`) sólo en las fotos que mandó el dueño
+  desde la web; con ella, `telegram.image` da la foto. Un archivo del agente trae sólo
+  `name`. Nunca trae rutas.
 - La terminal y el agente pueden pedir el hilo con `contact` en lugar de `thread`.
 - Fuera del roster sin Catch-All activo: `messages` va vacío y `hidden: true`.
 
@@ -273,6 +282,23 @@ Catch-All de Telegram activo.
   correo, que es único.
 - `file` sólo de la terminal y del agente, validado siempre contra `outbox/` y las
   carpetas permitidas (FR-20). La web y la pasarela nunca lo mandan.
+- `uploads` sólo del dueño (`by` `web` o `phone:…`), nunca junto con `file` (#662):
+  `["up_…"]`, de 1 a 10, que dio `paynani_lib.telegram.uploads.save(root, name, data)`
+  en el proceso de la web. `save` revisa el tipo por los bytes con las reglas de
+  Webchat (`WEBCHAT.md` §4): fotos JPEG, PNG, WebP o GIF y documentos PDF, TXT, CSV,
+  DOCX, XLSX o ZIP, hasta 20 MB cada uno. Rechaza con `too_big`, `bad_type` o
+  `too_many` (20 pendientes en la instalación). Cada `up_` vale 10 minutos y una sola
+  vez: se borra cuando el envío salió; si falla, sigue hasta que venza, menos los que
+  alcanzaron a salir en un envío `partial`, que se borran para que el reintento no los
+  repita; el error los lista en `sent_uploads`, y la web los quita de la lista antes de
+  reintentar (Andy en #665). Un `up_` que quedó sin su `.json` (el proceso murió a la mitad
+  de `save`) se borra al pasar 10 minutos. Mientras un envío los manda quedan apartados: otro `send` con alguno de ellos
+  da `bad_upload` (Iris en #665). En el `send`:
+  `bad_upload` (no es lista, vacío, repetido, desconocido, vencido, ya usado o en uso),
+  `too_many` (más de 10) o `too_big` (más de 20 MB entre todos), con `field: "uploads"`.
+  Los archivos salen en orden, como con `file`; el texto va como pie del primero (hasta
+  1024) o después de todos. Cada archivo cuenta para el límite del día. Una foto queda
+  copiada en `media/` para el hilo.
 - El servicio aplica siempre FR-25 y FR-26: contacto del roster con un chat privado
   que la persona abrió, y los límites. Si no, `error` con `not_allowed`,
   `not_started` (la persona nunca le escribió al bot) o `rate_limited` con
@@ -334,6 +360,8 @@ mensaje que el siguiente `send` edita (`transport: "edit"`).
 
 Como `whatsapp.image` (#573): `{"ref": "tg:…"}` → `{"mime", "bytes", "data"}`, decidido en
 cada pedido con las reglas de FR-17, y cualquier rechazo es el mismo `not_found`.
+También `{"ref": "tgo:…", "index": 0}`: la foto número `index` (entero desde 0) que el
+dueño mandó desde la web (#662), mientras la persona siga en el roster.
 
 #### `telegram.watch`
 
@@ -381,7 +409,8 @@ para un hilo que no existe y `conflict` si esa persona ya está en el roster.
 
 `unavailable`, `not_allowed`, `not_started`, `rate_limited`, `not_found`, `invalid`,
 `conflict`, `bad_json`, `unknown_type` y `missing_field`, con los mismos significados
-que en `WHATSAPP_BRIDGE.md` §11. Ningún `detail` trae un token, una URL ni un id de
+que en `WHATSAPP_BRIDGE.md` §11. Con `uploads` (#662), también `too_big`, `bad_type`,
+`too_many` y `bad_upload`. Ningún `detail` trae un token, una URL ni un id de
 Telegram.
 
 ## 5. `paynani telegram`

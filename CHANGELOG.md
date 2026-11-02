@@ -8,6 +8,106 @@
 
   Dos pruebas nuevas en `test_web_telegram_setup.py`.
 
+- **Telegram: el dueño puede mandar fotos y archivos desde PaynaniWeb, en el núcleo (#662, Q337 = B).** Lo pidió Julian: que el cuadro de «Mensajes de Telegram» tenga el clip, como Webchat. Antes `telegram.send` rechazaba archivos que no vinieran del agente o de la terminal. Ahora:
+  - PaynaniWeb sube cada archivo con `paynani_lib.telegram.uploads.save()`, en su proceso y sin elegir rutas, y recibe un `up_…`. Se guarda en `state/telegram/uploads/` (0700/0600), vale 10 minutos y una sola vez, y se revisa el tipo por los bytes con las reglas de Webchat;
+  - `telegram.send` acepta `uploads` (hasta 10, 20 MB entre todos) sólo del dueño. El texto va como pie del primero, o después si pasa de 1024;
+  - errores con código: `too_big`, `bad_type`, `too_many` y `bad_upload`;
+  - en el hilo, el mensaje trae `files`; las fotos quedan copiadas en `media/` y `telegram.image` las da con `ref` e `index`;
+  - `telegram.status` anuncia `web_files: true`, para que la web muestre el clip.
+
+  El clip en la web lo hace Iris en otro PR. `telegram/uploads.py`; `test_telegram_send.py`.
+
+  Después de la revisión: un `up_` que otro envío está mandando da `bad_upload`. Lo que ya salió en un envío parcial no se repite, y el error lo dice en `sent_uploads`. Un `up_` sin su `.json` se borra a los 10 minutos (Iris y Andy en #665).
+
+## 0.21.0 (2026-11-01)
+
+### Si actualizas desde 0.20.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.21.0
+python3 scripts/upgrade_plan.py --from v0.20.0     # y haz lo que imprima
+```
+
+El plan reinicia el listener, el despachador, la pasarela SMS, PaynaniWeb, WhatsApp y Telegram. No hay servicios nuevos ni pasos de instalación. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien.
+
+- **Si tu runtime es Hermes**, copia otra vez las dos listas `events` y el `prompt` del roster de `examples/hermes-routes.yaml` a `~/.hermes/config.yaml` y corre `hermes gateway restart` desde una terminal (`HERMES.md`, «Event lists»). Sin `webchat.received` en las rutas, el primer mensaje de Webchat detiene la cola (#582). El plan lo dice como `restart-runtime`.
+- **Webchat** aparece en PaynaniWeb en la sección «AI Agent», debajo del agente. Para probarlo: escribe algo en la página y el agente contesta con `scripts/paynani webchat send` (`AGENTS.md`). Si entras por el túnel, el WebSocket `/webchat/ws` tiene que pasar; si no pasa, la página cae a polling cada 3 s y sigue funcionando.
+- **Webchat desde PaynaniApp** necesita esta versión: PaynaniApp 0.13.0 platica con el agente por la pasarela SMS (#653, PaynaniApp#174). Con una PaynaniApp anterior, la pasarela sigue igual que en 0.20.0.
+- **Si tu runtime es Claude Code**, la siguiente sesión toma el hook nuevo: `harness/session_start.py` cuenta también los `webchat.received` sin atender (el plan lo imprime como `next-session`).
+
+- **PaynaniWeb: el agente cabe en una sola línea del menú.** Lo pidió Julian. La entrada de «AI Agent» queda así: el robot, el nombre del agente y su estado, en la misma línea; el harness ya no se muestra en el menú y queda en la página del agente. Si el nombre no cabe completo junto al estado, sólo queda el punto de color, como un LED (`nav.js`). El nombre del estado sigue en el `title` y para lectores de pantalla.
+
+- **Webchat desde PaynaniApp: la pasarela (#653, FR-1 a FR-6).** El teléfono emparejado platica con el agente en la misma conversación que PaynaniWeb (`SMS_GATEWAY.md` §13):
+  - `webchat.thread` (con `before`, `after`, «escribiendo…» y el borrador) y `webchat.send` por el WebSocket del teléfono, anunciados sólo si hay usuario de PaynaniWeb, con el `grant` `webchat.owner`;
+  - los archivos por HTTP: `POST /sms/webchat/upload` (multipart, campo `file`, hasta 20 MB, el tipo por los bytes) da un `up_…` de un solo uso, y `GET /sms/webchat/file` descarga los adjuntos ya guardados;
+  - `webchat.changed` (`messages`, `typing`, `draft` con su texto) a la conexión del dueño aunque no tenga la pantalla abierta;
+  - el aviso al agente dice «(PaynaniApp)» (`origin` en `store.append` y `event.webchat_event`).
+
+  `sms/webchat_api.py`; `test_sms_webchat.py`. La app es PaynaniApp#174.
+
+- **PaynaniWeb, Webchat: «escribiendo…» ya no queda tapado por la barra de escribir.** Julian lo vio desde su celular, sobre todo al mandar una foto. Cuando aparecía el indicador, la página no bajaba; y una foto que terminaba de cargar alargaba la conversación sin bajar. Ahora, si se está viendo el final, la página baja al aparecer el indicador y al cargar una foto. Si se está leyendo más arriba, no se mueve.
+
+- **PaynaniWeb, Webchat: una foto de Google Fotos ya no termina en el error de Chrome «ERR_UPLOAD_FILE_CHANGED».** Pasaba en Chrome de Android con una foto que estaba en la nube: el archivo cambiaba mientras se bajaba, entre elegirlo y mandarlo. Ahora, al elegir, cada archivo se copia a memoria y se manda esa copia; si se toca «Enviar» mientras copia, se manda al terminar. También: si el WebSocket se cierra antes de la respuesta, el texto regresa al cuadro (las dos, revisión de Metis en #656).
+
+- **PaynaniWeb: el cuadro de escribir de Webchat, como Telegram (Q321).** Lo pidió Julian en la prueba real desde su celular, donde el cuadro era de 2 líneas. Ahora es una sola barra:
+  - el clip pequeño a la izquierda abre «Foto» y «Archivo», con un `<details>` que funciona sin script;
+  - el cuadro ocupa todo el ancho y crece solo mientras se escribe, hasta unas 6 líneas;
+  - «Enviar» es un botón redondo.
+
+  Los límites de los adjuntos van en texto chico dentro del menú del clip.
+
+- **PaynaniWeb: hasta 64 conexiones en espera.** El servidor dejaba 5 (lo de `socketserver`). Con la página, sus scripts, el WebSocket de Webchat y varios intentos de entrar a la vez, el kernel cortaba las demás con «Connection reset by peer» (CI de `main` en cd4d4d8, `test_web_auth`).
+
+- **PaynaniWeb: Webchat, platicar con tu agente desde el navegador (#648).** Va en la sección «AI Agent», debajo del agente (Q304 a Q308):
+  - **Cómo se ve:**
+    - la conversación en burbujas, con fotos y archivos y un separador por día;
+    - «escribiendo…» mientras el agente responde;
+    - un cuadro con clip para adjuntar varios archivos, con vista previa y la × para quitar.
+  - **En vivo, por WebSocket** (Q309 = A): `/webchat/ws`, hecho con la biblioteca estándar (`web/websocket.py`, `web/webchat_ws.py`) y con el protocolo de NiceBot:
+    - `request_id`, `message.accepted` y errores con código;
+    - `message.delta` con el borrador de `webchat send --stream`;
+    - 20 mensajes por minuto y un ping cada 30 s.
+
+    Si no conecta, polling de `/webchat/updates` cada 3 s.
+  - **Seguridad:**
+    - sólo con tu sesión;
+    - `multipart/form-data` con CSRF y un límite que se revisa antes de leer el cuerpo;
+    - los adjuntos salen por `ref` en sandbox, las fotos inline y lo demás como descarga.
+  - **Lo que lee:** el almacén es el del núcleo (`webchat/store.py`); sin él, la página lo dice.
+  - **La página del agente** cuenta también Webchat.
+
+  `web/multipart.py` lee los formularios con archivos con `email.parser`, porque `cgi` ya no está en Python 3.13. Textos en los cinco idiomas; `test_web_webchat.py`.
+
+- **Webchat: el agente contesta (#648, W-2).** `paynani webchat send` (con `--file` desde `state/webchat/outbox/` y `--stream`), `paynani webchat typing` y `paynani webchat thread`. `event show wc:… --body` da el texto completo y la ruta local de cada adjunto. `send` marca `replied` los `webchat.received` abiertos. Con `--stream`, el borrador queda en `state/webchat/draft.json` para que PaynaniWeb lo muestre mientras el agente escribe. `AGENTS.md` explica cómo contestar.
+
+- **La pasarela deja pasar el WebSocket de PaynaniWeb (#648).** Antes quitaba `Upgrade` y `Connection` y agregaba `Connection: close`, así que un WebSocket de la web (como `/webchat/ws`) no podía abrirse por el túnel. Ahora un `GET` con `Upgrade: websocket` llega a la web con esos encabezados y, si la web contesta `101`, la pasarela copia los bytes en los dos sentidos. El plazo de 120 s sin actividad cuenta ahora en los dos sentidos juntos: antes cada sentido tenía el suyo, y uno callado se cortaba aunque el otro siguiera hablando. Lo demás no cambia.
+
+- **PaynaniWeb: el agente de IA en el menú y su página (#644).**
+  - **La sección «AI Agent»:** va debajo de tu nombre y arriba de «Management», como esa sección (Q303). Tiene una entrada con el robot, el nombre del agente y, abajo, el harness y el estado (Q293):
+    - verde «Online»;
+    - ámbar «No session»;
+    - rojo «Offline»;
+    - gris «No data», cuando todavía no hay evidencia (Q300).
+
+    Cada runtime tiene su propia evidencia: la vigilancia en Claude Code, el spool en Codex y OpenCode, y lo último que aceptó o rechazó en OpenClaw y Hermes, siempre del runtime actual.
+  - **La página `/agent`:** se abre al picar el bloque (Q292, Q298). Muestra:
+    - el estado del agente;
+    - los atendidos hoy, de correo, SMS, WhatsApp y Telegram;
+    - la cola;
+    - la última respuesta, sin contar los avisos de PaynaniWeb al dueño;
+    - el tiempo típico de respuesta (la mediana de hoy, Q297);
+    - «The agent» y «Channels»;
+    - lo que hizo hoy;
+    - qué hacer si cambia el estado (Q296).
+
+  Lee lo mismo que el Dashboard y no escribe nada. `dashboard_pages` comparte las filas de canales y de actividad. Textos en los cinco idiomas; `test_web_agent.py`.
+
+- **Webchat, el almacén (#648, W-1).** `scripts/paynani_lib/webchat/store.py` guarda la conversación del dueño con su agente en `state/webchat/`, revisa los adjuntos por sus bytes y escribe el evento `webchat.received` (`[webchat …, roster] <dueño> (PaynaniWeb): …`). El contrato está en `WEBCHAT.md`. Todavía no hay página ni comando: la página `/webchat` la hace Iris y `paynani webchat` va en W-2. **Hermes:** las dos rutas de `examples/hermes-routes.yaml` ya llevan `webchat.received`; si copiaste las rutas de 0.20.0 o antes, cópialas otra vez antes de usar Webchat (`HERMES.md`), o el primer mensaje detiene la cola.
+
+- **WhatsApp: los audios `.ogg` que manda el agente ahora llegan (#646).** `paynani whatsapp send --file` mandaba un OGG/Opus como `audio/ogg`, sin el códec, y WhatsApp lo dejaba en `sent` sin entregarlo nunca. Ahora el puente lo manda como `audio/ogg; codecs=opus` y como nota de voz (`ptt`). Los MP3, M4A y demás audios se mandan igual que antes.
+
 ## 0.20.0 (2026-10-31)
 
 Telegram se configura desde PaynaniWeb (#635): «Mensajes de Telegram» → «Cuenta de Telegram» pide el token y el usuario del bot, sin terminal. Para eso el instalador pone ahora el servicio de Telegram en todas las instalaciones, detenido hasta que haya un token. PaynaniWeb trae además la página «Acerca de» (#636) y «Messages» pasa a llamarse «Text Messages» (#633). Una instalación que no use Telegram no cambia en nada más.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests for two gateway findings from QA-4 (iaaorgmx/PaynaniApp#28).
+Tests for two gateway findings from QA-4 (iaaorgmx/PaynaniApp-Agentic#28).
 An assertion script, like the rest of this suite.
 
 1. `paynani sms revoke` (o un emparejamiento nuevo) tiene que cortar al teléfono que

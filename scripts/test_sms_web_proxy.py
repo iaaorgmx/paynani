@@ -78,6 +78,141 @@ class FakeWeb:
         return self.server.sockets[0].getsockname()[1]
 
 
+class FakeWsWeb:
+    """
+    Una web con WebSocket en /webchat/ws, como la de #648: hace el handshake, contesta
+    «eco:<texto>» a cada mensaje y, con `push`, manda `n` mensajes propios cada `every`
+    segundos sin que el navegador hable. Anota la cabecera y si el socket se cerró.
+    """
+
+    def __init__(self):
+        self.heads = []
+        self.closed = asyncio.Event()
+        self.push = None          # (n, every)
+        self.server = None
+
+    async def handle(self, reader, writer):
+        head = (await reader.readuntil(b"\r\n\r\n")).decode("latin-1")
+        self.heads.append(head)
+        got = headers_of(head)
+        key = (got.get("sec-websocket-key") or [""])[0]
+        if (got.get("upgrade") or [""])[0].lower() != "websocket":
+            payload = b"no-ws"
+            writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 5\r\nConnection: close\r\n\r\n" + payload)
+            await writer.drain()
+            writer.close()
+            return
+        writer.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                      f"Sec-WebSocket-Accept: {wsm.accept_key(key)}\r\n\r\n").encode("latin-1"))
+        await writer.drain()
+        ws = wsm.WebSocket(reader, writer, client=False)
+        pusher = None
+        if self.push:
+            n, every = self.push
+
+            async def push():
+                for i in range(n):
+                    await asyncio.sleep(every)
+                    await ws.send_text(f"push:{i}")
+            pusher = asyncio.ensure_future(push())
+        try:
+            while True:
+                text = await ws.recv()
+                await ws.send_text(f"eco:{text}")
+        except (wsm.ConnectionClosed, ConnectionError, OSError):
+            pass
+        finally:
+            if pusher:
+                pusher.cancel()
+            self.closed.set()
+            writer.close()
+
+    async def start(self):
+        self.server = await asyncio.start_server(self.handle, "127.0.0.1", 0)
+        return self.server.sockets[0].getsockname()[1]
+
+
+async def websocket_through_gateway():
+    """#648: un WebSocket de la web (/webchat/ws) pasa por la pasarela y el túnel."""
+    tmp = Path(tempfile.mkdtemp())
+    state = tmp / "state"
+    state.mkdir()
+    roster = tmp / "roster.md"
+    roster.write_text(ROSTER, encoding="utf-8")
+    web = FakeWsWeb()
+    web_port = await web.start()
+    g = gw.Gateway(state, state / "events.jsonl", roster, public_url="https://ejemplo.ngrok.io", web_port=web_port)
+    server = await gw.serve(g, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    saved_idle = gw.WEB_IDLE_TIMEOUT_S
+    try:
+        ws, status = await wsm.connect("127.0.0.1", port, "/webchat/ws",
+                                       headers={"Cookie": "paynani_web=abc", "Origin": "https://agente.ngrok.app"})
+        check("WebSocket a /webchat/ws por la pasarela: 101 de la web", 101, status)
+        sent = headers_of(web.heads[-1])
+        check("a la web le llegan Upgrade: websocket y Connection: Upgrade, sin close",
+              (["websocket"], ["Upgrade"]), (sent.get("upgrade"), sent.get("connection")))
+        check("y Sec-WebSocket-Key, Cookie y Origin tal cual", (True, ["paynani_web=abc"], ["https://agente.ngrok.app"]),
+              (bool(sent.get("sec-websocket-key")), sent.get("cookie"), sent.get("origin")))
+        await ws.send_text("hola")
+        check("un mensaje va y la respuesta vuelve", "eco:hola", await asyncio.wait_for(ws.recv(), 5))
+        await ws.send_text("ñ" * 100_000)
+        check("un mensaje de 200 KB cruza entero", "eco:" + "ñ" * 100_000, await asyncio.wait_for(ws.recv(), 5))
+        await ws.close()
+        await asyncio.wait_for(web.closed.wait(), 5)
+        check("si el navegador cierra, la web se entera", True, web.closed.is_set())
+
+        # Sólo habla la web durante más del plazo: el túnel sigue en los dos sentidos.
+        gw.WEB_IDLE_TIMEOUT_S = 1.0
+        web.closed = asyncio.Event()
+        web.push = (5, 0.4)
+        ws, status = await wsm.connect("127.0.0.1", port, "/webchat/ws")
+        got = [await asyncio.wait_for(ws.recv(), 5) for _ in range(5)]
+        check("la web empuja 2 s seguidos con el navegador callado: llegan los 5", [f"push:{i}" for i in range(5)], got)
+        await ws.send_text("sigo")
+        check("y el navegador todavía puede hablar después del plazo", "eco:sigo", await asyncio.wait_for(ws.recv(), 5))
+
+        # Nadie habla: se corta.
+        web.closed = asyncio.Event()
+        web.push = None
+        ws, status = await wsm.connect("127.0.0.1", port, "/webchat/ws")
+        try:
+            await asyncio.wait_for(ws.recv(), 5)
+            cut = False
+        except wsm.ConnectionClosed:
+            cut = True
+        check("sin un byte en ningún sentido por más del plazo, el túnel se corta", True, cut)
+        await asyncio.wait_for(web.closed.wait(), 5)
+        check("y la web también ve el cierre", True, web.closed.is_set())
+        gw.WEB_IDLE_TIMEOUT_S = saved_idle
+
+        # Lo que no es un WebSocket sigue como antes.
+        status, _, payload = await raw_http(port, ["POST /webchat/ws HTTP/1.1", "Host: x", "Upgrade: websocket",
+                                                   "Connection: Upgrade", "Content-Length: 0"])
+        sent = headers_of(web.heads[-1])
+        check("POST con Upgrade: websocket no es WebSocket: sin Upgrade y con Connection: close",
+              (None, ["close"]), (sent.get("upgrade"), sent.get("connection")))
+        status, _, payload = await raw_http(port, ["GET /webchat/ws HTTP/1.1", "Host: x", "Upgrade: websocket"])
+        sent = headers_of(web.heads[-1])
+        check("Upgrade: websocket sin Connection: upgrade tampoco", (None, ["close"]),
+              (sent.get("upgrade"), sent.get("connection")))
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writer.write(b"GET /webchat/ws HTTP/1.1\r\nHost: x\r\nUpgrade: WebSocket\r\n"
+                     b"Connection: keep-alive, Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n")
+        await writer.drain()
+        status = int((await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)).split(b" ", 2)[1])
+        writer.close()
+        sent = headers_of(web.heads[-1])
+        check("ese 101 llega al navegador", 101, status)
+        check("Connection con varios tokens y Upgrade en mayúsculas sí es WebSocket",
+              (["WebSocket"], ["Upgrade"]), (sent.get("upgrade"), sent.get("connection")))
+    finally:
+        gw.WEB_IDLE_TIMEOUT_S = saved_idle
+        server.close()
+        await g.shutdown()
+        web.server.close()
+
+
 async def raw_http(port, head_lines, body=b""):
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
     writer.write(("\r\n".join(head_lines) + "\r\n\r\n").encode("latin-1") + body)
@@ -261,5 +396,6 @@ async def main():
 
 
 asyncio.run(main())
+asyncio.run(websocket_through_gateway())
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
