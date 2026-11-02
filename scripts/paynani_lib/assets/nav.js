@@ -133,3 +133,32 @@
   });
   paint();
 })();
+
+/**
+ * The AI agent entry of the menu is one line: the robot, the agent's name and its
+ * status (Julian, 2026-11-02). When the name does not fit whole next to the status,
+ * .agente-punto leaves only the colored dot, like an LED; the status name stays for
+ * screen readers and in the title. Without this file the name is cut with an ellipsis.
+ */
+(function () {
+  'use strict';
+
+  var entry = document.querySelector('.web-shell .agente-entrada');
+  var name = entry && entry.querySelector('.agente-nombre');
+  if (!name || !('ResizeObserver' in window)) {
+    return;
+  }
+  function fit() {
+    // A hidden menu (the phone, before ☰) has no width: nothing to decide yet.
+    if (!entry.clientWidth) {
+      return;
+    }
+    entry.classList.remove('agente-punto');
+    if (name.scrollWidth > name.clientWidth) {
+      entry.classList.add('agente-punto');
+    }
+  }
+  // Opening the menu, turning the phone or loading the font changes the width.
+  new ResizeObserver(fit).observe(entry);
+  fit();
+})();

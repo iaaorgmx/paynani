@@ -267,8 +267,12 @@ for path in ("/?lang=en-US", "/about?lang=en-US", "/roster?lang=en-US"):
 _, _, page = req("GET", "/?lang=en-US", cookie=cookie)
 side = menu(page)
 check("el nombre del agente va escapado", True, '<span class="agente-nombre">Iris &lt;Agente&gt;</span>' in side)
-check("debajo del nombre, el harness y el estado (Q293)", True,
-      '<span class="agente-chip">Claude Code</span><span class="agente-chip agente-ok"><i aria-hidden="true"></i>Online</span>' in side)
+check("en la misma línea que el nombre, sólo el estado, sin el harness (Julian, 2026-11-02)", (True, False),
+      ('<span class="agente-nombre">Iris &lt;Agente&gt;</span>\n      <span class="agente-estado agente-ok" title="Online">'
+       '<i aria-hidden="true"></i><span class="agente-estado-txt">Online</span></span></a>' in side, "Claude Code" in side))
+check("nav.js deja sólo el punto si el nombre no cabe: la regla está en el CSS", (True, True),
+      (".agente-punto .agente-estado-txt" in (ROOT / "scripts/paynani_lib/assets/web.css").read_text(),
+       "agente-punto" in (ROOT / "scripts/paynani_lib/assets/nav.js").read_text()))
 check("la entrada empieza con el ícono del robot, como las del menú", True,
       bool(re.search(r'<a href="/agent" class="agente-entrada"[^>]*><svg class="i"', side)))
 check("la sección tiene su propio nav con su nombre", True, '<nav aria-label="AI Agent" class="agente-nav">' in side)
@@ -295,23 +299,23 @@ SOURCE["fake"] = dashboard.Fake(services=services(live=False),
                                 agent={"name": "Iris", "email": "iris@example.com", "runtime": "claudecode"})
 _, _, page = req("GET", "/agent?lang=en-US", cookie=cookie)
 check("sin sesión: ámbar «No session» en el bloque y en la página", (True, True, True),
-      ('agente-chip agente-warn' in menu(page), 'salud salud-warn' in page, "Not armed" in page))
+      ('agente-estado agente-warn' in menu(page), 'salud salud-warn' in page, "Not armed" in page))
 SOURCE["fake"] = dashboard.Fake(services=services(dispatcher="inactive"),
                                 agent={"name": "Iris", "email": "iris@example.com", "runtime": "openclaw"})
 _, _, page = req("GET", "/agent?lang=en-US", cookie=cookie)
-check("despachador detenido: rojo «Offline»", (True, True), ('agente-chip agente-bad' in menu(page), 'salud salud-bad' in page))
+check("despachador detenido: rojo «Offline»", (True, True), ('agente-estado agente-bad' in menu(page), 'salud salud-bad' in page))
 check("OpenClaw sin entregas: «Last delivery», sin afirmar que escucha", True, "nothing delivered yet" in page)
 SOURCE["fake"] = dashboard.Fake(services=services(),
                                 agent={"name": "Iris", "email": "iris@example.com", "runtime": "hermes"})
 _, _, page = req("GET", "/agent?lang=en-US", cookie=cookie)
 check("Hermes sin evidencia: gris «No data» en el bloque y en la página", (True, True, True),
-      ('agente-chip agente-off' in menu(page), "salud salud-off" in page, "Nothing has been delivered to the agent yet" in page))
+      ('agente-estado agente-off' in menu(page), "salud salud-off" in page, "Nothing has been delivered to the agent yet" in page))
 RT["now"] = "hermes"
 SOURCE["fake"] = dashboard.Fake(services=services(accepted=A8, error=A9),
                                 agent={"name": "Iris", "email": "iris@example.com", "runtime": "hermes"})
 _, _, page = req("GET", "/agent?lang=en-US", cookie=cookie)
 check("Hermes que rechaza: rojo, «Hermes is not taking messages»", (True, True),
-      ('agente-chip agente-bad' in menu(page), "Hermes is not taking messages" in page))
+      ('agente-estado agente-bad' in menu(page), "Hermes is not taking messages" in page))
 
 
 class Broken(dashboard.Fake):
