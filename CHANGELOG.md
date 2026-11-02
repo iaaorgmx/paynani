@@ -17,7 +17,22 @@ El plan reinicia el listener, el despachador, la pasarela SMS, PaynaniWeb, Whats
 
 - **Si tu runtime es Hermes**, copia otra vez las dos listas `events` y el `prompt` del roster de `examples/hermes-routes.yaml` a `~/.hermes/config.yaml` y corre `hermes gateway restart` desde una terminal (`HERMES.md`, «Event lists»). Sin `webchat.received` en las rutas, el primer mensaje de Webchat detiene la cola (#582). El plan lo dice como `restart-runtime`.
 - **Webchat** aparece en PaynaniWeb en la sección «AI Agent», debajo del agente. Para probarlo: escribe algo en la página y el agente contesta con `scripts/paynani webchat send` (`AGENTS.md`). Si entras por el túnel, el WebSocket `/webchat/ws` tiene que pasar; si no pasa, la página cae a polling cada 3 s y sigue funcionando.
-- **PaynaniApp no cambia** en esta versión. Webchat desde PaynaniApp viene después (#653).
+- **Webchat desde PaynaniApp** necesita esta versión: PaynaniApp 0.13.0 platica con el agente por la pasarela SMS (#653, PaynaniApp#174). Con una PaynaniApp anterior, la pasarela sigue igual que en 0.20.0.
+- **Si tu runtime es Claude Code**, la siguiente sesión toma el hook nuevo: `harness/session_start.py` cuenta también los `webchat.received` sin atender (el plan lo imprime como `next-session`).
+
+### Cambios
+
+- **Webchat desde PaynaniApp: la pasarela (#653, FR-1 a FR-6).** El teléfono emparejado platica con el agente en la misma conversación que PaynaniWeb (`SMS_GATEWAY.md` §13):
+  - `webchat.thread` (con `before`, `after`, «escribiendo…» y el borrador) y `webchat.send` por el WebSocket del teléfono, anunciados sólo si hay usuario de PaynaniWeb, con el `grant` `webchat.owner`;
+  - los archivos por HTTP: `POST /sms/webchat/upload` (multipart, campo `file`, hasta 20 MB, el tipo por los bytes) da un `up_…` de un solo uso, y `GET /sms/webchat/file` descarga los adjuntos ya guardados;
+  - `webchat.changed` (`messages`, `typing`, `draft` con su texto) a la conexión del dueño aunque no tenga la pantalla abierta;
+  - el aviso al agente dice «(PaynaniApp)» (`origin` en `store.append` y `event.webchat_event`).
+
+  `sms/webchat_api.py`; `test_sms_webchat.py`. La app es PaynaniApp#174.
+
+- **PaynaniWeb, Webchat: «escribiendo…» ya no queda tapado por la barra de escribir.** Julian lo vio desde su celular, sobre todo al mandar una foto. Cuando aparecía el indicador, la página no bajaba; y una foto que terminaba de cargar alargaba la conversación sin bajar. Ahora, si se está viendo el final, la página baja al aparecer el indicador y al cargar una foto. Si se está leyendo más arriba, no se mueve.
+
+- **PaynaniWeb, Webchat: una foto de Google Fotos ya no termina en el error de Chrome «ERR_UPLOAD_FILE_CHANGED».** Pasaba en Chrome de Android con una foto que estaba en la nube: el archivo cambiaba mientras se bajaba, entre elegirlo y mandarlo. Ahora, al elegir, cada archivo se copia a memoria y se manda esa copia; si se toca «Enviar» mientras copia, se manda al terminar. También: si el WebSocket se cierra antes de la respuesta, el texto regresa al cuadro (las dos, revisión de Metis en #656).
 
 - **PaynaniWeb: el cuadro de escribir de Webchat, como Telegram (Q321).** Lo pidió Julian en la prueba real desde su celular, donde el cuadro era de 2 líneas. Ahora es una sola barra:
   - el clip pequeño a la izquierda abre «Foto» y «Archivo», con un `<details>` que funciona sin script;

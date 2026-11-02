@@ -24,10 +24,29 @@
     });
   }
   var socket = null;
+  var copying = 0;          // copias a memoria de adjuntos en curso
+  var sendAfterCopy = false;
   var pending = {};
   var polling = null;
 
   function bottom() { window.scrollTo(0, document.body.scrollHeight); }
+  // ¿Se está viendo el final de la conversación? Lo dice el último scroll del usuario: una
+  // foto que termina de cargar alarga la página sin mover el scroll, y no cuenta como «subir».
+  var follow = true;
+  function nearBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 160; }
+  window.addEventListener("scroll", function () { follow = nearBottom(); }, {passive: true});
+  // Una foto nueva crece al cargar: si se veía el final, se vuelve a bajar.
+  hilo.addEventListener("load", function (ev) {
+    if (ev.target.tagName === "IMG" && follow) { bottom(); }
+  }, true);
+
+  // «Escribiendo…» aparece al final: si se veía el final, la página baja para que la barra de
+  // escribir no lo tape (Julian, al mandar una foto desde su celular); si se lee más arriba, no.
+  function showTyping(on) {
+    var was = escribe.hidden;
+    escribe.hidden = !on;
+    if (on && was && follow) { bottom(); }
+  }
 
   function lastDay() {
     var days = hilo.querySelectorAll(".wc-dia");
@@ -76,7 +95,7 @@
     }).then(function (data) {
       if (!data) { return; }
       addHtml(data.html, data.after);
-      escribe.hidden = !data.typing;
+      showTyping(!!data.typing);
     }).catch(function () {});
   }
   function startPolling() {
@@ -98,7 +117,7 @@
       try { data = JSON.parse(ev.data); } catch (e) { return; }
       if (data.type === "connected" && polling) { clearInterval(polling); polling = null; }
       else if (data.type === "messages") { showDraft(null); addHtml(data.html, data.after); }
-      else if (data.type === "typing") { escribe.hidden = !data.on || (borrador && !borrador.hidden); }
+      else if (data.type === "typing") { showTyping(!!data.on && !(borrador && !borrador.hidden)); }
       else if (data.type === "message.delta") { showDraft(data.text); }
       else if (data.type === "message.accepted") {
         delete pending[data.request_id];
@@ -112,6 +131,12 @@
     };
     socket.onclose = function () {
       socket = null;
+      // Si se cerró después de mandar y antes de la respuesta, el texto regresa al cuadro
+      // (revisión de Metis en #656).
+      var waiting = Object.keys(pending).map(function (k) { return pending[k]; })
+        .filter(function (t) { return typeof t === "string"; });
+      pending = {};
+      if (waiting.length && texto && !texto.value) { texto.value = waiting[waiting.length - 1]; grow(); }
       // Si nunca abrió (gateway viejo, red), polling; si se cayó, se reintenta en 5 s.
       if (!opened) { startPolling(); } else { startPolling(); setTimeout(connect, 5000); }
     };
@@ -137,6 +162,7 @@
         // Por el formulario (con archivos, o sin WebSocket): una sola vez. Subir una foto
         // por datos móviles tarda, y un segundo toque la mandaba dos veces (#656).
         if (form.classList.contains("wc-enviando")) { ev.preventDefault(); return; }
+        if (copying) { ev.preventDefault(); sendAfterCopy = true; form.classList.add("wc-enviando"); return; }
         form.classList.add("wc-enviando");
         return;
       }
@@ -178,6 +204,7 @@
       Array.prototype.forEach.call(input.files, function (f, j) { if (j !== i) { dt.items.add(f); } });
       input.files = dt.files;
       render();
+      copy(input);           // lo que queda, a memoria otra vez
     });
     item.appendChild(name);
     item.appendChild(small);
@@ -191,10 +218,47 @@
       Array.prototype.forEach.call(input.files, function (file, i) { lista.appendChild(chip(input, file, i)); });
     });
   }
+  // Chrome en Android a veces entrega una foto de Google Fotos como un archivo «en la nube»
+  // que cambia antes de subirse, y el envío falla con ERR_UPLOAD_FILE_CHANGED (lo vio
+  // Julian, #656). Al elegirlos se copian a memoria, así el envío ya no depende de ese archivo.
+  function snapshot(input) {
+    var files = Array.prototype.slice.call(input.files);
+    if (!files.length || !files[0].arrayBuffer) { return Promise.resolve(); }
+    return Promise.all(files.map(function (f) {
+      return f.arrayBuffer().then(function (buf) {
+        return new File([buf], f.name, {type: f.type, lastModified: f.lastModified});
+      }, function () { return f; });
+    })).then(function (copies) {
+      // Si mientras se copiaba se quitó o se cambió un archivo, la selección ya no es la
+      // que se copió: no se toca (revisión de Metis en #657).
+      var now = Array.prototype.slice.call(input.files);
+      if (now.length !== files.length || now.some(function (f, i) { return f !== files[i]; })) { return; }
+      var dt = new DataTransfer();
+      copies.forEach(function (c) { dt.items.add(c); });
+      input.files = dt.files;
+    });
+  }
+
+  function copy(input) {
+      copying += 1;
+      snapshot(input).then(done, done);
+      function done() {
+        copying -= 1;
+        render();
+        // Si se tocó «Enviar» mientras se copiaba, se manda ahora.
+        if (!copying && sendAfterCopy) {
+          sendAfterCopy = false;
+          form.classList.remove("wc-enviando");
+          if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
+        }
+      }
+  }
+
   inputs.forEach(function (input) {
     input.addEventListener("change", function () {
       if (menu) { menu.open = false; }
       render();
+      copy(input);
     });
   });
 }());
