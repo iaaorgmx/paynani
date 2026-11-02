@@ -38,7 +38,8 @@ import roster as roster_mod
 
 from . import api as tg_api
 from . import config, contacts
-from .store import read_json, write_json
+from . import uploads as tg_uploads
+from .store import private_dir, read_json, write_atomic, write_json
 
 MAX_MESSAGE = 4096                 # lo que acepta Telegram por mensaje
 MAX_CAPTION = 1024
@@ -287,30 +288,44 @@ class Outbound:
         by = msg.get("by", "")
         text = msg.get("text", "")
         file = msg.get("file")
+        ups = msg.get("uploads")
         if not isinstance(text, str):
             raise _refused("invalid", "text", field="text")
         if file is not None and author(by) != "agent":
             raise _refused("invalid", "sólo la terminal y el agente mandan archivos", field="file")
-        if not text.strip() and not file:
+        if ups is not None and (author(by) != "owner" or file is not None):
+            raise _refused("invalid", "sólo el dueño manda archivos subidos (#662)", field="uploads")
+        if not text.strip() and not file and not ups:
             raise _refused("invalid", "texto vacío", field="text", reason="empty")
         if len(text) > MAX_TOTAL:
             raise _refused("invalid", f"más de {MAX_TOTAL} caracteres", field="text", reason="too_long")
         thread, chat, _ = self._target(msg)
-        path = self.check_file(file) if file else None
-        caption = text if path and len(text) <= MAX_CAPTION else ""
+        if ups is not None:
+            try:
+                files = tg_uploads.take(self.root, ups)
+            except tg_uploads.Rejected as exc:
+                raise _refused(exc.code, exc.detail, field="uploads") from None
+        elif file:
+            path = self.check_file(file)
+            files = [{"name": path.name, "path": path}]
+        else:
+            files = []
+        caption = text if files and len(text) <= MAX_CAPTION else ""
         chunks = split_text(text) if text and not caption else []
-        reserved = len(chunks) + (1 if path else 0)
+        reserved = len(chunks) + len(files)
         day = await self._reserve(reserved)        # atómico: dos envíos a la vez no pasan el límite
         delivered = 0
         self._stop_typing(thread)
         ref = "tgo:" + secrets.token_hex(16)
         record = {"ref": ref, "thread": thread, "dir": "out", "by": author(by), "at": _now(),
-                  "kind": "file" if path else "text", "text": text, "file": path.name if path else None,
-                  "status": "sending"}
+                  "kind": "file" if files else "text", "text": text,
+                  "file": files[0]["name"] if files else None, "status": "sending"}
+        if ups is not None:
+            record["files"] = [self._keep_photo(ref, i, f) for i, f in enumerate(files)]
         self.store.record_sent(record)
         try:
-            if path:
-                await self._send_file(chat, path, caption)
+            for i, f in enumerate(files):
+                await self._send_file(chat, f, caption if i == 0 else "")
                 delivered += 1
             draft = self._drafts.pop(thread, None)
             for i, chunk in enumerate(chunks):
@@ -327,19 +342,36 @@ class Outbound:
                                     "delivered": delivered, "parts": reserved})
             self._notify("threads")
             raise
+        for f in files:
+            if f.get("upload"):
+                tg_uploads.drop(self.root, f["upload"])    # un solo uso: sólo cuando salió
         self.store.record_sent({"ref": ref, "status": "sent"})
         self.log(f"telegram.send {ref} a {thread}")
         self._notify("threads")
         return {"ref": ref, "status": "sent", "at": record["at"]}
 
-    async def _send_file(self, chat: int, path: Path, caption: str) -> None:
-        data = path.read_bytes()
-        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    def _keep_photo(self, ref: str, i: int, f: dict) -> dict:
+        """Lo que queda en outbox.jsonl de un archivo de la web; una foto, con su copia en media/."""
+        item = {"name": f["name"], "kind": f.get("kind"), "size": f["size"]}
+        if f.get("kind") == "image" and f["mime"] in PHOTO_MIMES + ("image/gif",):
+            ext = f["name"].rsplit(".", 1)[-1].lower() if "." in f["name"] else "bin"
+            path = private_dir(self.root / "media") / f"out-{ref[4:]}-{i}.{ext}"
+            with contextlib.suppress(OSError):
+                write_atomic(path, f["data"])
+                item["media"] = {"path": str(path), "mime": f["mime"], "bytes": f["size"]}
+        return item
+
+    async def _send_file(self, chat: int, f: dict, caption: str) -> None:
+        if f.get("path") is not None:
+            data = f["path"].read_bytes()
+            mime = mimetypes.guess_type(f["name"])[0] or "application/octet-stream"
+        else:
+            data, mime = f["data"], f["mime"]
         method, field = ("sendPhoto", "photo") if mime in PHOTO_MIMES and len(data) <= MAX_PHOTO \
             else ("sendDocument", "document")
         await self._pace(chat)
         params = {"chat_id": chat, "caption": caption or None}
-        await self._api(method, params, upload=(field, path.name, data, mime))
+        await self._api(method, params, upload=(field, f["name"], data, mime))
 
     # --- telegram.draft (FR-24) ----------------------------------------------------------
     def _draft_id(self, thread: str) -> int:
@@ -523,8 +555,13 @@ class Outbound:
         for s in self.store.sent():
             t = s.get("thread")
             if t in out:
-                out[t]["messages"].append({"ref": s["ref"], "dir": "out", "at": s.get("at"), "kind": s.get("kind"),
-                                           "text": s.get("text"), "by": s.get("by"), "status": s.get("status")})
+                item = {"ref": s["ref"], "dir": "out", "at": s.get("at"), "kind": s.get("kind"),
+                        "text": s.get("text"), "by": s.get("by"), "status": s.get("status")}
+                if s.get("files"):
+                    item["files"] = [_public_file(f) for f in s["files"]]
+                elif s.get("file"):
+                    item["files"] = [{"name": s["file"]}]
+                out[t]["messages"].append(item)
         for v in out.values():
             v["messages"].sort(key=lambda m: m.get("at") or "", reverse=True)
             v["visible"] = [m for m in v["messages"]
@@ -588,6 +625,8 @@ class Outbound:
     def image(self, msg: dict) -> dict:
         """Como `whatsapp.image` (#573): la foto de un mensaje visible hoy; si no, `not_found`."""
         ref = str(msg.get("ref") or "")
+        if ref.startswith("tgo:"):
+            return self._sent_image(ref, msg.get("index", 0))
         try:
             data = self.store.inbox(ref) if self.store else None
         except ValueError:
@@ -599,6 +638,28 @@ class Outbound:
         visible = contacts.recognized_now(known, links, data.get("user", 0)) is not None or \
             (data.get("catch_all") and self._catch_active())
         if not visible:
+            raise _refused("not_found")
+        path = Path(media["path"])
+        if path.parent != self.root / "media":
+            raise _refused("not_found")
+        try:
+            body = path.read_bytes()
+        except OSError:
+            raise _refused("not_found") from None
+        return {"mime": media["mime"], "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
+
+    def _sent_image(self, ref: str, index) -> dict:
+        """La copia de una foto que el dueño mandó desde la web (#662), si su hilo se ve hoy."""
+        if self.store is None or not isinstance(index, int) or isinstance(index, bool):
+            raise _refused("not_found")
+        rec = next((s for s in self.store.sent() if s.get("ref") == ref), None)
+        files = (rec or {}).get("files") or []
+        if not 0 <= index < len(files):
+            raise _refused("not_found")
+        media = files[index].get("media") or {}
+        info = self.store.threads().get(rec.get("thread"))
+        known, links = self._known()
+        if not media.get("path") or not info or contacts.recognized_now(known, links, info["user"]) is None:
             raise _refused("not_found")
         path = Path(media["path"])
         if path.parent != self.root / "media":
@@ -627,6 +688,15 @@ class _Refused(Exception):
         self.code = code
         self.detail = detail
         self.extra = extra
+
+
+def _public_file(f: dict) -> dict:
+    """Un archivo enviado, para `telegram.thread`: sin la ruta en disco."""
+    out = {k: f.get(k) for k in ("name", "kind", "size") if f.get(k) is not None}
+    media = f.get("media") or {}
+    if media.get("path"):
+        out["media"] = {"mime": media.get("mime"), "bytes": media.get("bytes")}
+    return out
 
 
 def _refused(code: str, detail: str = "", **extra) -> _Refused:
