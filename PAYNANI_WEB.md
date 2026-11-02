@@ -374,6 +374,10 @@ escribe con `paynani_lib/webchat/store.py`, sin un servicio aparte.
   - **Si no conecta:** el script vuelve a pedir `/webchat/updates?after=<id>` cada 3 s,
     sólo con la pestaña visible. Sin script, la página funciona igual y se recarga a mano.
   - **Límite:** como mucho 20 conexiones a la vez.
+- **Mensajes anteriores (Q336 = A):** la página trae los últimos 50. Si hay más, arriba
+  aparece «Mensajes anteriores», que pide los 50 de antes a
+  `/webchat/updates?before=<id>` y los pone arriba sin mover lo que se está leyendo. Sin
+  script no aparece.
 - **Lo que hace el agente** por Webchat cuenta en la página del agente: atendidos hoy,
   tiempo de respuesta, última respuesta y actividad.
 - **Sin el almacén:** si la instalación todavía no trae `webchat/store.py`, la página lo
@@ -434,8 +438,9 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   comprueba que el usuario sea el de ese token (Q282), borra un webhook si lo había
   (la casilla lo autoriza, Q283), escribe `telegram.env` (0600) y arranca
   `paynani-telegram`. Si algo falla no se escribe nada. Al terminar te llega un correo
-  con el bot, sin el token. Con un token ya puesto pero desactivado, se niega y pide
-  `paynani telegram enable`.
+  con el bot, sin el token. Con un token ya puesto pero desactivado, la página no muestra
+  el formulario: sólo pide `paynani telegram enable` (#641). La página no enlaza a
+  «Mensajes de Telegram», que sin bot es un 404.
 - **La cuenta** (`/telegram` con bot): el estado del servicio, el `@usuario` del bot, desde
   cuándo funciona, la última consulta a Telegram y cuántos mensajes llegaron y
   salieron hoy. Si otro programa lee el mismo bot o tiene un webhook, o si Telegram

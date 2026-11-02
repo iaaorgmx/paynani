@@ -155,7 +155,7 @@ check("«Webchat» va en la sección «AI Agent», debajo del agente y arriba de
 check("en /webchat la entrada está activa y la del agente no", (True, False),
       ('<a href="/webchat" class="activo" aria-current="page">' in side, "agente-entrada activo" in side))
 check("/webchat: 200, título, sin mensajes todavía, el formulario multipart", (200, True, True, True),
-      (status, "<h1>Webchat</h1>" in page, "No messages yet" in page, 'enctype="multipart/form-data"' in page))
+      (status, "<h1>Webchat - Iris</h1>" in page, "No messages yet" in page, 'enctype="multipart/form-data"' in page))
 check("el script de la página se carga con defer y se sirve", (True, 200),
       ('<script src="/assets/webchat.js" defer></script>' in page, req("GET", "/assets/webchat.js")[0]))
 check("sin atributos style", [], re.findall(r'\sstyle="', page))
@@ -403,6 +403,41 @@ check("más de 20 mensajes en un minuto: RATE_LIMITED, reintentable", True,
       any(f[1].get("code") == "RATE_LIMITED" and f[1].get("retryable") for f in frames if f[0] == 1))
 ws_send(sock, b"", op=8)
 sock.close()
+
+# ---- «Mensajes anteriores» (Q336 = A) -------------------------------------------------
+OWNER = {"name": "Julian", "email": "julian@example.com"}
+big = webchat_source.Fake()
+for i in range(120):
+    big.append("owner" if i % 2 else "agent", f"mensaje {i}", [], owner=OWNER if i % 2 else None)
+ids = [m["id"] for m in big.messages(limit=500)]
+STORE["now"] = big
+status, _, page = text("/webchat?lang=es-MX", cookie)
+check("con 120 mensajes la página trae los últimos 50", (200, 50, True, False),
+      (status, page.count('" id="w_'), "mensaje 119<" in page, "mensaje 69<" in page))
+check("y ofrece «Mensajes anteriores» desde el primero que se ve", True,
+      f'<li class="wc-antes" id="wc-antes" data-before="{ids[70]}"><button type="button" class="wc-antes-btn"'
+      f' data-loading="Cargando…">Mensajes anteriores</button></li>' in page)
+older = json.loads(req("GET", f"/webchat/updates?before={ids[70]}", cookie=cookie)[2])
+check("before: los 50 anteriores, ya dibujados, y que quedan más", (50, True, False, ids[20], True),
+      (older["html"].count('" id="w_'), "mensaje 69<" in older["html"], "mensaje 70<" in older["html"],
+       older["before"], older["more"]))
+check("before: lo cargado empieza con su separador de día", True, older["html"].startswith('<li class="wc-dia"'))
+older = json.loads(req("GET", f"/webchat/updates?before={ids[20]}", cookie=cookie)[2])
+check("before: los últimos 20, y ya no quedan", (20, ids[0], False),
+      (older["html"].count('" id="w_'), older["before"], older["more"]))
+check("before inválido o desconocido: nada, sin error", ("", False, "", False),
+      tuple(v for q in ("../../x", "w_" + "f" * 32)
+            for v in (lambda d: (d["html"], d["more"]))(json.loads(req("GET", f"/webchat/updates?before={q}", cookie=cookie)[2]))))
+few = webchat_source.Fake()
+for i in range(50):
+    few.append("owner", f"m{i}", [], owner=OWNER)
+STORE["now"] = few
+page = text("/webchat?lang=es-MX", cookie)[2]
+check("con 50 o menos, el botón está escondido", (50, True), (page.count('" id="w_'), bool(re.search(r'<li class="wc-antes" id="wc-antes" data-before="w_[0-9a-f]+" hidden>', page))))
+STORE["now"] = store
+check("webchat.js: el botón carga arriba y conserva lo que se ve", (True, True, True),
+      tuple(x in (ROOT / "scripts/paynani_lib/assets/webchat.js").read_text()
+            for x in ('"/webchat/updates?before="', 'insertAdjacentHTML("afterend"', "keepAnchor")))
 
 # ---- Sin el almacén del núcleo --------------------------------------------------------
 STORE["now"] = None
