@@ -151,6 +151,8 @@ async def main():
     order = st.order(stale["id"])
     order["expires_at"] = "2000-01-01T00:00:00Z"
     st.queue_order(order)
+    # Una de la API pendiente: aunque el saludo anuncie accepts_api_out, no se manda (Metis en #671).
+    api = outgoing.queue(st, to=ANA, text="De la API", origin="api", token="citas")
     ws, welcome_wc = await connect(port, token, device_id, sms=False, accepts_owner_out=True, accepts_api_out=True)
     check("sms false: device.json lo guarda", False, st.device().get("sms"))
     check("sms false: sms_enabled es False", False, st.sms_enabled())
@@ -161,6 +163,15 @@ async def main():
     check("sms false: la orden vencida queda expired", "expired", st.order_statuses(stale["id"])[-1]["status"])
     check("sms false: la del agente sigue en outbox hasta su hora", True,
           before["id"] in [o["id"] for o in st.pending_orders(origins=("agent",))])
+    check("sms false con accepts_api_out: la de la API sigue en outbox, sin enviarse", True,
+          api["id"] in [o["id"] for o in st.pending_orders(origins=("api",))])
+    order = st.order(api["id"])
+    order["expires_at"] = "2000-01-01T00:00:00Z"
+    st.queue_order(order)
+    await asyncio.sleep(1.5)
+    check("sms false con accepts_api_out: la de la API vence a su hora", "expired",
+          st.order_statuses(api["id"])[-1]["status"])
+    check("sms false con accepts_api_out: nunca llegó como sms.out", [], [m["id"] for m in await collect(ws, "sms.out", 1.2)])
     queued = sorted(o["id"] for o in st.pending_orders(origins=("agent", "owner", "api")))
     for origin, extra in (("agent", {}), ("owner", {"source": WEB}), ("api", {"token": "citas"})):
         check(f"sms false: una orden nueva de {origin} se rechaza con no_sms_phone", "no_sms_phone",

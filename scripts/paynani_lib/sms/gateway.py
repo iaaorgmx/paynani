@@ -952,7 +952,7 @@ class Gateway:
             origins = ["agent"] if getattr(ws, "sms", True) else []
             if getattr(ws, "accepts_owner_out", False) and origins:
                 origins.append("owner")
-            if getattr(ws, "accepts_api_out", False):
+            if getattr(ws, "accepts_api_out", False) and origins:
                 origins.append("api")
             # Las de un origen que el teléfono no acepta no se mandan, pero sí vencen a su hora.
             held = [o for o in ("agent", "owner", "api") if o not in origins]
