@@ -6,7 +6,7 @@ agente). Es el contrato que siguen las dos partes. Si una de las dos hace algo q
 aquí no está, el error es de esa parte o de esta página, y se corrige aquí primero.
 
 Es la tarea PROTO-1 ([#305](https://github.com/iaaorgmx/paynani/issues/305)) del
-PRD [iaaorgmx/PaynaniApp#15](https://github.com/iaaorgmx/PaynaniApp/issues/15).
+PRD [iaaorgmx/PaynaniApp-Agentic#15](https://github.com/iaaorgmx/PaynaniApp-Agentic/issues/15).
 La pasarela (SRV-1) ya lo implementa en `scripts/sms_gateway.py` y `scripts/paynani_lib/sms/`; la app lo implementa en APP-2, APP-3, APP-4 y APP-11.
 
 ## Qué hace la pasarela
