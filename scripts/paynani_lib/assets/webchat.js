@@ -14,6 +14,15 @@
   var csrf = form ? form.querySelector("input[name=csrf]") : null;
   var inputs = Array.prototype.slice.call(document.querySelectorAll("input.wc-archivos"));
   var menu = document.querySelector(".wc-adjuntar");
+  // El menú del clip se cierra al tocar fuera de él o con Esc, como en Telegram (Julian, #656).
+  if (menu) {
+    document.addEventListener("click", function (ev) {
+      if (menu.open && !menu.contains(ev.target)) { menu.open = false; }
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); }
+    });
+  }
   var socket = null;
   var pending = {};
   var polling = null;
