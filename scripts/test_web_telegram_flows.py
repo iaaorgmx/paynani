@@ -256,6 +256,16 @@ try:
     check("con archivos, un corte por tiempo dice que revises el hilo antes de reenviar", (503, True),
           (st, th("web.tg.err.send_unknown") in page))
 
+    def partial(kind, **fields):
+        raise telegram_source.Failed("rate_limited", retry_after_s=3, sent_uploads=fields["uploads"][:1])
+
+    src.request_slow = partial
+    st, _, page = req("POST", "/telegram/messages/enviar", {"csrf": csrf, "t": ana["thread"], "text": "x"}, ck,
+                      files=[("salio.png", PNG), ("falto.pdf", PDF)])
+    src.request_slow = real_slow
+    check("envío parcial (#667): dice cuáles ya salieron, para no repetirlos", (429, True, False),
+          (st, "Ya salieron: salio.png." in page, "falto.pdf." in page))
+
     st, _, page = req("GET", f"/telegram/messages/ver?t={pedro['thread']}&lang=es-MX", cookie=ck)
     check("Pedro: oculto, sin responder y con «Agregar al roster»", (200, True, False, True),
           (st, th("web.tg.hidden") in page, 'action="/telegram/messages/enviar"' in page, 'action="/telegram/roster"' in page))

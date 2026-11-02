@@ -1774,12 +1774,14 @@ def make_handler(ctx: Context):
                     return
                 # Los archivos van primero al núcleo (#662): `uploads.save` los revisa por los
                 # bytes y da un `up_…` de un solo uso; la web nunca elige una ruta.
-                ups = []
+                ups, names = [], {}
                 try:
                     if len(files) > tg_uploads.MAX_FILES:
                         raise tg_uploads.Rejected("too_many")
                     for f in files:
-                        ups.append(tg_uploads.save(self.CTX.state_dir() / "telegram", f["name"][:200], f["data"])["upload"])
+                        saved = tg_uploads.save(self.CTX.state_dir() / "telegram", f["name"][:200], f["data"])
+                        ups.append(saved["upload"])
+                        names[saved["upload"]] = saved["name"]
                 except tg_uploads.Rejected as exc:
                     for ref in ups:
                         tg_uploads.drop(self.CTX.state_dir() / "telegram", ref)
@@ -1795,8 +1797,13 @@ def make_handler(ctx: Context):
                     # Con archivos, un corte por tiempo no dice si salieron: no se invita a
                     # mandarlos otra vez sin revisar el hilo (#662).
                     key = "send_unknown" if ups and exc.fields.get("timed_out") else exc.code
-                    self._telegram_messages(values=values, error=telegram_pages.error_text(key, exc.fields),
-                                            code=code)
+                    error = telegram_pages.error_text(key, exc.fields)
+                    # Un envío parcial (#667): los que salieron vienen en `sent_uploads`. Como
+                    # cada POST sube todo otra vez, se dice cuáles ya llegaron.
+                    sent = [names[u] for u in exc.fields.get("sent_uploads") or [] if u in names]
+                    if sent:
+                        error += " " + i18n.t("web.tg.err.partial", names=", ".join(sent))
+                    self._telegram_messages(values=values, error=error, code=code)
                     return
                 self._redirect(f"/telegram/messages/ver?t={values['t']}&ok=sent#responder")
                 return
