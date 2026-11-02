@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, «Mensajes de Telegram»: el cuadro de contestar es la barra de Webchat (Q337).** Lo pidió Julian con un mockup que aprobó. Ya no lleva el título «Responder» ni la etiqueta «Mensaje», que siguen para lectores de pantalla. Es una sola barra pegada abajo: el cuadro empieza en una línea y crece hasta unas 6 mientras se escribe, y «Enviar» es el botón redondo. Un segundo toque no lo manda dos veces. Por ahora sólo texto: el clip para fotos y archivos llega con #662.
+
 ## 0.21.0 (2026-11-01)
 
 ### Si actualizas desde 0.20.0

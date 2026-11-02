@@ -458,6 +458,9 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   nunca por un id de Telegram. De alguien fuera del roster se ven el nombre que dio,
   marcado «no verificado», y la hora; el texto sólo con el Catch-All de Telegram
   activo.
+- **Contestar** usa la barra de Webchat (Q337): el cuadro de una línea, que crece hasta
+  unas 6 (`tg_barra.js`), y «Enviar» redondo, pegada abajo. Por ahora sólo manda texto;
+  el clip llega cuando el servicio acepte archivos de la web (#662).
 - **Responder** sólo aparece en la conversación de un contacto del roster que ya le
   escribió al bot, con el servicio funcionando. No hay «Nuevo mensaje»: Telegram no
   deja que un bot escriba primero.

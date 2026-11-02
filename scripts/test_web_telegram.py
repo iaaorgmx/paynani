@@ -232,6 +232,12 @@ check("un hilo del roster: mensajes en orden de hora y el cuadro de responder", 
       (status, page.index("¿Tienen mesa a las 8?") < page.index("Somos 4. Gracias."),
        'action="/telegram/messages/enviar"' in page))
 check("un mensaje editado lo dice", True, f'({th("web.tg.edited")})' in page)
+check("responder es la barra de Webchat (Q337): una línea, «Enviar» redondo y su script", (True, True, True, True, True),
+      ('class="wc-escribir tg-escribir" id="responder"' in page, 'name="text" rows="1"' in page,
+       'class="wc-enviar" aria-label="Enviar"' in page, '<label for="tg-text" class="solo-lector">' in page,
+       '<script src="/assets/tg_barra.js" defer></script>' in page))
+check("tg_barra.js se sirve", 200, req("GET", "/assets/tg_barra.js")[0])
+
 check("la foto se pide por su referencia opaca", True, 'src="/telegram/media?ref=tg%3Ademo02"' in page)
 check("sin «Agregar al roster» en un contacto del roster", False, 'action="/telegram/roster"' in page)
 csrf = csrf_of(page)
