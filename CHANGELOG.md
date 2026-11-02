@@ -2,6 +2,23 @@
 
 ## Sin publicar
 
+## 0.21.0 (2026-11-01)
+
+### Si actualizas desde 0.20.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.21.0
+python3 scripts/upgrade_plan.py --from v0.20.0     # y haz lo que imprima
+```
+
+El plan reinicia el listener, el despachador, la pasarela SMS, PaynaniWeb, WhatsApp y Telegram. No hay servicios nuevos ni pasos de instalación. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien.
+
+- **Si tu runtime es Hermes**, copia otra vez las dos listas `events` y el `prompt` del roster de `examples/hermes-routes.yaml` a `~/.hermes/config.yaml` y corre `hermes gateway restart` desde una terminal (`HERMES.md`, «Event lists»). Sin `webchat.received` en las rutas, el primer mensaje de Webchat detiene la cola (#582). El plan lo dice como `restart-runtime`.
+- **Webchat** aparece en PaynaniWeb en la sección «AI Agent», debajo del agente. Para probarlo: escribe algo en la página y el agente contesta con `scripts/paynani webchat send` (`AGENTS.md`). Si entras por el túnel, el WebSocket `/webchat/ws` tiene que pasar; si no pasa, la página cae a polling cada 3 s y sigue funcionando.
+- **PaynaniApp no cambia** en esta versión. Webchat desde PaynaniApp viene después (#653).
+
 - **PaynaniWeb: el cuadro de escribir de Webchat, como Telegram (Q321).** Lo pidió Julian en la prueba real desde su celular, donde el cuadro era de 2 líneas. Ahora es una sola barra:
   - el clip pequeño a la izquierda abre «Foto» y «Archivo», con un `<details>` que funciona sin script;
   - el cuadro ocupa todo el ancho y crece solo mientras se escribe, hasta unas 6 líneas;
