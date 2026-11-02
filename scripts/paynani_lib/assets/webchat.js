@@ -102,6 +102,76 @@
     if (!polling) { polling = setInterval(poll, 3000); }
   }
 
+  // ---- «Mensajes anteriores» (Q336 = A) ------------------------------------------------
+  // Los PAGE de antes del primero que se ve, arriba, sin mover lo que se está leyendo: se
+  // mide el primer renglón que había antes y después de insertar, y lo mismo cuando una
+  // foto de las nuevas termina de cargar (Chrome lo hace solo; Safari no).
+  var antes = document.getElementById("wc-antes");
+  var antesBtn = antes ? antes.querySelector("button") : null;
+  var ancla = null;
+  var anclaTop = 0;
+  function keepAnchor() {
+    if (ancla && ancla.isConnected) {
+      window.scrollBy(0, ancla.getBoundingClientRect().top - anclaTop);
+      anclaTop = ancla.getBoundingClientRect().top;
+    }
+  }
+  window.addEventListener("scroll", function () {
+    if (ancla && ancla.isConnected) { anclaTop = ancla.getBoundingClientRect().top; }
+  }, {passive: true});
+  if (antesBtn) {
+    antesBtn.addEventListener("click", function () {
+      if (antesBtn.disabled) { return; }
+      var label = antesBtn.textContent;
+      antesBtn.disabled = true;
+      antesBtn.textContent = antesBtn.getAttribute("data-loading");
+      var url = "/webchat/updates?before=" + encodeURIComponent(antes.getAttribute("data-before"));
+      fetch(url, {credentials: "same-origin", cache: "no-store"}).then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (data) {
+        antesBtn.disabled = false;
+        antesBtn.textContent = label;
+        if (!data) { return; }
+        var first = antes.nextElementSibling;
+        // Se mide también el renglón que sigue al separador, por si el separador sobra.
+        var tops = [];
+        for (var r = first; r && tops.length < 2; r = r.nextElementSibling) { tops.push(r.getBoundingClientRect().top); }
+        var top = tops[0] || 0;
+        antes.insertAdjacentHTML("afterend", data.html || "");
+        // El último día de lo cargado ya trae su separador: si el primero que había es del
+        // mismo día, sobra.
+        if (first && first.classList.contains("wc-dia")) {
+          for (var el = first.previousElementSibling; el && el !== antes; el = el.previousElementSibling) {
+            if (el.classList.contains("wc-dia")) {
+              if (el.getAttribute("data-day") === first.getAttribute("data-day")) {
+                var next = first.nextElementSibling;
+                first.remove();
+                first = next;
+                top = tops[1] || 0;
+              }
+              break;
+            }
+          }
+        }
+        if (first) {
+          ancla = first;
+          window.scrollBy(0, first.getBoundingClientRect().top - top);
+          anclaTop = first.getBoundingClientRect().top;
+          for (var img = antes.nextElementSibling; img && img !== first; img = img.nextElementSibling) {
+            Array.prototype.forEach.call(img.querySelectorAll("img"), function (i) {
+              if (!i.complete) { i.addEventListener("load", keepAnchor); }
+            });
+          }
+        }
+        antes.setAttribute("data-before", data.before || "");
+        antes.hidden = !data.more;
+      }).catch(function () {
+        antesBtn.disabled = false;
+        antesBtn.textContent = label;
+      });
+    });
+  }
+
   // ---- WebSocket -----------------------------------------------------------------------
   function connect() {
     if (!("WebSocket" in window) || !csrf) { startPolling(); return; }
