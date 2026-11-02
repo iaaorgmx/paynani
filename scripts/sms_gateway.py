@@ -32,7 +32,7 @@ import paths  # noqa: E402
 from paynani_lib.sms import config as sms_config  # noqa: E402
 from paynani_lib.sms import gateway as gw  # noqa: E402
 from paynani_lib.sms import roster_api  # noqa: E402
-from paynani_lib.sms import telegram_api, whatsapp_api  # noqa: E402
+from paynani_lib.sms import telegram_api, webchat_api, whatsapp_api  # noqa: E402
 
 DEFAULT_PORT = 8770  # 8765 es del onboarding y de `sms pair --web`, que corren a la vez
 
@@ -65,6 +65,24 @@ def whatsapp_relay(state: Path, roster: roster_api.RosterService) -> whatsapp_ap
     """
     return whatsapp_api.WhatsAppRelay(state, notifier=roster_api.send_sh_notifier,
                                       owner_email=roster.owner_email, log=gw.log)
+
+
+def webchat_relay(state: Path) -> webchat_api.WebchatRelay:
+    """
+    Webchat desde PaynaniApp (SMS_GATEWAY.md §13). El dueño es el usuario de PaynaniWeb
+    (`web/user.json`), leído en cada pregunta: si se crea o se borra, la pasarela lo nota
+    y manda un welcome nuevo. El nombre del agente es `AGENT_EMAIL_FROM_NAME`, como en la web.
+    """
+    def owner() -> dict | None:
+        from paynani_lib.web import users
+        data = users.load(users.user_path())
+        return {"name": data.get("name", ""), "email": data.get("email", "")} if data else None
+
+    def agent_name() -> str:
+        from paynani_lib import envfile
+        return envfile.read_env().get("AGENT_EMAIL_FROM_NAME", "")
+
+    return webchat_api.WebchatRelay(state, owner=owner, agent_name=agent_name, log=gw.log)
 
 
 def api_tokens_path() -> Path | None:
@@ -111,7 +129,8 @@ def main(argv=None) -> int:
                          roster_service=roster, web_port=web_port,
                          api_tokens_path=api_tokens_path(), whatsapp=whatsapp_relay(state, roster),
                          # TELEGRAM.md §6: telegram.env dice si está configurado.
-                         telegram=telegram_api.TelegramRelay(state, log=gw.log))
+                         telegram=telegram_api.TelegramRelay(state, log=gw.log),
+                         webchat=webchat_relay(state))
 
     async def run():
         server = await gw.serve(gateway, args.host, args.port)

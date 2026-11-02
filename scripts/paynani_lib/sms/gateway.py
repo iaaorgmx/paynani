@@ -30,7 +30,7 @@ from pathlib import Path
 from . import api_replies
 from . import config as sms_config
 from . import roster_api
-from . import telegram_api, whatsapp_api
+from . import telegram_api, webchat_api, whatsapp_api
 from . import store as store_mod
 from .websocket import ConnectionClosed, WebSocket, accept_key
 
@@ -78,6 +78,9 @@ PAUSE_MAX_MIN = 1440
 # PaynaniWeb detrás de la pasarela (PRD #434 FR-1, FR-2).
 WEB_PORT = sms_config.WEB_PORT
 WEB_CONNECT_TIMEOUT_S = 3
+# §13: un archivo de hasta 20 MB más lo que agrega multipart, y tiempo para subirlo por datos móviles.
+WEBCHAT_UPLOAD_BODY = 20 * 1024 * 1024 + 64 * 1024
+WEBCHAT_UPLOAD_TIMEOUT_S = 300
 WEB_IDLE_TIMEOUT_S = 120   # sin un byte en ningún sentido, se corta
 WEB_CHUNK = 65536
 # Encabezados de un solo salto (RFC 9110 §7.6.1): son de esta conexión, no de la
@@ -186,7 +189,8 @@ class Gateway:
                  battery_stale_s: int = BATTERY_STALE_S, roster_service=None,
                  web_port: int = WEB_PORT, web_host: str = "127.0.0.1", api_tokens_path: Path | None = None,
                  whatsapp: whatsapp_api.WhatsAppRelay | None = None, whatsapp_check_s: float = 5.0,
-                 telegram: telegram_api.TelegramRelay | None = None):
+                 telegram: telegram_api.TelegramRelay | None = None,
+                 webchat: webchat_api.WebchatRelay | None = None):
         self.store = store_mod.Store(state_dir)
         self.journal = Path(journal)
         self.ledger_path = ledger.path_for(self.journal)
@@ -222,6 +226,9 @@ class Gateway:
         # Telegram desde PaynaniApp (TELEGRAM.md §6), igual: sin uno dado, no está configurado.
         # `whatsapp_check_s` también es cada cuánto se mira si cambió su configuración.
         self.telegram = telegram or telegram_api.TelegramRelay(state_dir, log=log, configured=lambda: False)
+        # Webchat desde PaynaniApp (§13). Sin uno dado, no hay usuario de PaynaniWeb y no se
+        # anuncia: sms_gateway.py pasa el de la instalación.
+        self.webchat = webchat or webchat_api.WebchatRelay(state_dir, log=log)
         # 0 apaga el reenvío: fuera de /sms/ se responde 404, como antes de #434.
         self.web_port = web_port
         self.web_host = web_host
@@ -283,6 +290,10 @@ class Gateway:
             await self._pair(reader, writer, headers)
         elif method == "GET" and path == "/sms/ws":
             await self._websocket(reader, writer, headers)
+        elif path == "/sms/webchat/upload":
+            await self._webchat_upload(reader, writer, method, headers)
+        elif path == "/sms/webchat/file":
+            await self._webchat_file(writer, method, target, headers)
         elif method == "GET" and path == "/sms/health":
             await self._respond(writer, 200, {"ok": True, "phone_connected": self.conn is not None})
         elif path == "/sms" or path.startswith("/sms/") or not self.web_port:
@@ -292,7 +303,7 @@ class Gateway:
 
     async def _respond(self, writer, status: int, body: dict | None = None, *, html: str = "") -> None:
         reason = {200: "OK", 201: "Created", 400: "Bad Request", 401: "Unauthorized",
-                  404: "Not Found", 409: "Conflict", 410: "Gone", 413: "Payload Too Large",
+                  403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed", 411: "Length Required", 409: "Conflict", 410: "Gone", 413: "Payload Too Large",
                   426: "Upgrade Required", 429: "Too Many Requests",
                   431: "Request Header Fields Too Large", 502: "Bad Gateway",
                   503: "Service Unavailable"}.get(status, "Error")
@@ -660,12 +671,16 @@ class Gateway:
         # TELEGRAM.md §6: los tipos telegram.* sólo con Telegram configurado, sin `grants`.
         ws.tg_configured = self.telegram.configured()
         ws.tg_watching = False
+        # §13: Webchat sólo con un usuario de PaynaniWeb; `webchat.owner` a esta conexión, que
+        # es la del teléfono emparejado.
+        ws.wc_available = self.webchat.available()
+        ws.wc_grants = self.webchat.grants(ws.wc_available)
         welcome = {"type": "welcome", "protocol": PROTOCOL, "server_time": store_mod.now_utc(),
                    "heartbeat_s": self.heartbeat_s, "allowed": allowed,
                    "max_out_per_hour": self.max_out_per_hour,
                    "accepts": list(ACCEPTS) + self.whatsapp.accepts(ws.wa_configured)
-                   + self.telegram.accepts(ws.tg_configured),
-                   "grants": list(ws.wa_grants)}
+                   + self.telegram.accepts(ws.tg_configured) + self.webchat.accepts(ws.wc_available),
+                   "grants": list(ws.wa_grants) + list(ws.wc_grants)}
         if SERVER_VERSION:
             welcome["server_version"] = SERVER_VERSION
         await self._send(ws, welcome)
@@ -677,6 +692,8 @@ class Gateway:
             tasks.append(asyncio.create_task(self.whatsapp.watch(device_id, lambda what: self._wa_changed(ws, what))))
         if ws.tg_configured:
             tasks.append(asyncio.create_task(self.telegram.watch(device_id, lambda what: self._tg_changed(ws, what))))
+        if ws.wc_available:
+            tasks.append(asyncio.create_task(self.webchat.watch(lambda what, extra: self._wc_changed(ws, what, extra))))
         try:
             while True:
                 raw = await ws.recv()
@@ -749,6 +766,11 @@ class Gateway:
                 log("cambió la configuración de Telegram; se cierra la conexión (1012) para un welcome nuevo")
                 await ws.close(1012, "cambió la configuración de Telegram")
                 return
+            # §13: lo mismo si se crea o se borra el usuario de PaynaniWeb.
+            if self.webchat.available() != getattr(ws, "wc_available", False):
+                log("cambió el usuario de PaynaniWeb; se cierra la conexión (1012) para un welcome nuevo")
+                await ws.close(1012, "cambió Webchat")
+                return
 
     async def _wa_changed(self, ws: WebSocket, what: str) -> None:
         """`whatsapp.changed` sólo a una conexión que ya pidió status o threads (§12)."""
@@ -767,6 +789,105 @@ class Gateway:
             await self._send(ws, {"type": "telegram.changed", "what": what})
         except (ConnectionClosed, ConnectionError, OSError):
             pass
+
+    async def _wc_changed(self, ws: WebSocket, what: str, extra: dict) -> None:
+        """`webchat.changed` a la conexión con `webchat.owner`, la haya pedido o no (§13)."""
+        if ws.closed or webchat_api.GRANT not in getattr(ws, "wc_grants", []):
+            return
+        try:
+            await self._send(ws, {"type": "webchat.changed", "what": what, **extra})
+        except (ConnectionClosed, ConnectionError, OSError):
+            pass
+
+    async def _webchat(self, ws: WebSocket, device_id: str, msg: dict) -> None:
+        """Un pedido `webchat.*` de la app (§13)."""
+        response = await self.webchat.handle(msg, device_id, grants=getattr(ws, "wc_grants", []))
+        try:
+            await self._send(ws, response)
+        except (ConnectionClosed, ConnectionError, OSError):
+            pass
+
+    # --- los archivos de Webchat (§13) -------------------------------------
+    def _webchat_device(self, headers: dict) -> dict | None:
+        """El teléfono emparejado si el token es el suyo; si no, None."""
+        auth = headers.get("authorization", "")
+        token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        return self.store.device_for_token(token)
+
+    async def _webchat_upload(self, reader, writer, method: str, headers: dict) -> None:
+        if method != "POST":
+            await self._respond(writer, 405, {"error": "method_not_allowed"})
+            return
+        device = self._webchat_device(headers)
+        if not device:
+            await self._respond(writer, 401, {"error": "unauthorized"})
+            return
+        if not self.webchat.available():
+            await self._respond(writer, 403, {"error": "forbidden"})
+            return
+        try:
+            length = int(headers.get("content-length", ""))
+        except ValueError:
+            await self._respond(writer, 411, {"error": "length_required"})
+            return
+        if length < 0 or length > WEBCHAT_UPLOAD_BODY:
+            await self._respond(writer, 413, {"error": "too_big"})
+            return
+        try:
+            raw = await asyncio.wait_for(reader.readexactly(length), WEBCHAT_UPLOAD_TIMEOUT_S)
+        except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionError):
+            writer.close()
+            return
+        try:
+            from ..web import multipart  # noqa: PLC0415 -- el mismo lector que la web
+            _fields, files = multipart.parse(raw, headers.get("content-type", ""))
+        except ValueError:
+            await self._respond(writer, 400, {"error": "invalid"})
+            return
+        files = [f for f in files if f.get("field") == "file"]
+        if len(files) != 1:
+            await self._respond(writer, 400, {"error": "invalid"})
+            return
+        result = await asyncio.to_thread(self.webchat.save_upload, device["device_id"],
+                                         files[0]["name"], files[0]["data"])
+        if "error" in result:
+            status = {"too_big": 413, "too_many": 429}.get(result["error"], 400)
+            await self._respond(writer, status, result)
+            return
+        await self._respond(writer, 201, result)
+
+    async def _webchat_file(self, writer, method: str, target: str, headers: dict) -> None:
+        if method != "GET":
+            await self._respond(writer, 405, {"error": "method_not_allowed"})
+            return
+        if not self._webchat_device(headers):
+            await self._respond(writer, 401, {"error": "unauthorized"})
+            return
+        if not self.webchat.available():
+            await self._respond(writer, 403, {"error": "forbidden"})
+            return
+        from urllib.parse import parse_qs, urlsplit  # noqa: PLC0415
+        ref = (parse_qs(urlsplit(target).query).get("ref") or [""])[0]
+        found = await asyncio.to_thread(self.webchat.file, ref)
+        if not found:
+            await self._respond(writer, 404, {"error": "not_found"})
+            return
+        path, mime, name = found
+        try:
+            data = await asyncio.to_thread(path.read_bytes)
+        except OSError:
+            await self._respond(writer, 404, {"error": "not_found"})
+            return
+        from urllib.parse import quote  # noqa: PLC0415
+        inline = mime.startswith("image/")
+        disposition = ("inline" if inline else "attachment") + f"; filename*=UTF-8''{quote(name, safe='')}"
+        writer.write((f"HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {len(data)}\r\n"
+                      f"Content-Disposition: {disposition}\r\nX-Content-Type-Options: nosniff\r\n"
+                      "Cache-Control: private, no-store\r\nConnection: close\r\n\r\n").encode("latin-1") + data)
+        try:
+            await writer.drain()
+        finally:
+            writer.close()
 
     async def _telegram(self, ws: WebSocket, device_id: str, msg: dict) -> None:
         """Un pedido `telegram.*` de la app (TELEGRAM.md §6), pasado al servicio paynani-telegram."""
@@ -879,6 +1000,11 @@ class Gateway:
         elif kind in telegram_api.TYPES:
             # Como tarea: un `telegram.send` largo sale por partes, una por segundo.
             task = asyncio.create_task(self._telegram(ws, device_id, msg))
+            self.roster_tasks.add(task)
+            task.add_done_callback(self.roster_tasks.discard)
+        elif kind in webchat_api.TYPES:
+            # Como tarea: un mensaje con archivos tarda en guardarse (§13).
+            task = asyncio.create_task(self._webchat(ws, device_id, msg))
             self.roster_tasks.add(task)
             task.add_done_callback(self.roster_tasks.discard)
         elif kind == "hello":

@@ -1547,8 +1547,9 @@ la misma pasarela, con el token del teléfono (ver «Archivos»).
   `whatsapp.thread`). `limit` de 1 a 100 (50 por omisión).
 - **Paginación:**
   - `before` (un id `w_…`) trae los anteriores a ese, para «Mensajes anteriores».
-  - `after` (un id `w_…`) trae sólo los posteriores, para refrescar al recibir
-    `webchat.changed`.
+  - `after` (un id `w_…`) trae los primeros `limit` posteriores a ese, para refrescar
+    al recibir `webchat.changed`. Si llegan `limit`, puede haber más: la app vuelve a
+    pedir con el último.
   - `before` y `after` juntos responden `invalid`. Un id que no existe responde
     `not_found`.
   - `next_before` es el id que se manda en `before` para la página anterior, o `null`
@@ -1575,11 +1576,12 @@ la misma pasarela, con el token del teléfono (ver «Archivos»).
 - **Contenido:** texto de hasta 4,000 caracteres y, opcionalmente, hasta 10 `uploads`
   ya subidos. Lo mismo que el almacén: hasta 20 MB por archivo y 25 MB por mensaje.
   Texto vacío y sin archivos responde `empty`.
-- **Quién escribe:** se guarda como del dueño (`append("owner", …)`) con el nombre y el
-  correo del usuario de PaynaniWeb, y escribe el evento `webchat.received`. El aviso al
-  agente dice «(PaynaniApp)».
-- **Tope:** 20 mensajes por minuto, como la web. Pasado el tope, `rate_limited` con
-  `retry_after_s`.
+- **Quién escribe:** se guarda como del dueño (`append("owner", …, origin="app")`) con
+  el nombre y el correo del usuario de PaynaniWeb, y escribe el evento
+  `webchat.received`. El aviso al agente dice «(PaynaniApp)» en lugar de «(PaynaniWeb)».
+- **Tope:** 20 mensajes por minuto desde el teléfono, como la web. El de la web cuenta
+  por conexión y éste por teléfono, así que no se suman. Pasado el tope, `rate_limited`
+  con `retry_after_s`.
 - **Reenvío seguro:** con el mismo `id`, no se guarda dos veces y responde el mismo
   `result` con `"replayed": true`.
 - **Uploads:** un `up_…` se consume sólo cuando el mensaje se guarda. Si el envío falla,
@@ -1599,6 +1601,8 @@ Las dos rutas piden `Authorization: Bearer <token del teléfono>` y el `grant`
   - Responde `{"upload": "up_…", "name": "…", "kind": "image", "size": 48213}`.
   - El `up_…` vence a los 10 minutos, se usa una sola vez y sólo lo puede usar el mismo
     teléfono. Los no usados se borran al vencer.
+  - Las subidas pendientes viven en `state/webchat/uploads/` (0700, archivos 0600), fuera
+    de `files/`: un `up_…` no se puede descargar por ninguna ruta.
   - Hay un máximo de 20 pendientes por teléfono; pasado eso, `429`.
 - `GET /sms/webchat/file?ref=f_…`
   - Devuelve el archivo con el mismo filtro que `/webchat/file` de la web: las fotos

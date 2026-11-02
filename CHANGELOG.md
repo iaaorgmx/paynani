@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- **Webchat desde PaynaniApp: la pasarela (#653, FR-1 a FR-6).** El teléfono emparejado platica con el agente en la misma conversación que PaynaniWeb (`SMS_GATEWAY.md` §13):
+  - `webchat.thread` (con `before`, `after`, «escribiendo…» y el borrador) y `webchat.send` por el WebSocket del teléfono, anunciados sólo si hay usuario de PaynaniWeb, con el `grant` `webchat.owner`;
+  - los archivos por HTTP: `POST /sms/webchat/upload` (multipart, campo `file`, hasta 20 MB, el tipo por los bytes) da un `up_…` de un solo uso, y `GET /sms/webchat/file` descarga los adjuntos ya guardados;
+  - `webchat.changed` (`messages`, `typing`, `draft` con su texto) a la conexión del dueño aunque no tenga la pantalla abierta;
+  - el aviso al agente dice «(PaynaniApp)» (`origin` en `store.append` y `event.webchat_event`).
+
+  `sms/webchat_api.py`; `test_sms_webchat.py`. La app es PaynaniApp#174.
+
 - **PaynaniWeb: hasta 64 conexiones en espera.** El servidor dejaba 5 (lo de `socketserver`). Con la página, sus scripts, el WebSocket de Webchat y varios intentos de entrar a la vez, el kernel cortaba las demás con «Connection reset by peer» (CI de `main` en cd4d4d8, `test_web_auth`).
 
 - **PaynaniWeb: Webchat, platicar con tu agente desde el navegador (#648).** Va en la sección «AI Agent», debajo del agente (Q304 a Q308):
