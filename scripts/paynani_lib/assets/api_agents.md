@@ -214,6 +214,7 @@ curl -s "$PAYNANI_URL/api/agent" \
 | `human_replied` | 409 | The owner just texted that number by hand. `until` says when the API can write again |
 | `no_phone` | 409 | No phone is paired with paynani |
 | `app_outdated` | 409 | The paired phone runs a PaynaniApp older than 0.9.0. Ask the owner to update it |
+| `no_sms_phone` | 409 | The paired phone runs PaynaniApp for Webchat only and does not send texts. Do not retry; tell the owner |
 
 ## Replies and opt-outs
 
@@ -276,7 +277,7 @@ ask a person who opted out to opt back in.
 | `agent_account` | 403 | The agent's own mail account cannot be removed |
 | `invalid_account`, `probe_failed` | 400 | The account data is wrong, or the mail server refused it |
 | `idempotency_conflict` | 409 | That `idempotency_key` was used with another number or text; `order_id` |
-| `opted_out`, `human_replied`, `no_phone`, `app_outdated` | 403, 409 | See «When the API cannot write to a number» |
+| `opted_out`, `human_replied`, `no_phone`, `app_outdated`, `no_sms_phone` | 403, 409 | See «When the API cannot write to a number» |
 | `busy` | 503 | The roster is being written; retry in a few seconds |
 | `whatsapp_unavailable` | 503 | WhatsApp is not set up on this install, or its service is not answering; retry later |
 | `telegram_unavailable` | 503 | Telegram is not set up on this install, or its service is not answering; retry later |

@@ -28,6 +28,7 @@ MAX_TEXT = 1000
 PHONE_OK = "ok"
 PHONE_NONE = "no_phone"
 PHONE_OLD = "old_app"
+PHONE_NO_SMS = "no_sms_phone"   # PaynaniApp sólo Webchat (PaynaniApp-Agentic#175): no manda SMS
 
 
 def _who(conv_or_item: dict, names: dict) -> str:

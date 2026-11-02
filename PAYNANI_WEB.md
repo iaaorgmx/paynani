@@ -93,6 +93,9 @@ emparejado (PRD #489).
 
 - **Dónde:** «Nuevo SMS» (`/messages/nuevo`), con el número escrito o elegido del
   roster, y el cuadro de responder al pie de cada conversación.
+- **Con un teléfono «solo Webchat»** (la PaynaniApp de Google Play, #671), ni «Nuevo SMS»
+  ni el cuadro de responder se ofrecen: un aviso dice que ese teléfono no manda SMS. En el
+  Dashboard su fila dice «sólo Webchat, sin SMS» y, con la app cerrada, queda en gris.
 - **El número** se normaliza con la región de la SIM del teléfono emparejado. Un
   número que no se puede leer no sale (`invalid_number`).
 - **Fuera del roster** pide la contraseña de la web, con el mismo bloqueo de

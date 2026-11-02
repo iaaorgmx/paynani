@@ -107,6 +107,14 @@ def phone_row(phone: dict | None, name: str = "") -> str:
     name = name or _th("svc.phone")
     if phone is None:
         return _row("inbox", name, _t("svc.no_phone"), _pill("off", _t("state.unpaired"), "svc.phone"))
+    if phone.get("sms") is False:
+        # PaynaniApp sólo Webchat (#671): no es pasarela de SMS y sólo se conecta con la app
+        # abierta, así que desconectado es lo normal, no un apagón (gris, no rojo).
+        detail = _t("svc.phone_webchat", model=phone.get("model") or "—", version=phone.get("app_version") or "—",
+                    age=ago(phone.get("last_seen_age_s")))
+        return _row("inbox", name, detail,
+                    _pill("ok", _t("state.online"), "svc.phone") if phone["online"]
+                    else _pill("off", _t("state.app_closed"), "svc.phone"))
     battery = f"{phone['battery']} %" if phone.get("battery") is not None else "—"
     detail = _t("svc.phone_detail", model=phone.get("model") or "—", version=phone.get("app_version") or "—",
                 battery=battery, age=ago(phone.get("last_seen_age_s")))

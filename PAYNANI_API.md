@@ -122,7 +122,8 @@ alcanza. La API no manda mensajes de Telegram.
 
 - **Salen de tu teléfono,** como los del agente, y en «Mensajes» se ven como
   «API: <token>». PaynaniApp tiene que ser la 0.9.0 o posterior; con una anterior,
-  la API responde `app_outdated`.
+  la API responde `app_outdated`. Con la PaynaniApp sólo para Webchat (la de Google Play,
+  PaynaniApp-Agentic#175) responde `no_sms_phone`.
 - **A cualquier número,** en E.164 o con la región de la SIM del teléfono, sin
   pasar por el roster. Por eso los topes son por token.
 - **Cada envío lleva una `idempotency_key`.** Si el agente repite la llamada con
@@ -201,6 +202,7 @@ encabezado `X-Request-Id`. Si un agente te reporta un problema, pídele el
 | `human_replied` | 409 | Le acabas de escribir a ese número; trae hasta cuándo |
 | `no_phone` | 409 | No hay teléfono emparejado |
 | `app_outdated` | 409 | El teléfono tiene una PaynaniApp anterior a la 0.9.0 |
+| `no_sms_phone` | 409 | El teléfono tiene PaynaniApp sólo para Webchat y no manda SMS (#671) |
 | `busy` | 503 | El roster se está escribiendo; hay que reintentar en unos segundos |
 | `whatsapp_unavailable` | 503 | WhatsApp no está activado en la instalación, o el servicio `paynani-whatsapp` no contesta |
 | `telegram_unavailable` | 503 | Telegram no está configurado en la instalación, o el servicio `paynani-telegram` no contesta |
