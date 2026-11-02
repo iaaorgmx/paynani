@@ -1331,7 +1331,10 @@ def make_handler(ctx: Context):
             more = len(messages) > webchat_pages.PAGE
             messages = messages[-webchat_pages.PAGE:]
             typing = bool(store and store.is_typing())
-            self._page(code, title=i18n.t("web.wc.title"), icon_name="webchat", active="webchat", wide=True,
+            # «Webchat - <agente>» en el encabezado (Julian, 2026-11-02).
+            name = (summary or {}).get("name") or ""
+            title = f'{i18n.t("web.wc.title")} - {name}' if name else i18n.t("web.wc.title")
+            self._page(code, title=title, icon_name="webchat", active="webchat", wide=True,
                        body=webchat_pages.body(messages, self.CTX.now(), summary, self.session["csrf"],
                                                typing=typing, available=store is not None, text=text, error=error,
                                                more=more))
@@ -1652,7 +1655,13 @@ def make_handler(ctx: Context):
                 # Sin bot, /telegram es la configuración inicial (#635); lo demás avisa y
                 # lleva ahí.
                 if self.route == "/telegram":
-                    self._telegram_setup_page()
+                    # Con token pero desactivado, el formulario se negaría al guardar
+                    # (already_configured): mejor el aviso de `paynani telegram enable` (#641).
+                    from ..telegram import setup as tg_setup
+                    if tg_setup.already_configured(self.CTX.telegram_env()):
+                        self._tg_page(200, telegram_pages.disabled_body())
+                    else:
+                        self._telegram_setup_page()
                 else:
                     self._tg_page(404, telegram_pages.not_configured_body(), title_key="web.tg.messages_title")
                 return
