@@ -101,6 +101,7 @@ class Outbound:
         self._streams: dict[str, dict] = {}
         self._chat_last: dict[int, float] = {}
         self._rate_lock = asyncio.Lock()
+        self._uploads_busy: set[str] = set()   # #662: los up_ de un envío en curso
         self.watchers: set = set()
 
     async def _out_stop(self) -> None:
@@ -310,6 +311,17 @@ class Outbound:
             files = [{"name": path.name, "path": path}]
         else:
             files = []
+        busy = [f["upload"] for f in files if f.get("upload")]
+        if self._uploads_busy.intersection(busy):
+            raise _refused("bad_upload", "otro envío ya los está mandando", field="uploads")
+        self._uploads_busy.update(busy)       # antes del primer await: un up_ no sale dos veces
+        try:
+            return await self._send(by, text, thread, chat, files, ups is not None)
+        finally:
+            self._uploads_busy.difference_update(busy)
+
+    async def _send(self, by: str, text: str, thread: str, chat: int, files: list[dict],
+                    from_web: bool) -> dict:
         caption = text if files and len(text) <= MAX_CAPTION else ""
         chunks = split_text(text) if text and not caption else []
         reserved = len(chunks) + len(files)
@@ -320,7 +332,7 @@ class Outbound:
         record = {"ref": ref, "thread": thread, "dir": "out", "by": author(by), "at": _now(),
                   "kind": "file" if files else "text", "text": text,
                   "file": files[0]["name"] if files else None, "status": "sending"}
-        if ups is not None:
+        if from_web:
             record["files"] = [self._keep_photo(ref, i, f) for i, f in enumerate(files)]
         self.store.record_sent(record)
         try:
@@ -338,6 +350,9 @@ class Outbound:
                 delivered += 1
         except Exception:
             await self._release(reserved - delivered, day)
+            for f in files[:delivered]:
+                if f.get("upload"):
+                    tg_uploads.drop(self.root, f["upload"])    # lo que ya salió no se repite al reintentar
             self.store.record_sent({"ref": ref, "status": "failed" if not delivered else "partial",
                                     "delivered": delivered, "parts": reserved})
             self._notify("threads")

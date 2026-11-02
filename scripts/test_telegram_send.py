@@ -491,6 +491,29 @@ async def web_uploads_tests():
               and not methods(api, "sendPhoto")[nphoto].get("caption")
               and methods(api, "sendMessage")[nmsg]["text"] == "x" * 1500, str(r))
 
+        # --- Iris en #665: dos envíos a la vez con los mismos up_ ----------------------------
+        foto3 = tg_uploads.save(root, "tres.jpg", JPEG)
+        nphoto = len(methods(api, "sendPhoto"))
+        ra, rb = await asyncio.gather(
+            call(s, "telegram.send", by="web", thread=thread, text="a", uploads=[foto3["upload"]]),
+            call(s, "telegram.send", by="web", thread=thread, text="b", uploads=[foto3["upload"]]))
+        oks = [r for r in (ra, rb) if r.get("ok")]
+        busy = [r for r in (ra, rb) if r.get("code") == "bad_upload"]
+        check("#665: el mismo up_ en dos envíos a la vez: uno sale, el otro bad_upload",
+              len(oks) == 1 and len(busy) == 1 and len(methods(api, "sendPhoto")) == nphoto + 1, str((ra, rb)))
+        check("#665: al terminar, nada queda apartado", not s._uploads_busy)
+
+        # --- Iris en #665: un envío parcial no repite lo que ya salió -----------------------
+        foto4 = tg_uploads.save(root, "cuatro.jpg", JPEG)
+        doc4 = tg_uploads.save(root, "cuatro.pdf", PDF)
+        api.fail_next("sendDocument", 400)
+        r = await call(s, "telegram.send", by="web", thread=thread, text="", uploads=[foto4["upload"], doc4["upload"]])
+        check("#665: parcial: la foto salió y su up_ se borra; el del PDF queda",
+              r.get("code") == "invalid" and not (d / foto4["upload"]).exists() and (d / doc4["upload"]).exists(),
+              str(r))
+        r = await call(s, "telegram.send", by="web", thread=thread, text="", uploads=[doc4["upload"]])
+        check("#665: el reintento manda sólo el PDF", r.get("ok") is True, str(r))
+
         # --- 20 MB entre todos y 20 pendientes ----------------------------------------------
         big = [tg_uploads.save(root, f"b{i}.jpg", JPEG + b"\0" * (11 * 1024 * 1024)) for i in range(2)]
         r = await call(s, "telegram.send", by="web", thread=thread, text="", uploads=[b["upload"] for b in big])

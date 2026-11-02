@@ -288,8 +288,11 @@ Catch-All de Telegram activo.
   Webchat (`WEBCHAT.md` §4): fotos JPEG, PNG, WebP o GIF y documentos PDF, TXT, CSV,
   DOCX, XLSX o ZIP, hasta 20 MB cada uno. Rechaza con `too_big`, `bad_type` o
   `too_many` (20 pendientes en la instalación). Cada `up_` vale 10 minutos y una sola
-  vez: se borra cuando el envío salió; si falla, sigue hasta que venza. En el `send`:
-  `bad_upload` (no es lista, vacío, repetido, desconocido, vencido o ya usado),
+  vez: se borra cuando el envío salió; si falla, sigue hasta que venza, menos los que
+  alcanzaron a salir en un envío `partial`, que se borran para que el reintento no los
+  repita. Mientras un envío los manda quedan apartados: otro `send` con alguno de ellos
+  da `bad_upload` (Iris en #665). En el `send`:
+  `bad_upload` (no es lista, vacío, repetido, desconocido, vencido, ya usado o en uso),
   `too_many` (más de 10) o `too_big` (más de 20 MB entre todos), con `field: "uploads"`.
   Los archivos salen en orden, como con `file`; el texto va como pie del primero (hasta
   1024) o después de todos. Cada archivo cuenta para el límite del día. Una foto queda
