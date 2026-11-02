@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, «Mensajes de Telegram»: el cuadro de contestar es la barra de Webchat (Q337).** Lo pidió Julian con un mockup que aprobó. Ya no lleva el título «Responder» ni la etiqueta «Mensaje», que siguen para lectores de pantalla. Es una sola barra pegada abajo: el cuadro empieza en una línea y crece hasta unas 6 mientras se escribe, y «Enviar» es el botón redondo. Un segundo toque no lo manda dos veces. Por ahora sólo texto: el clip para fotos y archivos llega con #662.
+
 - **PaynaniWeb, Webchat: «Mensajes anteriores» (Q336 = A).** La página sigue trayendo los últimos 50 mensajes. Si hay más, arriba de la conversación aparece «Mensajes anteriores», que carga los 50 de antes cada vez, con sus separadores de día y sin mover lo que se está leyendo. Cuando ya no quedan más, el botón se esconde. `GET /webchat/updates?before=<id>` los da ya dibujados.
 
 - **PaynaniWeb, Webchat: «escribiendo…» con animación.** Lo pidió Julian. Los tres puntos suben y se encienden uno tras otro, en el color de la marca, para que se note que el agente está trabajando. Con «reducir movimiento» en el sistema sólo cambian de intensidad.

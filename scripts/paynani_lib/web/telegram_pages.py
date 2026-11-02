@@ -21,7 +21,7 @@ from urllib.parse import quote
 
 from .. import i18n
 from . import mail_pages
-from .shell import e
+from .shell import e, icon
 from .telegram_source import MAX_TEXT, STATES
 
 KINDS = ("image", "voice", "audio", "video", "document", "sticker", "location", "contact")
@@ -212,14 +212,22 @@ def reply_box(thread: dict, csrf: str, running: bool, values: dict | None = None
     if not running:
         return f'<section class="responder">{head}<p class="aviso-caja" role="status">{_th("no_reply_state")}</p></section>'
     text = (values or {}).get("text", "")
-    return f"""<section class="responder">{head}
-<form method="post" action="/telegram/messages/enviar" class="formulario">
+    # La barra de Webchat (Julian, mockup aprobado; Q337 = B): el cuadro con todo el ancho,
+    # que crece solo (tg_barra.js), y «Enviar» redondo, pegada abajo. El clip llega cuando el
+    # servicio acepte archivos de la web (#662).
+    name = str(thread.get("name") or "")
+    placeholder = _th("placeholder", name=name) if name else _th("reply_text")
+    return f"""<form method="post" action="/telegram/messages/enviar" class="wc-escribir tg-escribir" id="responder">
+  <h3 class="solo-lector">{_th("reply")}</h3>{_error(error)}
   <input type="hidden" name="csrf" value="{e(csrf)}">
   <input type="hidden" name="t" value="{e(thread["thread"])}">
-  <label for="tg-text">{_th("reply_text")}</label>
-  <textarea id="tg-text" name="text" rows="4" maxlength="{MAX_TEXT}" required>{e(text)}</textarea>
-  <button type="submit" class="primario">{_th("send")}</button>
-</form></section>"""
+  <div class="wc-barra">
+    <label for="tg-text" class="solo-lector">{_th("reply_text")}</label>
+    <textarea id="tg-text" name="text" rows="1" maxlength="{MAX_TEXT}" required placeholder="{placeholder}">{e(text)}</textarea>
+    <button type="submit" class="wc-enviar" aria-label="{_th("send")}" title="{_th("send")}">{icon("send")}</button>
+  </div>
+</form>
+<script src="/assets/tg_barra.js" defer></script>"""
 
 
 def add_box(thread: dict, csrf: str, error: str = "") -> str:

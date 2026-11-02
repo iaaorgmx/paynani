@@ -52,6 +52,7 @@ STATIC = {
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
     "/assets/about.js": (ASSETS / "about.js", "application/javascript; charset=UTF-8"),
     "/assets/webchat.js": (ASSETS / "webchat.js", "application/javascript; charset=UTF-8"),
+    "/assets/tg_barra.js": (ASSETS / "tg_barra.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a

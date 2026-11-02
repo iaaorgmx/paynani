@@ -730,6 +730,9 @@ body.web-shell {
 .web-shell .wc-enviar svg { width: 18px; height: 18px; transform: translate(-1px, 1px); }   /* sin el padding general de button, y el avión de papel un poco hacia abajo-izquierda: así se ve al centro (Julian, #656) */
 .web-shell .wc-enviando .wc-enviar { opacity: .5; cursor: progress; }   /* mientras sube, sin segundo envío */
 .web-shell .wc-enviar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* «Mensajes de Telegram» usa la misma barra (Q337); sin el clip, el texto no va pegado al borde. */
+.web-shell .tg-escribir { margin-top: 16px; }
+.web-shell .tg-escribir .wc-barra { padding-left: 14px; }
 .web-shell .wc-adjuntar { position: relative; flex: none; }
 .web-shell .wc-adjuntar > summary { list-style: none; }
 .web-shell .wc-adjuntar > summary::-webkit-details-marker { display: none; }
