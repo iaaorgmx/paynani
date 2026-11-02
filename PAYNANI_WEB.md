@@ -374,6 +374,10 @@ escribe con `paynani_lib/webchat/store.py`, sin un servicio aparte.
   - **Si no conecta:** el script vuelve a pedir `/webchat/updates?after=<id>` cada 3 s,
     sólo con la pestaña visible. Sin script, la página funciona igual y se recarga a mano.
   - **Límite:** como mucho 20 conexiones a la vez.
+- **Mensajes anteriores (Q336 = A):** la página trae los últimos 50. Si hay más, arriba
+  aparece «Mensajes anteriores», que pide los 50 de antes a
+  `/webchat/updates?before=<id>` y los pone arriba sin mover lo que se está leyendo. Sin
+  script no aparece.
 - **Lo que hace el agente** por Webchat cuenta en la página del agente: atendidos hoy,
   tiempo de respuesta, última respuesta y actividad.
 - **Sin el almacén:** si la instalación todavía no trae `webchat/store.py`, la página lo

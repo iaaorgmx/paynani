@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, Webchat: «Mensajes anteriores» (Q336 = A).** La página sigue trayendo los últimos 50 mensajes. Si hay más, arriba de la conversación aparece «Mensajes anteriores», que carga los 50 de antes cada vez, con sus separadores de día y sin mover lo que se está leyendo. Cuando ya no quedan más, el botón se esconde. `GET /webchat/updates?before=<id>` los da ya dibujados.
+
 ## 0.21.0 (2026-11-01)
 
 ### Si actualizas desde 0.20.0

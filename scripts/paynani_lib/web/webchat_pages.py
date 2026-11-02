@@ -9,6 +9,9 @@ Webchat (#648): el dueño platica con su agente desde PaynaniWeb, con archivos y
   manda ya dibujados y `assets/webchat.js` los agrega al final, así que se dibujan en un
   solo lugar.
 - Las fotos y los archivos salen por `/webchat/file?ref=f_…`, nunca por una ruta del disco.
+- La página trae los últimos `PAGE` mensajes; «Mensajes anteriores» (Q336 = A) pide los
+  `PAGE` de antes a `/webchat/updates?before=…` y webchat.js los pone arriba sin mover lo
+  que se está viendo.
 """
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ from .dashboard import parse
 from .shell import e, icon
 
 MAX_FILES = 10
+PAGE = 50
 
 
 def _th(key: str, **kw) -> str:
@@ -103,6 +107,13 @@ def draft_row(agent_name: str) -> str:
             f'<div class="de">{e(agent_name)}</div><div class="texto"></div></div></li>')
 
 
+def older_row(first_id: str, more: bool) -> str:
+    """«Mensajes anteriores» arriba de la conversación (Q336 = A). Es un botón de webchat.js:
+    sin script no aparece, como antes."""
+    return (f'<li class="wc-antes" id="wc-antes" data-before="{e(first_id)}"{"" if more else " hidden"}>'
+            f'<button type="button" class="wc-antes-btn" data-loading="{_th("loading")}">{_th("older")}</button></li>')
+
+
 def _error(text: str) -> str:
     return f'<p class="error-caja" role="alert">{e(text)}</p>' if text else ""
 
@@ -138,7 +149,7 @@ def composer(csrf: str, agent_name: str, text: str = "", error: str = "") -> str
 
 
 def body(messages: list[dict], now: dt.datetime, summary: dict | None, csrf: str, *, typing: bool = False,
-         available: bool = True, text: str = "", error: str = "") -> str:
+         available: bool = True, text: str = "", error: str = "", more: bool = False) -> str:
     name = (summary or {}).get("name") or "AI agent"
     head = f"""<div class="wc-cab">
     <span class="wc-avatar" aria-hidden="true">{icon("agent")}</span>
@@ -151,7 +162,7 @@ def body(messages: list[dict], now: dt.datetime, summary: dict | None, csrf: str
     last = messages[-1]["id"] if messages else ""
     return f"""<div class="wc-pag" data-after="{e(last)}">
   {head}
-  <ol class="wc-hilo" id="wc-hilo" aria-live="polite">{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
+  <ol class="wc-hilo" id="wc-hilo" aria-live="polite">{older_row(messages[0]["id"], more) if messages else ""}{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
   {composer(csrf, name, text, error)}
 </div>
 <script src="/assets/webchat.js" defer></script>
