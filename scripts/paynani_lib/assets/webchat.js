@@ -12,7 +12,17 @@
   var form = document.querySelector(".wc-escribir");
   var texto = form ? form.querySelector("textarea[name=text]") : null;
   var csrf = form ? form.querySelector("input[name=csrf]") : null;
-  var input = document.getElementById("wc-archivos");
+  var inputs = Array.prototype.slice.call(document.querySelectorAll("input.wc-archivos"));
+  var menu = document.querySelector(".wc-adjuntar");
+  // El menú del clip se cierra al tocar fuera de él o con Esc, como en Telegram (Julian, #656).
+  if (menu) {
+    document.addEventListener("click", function (ev) {
+      if (menu.open && !menu.contains(ev.target)) { menu.open = false; }
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); }
+    });
+  }
   var socket = null;
   var pending = {};
   var polling = null;
@@ -91,10 +101,12 @@
       else if (data.type === "typing") { escribe.hidden = !data.on || (borrador && !borrador.hidden); }
       else if (data.type === "message.delta") { showDraft(data.text); }
       else if (data.type === "message.accepted") {
-        if (pending[data.request_id] && texto) { texto.value = ""; }
         delete pending[data.request_id];
       } else if (data.type === "error") {
+        // El cuadro se vació al mandar: si no se guardó, el texto regresa (revisión de Metis, #656).
+        var lost = pending[data.request_id];
         delete pending[data.request_id];
+        if (typeof lost === "string" && texto && !texto.value) { texto.value = lost; grow(); }
         showError(data.message || "");
       }
     };
@@ -107,21 +119,41 @@
   connect();
   bottom();
 
+  // El cuadro crece solo mientras se escribe, hasta su max-height (unas 6 líneas; Q321).
+  function grow() {
+    if (!texto) { return; }
+    texto.style.height = "auto";
+    texto.style.height = texto.scrollHeight + 2 + "px";
+  }
+  if (texto) { texto.addEventListener("input", grow); grow(); }
+
   // Mandar: el texto solo va por el WebSocket; con archivos, por el formulario (POST).
   if (form) {
+    // Al volver con atrás/adelante (bfcache) el formulario no se queda bloqueado (Metis, #656).
+    window.addEventListener("pageshow", function () { form.classList.remove("wc-enviando"); });
     form.addEventListener("submit", function (ev) {
-      var hasFiles = input && input.files && input.files.length;
-      if (!socket || socket.readyState !== 1 || hasFiles || !texto || !texto.value.trim()) { return; }
+      var hasFiles = inputs.some(function (i) { return i.files && i.files.length; });
+      if (!socket || socket.readyState !== 1 || hasFiles || !texto || !texto.value.trim()) {
+        // Por el formulario (con archivos, o sin WebSocket): una sola vez. Subir una foto
+        // por datos móviles tarda, y un segundo toque la mandaba dos veces (#656).
+        if (form.classList.contains("wc-enviando")) { ev.preventDefault(); return; }
+        form.classList.add("wc-enviando");
+        return;
+      }
       ev.preventDefault();
       var id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random();
-      pending[id] = true;
+      // El cuadro se vacía al mandar, así un segundo toque no manda el mismo texto otra vez.
+      pending[id] = texto.value;
       socket.send(JSON.stringify({type: "message.create", request_id: id, content: texto.value}));
+      texto.value = "";
+      grow();
     });
   }
 
-  // Los adjuntos elegidos: una ficha por archivo, con una × para quitarlo.
+  // Los adjuntos elegidos, de «Foto» y de «Archivo»: una ficha por archivo, con una × para
+  // quitarlo. Al elegir, el menú del clip se cierra.
   var lista = document.getElementById("wc-adjuntos");
-  if (!input || !lista || typeof DataTransfer === "undefined") { return; }
+  if (!inputs.length || !lista || typeof DataTransfer === "undefined") { return; }
   var removeLabel = lista.getAttribute("data-remove") || "{name}";
 
   function size(n) {
@@ -130,30 +162,39 @@
     return (n / 1048576).toFixed(1) + " MB";
   }
 
+  function chip(input, file, i) {
+    var item = document.createElement("span");
+    item.className = "wc-adj";
+    var name = document.createElement("span");
+    name.textContent = file.name;
+    var small = document.createElement("small");
+    small.textContent = size(file.size);
+    var quitar = document.createElement("button");
+    quitar.type = "button";
+    quitar.textContent = "×";
+    quitar.setAttribute("aria-label", removeLabel.replace("{name}", file.name));
+    quitar.addEventListener("click", function () {
+      var dt = new DataTransfer();
+      Array.prototype.forEach.call(input.files, function (f, j) { if (j !== i) { dt.items.add(f); } });
+      input.files = dt.files;
+      render();
+    });
+    item.appendChild(name);
+    item.appendChild(small);
+    item.appendChild(quitar);
+    return item;
+  }
+
   function render() {
     lista.textContent = "";
-    Array.prototype.forEach.call(input.files, function (file, i) {
-      var chip = document.createElement("span");
-      chip.className = "wc-adj";
-      var name = document.createElement("span");
-      name.textContent = file.name;
-      var small = document.createElement("small");
-      small.textContent = size(file.size);
-      var quitar = document.createElement("button");
-      quitar.type = "button";
-      quitar.textContent = "×";
-      quitar.setAttribute("aria-label", removeLabel.replace("{name}", file.name));
-      quitar.addEventListener("click", function () {
-        var dt = new DataTransfer();
-        Array.prototype.forEach.call(input.files, function (f, j) { if (j !== i) { dt.items.add(f); } });
-        input.files = dt.files;
-        render();
-      });
-      chip.appendChild(name);
-      chip.appendChild(small);
-      chip.appendChild(quitar);
-      lista.appendChild(chip);
+    inputs.forEach(function (input) {
+      Array.prototype.forEach.call(input.files, function (file, i) { lista.appendChild(chip(input, file, i)); });
     });
   }
-  input.addEventListener("change", render);
+  inputs.forEach(function (input) {
+    input.addEventListener("change", function () {
+      if (menu) { menu.open = false; }
+      render();
+    });
+  });
 }());
