@@ -1326,14 +1326,18 @@ def make_handler(ctx: Context):
         def _webchat_page(self, code: int = 200, *, text: str = "", error: str = ""):
             store = self.CTX.webchat
             summary = self.CTX.agent_summary()
-            messages = store.messages(limit=50) if store else []
+            # Uno de más para saber si hay anteriores (Q336 = A).
+            messages = store.messages(limit=webchat_pages.PAGE + 1) if store else []
+            more = len(messages) > webchat_pages.PAGE
+            messages = messages[-webchat_pages.PAGE:]
             typing = bool(store and store.is_typing())
             # «Webchat - <agente>» en el encabezado (Julian, 2026-11-02).
             name = (summary or {}).get("name") or ""
             title = f'{i18n.t("web.wc.title")} - {name}' if name else i18n.t("web.wc.title")
             self._page(code, title=title, icon_name="webchat", active="webchat", wide=True,
                        body=webchat_pages.body(messages, self.CTX.now(), summary, self.session["csrf"],
-                                               typing=typing, available=store is not None, text=text, error=error))
+                                               typing=typing, available=store is not None, text=text, error=error,
+                                               more=more))
 
         def _webchat_get(self):
             store = self.CTX.webchat
@@ -1342,6 +1346,19 @@ def make_handler(ctx: Context):
                 return
             if store is None:
                 self._send(404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
+                return
+            if self.route == "/webchat/updates" and "before" in self.query:
+                # «Mensajes anteriores» (Q336 = A): los PAGE de antes de `before`, ya dibujados
+                # con sus separadores de día, y si quedan más.
+                before = self.query.get("before", [""])[0][:40]
+                older = (store.messages(before=before, limit=webchat_pages.PAGE + 1)
+                         if webchat_source.ID_RE.match(before) else [])
+                more = len(older) > webchat_pages.PAGE
+                older = older[-webchat_pages.PAGE:]
+                name = (self.CTX.agent_summary() or {}).get("name") or "AI agent"
+                data = {"html": webchat_pages.bubbles(older, self.CTX.now(), name) if older else "",
+                        "before": older[0]["id"] if older else before, "more": more}
+                self._send(200, "application/json; charset=UTF-8", json.dumps(data, ensure_ascii=False).encode("utf-8"))
                 return
             if self.route == "/webchat/updates":
                 after = self.query.get("after", [""])[0][:40]

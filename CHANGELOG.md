@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, Webchat: «Mensajes anteriores» (Q336 = A).** La página sigue trayendo los últimos 50 mensajes. Si hay más, arriba de la conversación aparece «Mensajes anteriores», que carga los 50 de antes cada vez, con sus separadores de día y sin mover lo que se está leyendo. Cuando ya no quedan más, el botón se esconde. `GET /webchat/updates?before=<id>` los da ya dibujados.
+
 - **PaynaniWeb, Webchat: «escribiendo…» con animación.** Lo pidió Julian. Los tres puntos suben y se encienden uno tras otro, en el color de la marca, para que se note que el agente está trabajando. Con «reducir movimiento» en el sistema sólo cambian de intensidad.
 
 - **PaynaniWeb, Webchat: el nombre del agente en el encabezado.** Lo pidió Julian: el título de la página dice «Webchat - <nombre del agente>», por ejemplo «Webchat - Iris Claude-Tob». Sin datos del agente queda «Webchat».
