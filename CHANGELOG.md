@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, Webchat: el nombre del agente en el encabezado.** Lo pidió Julian: el título de la página dice «Webchat - <nombre del agente>», por ejemplo «Webchat - Iris Claude-Tob». Sin datos del agente queda «Webchat».
+
 - **PaynaniWeb: dos detalles de «Cuenta de Telegram» sin bot (#641, seguimiento de #639).**
   - Con un token ya puesto pero desactivado, `/telegram` muestra el aviso de `paynani telegram enable` y ya no el formulario, que de todos modos se negaba al guardar.
   - El formulario de configuración ya no enlaza a «Mensajes de Telegram», que sin bot es un 404.
