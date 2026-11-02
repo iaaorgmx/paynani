@@ -2,6 +2,24 @@
 
 ## Sin publicar
 
+## 0.21.0 (2026-11-01)
+
+### Si actualizas desde 0.20.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.21.0
+python3 scripts/upgrade_plan.py --from v0.20.0     # y haz lo que imprima
+```
+
+El plan reinicia el listener, el despachador, la pasarela SMS, PaynaniWeb, WhatsApp y Telegram. No hay servicios nuevos ni pasos de instalación. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien.
+
+- **Si tu runtime es Hermes**, copia otra vez las dos listas `events` y el `prompt` del roster de `examples/hermes-routes.yaml` a `~/.hermes/config.yaml` y corre `hermes gateway restart` desde una terminal (`HERMES.md`, «Event lists»). Sin `webchat.received` en las rutas, el primer mensaje de Webchat detiene la cola (#582). El plan lo dice como `restart-runtime`.
+- **Webchat** aparece en PaynaniWeb en la sección «AI Agent», debajo del agente. Para probarlo: escribe algo en la página y el agente contesta con `scripts/paynani webchat send` (`AGENTS.md`). Si entras por el túnel, el WebSocket `/webchat/ws` tiene que pasar; si no pasa, la página cae a polling cada 3 s y sigue funcionando.
+- **Webchat desde PaynaniApp** necesita esta versión: PaynaniApp 0.13.0 platica con el agente por la pasarela SMS (#653, PaynaniApp#174). Con una PaynaniApp anterior, la pasarela sigue igual que en 0.20.0.
+- **Si tu runtime es Claude Code**, la siguiente sesión toma el hook nuevo: `harness/session_start.py` cuenta también los `webchat.received` sin atender (el plan lo imprime como `next-session`).
+
 - **PaynaniWeb: el agente cabe en una sola línea del menú.** Lo pidió Julian. La entrada de «AI Agent» queda así: el robot, el nombre del agente y su estado, en la misma línea; el harness ya no se muestra en el menú y queda en la página del agente. Si el nombre no cabe completo junto al estado, sólo queda el punto de color, como un LED (`nav.js`). El nombre del estado sigue en el `title` y para lectores de pantalla.
 
 - **Webchat desde PaynaniApp: la pasarela (#653, FR-1 a FR-6).** El teléfono emparejado platica con el agente en la misma conversación que PaynaniWeb (`SMS_GATEWAY.md` §13):
