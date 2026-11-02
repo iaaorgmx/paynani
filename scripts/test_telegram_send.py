@@ -511,6 +511,7 @@ async def web_uploads_tests():
         check("#665: parcial: la foto salió y su up_ se borra; el del PDF queda",
               r.get("code") == "invalid" and not (d / foto4["upload"]).exists() and (d / doc4["upload"]).exists(),
               str(r))
+        check("#665: el error dice qué up_ ya salieron (sent_uploads)", r.get("sent_uploads") == [foto4["upload"]], str(r))
         r = await call(s, "telegram.send", by="web", thread=thread, text="", uploads=[doc4["upload"]])
         check("#665: el reintento manda sólo el PDF", r.get("ok") is True, str(r))
 
@@ -531,6 +532,14 @@ async def web_uploads_tests():
         later = time.time() + tg_uploads.TTL_S + 1
         tg_uploads.save(root, "nuevo.jpg", JPEG, clock=lambda: later)
         check("#662: los vencidos se borran al subir otro", len(list(d.glob("up_*.json"))) == 1)
+        orphan = d / ("up_" + "a" * 32)
+        orphan.write_bytes(JPEG)
+        os.utime(orphan, (time.time() - tg_uploads.TTL_S - 5,) * 2)
+        fresh = d / ("up_" + "b" * 32)
+        fresh.write_bytes(JPEG)
+        tg_uploads.save(root, "otro.jpg", JPEG)
+        check("#665: un up_ sin .json y viejo se borra; uno reciente se queda (save a medias)",
+              not orphan.exists() and fresh.exists())
     finally:
         await s.stop()
         api.stop()
