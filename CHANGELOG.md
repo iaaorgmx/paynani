@@ -3,6 +3,7 @@
 ## Sin publicar
 
 - **PaynaniWeb: el agente cabe en una sola línea del menú.** Lo pidió Julian. La entrada de «AI Agent» queda así: el robot, el nombre del agente y su estado, en la misma línea; el harness ya no se muestra en el menú y queda en la página del agente. Si el nombre no cabe completo junto al estado, sólo queda el punto de color, como un LED (`nav.js`). El nombre del estado sigue en el `title` y para lectores de pantalla.
+- **PaynaniWeb, Webchat: «escribiendo…» ya no queda tapado por la barra de escribir.** Julian lo vio desde su celular, sobre todo al mandar una foto. Cuando aparecía el indicador, la página no bajaba; y una foto que terminaba de cargar alargaba la conversación sin bajar. Ahora, si se está viendo el final, la página baja al aparecer el indicador y al cargar una foto. Si se está leyendo más arriba, no se mueve.
 
 - **PaynaniWeb, Webchat: una foto de Google Fotos ya no termina en el error de Chrome «ERR_UPLOAD_FILE_CHANGED».** Pasaba en Chrome de Android con una foto que estaba en la nube: el archivo cambiaba mientras se bajaba, entre elegirlo y mandarlo. Ahora, al elegir, cada archivo se copia a memoria y se manda esa copia; si se toca «Enviar» mientras copia, se manda al terminar. También: si el WebSocket se cierra antes de la respuesta, el texto regresa al cuadro (las dos, revisión de Metis en #656).
 
