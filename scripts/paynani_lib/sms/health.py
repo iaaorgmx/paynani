@@ -56,6 +56,8 @@ def phone_facts(state_dir, now=None):
         "last_seen_age_s": age,
         "orders_queued": queued,
         "offline_notified": bool(device.get("offline_notified")),
+        # False: PaynaniApp sólo Webchat (PaynaniApp-Agentic#175). No hace SMS ni avisa apagones.
+        "sms": device.get("sms") is not False,
         "battery": _battery(device, now),
     }
 
@@ -94,6 +96,9 @@ def describe(facts):
     if facts is None:
         return ["no phone is paired"]
     who = facts["device_id"] + (f" ({facts['model']})" if facts["model"] else "")
+    if facts.get("sms") is False:
+        state = "connected" if facts["online"] else "not connected (normal while the app is closed)"
+        return [f"{who}: Webchat only, no texts or calls; {state}"]
     if facts["last_seen_age_s"] is None:
         beat = "never connected"
     else:

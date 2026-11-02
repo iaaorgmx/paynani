@@ -1094,7 +1094,8 @@ def sms_phone_facts():
 
 def sms_phone_warnings(phone):
     """A paired phone that is not reporting, or about to stop. Not a problem: the install itself is fine."""
-    if phone is None:
+    if phone is None or phone.get("sms") is False:
+        # Sólo Webchat (PaynaniApp-Agentic#175): desconectado con la app cerrada es lo normal.
         return []
     if phone["online"]:
         battery = phone.get("battery")

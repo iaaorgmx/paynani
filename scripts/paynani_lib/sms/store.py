@@ -260,6 +260,15 @@ class Store:
         # Sólo un true booleano cuenta: "false", 1 o un estado viejo no habilitan nada.
         return device.get({"owner": "accepts_owner_out", "api": "accepts_api_out"}.get(origin, "")) is True
 
+    def sms_enabled(self) -> bool:
+        """
+        ¿El teléfono emparejado hace SMS? Sí, salvo que su saludo haya dicho `"sms": false`
+        (PaynaniApp sólo Webchat, PaynaniApp-Agentic#175). Sin teléfono, o con una app que no
+        manda el campo, sí: nada cambia para la PaynaniApp de siempre.
+        """
+        device = self.device() or {}
+        return device.get("sms") is not False
+
     def append_status(self, record: dict) -> bool:
         """
         Agrega un estado de orden. False si ese id de estado ya estaba (idempotente).

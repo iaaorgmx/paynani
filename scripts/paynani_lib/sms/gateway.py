@@ -488,6 +488,9 @@ class Gateway:
             return None
         if device.get("offline_notified"):
             return None
+        if device.get("sms") is False:
+            # Sólo Webchat: la conexión vive mientras la app está abierta. Cerrarla no es un apagón.
+            return None
         seen = _epoch(device.get("last_seen")) or _epoch(device.get("paired_at")) or 0.0
         since = max(seen, self.started_at)
         if now - since < self.offline_after_s:
@@ -520,7 +523,7 @@ class Gateway:
         """
         now = self.clock() if now is None else now
         device = self.store.device()
-        if not device or self.conn is None:
+        if not device or self.conn is None or device.get("sms") is False:
             return None
         pct = device.get("battery_pct")
         received = _epoch(device.get("battery_received_at"))
@@ -648,10 +651,14 @@ class Gateway:
         # app lo anuncia. Una app vieja no las recibe, y la web y la API lo dicen.
         ws.accepts_owner_out = hello.get("accepts_owner_out") is True
         ws.accepts_api_out = hello.get("accepts_api_out") is True
+        # Sólo Webchat (PaynaniApp-Agentic#175): sólo un false booleano lo apaga. Sin el campo, o con
+        # cualquier otro valor, el teléfono es la pasarela de SMS de siempre.
+        ws.sms = hello.get("sms") is not False
         self.store.touch(connected=True, last_seen=store_mod.now_utc(),
                          app_version=str(hello.get("app_version", ""))[:40],
                          sims=hello.get("sims") if isinstance(hello.get("sims"), list) else device.get("sims", []),
-                         accepts_owner_out=ws.accepts_owner_out, accepts_api_out=ws.accepts_api_out)
+                         accepts_owner_out=ws.accepts_owner_out, accepts_api_out=ws.accepts_api_out,
+                         sms=ws.sms)
         if isinstance(hello.get("device_status"), dict):
             # La última lectura de batería viene en el saludo (PaynaniApp#109). Una
             # lectura mala nunca impide el welcome.
@@ -941,13 +948,14 @@ class Gateway:
     async def _pump_outbox(self, ws: WebSocket) -> None:
         pushed: set[str] = set()
         while not ws.closed:
-            origins = ["agent"]
-            if getattr(ws, "accepts_owner_out", False):
+            # Un teléfono sólo Webchat no recibe ninguna: las que quedaran de antes vencen a su hora.
+            origins = ["agent"] if getattr(ws, "sms", True) else []
+            if getattr(ws, "accepts_owner_out", False) and origins:
                 origins.append("owner")
             if getattr(ws, "accepts_api_out", False):
                 origins.append("api")
             # Las de un origen que el teléfono no acepta no se mandan, pero sí vencen a su hora.
-            held = [o for o in ("owner", "api") if o not in origins]
+            held = [o for o in ("agent", "owner", "api") if o not in origins]
             for order in self.store.pending_orders(origins=held):
                 self._expire(order)
             for order in self.store.pending_orders(origins=origins):

@@ -116,6 +116,10 @@ def check_phone(report, facts):
         return False
     who = facts["device_id"] + (f" ({facts['model']})" if facts["model"] else "")
     version = f", PaynaniApp {facts['app_version']}" if facts["app_version"] else ""
+    if facts.get("sms") is False:
+        state = "online" if facts["online"] else "not connected now, which is normal while the app is closed"
+        report.ok(f"phone: {who} is paired for Webchat only{version} (no texts or calls); {state}")
+        return False
     if facts["last_seen_age_s"] is None:
         report.fail(f"phone: {who} is paired but has never connected. Open Paynani on the phone and check its Status screen")
         return False
@@ -190,6 +194,12 @@ def run(args, out=None, gateway_facts=_UNSET, phone_facts=_UNSET, fetch=fetch_he
             device = sms_cli._store().device() or {}
             phone_facts["sims"] = device.get("sims") or []
     online = check_phone(report, phone_facts)
+    if phone_facts is not None and phone_facts.get("sms") is False:
+        if number is not None:
+            print("\nNo test text: the paired phone runs PaynaniApp for Webchat only and does not send texts.",
+                  file=report.out)
+            return 1
+        return 1 if report.failed else 0
 
     if number is None:
         if not report.failed:
