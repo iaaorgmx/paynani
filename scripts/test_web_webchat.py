@@ -155,7 +155,7 @@ check("«Webchat» va en la sección «AI Agent», debajo del agente y arriba de
 check("en /webchat la entrada está activa y la del agente no", (True, False),
       ('<a href="/webchat" class="activo" aria-current="page">' in side, "agente-entrada activo" in side))
 check("/webchat: 200, título, sin mensajes todavía, el formulario multipart", (200, True, True, True),
-      (status, "<h1>Webchat</h1>" in page, "No messages yet" in page, 'enctype="multipart/form-data"' in page))
+      (status, "<h1>Webchat - Iris</h1>" in page, "No messages yet" in page, 'enctype="multipart/form-data"' in page))
 check("el script de la página se carga con defer y se sirve", (True, 200),
       ('<script src="/assets/webchat.js" defer></script>' in page, req("GET", "/assets/webchat.js")[0]))
 check("sin atributos style", [], re.findall(r'\sstyle="', page))
