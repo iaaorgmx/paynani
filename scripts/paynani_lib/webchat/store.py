@@ -179,17 +179,40 @@ def _clean_name(name: str) -> str:
     return name[:200] or "archivo"
 
 
+def check_upload(path: Path, name: str, data: bytes) -> tuple[str, str]:
+    """
+    Para la pasarela (SMS_GATEWAY.md §13): `(nombre limpio, kind)` de un archivo ya escrito
+    en `path`, o Rejected (`too_big`, `bad_type`). Las mismas reglas que `append`.
+    """
+    name = _clean_name(name)
+    if len(data) > MAX_FILE:
+        raise Rejected("too_big", name)
+    real = _check_file(path, name, data)
+    return name, TYPES[real][0]
+
+
+def private_dir(path: Path) -> Path:
+    """Una carpeta 0700 (la de las subidas pendientes de la pasarela, §13)."""
+    return _private_dir(path)
+
+
+def write_private(path: Path, data: bytes) -> None:
+    """Un archivo 0600, escrito completo o nada."""
+    _write_private(path, data)
+
+
 # --- escribir -----------------------------------------------------------------------
 
 def append(by: str, text: str, files: list[tuple[str, bytes]] | None = None, *,
-           owner: dict | None = None, rules: dict | None = None,
+           owner: dict | None = None, rules: dict | None = None, origin: str = "web",
            state_dir: Path | None = None) -> dict:
     """
     Guarda un mensaje y lo devuelve. `files` es `[(nombre, bytes)]`.
 
     `by="owner"` exige `owner={"name", "email"}` y escribe el evento `webchat.received`
     con su `observed`. `by="agent"` no escribe evento. `rules` es la nota de reglas del
-    dueño (`rules.notice`), si tiene. Un error es `Rejected(code)`.
+    dueño (`rules.notice`), si tiene. `origin` es `web` o `app` (desde PaynaniApp, por la
+    pasarela): sólo cambia el aviso al agente. Un error es `Rejected(code)`.
     """
     if by not in ("owner", "agent"):
         raise ValueError(f"by debe ser owner o agent, no {by!r}")
@@ -239,7 +262,7 @@ def append(by: str, text: str, files: list[tuple[str, bytes]] | None = None, *,
         envelope = ev.webchat_event(
             message_id=msg_id, owner_name=owner.get("name", ""), owner_email=owner.get("email", ""),
             text=text, files=entries, sent_at=message["at"], local_time=time.strftime("%H:%M:%S"),
-            observed_at=message["at"], rules=rules)
+            observed_at=message["at"], rules=rules, origin=origin)
     with _locked(r):
         _append_line(r / "messages.jsonl", message)
         if by == "agent":

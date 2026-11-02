@@ -852,13 +852,14 @@ _WC_KIND_LABEL = {"image": "foto", "document": "documento"}
 
 
 def webchat_event(*, message_id, owner_name, owner_email, text, files, sent_at, local_time,
-                  observed_at=None, rules=None):
+                  observed_at=None, rules=None, origin="web"):
     """
     Un mensaje que el dueño escribió en el Webchat de PaynaniWeb (WEBCHAT.md §5).
     `event_id` es `wc:` + los mismos 32 hex del mensaje (`w_…`). Lo escribe el dueño con
     su sesión, así que el aviso termina en `, roster]`: cada runtime lo trata como
     trabajo con las reglas que ya tiene. El texto completo y los adjuntos salen con
-    `paynani event show --body`.
+    `paynani event show --body`. `origin` es `web` (PaynaniWeb) o `app` (PaynaniApp, por
+    la pasarela, SMS_GATEWAY.md §13): sólo cambia lo que dice el aviso.
     """
     hexpart = message_id.split("_", 1)[1]
     ref = "wc:" + hexpart
@@ -879,7 +880,8 @@ def webchat_event(*, message_id, owner_name, owner_email, text, files, sent_at, 
     else:
         kind = kinds.pop()
     note = f", {_rules_tag(rules)}" if rules else ""
-    line = f"[webchat {local_time}{note}, roster] {who} (PaynaniWeb): {excerpt}"
+    where = "PaynaniApp" if origin == "app" else "PaynaniWeb"
+    line = f"[webchat {local_time}{note}, roster] {who} ({where}): {excerpt}"
     record = {
         "schema_version": SCHEMA_VERSION,
         "event_type": WEBCHAT_RECEIVED,

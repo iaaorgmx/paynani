@@ -2,6 +2,14 @@
 
 ## Sin publicar
 
+- **Webchat desde PaynaniApp: la pasarela (#653, FR-1 a FR-6).** El teléfono emparejado platica con el agente en la misma conversación que PaynaniWeb (`SMS_GATEWAY.md` §13):
+  - `webchat.thread` (con `before`, `after`, «escribiendo…» y el borrador) y `webchat.send` por el WebSocket del teléfono, anunciados sólo si hay usuario de PaynaniWeb, con el `grant` `webchat.owner`;
+  - los archivos por HTTP: `POST /sms/webchat/upload` (multipart, campo `file`, hasta 20 MB, el tipo por los bytes) da un `up_…` de un solo uso, y `GET /sms/webchat/file` descarga los adjuntos ya guardados;
+  - `webchat.changed` (`messages`, `typing`, `draft` con su texto) a la conexión del dueño aunque no tenga la pantalla abierta;
+  - el aviso al agente dice «(PaynaniApp)» (`origin` en `store.append` y `event.webchat_event`).
+
+  `sms/webchat_api.py`; `test_sms_webchat.py`. La app es PaynaniApp#174.
+
 - **PaynaniWeb, Webchat: «escribiendo…» ya no queda tapado por la barra de escribir.** Julian lo vio desde su celular, sobre todo al mandar una foto. Cuando aparecía el indicador, la página no bajaba; y una foto que terminaba de cargar alargaba la conversación sin bajar. Ahora, si se está viendo el final, la página baja al aparecer el indicador y al cargar una foto. Si se está leyendo más arriba, no se mueve.
 
 - **PaynaniWeb, Webchat: una foto de Google Fotos ya no termina en el error de Chrome «ERR_UPLOAD_FILE_CHANGED».** Pasaba en Chrome de Android con una foto que estaba en la nube: el archivo cambiaba mientras se bajaba, entre elegirlo y mandarlo. Ahora, al elegir, cada archivo se copia a memoria y se manda esa copia; si se toca «Enviar» mientras copia, se manda al terminar. También: si el WebSocket se cierra antes de la respuesta, el texto regresa al cuadro (las dos, revisión de Metis en #656).
