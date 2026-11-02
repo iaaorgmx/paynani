@@ -101,10 +101,12 @@
       else if (data.type === "typing") { escribe.hidden = !data.on || (borrador && !borrador.hidden); }
       else if (data.type === "message.delta") { showDraft(data.text); }
       else if (data.type === "message.accepted") {
-        if (pending[data.request_id] && texto) { texto.value = ""; grow(); }
         delete pending[data.request_id];
       } else if (data.type === "error") {
+        // El cuadro se vació al mandar: si no se guardó, el texto regresa (revisión de Metis, #656).
+        var lost = pending[data.request_id];
         delete pending[data.request_id];
+        if (typeof lost === "string" && texto && !texto.value) { texto.value = lost; grow(); }
         showError(data.message || "");
       }
     };
@@ -127,6 +129,8 @@
 
   // Mandar: el texto solo va por el WebSocket; con archivos, por el formulario (POST).
   if (form) {
+    // Al volver con atrás/adelante (bfcache) el formulario no se queda bloqueado (Metis, #656).
+    window.addEventListener("pageshow", function () { form.classList.remove("wc-enviando"); });
     form.addEventListener("submit", function (ev) {
       var hasFiles = inputs.some(function (i) { return i.files && i.files.length; });
       if (!socket || socket.readyState !== 1 || hasFiles || !texto || !texto.value.trim()) {
@@ -138,8 +142,11 @@
       }
       ev.preventDefault();
       var id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random();
-      pending[id] = true;
+      // El cuadro se vacía al mandar, así un segundo toque no manda el mismo texto otra vez.
+      pending[id] = texto.value;
       socket.send(JSON.stringify({type: "message.create", request_id: id, content: texto.value}));
+      texto.value = "";
+      grow();
     });
   }
 
