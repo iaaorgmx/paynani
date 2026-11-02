@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el agente cabe en una sola línea del menú.** Lo pidió Julian. La entrada de «AI Agent» queda así: el robot, el nombre del agente y su estado, en la misma línea; el harness ya no se muestra en el menú y queda en la página del agente. Si el nombre no cabe completo junto al estado, sólo queda el punto de color, como un LED (`nav.js`). El nombre del estado sigue en el `title` y para lectores de pantalla.
+
 - **Webchat desde PaynaniApp: la pasarela (#653, FR-1 a FR-6).** El teléfono emparejado platica con el agente en la misma conversación que PaynaniWeb (`SMS_GATEWAY.md` §13):
   - `webchat.thread` (con `before`, `after`, «escribiendo…» y el borrador) y `webchat.send` por el WebSocket del teléfono, anunciados sólo si hay usuario de PaynaniWeb, con el `grant` `webchat.owner`;
   - los archivos por HTTP: `POST /sms/webchat/upload` (multipart, campo `file`, hasta 20 MB, el tipo por los bytes) da un `up_…` de un solo uso, y `GET /sms/webchat/file` descarga los adjuntos ya guardados;

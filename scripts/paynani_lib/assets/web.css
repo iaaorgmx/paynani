@@ -184,12 +184,19 @@ body.web-shell {
 .web-shell .usuario .perfil.activo { color: #d8887f; }
 .web-shell .usuario b { display: block; color: #fff; font-size: 1.15rem; font-weight: 600; }
 .web-shell .usuario small { color: var(--menu-texto); }
-/* #644: la sección «AI Agent» del menú (Q303): una entrada con el robot arriba, el nombre del
-   agente y, abajo, el harness y el estado (Q293). Lleva a /agent. */
-.web-shell .agente-nav a.agente-entrada { align-items: flex-start; min-height: 54px; padding-top: 8px; padding-bottom: 8px; }
-.web-shell .agente-entrada > svg.i { flex: none; width: 22px; height: 22px; margin-top: -2px; }
-.web-shell .agente-texto { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.web-shell .agente-nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* #644: la sección «AI Agent» del menú (Q303): una entrada de una línea con el robot, el
+   nombre del agente y su estado (Julian, 2026-11-02). Lleva a /agent. Si el nombre no cabe
+   junto al estado, nav.js pone .agente-punto y sólo queda el punto, como un LED. */
+.web-shell .agente-entrada > svg.i { flex: none; width: 22px; height: 22px; }
+.web-shell .agente-nombre { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-shell .agente-estado { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: .68rem; padding: 2px 7px; border-radius: 999px; white-space: nowrap; background: var(--menu-borde); color: var(--menu-texto); }
+.web-shell .agente-estado i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.web-shell .agente-estado.agente-ok { background: rgba(63, 179, 107, .16); color: #8fdcab; }
+.web-shell .agente-estado.agente-warn { background: rgba(217, 164, 65, .18); color: #f0c97a; }
+.web-shell .agente-estado.agente-bad { background: rgba(214, 90, 80, .2); color: #f2a39b; }
+.web-shell .agente-punto .agente-estado { padding: 0; background: none; }
+.web-shell .agente-punto .agente-estado i { width: 9px; height: 9px; box-shadow: 0 0 6px currentColor; }
+.web-shell .agente-punto .agente-estado-txt { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .web-shell .agente-chips { display: flex; flex-wrap: nowrap; gap: 5px; }
 .web-shell .agente-chip { display: inline-flex; align-items: center; gap: 5px; font-size: .68rem; padding: 2px 7px; border-radius: 999px; white-space: nowrap; background: var(--menu-borde); color: var(--menu-texto); }
 .web-shell .agente-chip i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

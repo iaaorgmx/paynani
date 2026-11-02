@@ -3,8 +3,9 @@
 del marco de shell.py y con las clases del Dashboard (kpis, tarjeta-d, srv, pill).
 
 - `block(summary, active)` es la sección «AI Agent» del menú, arriba de «Management»
-  (Q303): una entrada con el robot, el nombre del agente y, abajo, el harness y el estado
-  (Q293). Lleva a `/agent` (Q292, Q298).
+  (Q303): una entrada de una línea, con el robot, el nombre del agente y su estado (Q293).
+  Sin el harness, que queda en la página. Si el nombre no cabe junto al estado, sólo queda
+  el punto, como un LED (Julian, 2026-11-02). Lleva a `/agent` (Q292, Q298).
 - `body(model)` es la página (Q296): el agente y su estado, las cuatro cifras de hoy,
   «The agent», «Channels» (Julian), lo que hizo hoy y qué hacer si cambia el estado.
 """
@@ -32,19 +33,28 @@ def chips(runtime_label: str, status: str) -> str:
             f'{_th("status." + status)}</span></span>')
 
 
+def status_dot(status: str) -> str:
+    """El estado del menú: el punto de color y su nombre. nav.js deja sólo el punto (un LED)
+    cuando el nombre del agente no cabe completo junto a él; el nombre sigue para lectores
+    de pantalla y en el `title`."""
+    label = _th("status." + status)
+    return (f'<span class="agente-estado agente-{e(TONES.get(status, "warn"))}" title="{label}">'
+            f'<i aria-hidden="true"></i><span class="agente-estado-txt">{label}</span></span>')
+
+
 def block(summary: dict | None, active: bool = False, active_key: str = "") -> str:
     """
     La sección «AI Agent» del menú, arriba de «Management» (Q303): una entrada como las del
-    menú, con el robot a la izquierda (alineado arriba), el nombre del agente y, abajo, el
-    harness y el estado. Lleva a /agent. Sin datos del agente no se dibuja.
+    menú, de una sola línea: el robot, el nombre del agente y su estado (Julian, 2026-11-02).
+    Lleva a /agent. Sin datos del agente no se dibuja.
     """
     if not summary:
         return ""
     current = ' aria-current="page"' if active else ""
     return f"""<div class="grupo">{_th("section")}</div>
   <nav aria-label="{_th("section")}" class="agente-nav">
-    <a href="/agent" class="agente-entrada{' activo' if active else ''}"{current} title="{_th('block', name=summary['name'])}">{icon("agent")}<span class="agente-texto"><span class="agente-nombre">{e(summary["name"])}</span>
-      {chips(summary["runtime_label"], summary["status"])}</span></a>
+    <a href="/agent" class="agente-entrada{' activo' if active else ''}"{current} title="{_th('block', name=summary['name'])}">{icon("agent")}<span class="agente-nombre">{e(summary["name"])}</span>
+      {status_dot(summary["status"])}</a>
     {_webchat_entry(active_key == "webchat")}
   </nav>"""
 
