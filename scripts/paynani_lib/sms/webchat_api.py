@@ -64,6 +64,9 @@ class WebchatRelay:
         self.replays: collections.OrderedDict = collections.OrderedDict()
         self.lock = threading.Lock()
         self.inflight: dict[str, tuple[str, asyncio.Future]] = {}
+        # Un `send` a la vez: dos envíos con el mismo `up_…` y distinto `id` no lo usan dos
+        # veces (Iris en #655). Mandar es raro; serializar no cuesta.
+        self.send_lock = threading.Lock()
 
     # --- el welcome --------------------------------------------------------
     def owner(self) -> dict | None:
@@ -173,6 +176,10 @@ class WebchatRelay:
 
     # --- webchat.send ------------------------------------------------------
     def send(self, msg: dict, rid: str, device_id: str) -> dict:
+        with self.send_lock:
+            return self._send_locked(msg, rid, device_id)
+
+    def _send_locked(self, msg: dict, rid: str, device_id: str) -> dict:
         owner = self.owner()
         if owner is None:
             return _error(rid, "unavailable")

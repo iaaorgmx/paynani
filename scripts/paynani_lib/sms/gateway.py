@@ -881,8 +881,12 @@ class Gateway:
         from urllib.parse import quote  # noqa: PLC0415
         inline = mime.startswith("image/")
         disposition = ("inline" if inline else "attachment") + f"; filename*=UTF-8''{quote(name, safe='')}"
-        writer.write((f"HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {len(data)}\r\n"
+        # Como la web (#650): los documentos como octet-stream y todo con CSP sandbox, por si
+        # algún día se abre desde un navegador (Iris en #655).
+        kind = mime if inline else "application/octet-stream"
+        writer.write((f"HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {len(data)}\r\n"
                       f"Content-Disposition: {disposition}\r\nX-Content-Type-Options: nosniff\r\n"
+                      "Content-Security-Policy: default-src 'none'; sandbox\r\n"
                       "Cache-Control: private, no-store\r\nConnection: close\r\n\r\n").encode("latin-1") + data)
         try:
             await writer.drain()

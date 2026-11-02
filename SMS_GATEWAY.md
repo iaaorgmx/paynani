@@ -1605,9 +1605,10 @@ Las dos rutas piden `Authorization: Bearer <token del teléfono>` y el `grant`
     de `files/`: un `up_…` no se puede descargar por ninguna ruta.
   - Hay un máximo de 20 pendientes por teléfono; pasado eso, `429`.
 - `GET /sms/webchat/file?ref=f_…`
-  - Devuelve el archivo con el mismo filtro que `/webchat/file` de la web: las fotos
-    con su tipo y lo demás como descarga (`Content-Disposition: attachment`).
-  - Con `nosniff` y `Cache-Control: private, no-store`.
+  - Devuelve el archivo como `/webchat/file` de la web: las fotos con su tipo e
+    `inline`, y lo demás como `application/octet-stream` y `attachment`.
+  - Con `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox` y
+    `Cache-Control: private, no-store`.
   - Un `ref` que no existe responde `404`.
 
 Los errores HTTP traen `{"error": "<code>"}` con los mismos códigos de abajo.

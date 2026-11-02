@@ -226,10 +226,27 @@ async def main() -> None:
         check("GET file: tipo, nosniff y no-store", ("image/png", "nosniff", "private, no-store"),
               (headers.get("content-type"), headers.get("x-content-type-options"), headers.get("cache-control")))
         check("GET file: la foto inline", True, headers.get("content-disposition", "").startswith("inline"))
+        check("GET file: CSP sandbox", True, "sandbox" in headers.get("content-security-policy", ""))
         status, _h, _b = await raw_http(port, "GET", "/sms/webchat/file?ref=" + files[0]["ref"])
         check("GET file sin token: 401", 401, status)
         status, _h, _b = await raw_http(port, "GET", "/sms/webchat/file?ref=../device.json", token=token)
         check("GET file con un ref inválido: 404", 404, status)
+
+        # Un documento se descarga como octet-stream.
+        status, upd = await upload(port, token, "lista.txt", b"pan\nleche\n")
+        r = await app.ask("webchat.send", text="", uploads=[upd["upload"]])
+        doc = (((r.get("data") or {}).get("message") or {}).get("files") or [{}])[0]
+        status, headers, payload = await raw_http(port, "GET", "/sms/webchat/file?ref=" + doc.get("ref", ""), token=token)
+        check("documento: octet-stream y attachment", (200, "application/octet-stream", True),
+              (status, headers.get("content-type"), headers.get("content-disposition", "").startswith("attachment")))
+
+        # Dos envíos a la vez con el mismo up_ y distinto id: sólo uno lo usa.
+        status, upr = await upload(port, token, "carrera.png", PNG)
+        ra, rb = await asyncio.gather(app.ask("webchat.send", text="a", uploads=[upr["upload"]]),
+                                      app.ask("webchat.send", text="b", uploads=[upr["upload"]]))
+        check("mismo up_ a la vez: uno result y otro bad_upload", ["bad_upload", "result"],
+              sorted([ra.get("type") if ra.get("type") == "result" else ra.get("code"),
+                      rb.get("type") if rb.get("type") == "result" else rb.get("code")]))
 
         # Un up_ que falla al mandar sigue vigente; uno vencido ya no.
         status, up2 = await upload(port, token, "nota.txt", b"hola")
