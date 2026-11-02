@@ -24,6 +24,8 @@
     });
   }
   var socket = null;
+  var copying = 0;          // copias a memoria de adjuntos en curso
+  var sendAfterCopy = false;
   var pending = {};
   var polling = null;
 
@@ -112,6 +114,12 @@
     };
     socket.onclose = function () {
       socket = null;
+      // Si se cerró después de mandar y antes de la respuesta, el texto regresa al cuadro
+      // (revisión de Metis en #656).
+      var waiting = Object.keys(pending).map(function (k) { return pending[k]; })
+        .filter(function (t) { return typeof t === "string"; });
+      pending = {};
+      if (waiting.length && texto && !texto.value) { texto.value = waiting[waiting.length - 1]; grow(); }
       // Si nunca abrió (gateway viejo, red), polling; si se cayó, se reintenta en 5 s.
       if (!opened) { startPolling(); } else { startPolling(); setTimeout(connect, 5000); }
     };
@@ -137,6 +145,7 @@
         // Por el formulario (con archivos, o sin WebSocket): una sola vez. Subir una foto
         // por datos móviles tarda, y un segundo toque la mandaba dos veces (#656).
         if (form.classList.contains("wc-enviando")) { ev.preventDefault(); return; }
+        if (copying) { ev.preventDefault(); sendAfterCopy = true; form.classList.add("wc-enviando"); return; }
         form.classList.add("wc-enviando");
         return;
       }
@@ -191,10 +200,39 @@
       Array.prototype.forEach.call(input.files, function (file, i) { lista.appendChild(chip(input, file, i)); });
     });
   }
+  // Chrome en Android a veces entrega una foto de Google Fotos como un archivo «en la nube»
+  // que cambia antes de subirse, y el envío falla con ERR_UPLOAD_FILE_CHANGED (lo vio
+  // Julian, #656). Al elegirlos se copian a memoria, así el envío ya no depende de ese archivo.
+  function snapshot(input) {
+    var files = Array.prototype.slice.call(input.files);
+    if (!files.length || !files[0].arrayBuffer) { return Promise.resolve(); }
+    return Promise.all(files.map(function (f) {
+      return f.arrayBuffer().then(function (buf) {
+        return new File([buf], f.name, {type: f.type, lastModified: f.lastModified});
+      }, function () { return f; });
+    })).then(function (copies) {
+      var dt = new DataTransfer();
+      copies.forEach(function (c) { dt.items.add(c); });
+      input.files = dt.files;
+    });
+  }
+
   inputs.forEach(function (input) {
     input.addEventListener("change", function () {
       if (menu) { menu.open = false; }
       render();
+      copying += 1;
+      snapshot(input).then(done, done);
+      function done() {
+        copying -= 1;
+        render();
+        // Si se tocó «Enviar» mientras se copiaba, se manda ahora.
+        if (!copying && sendAfterCopy) {
+          sendAfterCopy = false;
+          form.classList.remove("wc-enviando");
+          if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
+        }
+      }
     });
   });
 }());
