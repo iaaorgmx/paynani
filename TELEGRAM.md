@@ -290,7 +290,9 @@ Catch-All de Telegram activo.
   `too_many` (20 pendientes en la instalación). Cada `up_` vale 10 minutos y una sola
   vez: se borra cuando el envío salió; si falla, sigue hasta que venza, menos los que
   alcanzaron a salir en un envío `partial`, que se borran para que el reintento no los
-  repita. Mientras un envío los manda quedan apartados: otro `send` con alguno de ellos
+  repita; el error los lista en `sent_uploads`, y la web los quita de la lista antes de
+  reintentar (Andy en #665). Un `up_` que quedó sin su `.json` (el proceso murió a la mitad
+  de `save`) se borra al pasar 10 minutos. Mientras un envío los manda quedan apartados: otro `send` con alguno de ellos
   da `bad_upload` (Iris en #665). En el `send`:
   `bad_upload` (no es lista, vacío, repetido, desconocido, vencido, ya usado o en uso),
   `too_many` (más de 10) o `too_big` (más de 20 MB entre todos), con `field: "uploads"`.
