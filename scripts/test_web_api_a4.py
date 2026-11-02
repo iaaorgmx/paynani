@@ -94,7 +94,12 @@ st.save_device({"device_id": "d_1", "sims": [{"slot": 0, "country": "MX"}], "acc
                 "connected": False, "last_seen": "2026-01-01T00:00:00Z"})
 status, body = api(sender, "SendSms", to=CLIENTE, text="hola", idempotency_key="k1")
 check("FR-10: app sin accepts_api_out, app_outdated", (409, "app_outdated", []), (status, body["code"], outbox()))
-st.touch(accepts_api_out=True)
+# PaynaniApp sólo Webchat (#671): no es una app vieja; aunque anuncie accepts_api_out, no manda SMS.
+st.touch(sms=False, accepts_api_out=True)
+status, body = api(sender, "SendSms", to=CLIENTE, text="hola", idempotency_key="k1")
+check("teléfono sólo Webchat: no_sms_phone, no app_outdated, y nada en outbox/", (409, "no_sms_phone", []),
+      (status, body["code"], outbox()))
+st.touch(sms=True)
 
 # --- FR-7: idempotency_key obligatoria y válida ---------------------------------------
 status, body = api(sender, "SendSms", to=CLIENTE, text="hola")

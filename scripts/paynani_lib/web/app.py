@@ -1052,6 +1052,9 @@ def make_handler(ctx: Context):
             """FR-6: ¿el teléfono emparejado acepta órdenes del dueño?"""
             if not store.device():
                 return messages_pages.PHONE_NONE
+            # Un teléfono «solo Webchat» (#671) no manda SMS: no es que la app sea vieja.
+            if not store.sms_enabled():
+                return messages_pages.PHONE_NO_SMS
             return messages_pages.PHONE_OK if store.accepts("owner") else messages_pages.PHONE_OLD
 
         def _sms_region(self, store) -> str | None:
@@ -1303,6 +1306,8 @@ def make_handler(ctx: Context):
                                  when=messages_pages.local_time(exc.retry_at or ""))
                 elif exc.code in ("empty_text", "text_too_long", "invalid_number"):
                     message = th(f"web.sms.err.{exc.code}", n=outgoing.MAX_TEXT)
+                elif exc.code == "no_sms_phone":
+                    message = th("web.sms.no_sms_phone")
                 else:
                     message = str(exc)
                 self._messages(values, message, 429 if exc.code == "rate_limited" else 400)

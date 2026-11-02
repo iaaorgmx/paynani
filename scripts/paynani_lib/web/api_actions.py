@@ -562,6 +562,10 @@ def send_sms(call: Call) -> dict:
     if earlier is None:
         if not store.device():
             raise ApiError(409, "no_phone", "There is no paired phone to send from.")
+        if not store.sms_enabled():
+            # PaynaniApp sólo Webchat (#671): no es una app vieja; no manda SMS.
+            raise ApiError(409, "no_sms_phone", "The paired phone runs PaynaniApp for Webchat only; it does not "
+                                                "send texts.")
         if not store.accepts("api"):
             raise ApiError(409, "app_outdated", "The paired phone runs a PaynaniApp that does not accept API orders. "
                                                 "Update it to 0.9.0 or later.")
@@ -590,6 +594,9 @@ def send_sms(call: Call) -> dict:
                            order_id=exc.order_id) from None
         if exc.code in ("empty_text", "text_too_long"):
             raise ApiError(400, exc.code, exc.message, field="text") from None
+        if exc.code == "no_sms_phone":
+            raise ApiError(409, "no_sms_phone", "The paired phone runs PaynaniApp for Webchat only; it does not "
+                                                "send texts.") from None
         raise ApiError(400, exc.code, exc.message) from None
     duplicate = bool(order.pop("duplicate", False))
     if not duplicate:

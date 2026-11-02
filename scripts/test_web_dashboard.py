@@ -315,6 +315,26 @@ after = sorted(str(p.relative_to(core_state)) + oct(p.stat().st_mode) for p in c
 check("Core lee el SMS de state/sms/", [("received", "Ana")], [(i["kind"], i["name"]) for i in got])
 check("FR-20: y no crea carpetas ni cambia permisos", before, after)
 
+# --- PaynaniApp sólo Webchat (#671): no es pasarela de SMS; desconectado es lo normal -----
+from paynani_lib.web import dashboard_pages as _dp  # noqa: E402
+i18n.set_current("en-US")
+_webchat = {"online": False, "model": "Pixel 8", "app_version": "1.0.0", "last_seen_age_s": 7200, "battery": None,
+            "sms": False}
+row = _dp.phone_row(_webchat)
+check("sólo Webchat, app cerrada: «Webchat only, no texts», píldora gris «App closed», sin batería", (True, True, False, False),
+      ("Webchat only, no texts" in row, 'pill pill-off' in row and "App closed" in row, "pill-bad" in row, "battery" in row))
+row = _dp.phone_row({**_webchat, "online": True})
+check("sólo Webchat, app abierta: verde «Online»", (True, True), ('pill pill-ok' in row, "Webchat only" in row))
+row = _dp.phone_row({**_webchat, "sms": True, "battery": 80})
+check("la pasarela de SMS no cambia: desconectada sigue en rojo con la batería", (True, True), ("pill-bad" in row, "80 %" in row))
+_model = {"status": "ok", "checks_ok": 1, "checks_total": 1, "mail_today": {}, "open_notices": 0, "sms_today": {},
+          "roster_count": 0, "attention": [], "week": [], "whatsapp": None, "telegram": None,
+          "now": dt.datetime(2026, 11, 2, tzinfo=dt.timezone.utc),
+          "services": {"listener": {"unit": "active"}, "dispatcher": {"unit": "active"}, "session": {"live": True},
+                       "phone": {"online": False, "sms": False}}}
+check("/dashboard.json: el teléfono sólo Webchat cerrado es app_closed, no offline", "app_closed",
+      dashboard.numbers(_model)["services"]["phone"])
+
 httpd.shutdown()
 check("la configuración real no cambió (.env y Himalaya)", BEFORE, [sha(p) for p in REAL])
 

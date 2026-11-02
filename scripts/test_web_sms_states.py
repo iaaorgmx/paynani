@@ -200,6 +200,22 @@ missing = [lang for lang in strings.STRINGS if "web.sms.offline" not in strings.
 check("FR-10: el aviso de desconectado en los cinco idiomas", [], missing)
 check("status_label sin código no agrega paréntesis", t("web.sms.status.failed"), messages_pages.status_label("failed"))
 
+# --- PaynaniApp sólo Webchat (#671, PaynaniApp-Agentic#175) ------------------------------
+st.save_device({**(st.device() or {}), "sms": False, "accepts_owner_out": False})
+status, _, page = req("GET", "/messages?lang=es-MX", cookie=cookie)
+check("sólo Webchat: «Nuevo SMS» deshabilitado con su aviso, no «Actualiza PaynaniApp»", (200, True, False, False),
+      (status, th("web.sms.no_sms_phone") in page, 'href="/messages/nuevo"' in page, th("web.sms.old_app") in page))
+status, _, page = req("GET", VER + "&lang=es-MX", cookie=cookie)
+check("sólo Webchat: en el hilo, el aviso en lugar del cuadro de responder", (200, True, False),
+      (status, th("web.sms.no_sms_phone") in page, 'action="/messages/enviar"' in page))
+csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+status, _, page = req("POST", "/messages/enviar?lang=es-MX", form={"csrf": csrf, "n": ANA, "text": "hola", "desde_hilo": "1"},
+                      cookie=cookie)
+check("sólo Webchat: un POST directo se rechaza (409, como sin teléfono) con el mismo aviso", (409, True),
+      (status, th("web.sms.no_sms_phone") in page))
+missing = [lang for lang in strings.STRINGS if "web.sms.no_sms_phone" not in strings.STRINGS[lang]]
+check("el aviso de sólo Webchat en los cinco idiomas", [], missing)
+
 httpd.shutdown()
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

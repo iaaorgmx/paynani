@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **PaynaniWeb y la API con un teléfono «solo Webchat» (#671, PaynaniApp-Agentic#175).** Cuando el teléfono emparejado es la PaynaniApp sólo para Webchat:
+  - **Dashboard:** la fila del teléfono dice «sólo Webchat, sin SMS», sin la batería. Con la app cerrada, la píldora queda gris («App cerrada») y no roja, porque no es un apagón. `/dashboard.json` da `app_closed`.
+  - **«Mensajes de texto»:** «Nuevo SMS» y el cuadro de responder muestran que ese teléfono no manda SMS, en lugar de «Actualiza PaynaniApp».
+  - **La página del agente** muestra lo mismo en «Channels».
+  - **`SendSms` de la API** responde `409 no_sms_phone`, y no `app_outdated` ni un 400 genérico.
+
 - **El teléfono «solo Webchat» (PaynaniApp-Agentic#175, Q343 = A).** La PaynaniApp pública para Google Play sólo hace Webchat y dice `"sms": false` en su saludo. Con ese teléfono emparejado, la pasarela no le manda `sms.out`, las órdenes nuevas fallan con `no_sms_phone`, cerrar la app no escribe `sms.gateway.offline` ni avisos de batería, y `paynani status`, `healthcheck` y `paynani sms check` lo muestran como «Webchat only». Sin el campo, todo sigue igual que antes (`SMS_GATEWAY.md` §2).
 
 - **PaynaniWeb, «Mensajes de Telegram»: fotos y archivos con el clip (#662, Q337 = B).** La barra de contestar lleva el clip de Webchat, con «Foto» y «Archivo»: hasta 10 archivos y 20 MB por mensaje, y el texto como pie de foto. Si el envío falla, la página dice qué archivos ya salieron. Si se corta por tiempo, pide revisar la conversación antes de reenviar. Y si el fallo es definitivo, borra los archivos que no salieron. Las fotos que mandas se ven en el hilo; de los demás archivos queda el nombre. Usa el núcleo de #665 (`telegram/uploads.py` y `uploads` en `telegram.send`) y sólo aparece si el servicio anuncia `web_files`. El clip, las fichas y la copia a memoria (#657) ahora viven en `assets/adjuntos.js`, compartido con Webchat.

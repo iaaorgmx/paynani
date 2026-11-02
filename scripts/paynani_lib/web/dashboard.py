@@ -436,7 +436,8 @@ def local_health(state_dir: Path, now: float | None = None) -> dict:
     for text in hc.sms_phone_warnings(phone):
         checks.append(_check("sms_phone", "warning", text.split(":")[0]))
     if phone is not None and not hc.sms_phone_warnings(phone):
-        checks.append(_check("sms_phone", "ok", "the paired phone is online"))
+        checks.append(_check("sms_phone", "ok", "the paired phone is online" if phone.get("sms") is not False
+                             else "the paired phone is Webchat only (no texts)"))
     network, network_at = network_checks(_jsonl_one(Path(state_dir) / DOCTOR_FILE),
                                          time.time() if now is None else now)
     return {"checks": checks + network, "network_at": network_at}
@@ -503,7 +504,9 @@ def local_services(state_dir: Path) -> dict:
         "phone": None if phone is None else {
             "online": bool(phone["online"]), "model": phone.get("model", ""),
             "app_version": phone.get("app_version", ""), "last_seen_age_s": phone.get("last_seen_age_s"),
-            "battery": (phone.get("battery") or {}).get("pct")},
+            "battery": (phone.get("battery") or {}).get("pct"),
+            # False: PaynaniApp sólo Webchat (#671); no es pasarela de SMS.
+            "sms": phone.get("sms") is not False},
         "additional": additional,
         "queue": {"pending": int(queue.get("pending") or 0), "oldest_age_s": queue.get("oldest_age_seconds")},
         # Con el runtime que la produjo: la evidencia de otro runtime no cuenta (Ximena en #645).
@@ -806,7 +809,8 @@ def numbers(model: dict) -> dict:
             "listener": services["listener"]["unit"],
             "dispatcher": services["dispatcher"]["unit"],
             "session": "live" if services["session"]["live"] else "none",
-            "phone": None if phone is None else ("online" if phone["online"] else "offline"),
+            "phone": None if phone is None else ("online" if phone["online"] else "offline" if phone.get("sms", True)
+                                                 else "app_closed"),
             "whatsapp": model["whatsapp"],
             "telegram": None if model.get("telegram") is None else model["telegram"]["state"],
         },
