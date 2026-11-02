@@ -1328,7 +1328,10 @@ def make_handler(ctx: Context):
             summary = self.CTX.agent_summary()
             messages = store.messages(limit=50) if store else []
             typing = bool(store and store.is_typing())
-            self._page(code, title=i18n.t("web.wc.title"), icon_name="webchat", active="webchat", wide=True,
+            # «Webchat - <agente>» en el encabezado (Julian, 2026-11-02).
+            name = (summary or {}).get("name") or ""
+            title = f'{i18n.t("web.wc.title")} - {name}' if name else i18n.t("web.wc.title")
+            self._page(code, title=title, icon_name="webchat", active="webchat", wide=True,
                        body=webchat_pages.body(messages, self.CTX.now(), summary, self.session["csrf"],
                                                typing=typing, available=store is not None, text=text, error=error))
 
