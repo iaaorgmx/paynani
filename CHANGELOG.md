@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: dos detalles de «Cuenta de Telegram» sin bot (#641, seguimiento de #639).**
+  - Con un token ya puesto pero desactivado, `/telegram` muestra el aviso de `paynani telegram enable` y ya no el formulario, que de todos modos se negaba al guardar.
+  - El formulario de configuración ya no enlaza a «Mensajes de Telegram», que sin bot es un 404.
+
+  Dos pruebas nuevas en `test_web_telegram_setup.py`.
+
 - **Telegram: el dueño puede mandar fotos y archivos desde PaynaniWeb, en el núcleo (#662, Q337 = B).** Lo pidió Julian: que el cuadro de «Mensajes de Telegram» tenga el clip, como Webchat. Antes `telegram.send` rechazaba archivos que no vinieran del agente o de la terminal. Ahora:
   - PaynaniWeb sube cada archivo con `paynani_lib.telegram.uploads.save()`, en su proceso y sin elegir rutas, y recibe un `up_…`. Se guarda en `state/telegram/uploads/` (0700/0600), vale 10 minutos y una sola vez, y se revisa el tipo por los bytes con las reglas de Webchat;
   - `telegram.send` acepta `uploads` (hasta 10, 20 MB entre todos) sólo del dueño. El texto va como pie del primero, o después si pasa de 1024;
