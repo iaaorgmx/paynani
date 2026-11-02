@@ -187,6 +187,7 @@
       Array.prototype.forEach.call(input.files, function (f, j) { if (j !== i) { dt.items.add(f); } });
       input.files = dt.files;
       render();
+      copy(input);           // lo que queda, a memoria otra vez
     });
     item.appendChild(name);
     item.appendChild(small);
@@ -211,16 +212,17 @@
         return new File([buf], f.name, {type: f.type, lastModified: f.lastModified});
       }, function () { return f; });
     })).then(function (copies) {
+      // Si mientras se copiaba se quitó o se cambió un archivo, la selección ya no es la
+      // que se copió: no se toca (revisión de Metis en #657).
+      var now = Array.prototype.slice.call(input.files);
+      if (now.length !== files.length || now.some(function (f, i) { return f !== files[i]; })) { return; }
       var dt = new DataTransfer();
       copies.forEach(function (c) { dt.items.add(c); });
       input.files = dt.files;
     });
   }
 
-  inputs.forEach(function (input) {
-    input.addEventListener("change", function () {
-      if (menu) { menu.open = false; }
-      render();
+  function copy(input) {
       copying += 1;
       snapshot(input).then(done, done);
       function done() {
@@ -233,6 +235,13 @@
           if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
         }
       }
+  }
+
+  inputs.forEach(function (input) {
+    input.addEventListener("change", function () {
+      if (menu) { menu.open = false; }
+      render();
+      copy(input);
     });
   });
 }());
