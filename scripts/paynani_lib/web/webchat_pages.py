@@ -108,18 +108,30 @@ def _error(text: str) -> str:
 
 
 def composer(csrf: str, agent_name: str, text: str = "", error: str = "") -> str:
+    """
+    Una sola barra, como Telegram (Julian, Q321): el clip pequeño dentro, a la izquierda, que
+    abre «Foto» y «Archivo» (un `<details>`, sin script); el
+    cuadro de escribir con todo el espacio, que crece solo hasta unas 6 líneas (webchat.js);
+    y «Enviar» como botón redondo. Los límites de los adjuntos van en el título del clip.
+    """
     return f"""<form class="wc-escribir" method="post" action="/webchat/enviar" enctype="multipart/form-data">
     {_error(error)}
     <input type="hidden" name="csrf" value="{e(csrf)}">
     <div class="wc-adjuntos" id="wc-adjuntos" data-remove="{_th('remove', name='{name}')}"></div>
-    <div class="wc-fila">
-      <label class="wc-clip" title="{_th('attach')}">{icon("clip")}<span class="solo-lector">{_th('attach')}</span>
-        <input type="file" name="files" id="wc-archivos" multiple accept="image/*,application/pdf,.pdf,.txt,.csv,.docx,.xlsx,.zip"></label>
-      <textarea name="text" rows="2" maxlength="4000" placeholder="{_th('placeholder', name=agent_name)}"
+    <div class="wc-barra">
+      <details class="wc-adjuntar">
+        <summary class="wc-clip" title="{_th('note')}">{icon("clip")}<span class="solo-lector">{_th('attach')}</span></summary>
+        <div class="wc-menu">
+          <label class="wc-opcion">{icon("photo")}<span>{_th("opt_photo")}</span>
+            <input type="file" name="files" class="wc-archivos" multiple accept="image/jpeg,image/png,image/webp,image/gif"></label>
+          <label class="wc-opcion">{icon("file")}<span>{_th("opt_file")}</span>
+            <input type="file" name="files" class="wc-archivos" multiple accept=".pdf,.txt,.csv,.docx,.xlsx,.zip,application/pdf,text/plain,text/csv,application/zip"></label>
+        </div>
+      </details>
+      <textarea name="text" rows="1" maxlength="4000" placeholder="{_th('placeholder', name=agent_name)}"
                 aria-label="{_th('placeholder', name=agent_name)}">{e(text)}</textarea>
-      <button type="submit" class="primario">{_th("send")}</button>
+      <button type="submit" class="wc-enviar" aria-label="{_th('send')}" title="{_th('send')}">{icon("send")}</button>
     </div>
-    <p class="wc-nota">{_th("note")}</p>
   </form>"""
 
 

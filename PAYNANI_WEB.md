@@ -349,6 +349,7 @@ escribe con `paynani_lib/webchat/store.py`, sin un servicio aparte.
 - **Sólo para ti** (Q307): pide la sesión de PaynaniWeb y no tiene API externa.
 - **Cada mensaje tuyo** es un evento `webchat.received`. Le llega al agente como
   trabajo, con tu nombre y tu correo, y él contesta con `paynani webchat send`.
+- **El cuadro de escribir**, como Telegram (Q321): una sola barra con el clip («Foto» o «Archivo»), el cuadro, que crece hasta unas 6 líneas, y «Enviar».
 - **Adjuntos:** varios archivos o fotos por mensaje, hasta 20 MB cada uno y 25 MB en
   total. El texto puede tener hasta 4000 caracteres. El tipo se revisa por los bytes.
   El POST es `multipart/form-data`, con CSRF y Origin como todo POST, y un cuerpo más

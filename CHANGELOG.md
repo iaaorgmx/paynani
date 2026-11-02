@@ -2,6 +2,13 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el cuadro de escribir de Webchat, como Telegram (Q321).** Lo pidió Julian en la prueba real desde su celular, donde el cuadro era de 2 líneas. Ahora es una sola barra:
+  - el clip pequeño a la izquierda abre «Foto» y «Archivo», con un `<details>` que funciona sin script;
+  - el cuadro ocupa todo el ancho y crece solo mientras se escribe, hasta unas 6 líneas;
+  - «Enviar» es un botón redondo.
+
+  Los límites de los adjuntos van en el título del clip.
+
 - **PaynaniWeb: hasta 64 conexiones en espera.** El servidor dejaba 5 (lo de `socketserver`). Con la página, sus scripts, el WebSocket de Webchat y varios intentos de entrar a la vez, el kernel cortaba las demás con «Connection reset by peer» (CI de `main` en cd4d4d8, `test_web_auth`).
 
 - **PaynaniWeb: Webchat, platicar con tu agente desde el navegador (#648).** Va en la sección «AI Agent», debajo del agente (Q304 a Q308):
