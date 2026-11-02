@@ -1113,18 +1113,18 @@ Tested on a Blackview BV5500Pro with Android 9 (2026-10-06): with the switch
 off, DuraSpeed force-stopped the app with the screen off and the phone stayed
 offline until someone opened it again; with the switch on, the setting survived
 a reboot, the app started on its own and kept running with the screen off
-(iaaorgmx/PaynaniApp#84). **Check it again after updating PaynaniApp:** on that
+(iaaorgmx/PaynaniApp-Agentic#84). **Check it again after updating PaynaniApp:** on that
 phone, the update from 0.4.0 to 0.6.1 turned the switch back off (reinstalling
 the same version did not). From PaynaniApp 0.6.2 the app asks again after each
 update: Status shows the **Background** row until you confirm it
-(iaaorgmx/PaynaniApp#94).
+(iaaorgmx/PaynaniApp-Agentic#94).
 
 **Samsung:** two settings, and one list to stay away from. Settings → Apps →
 Paynani → Battery → **Unrestricted**; and Settings → Battery → Background usage
 limits → **Never sleeping apps** → + → Paynani. Do **not** add it to *Sleeping
 apps* or *Deep sleeping apps*: those put it to sleep. From PaynaniApp 0.6.5 the
 app shows these steps itself on a Samsung, and its **Open settings** button opens
-Paynani's own screen for the first one (iaaorgmx/PaynaniApp#97). If Paynani is missing
+Paynani's own screen for the first one (iaaorgmx/PaynaniApp-Agentic#97). If Paynani is missing
 when you tap + in *Sleeping apps*, its battery is most likely already
 unrestricted (seen on a Galaxy S21+); that list is the one to stay out of anyway.
 
@@ -1152,7 +1152,7 @@ with the change yet), PaynaniApp can only tell paynani about it through Google
 Messages' notification. With that conversation open on screen, Google Messages
 posts the notification silently and PaynaniApp does not report it, so nothing
 reaches the agent, not even the `sms.unseen` notice. Leave the phone on the chat list
-or locked (iaaorgmx/PaynaniApp#75).
+or locked (iaaorgmx/PaynaniApp-Agentic#75).
 
 **6. Pair it.** On the agent's machine, from the clone, with the tunnel address
 in `PAYNANI_SMS_PUBLIC_URL` (§5.1):

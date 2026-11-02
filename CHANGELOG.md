@@ -13,6 +13,8 @@
 
   El clip en la web lo hace Iris en otro PR. `telegram/uploads.py`; `test_telegram_send.py`.
 
+  Después de la revisión: un `up_` que otro envío está mandando da `bad_upload`. Lo que ya salió en un envío parcial no se repite, y el error lo dice en `sent_uploads`. Un `up_` sin su `.json` se borra a los 10 minutos (Iris y Andy en #665).
+
 ## 0.21.0 (2026-11-01)
 
 ### Si actualizas desde 0.20.0
