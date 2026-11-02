@@ -154,5 +154,6 @@ def body(messages: list[dict], now: dt.datetime, summary: dict | None, csrf: str
   <ol class="wc-hilo" id="wc-hilo" aria-live="polite">{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
   {composer(csrf, name, text, error)}
 </div>
+<script src="/assets/adjuntos.js" defer></script>
 <script src="/assets/webchat.js" defer></script>
 """

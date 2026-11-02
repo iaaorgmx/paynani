@@ -237,6 +237,9 @@ check("responder es la barra de Webchat (Q337): una línea, «Enviar» redondo y
        'class="wc-enviar" aria-label="Enviar"' in page, '<label for="tg-text" class="solo-lector">' in page,
        '<script src="/assets/tg_barra.js" defer></script>' in page))
 check("tg_barra.js se sirve", 200, req("GET", "/assets/tg_barra.js")[0])
+check("un servicio sin web_files (#662): sin clip, sólo texto y required", (False, False, True),
+      ('class="wc-adjuntar"' in page, "multipart/form-data" in page, 'maxlength="4096" required' in page))
+check("adjuntos.js se sirve", 200, req("GET", "/assets/adjuntos.js")[0])
 
 check("la foto se pide por su referencia opaca", True, 'src="/telegram/media?ref=tg%3Ademo02"' in page)
 check("sin «Agregar al roster» en un contacto del roster", False, 'action="/telegram/roster"' in page)

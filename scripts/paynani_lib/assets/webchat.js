@@ -12,20 +12,9 @@
   var form = document.querySelector(".wc-escribir");
   var texto = form ? form.querySelector("textarea[name=text]") : null;
   var csrf = form ? form.querySelector("input[name=csrf]") : null;
-  var inputs = Array.prototype.slice.call(document.querySelectorAll("input.wc-archivos"));
-  var menu = document.querySelector(".wc-adjuntar");
-  // El menú del clip se cierra al tocar fuera de él o con Esc, como en Telegram (Julian, #656).
-  if (menu) {
-    document.addEventListener("click", function (ev) {
-      if (menu.open && !menu.contains(ev.target)) { menu.open = false; }
-    });
-    document.addEventListener("keydown", function (ev) {
-      if (ev.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); }
-    });
-  }
+  // El clip, las fichas y la copia a memoria: assets/adjuntos.js (compartido con Telegram).
+  var adjuntos = window.paynaniAdjuntos ? window.paynaniAdjuntos(form) : null;
   var socket = null;
-  var copying = 0;          // copias a memoria de adjuntos en curso
-  var sendAfterCopy = false;
   var pending = {};
   var polling = null;
 
@@ -157,12 +146,12 @@
     // Al volver con atrás/adelante (bfcache) el formulario no se queda bloqueado (Metis, #656).
     window.addEventListener("pageshow", function () { form.classList.remove("wc-enviando"); });
     form.addEventListener("submit", function (ev) {
-      var hasFiles = inputs.some(function (i) { return i.files && i.files.length; });
+      var hasFiles = !!adjuntos && adjuntos.hasFiles();
       if (!socket || socket.readyState !== 1 || hasFiles || !texto || !texto.value.trim()) {
         // Por el formulario (con archivos, o sin WebSocket): una sola vez. Subir una foto
         // por datos móviles tarda, y un segundo toque la mandaba dos veces (#656).
         if (form.classList.contains("wc-enviando")) { ev.preventDefault(); return; }
-        if (copying) { ev.preventDefault(); sendAfterCopy = true; form.classList.add("wc-enviando"); return; }
+        if (adjuntos && adjuntos.busy()) { ev.preventDefault(); adjuntos.sendWhenReady(); return; }
         form.classList.add("wc-enviando");
         return;
       }
@@ -175,90 +164,4 @@
       grow();
     });
   }
-
-  // Los adjuntos elegidos, de «Foto» y de «Archivo»: una ficha por archivo, con una × para
-  // quitarlo. Al elegir, el menú del clip se cierra.
-  var lista = document.getElementById("wc-adjuntos");
-  if (!inputs.length || !lista || typeof DataTransfer === "undefined") { return; }
-  var removeLabel = lista.getAttribute("data-remove") || "{name}";
-
-  function size(n) {
-    if (n < 1024) { return n + " B"; }
-    if (n < 1048576) { return Math.round(n / 1024) + " KB"; }
-    return (n / 1048576).toFixed(1) + " MB";
-  }
-
-  function chip(input, file, i) {
-    var item = document.createElement("span");
-    item.className = "wc-adj";
-    var name = document.createElement("span");
-    name.textContent = file.name;
-    var small = document.createElement("small");
-    small.textContent = size(file.size);
-    var quitar = document.createElement("button");
-    quitar.type = "button";
-    quitar.textContent = "×";
-    quitar.setAttribute("aria-label", removeLabel.replace("{name}", file.name));
-    quitar.addEventListener("click", function () {
-      var dt = new DataTransfer();
-      Array.prototype.forEach.call(input.files, function (f, j) { if (j !== i) { dt.items.add(f); } });
-      input.files = dt.files;
-      render();
-      copy(input);           // lo que queda, a memoria otra vez
-    });
-    item.appendChild(name);
-    item.appendChild(small);
-    item.appendChild(quitar);
-    return item;
-  }
-
-  function render() {
-    lista.textContent = "";
-    inputs.forEach(function (input) {
-      Array.prototype.forEach.call(input.files, function (file, i) { lista.appendChild(chip(input, file, i)); });
-    });
-  }
-  // Chrome en Android a veces entrega una foto de Google Fotos como un archivo «en la nube»
-  // que cambia antes de subirse, y el envío falla con ERR_UPLOAD_FILE_CHANGED (lo vio
-  // Julian, #656). Al elegirlos se copian a memoria, así el envío ya no depende de ese archivo.
-  function snapshot(input) {
-    var files = Array.prototype.slice.call(input.files);
-    if (!files.length || !files[0].arrayBuffer) { return Promise.resolve(); }
-    return Promise.all(files.map(function (f) {
-      return f.arrayBuffer().then(function (buf) {
-        return new File([buf], f.name, {type: f.type, lastModified: f.lastModified});
-      }, function () { return f; });
-    })).then(function (copies) {
-      // Si mientras se copiaba se quitó o se cambió un archivo, la selección ya no es la
-      // que se copió: no se toca (revisión de Metis en #657).
-      var now = Array.prototype.slice.call(input.files);
-      if (now.length !== files.length || now.some(function (f, i) { return f !== files[i]; })) { return; }
-      var dt = new DataTransfer();
-      copies.forEach(function (c) { dt.items.add(c); });
-      input.files = dt.files;
-    });
-  }
-
-  function copy(input) {
-      copying += 1;
-      snapshot(input).then(done, done);
-      function done() {
-        copying -= 1;
-        render();
-        // Si se tocó «Enviar» mientras se copiaba, se manda ahora.
-        if (!copying && sendAfterCopy) {
-          sendAfterCopy = false;
-          form.classList.remove("wc-enviando");
-          if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
-        }
-      }
-  }
-
-  inputs.forEach(function (input) {
-    input.addEventListener("change", function () {
-      if (menu) { menu.open = false; }
-      render();
-      copy(input);
-    });
-  });
 }());

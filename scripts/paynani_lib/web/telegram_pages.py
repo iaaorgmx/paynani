@@ -48,7 +48,8 @@ def error_text(code: str, fields: dict | None = None) -> str:
         return i18n.t("web.tg.err.rate_limited", s=fields.get("retry_after_s", "?"))
     if code in ("invalid", "missing_field"):
         return i18n.t(f"web.tg.err.{code}", field=fields.get("field", "?"))
-    if code in ("unavailable", "not_allowed", "not_started", "not_found", "conflict"):
+    if code in ("unavailable", "not_allowed", "not_started", "not_found", "conflict", "too_big", "bad_type",
+                "too_many", "bad_upload", "malformed"):
         return i18n.t("web.tg.err." + code)
     return i18n.t("web.tg.err.other", code=code)
 
@@ -202,7 +203,8 @@ def _status(m: dict) -> str:
     return f' <span class="estado estado-tg-{tone}">{_th("status." + status)}</span>'
 
 
-def reply_box(thread: dict, csrf: str, running: bool, values: dict | None = None, error: str = "") -> str:
+def reply_box(thread: dict, csrf: str, running: bool, values: dict | None = None, error: str = "",
+              web_files: bool = False) -> str:
     """Responder al pie del hilo, sólo si el servicio dice `can_reply` (FR-25)."""
     head = f'<h3 id="responder">{_th("reply")}</h3>{_error(error)}'
     if not thread.get("in_roster"):
@@ -213,21 +215,43 @@ def reply_box(thread: dict, csrf: str, running: bool, values: dict | None = None
         return f'<section class="responder">{head}<p class="aviso-caja" role="status">{_th("no_reply_state")}</p></section>'
     text = (values or {}).get("text", "")
     # La barra de Webchat (Julian, mockup aprobado; Q337 = B): el cuadro con todo el ancho,
-    # que crece solo (tg_barra.js), y «Enviar» redondo, pegada abajo. El clip llega cuando el
-    # servicio acepte archivos de la web (#662).
+    # que crece solo (tg_barra.js), y «Enviar» redondo, pegada abajo. El clip con «Foto» y
+    # «Archivo» sólo si el servicio acepta archivos de la web (`web_files`, #662); entonces
+    # el texto puede ir vacío y el formulario es multipart.
     name = str(thread.get("name") or "")
     placeholder = _th("placeholder", name=name) if name else _th("reply_text")
-    return f"""<form method="post" action="/telegram/messages/enviar" class="wc-escribir tg-escribir" id="responder">
+    clip = attach = ""
+    form_attrs = ""
+    required = " required"
+    if web_files:
+        form_attrs = ' enctype="multipart/form-data"'
+        required = ""
+        wc = lambda key, **kw: i18n.th("web.wc." + key, **kw)  # noqa: E731 -- los textos del clip son los de Webchat
+        attach = f'\n  <div class="wc-adjuntos" id="tg-adjuntos" data-remove="{wc("remove", name="{name}")}"></div>'
+        clip = f"""
+    <details class="wc-adjuntar">
+      <summary class="wc-clip" title="{_th('files_note')}">{icon("clip")}<span class="solo-lector">{wc('attach')}</span></summary>
+      <div class="wc-menu">
+        <label class="wc-opcion">{icon("photo")}<span>{wc("opt_photo")}</span>
+          <input type="file" name="files" class="wc-archivos" multiple accept="image/jpeg,image/png,image/webp,image/gif"></label>
+        <label class="wc-opcion">{icon("file")}<span>{wc("opt_file")}</span>
+          <input type="file" name="files" class="wc-archivos" multiple accept=".pdf,.txt,.csv,.docx,.xlsx,.zip,application/pdf,text/plain,text/csv,application/zip"></label>
+        <p class="wc-menu-nota">{_th("files_note")}</p>
+      </div>
+    </details>"""
+    scripts = ('<script src="/assets/adjuntos.js" defer></script>\n' if web_files else "") + \
+        '<script src="/assets/tg_barra.js" defer></script>'
+    return f"""<form method="post" action="/telegram/messages/enviar" class="wc-escribir tg-escribir{' tg-con-clip' if web_files else ''}" id="responder"{form_attrs}>
   <h3 class="solo-lector">{_th("reply")}</h3>{_error(error)}
   <input type="hidden" name="csrf" value="{e(csrf)}">
-  <input type="hidden" name="t" value="{e(thread["thread"])}">
-  <div class="wc-barra">
+  <input type="hidden" name="t" value="{e(thread["thread"])}">{attach}
+  <div class="wc-barra">{clip}
     <label for="tg-text" class="solo-lector">{_th("reply_text")}</label>
-    <textarea id="tg-text" name="text" rows="1" maxlength="{MAX_TEXT}" required placeholder="{placeholder}">{e(text)}</textarea>
+    <textarea id="tg-text" name="text" rows="1" maxlength="{MAX_TEXT}"{required} placeholder="{placeholder}">{e(text)}</textarea>
     <button type="submit" class="wc-enviar" aria-label="{_th("send")}" title="{_th("send")}">{icon("send")}</button>
   </div>
 </form>
-<script src="/assets/tg_barra.js" defer></script>"""
+{scripts}"""
 
 
 def add_box(thread: dict, csrf: str, error: str = "") -> str:
@@ -291,6 +315,11 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
             body = (f'<a class="wa-foto" href="{e(src)}" target="_blank" rel="noopener">'
                     f'<img src="{e(src)}" alt="{kind_label("image")}" loading="lazy"></a>'
                     + (f'<span class="wa-pie">{caption}</span>' if caption else ""))
+        elif out_dir and m.get("files"):
+            # Lo que mandó el dueño desde la web (#662): las fotos por /telegram/media con
+            # su índice, que vuelve a pedirle permiso al servicio; de un archivo, el nombre.
+            body = _sent_files(str(m.get("ref") or ""), m["files"]) + (
+                f'<span class="wa-pie">{e(m.get("text") or "")}</span>' if m.get("text") else "")
         elif m.get("kind") and m.get("kind") != "text":
             caption = e(m.get("text") or "")
             body = kind_label(m.get("kind")) + (f" {caption}" if caption else "")
@@ -302,6 +331,21 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
                        f'<div class="texto">{body}</div>{when}</div></li>')
     bubbles.append("</ol>")
     return "\n".join(out + bubbles + [add, reply]) + "\n"
+
+
+def _sent_files(ref: str, files: list) -> str:
+    out = []
+    for i, f in enumerate(files):
+        if not isinstance(f, dict):
+            continue
+        fname = str(f.get("name") or "")
+        if f.get("media") and ref.startswith("tgo:"):
+            src = f"/telegram/media?ref={quote(ref, safe='')}&i={i}"
+            out.append(f'<a class="wa-foto" href="{e(src)}" target="_blank" rel="noopener">'
+                       f'<img src="{e(src)}" alt="{e(fname) or kind_label("image")}" loading="lazy"></a>')
+        else:
+            out.append(f'<span class="tg-archivo">{icon("file")}<span>{e(fname) or kind_label(f.get("kind"))}</span></span>')
+    return "".join(out)
 
 
 def not_configured_body() -> str:

@@ -717,6 +717,10 @@ body.web-shell {
 /* «Mensajes de Telegram» usa la misma barra (Q337); sin el clip, el texto no va pegado al borde. */
 .web-shell .tg-escribir { margin-top: 16px; }
 .web-shell .tg-escribir .wc-barra { padding-left: 14px; }
+.web-shell .tg-escribir.tg-con-clip .wc-barra { padding-left: 6px; }
+/* Un archivo que mandó el dueño desde la web (#662): sólo el nombre, sin descarga. */
+.web-shell .tg-archivo { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; margin-bottom: 6px; border-radius: 10px; background: #ffffffaa; border: 1px solid var(--line); }
+.web-shell .tg-archivo svg { width: 18px; height: 18px; color: var(--accent); flex: none; }
 .web-shell .wc-adjuntar { position: relative; flex: none; }
 .web-shell .wc-adjuntar > summary { list-style: none; }
 .web-shell .wc-adjuntar > summary::-webkit-details-marker { display: none; }

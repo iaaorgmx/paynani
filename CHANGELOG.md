@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, «Mensajes de Telegram»: fotos y archivos con el clip (#662, Q337 = B).** La barra de contestar lleva el clip de Webchat, con «Foto» y «Archivo»: hasta 10 archivos y 20 MB por mensaje, y el texto como pie de foto. Las fotos que mandas se ven en el hilo; de los demás archivos queda el nombre. Usa el núcleo de #665 (`telegram/uploads.py` y `uploads` en `telegram.send`) y sólo aparece si el servicio anuncia `web_files`. El clip, las fichas y la copia a memoria (#657) ahora viven en `assets/adjuntos.js`, compartido con Webchat.
+
 - **PaynaniWeb, «Mensajes de Telegram»: el cuadro de contestar es la barra de Webchat (Q337).** Lo pidió Julian con un mockup que aprobó. Ya no lleva el título «Responder» ni la etiqueta «Mensaje», que siguen para lectores de pantalla. Es una sola barra pegada abajo: el cuadro empieza en una línea y crece hasta unas 6 mientras se escribe, y «Enviar» es el botón redondo. Un segundo toque no lo manda dos veces. Por ahora sólo texto: el clip para fotos y archivos llega con #662.
 
 - **Telegram: el dueño puede mandar fotos y archivos desde PaynaniWeb, en el núcleo (#662, Q337 = B).** Lo pidió Julian: que el cuadro de «Mensajes de Telegram» tenga el clip, como Webchat. Antes `telegram.send` rechazaba archivos que no vinieran del agente o de la terminal. Ahora:
