@@ -20,8 +20,6 @@ El plan reinicia el listener, el despachador, la pasarela SMS, PaynaniWeb, Whats
 - **Webchat desde PaynaniApp** necesita esta versión: PaynaniApp 0.13.0 platica con el agente por la pasarela SMS (#653, PaynaniApp#174). Con una PaynaniApp anterior, la pasarela sigue igual que en 0.20.0.
 - **Si tu runtime es Claude Code**, la siguiente sesión toma el hook nuevo: `harness/session_start.py` cuenta también los `webchat.received` sin atender (el plan lo imprime como `next-session`).
 
-### Cambios
-
 - **Webchat desde PaynaniApp: la pasarela (#653, FR-1 a FR-6).** El teléfono emparejado platica con el agente en la misma conversación que PaynaniWeb (`SMS_GATEWAY.md` §13):
   - `webchat.thread` (con `before`, `after`, «escribiendo…» y el borrador) y `webchat.send` por el WebSocket del teléfono, anunciados sólo si hay usuario de PaynaniWeb, con el `grant` `webchat.owner`;
   - los archivos por HTTP: `POST /sms/webchat/upload` (multipart, campo `file`, hasta 20 MB, el tipo por los bytes) da un `up_…` de un solo uso, y `GET /sms/webchat/file` descarga los adjuntos ya guardados;
