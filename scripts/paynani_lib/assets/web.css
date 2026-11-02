@@ -696,8 +696,24 @@ body.web-shell {
 .web-shell .wc-archivo b { display: block; font-size: .85rem; overflow-wrap: anywhere; }
 .web-shell .wc-archivo small { color: var(--quiet); font-size: .75rem; }
 .web-shell .wc-escribe .globo { color: var(--quiet); font-size: .85rem; display: flex; align-items: center; gap: 8px; }
-.web-shell .wc-puntos { display: inline-flex; gap: 3px; }
-.web-shell .wc-puntos i { width: 6px; height: 6px; border-radius: 50%; background: var(--quiet); opacity: .6; }
+/* «escribiendo…»: los tres puntos suben y se encienden uno tras otro, como en Telegram,
+   para que se note que el agente está trabajando (Julian). Con movimiento reducido sólo
+   cambian de intensidad. */
+.web-shell .wc-puntos { display: inline-flex; align-items: center; gap: 4px; height: 12px; }
+.web-shell .wc-puntos i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .35; animation: wc-puntos 1.2s ease-in-out infinite; }
+.web-shell .wc-puntos i:nth-child(2) { animation-delay: .2s; }
+.web-shell .wc-puntos i:nth-child(3) { animation-delay: .4s; }
+@keyframes wc-puntos {
+  0%, 60%, 100% { transform: translateY(0); opacity: .35; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+@keyframes wc-puntos-quietos {
+  0%, 60%, 100% { opacity: .35; }
+  30% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .web-shell .wc-puntos i { animation-name: wc-puntos-quietos; }
+}
 .web-shell .wc-escribir { position: sticky; bottom: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 .web-shell .wc-adjuntos { display: flex; flex-wrap: wrap; gap: 6px; }
 .web-shell .wc-adj { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 8px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: .8rem; }

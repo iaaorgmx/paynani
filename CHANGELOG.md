@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, Webchat: «escribiendo…» con animación.** Lo pidió Julian. Los tres puntos suben y se encienden uno tras otro, en el color de la marca, para que se note que el agente está trabajando. Con «reducir movimiento» en el sistema sólo cambian de intensidad.
+
 ## 0.21.0 (2026-11-01)
 
 ### Si actualizas desde 0.20.0
