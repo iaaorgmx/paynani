@@ -141,14 +141,14 @@ vuelve a pedir contraseña. `state_dir` sale de `paths.state_dir()`; las pruebas
 
 ## 7. PaynaniWeb (Iris)
 
-- `GET /webchat`, en la sección «AI Agent» del menú, con los últimos 50 mensajes y
-  «Mensajes anteriores».
+- `GET /webchat`, en la sección «AI Agent» del menú, con los últimos 20 mensajes (#680; antes 50) y
+  «Mensajes anteriores», que se pide solo al llegar arriba con el scroll.
 - `POST /webchat/enviar`: `multipart/form-data` con CSRF y Origin; el tamaño se revisa
   antes de leer el cuerpo. Llama a `append("owner", …)`.
 - `GET /webchat/updates?after=w_…`: `{messages, typing}`. `assets/webchat.js` lo pide
   cada 3 s, sólo con la pestaña visible.
 - `GET /webchat/updates?before=w_…`: «Mensajes anteriores» (Q336 = A), `{html, before,
-  more}` con los 50 de antes, que webchat.js pone arriba sin mover lo que se está viendo.
+  more}` con los 20 de antes, que webchat.js pone arriba sin mover lo que se está viendo.
 - `GET /webchat/file?ref=f_…`: la descarga.
 - La página «AI Agent» (#644) cuenta los `webchat.received` en «Atendidos hoy», la
   mediana, la última respuesta y la actividad.

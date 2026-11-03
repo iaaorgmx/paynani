@@ -406,6 +406,15 @@ check("responder es la barra de Webchat (#670 FR-1): una línea, «Enviar» redo
       ('class="wc-escribir barra-escribir wa-escribir" id="responder"' in page, 'name="text" rows="1"' in page,
        f'class="wc-enviar" aria-label="{th("web.wa.send")}"' in page, '<label for="wa-text" class="solo-lector">' in page,
        f'placeholder="{th("web.wa.placeholder", name="Ana López")}"' in page, '<script src="/assets/barra.js" defer></script>' in page))
+check("#680: el hilo carga hilo.js, que baja al último mensaje", True, '<script src="/assets/hilo.js" defer></script>' in page)
+_seen: list = []
+_real = demo.request
+demo.request = lambda kind, **f: (_seen.append((kind, f.get("limit"))), _real(kind, **f))[1]
+req("GET", "/whatsapp/messages/ver?n=%2B15550100001&lang=es-MX", cookie=cookie)
+req("GET", "/whatsapp/messages?lang=es-MX", cookie=cookie)
+demo.request = _real
+check("#680: un hilo pide 20 mensajes; la lista de conversaciones sigue en 50", (20, 50),
+      (next((lim for k, lim in _seen if k == "whatsapp.thread"), None), next((lim for k, lim in _seen if k == "whatsapp.threads"), None)))
 check("la foto se muestra por su tipo, sin ruta ni contenido", True, th("web.wa.kind.image") in page)
 status, hdrs, _ = req("POST", "/whatsapp/messages/enviar", form={"csrf": csrf, "n": "+15550100001",
                                                                  "text": "Con gusto, <b>los esperamos</b>."},

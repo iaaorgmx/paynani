@@ -214,7 +214,8 @@ try:
           (bool(src_img), '<span class="tg-archivo">' in page and "menu.pdf" in page))
     if src_img:
         st, hh, _ = req("GET", src_img.group(1).replace("&amp;", "&"), cookie=ck)
-        check("/telegram/media sirve la foto que mandó el dueño", (200, "image/png"), (st, hh.get("content-type")))
+        check("/telegram/media sirve la foto que mandó el dueño, y se guarda en el navegador (#680)",
+              (200, "image/png", "private, max-age=31536000, immutable"), (st, hh.get("content-type"), hh.get("cache-control")))
     check("un índice que no existe o mal formado: 404", (404, 404),
           (req("GET", src_img.group(1).replace("&amp;", "&").replace("i=0", "i=7"), cookie=ck)[0] if src_img else 0,
            req("GET", "/telegram/media?ref=tgo%3A" + "0" * 32 + "&i=x", cookie=ck)[0]))
@@ -285,10 +286,10 @@ try:
         c = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
         c.request("GET", link.group(1).replace("&amp;", "&"), headers={"Host": "agente.test", "Cookie": ck})
         r = c.getresponse(); body = r.read(); hh = {k.lower(): v for k, v in r.getheaders()}; c.close()
-        check("#676: la descarga trae los mismos bytes, como archivo, nosniff y no-store",
-              (200, PDF, "application/octet-stream", True, "nosniff", True),
+        check("#676: la descarga trae los mismos bytes, como archivo y nosniff; se guarda en el navegador (#680)",
+              (200, PDF, "application/octet-stream", True, "nosniff", "private, max-age=31536000, immutable"),
               (r.status, body, hh.get("content-type"), hh.get("content-disposition", "").startswith("attachment;"),
-               hh.get("x-content-type-options"), "no-store" in hh.get("cache-control", "")))
+               hh.get("x-content-type-options"), hh.get("cache-control")))
         check("#676: el nombre en UTF-8 va en filename*", True,
               "filename*=UTF-8''men%C3%BA%20del%20d%C3%ADa.pdf" in hh.get("content-disposition", ""))
     api.private_message(PEDRO, document=(PDF, "oculto.pdf", "application/pdf"), first_name="Pedro")
@@ -298,6 +299,10 @@ try:
           (bool(hidden_ref), req("GET", "/telegram/file?ref=" + quote(str(hidden_ref or ""), safe=""), cookie=ck)[0]))
     check("#676: una ref inventada o mal formada: 404", (404, 404),
           (req("GET", "/telegram/file?ref=tg%3Ainventada", cookie=ck)[0], req("GET", "/telegram/file?ref=../x", cookie=ck)[0]))
+    _st, _h, _ = req("GET", "/telegram/file?ref=tg%3Ainventada", cookie=ck)
+    _st2, _h2, _ = req("GET", "/telegram/media?ref=tgo%3A" + "0" * 32 + "&i=x", cookie=ck)
+    check("#680: los errores de /telegram/file y /telegram/media no se guardan (no-store)", (True, True),
+          ("no-store" in _h.get("cache-control", ""), "no-store" in _h2.get("cache-control", "")))
 
     st, _, page = req("GET", f"/telegram/messages/ver?t={pedro['thread']}&lang=es-MX", cookie=ck)
     check("Pedro: oculto, sin responder y con «Agregar al roster»", (200, True, False, True),

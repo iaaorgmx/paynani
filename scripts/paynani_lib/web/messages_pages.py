@@ -21,7 +21,8 @@ from .. import i18n
 from . import mail_pages
 from .shell import e
 
-PAGE = 50
+PAGE = 50                # conversaciones por página de la lista
+THREAD_PAGE = 20         # mensajes por página de un hilo (#680)
 MAX_TEXT = 1000
 
 # Lo que dice el teléfono emparejado sobre las órdenes del dueño (FR-6).
@@ -233,7 +234,7 @@ def new_body(csrf: str, phone_state: str, pause_min: int, roster: dict, values: 
 
 def thread_body(number: str, who: str, items: list[dict], offset: int, pause_until: str | None,
                 reply: str = "", notice: str = "", offline_ttl: int = 0) -> str:
-    """`items` en orden de hora; se muestran los `PAGE` más recientes desde `offset`
+    """`items` en orden de hora; se muestran los `THREAD_PAGE` más recientes desde `offset`
     contado desde el final. `reply` es el cuadro de reply_box(); `notice`, un aviso arriba.
     `offline_ttl` > 0: el teléfono está desconectado y lo que se mande vence a esos
     minutos (FR-7)."""
@@ -251,10 +252,10 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
         head.append(f'<p class="lead">{th("web.sms.thread_empty")}</p>')
         return "\n".join(head + [reply]) + "\n"
     end = max(0, len(items) - offset)
-    start = max(0, end - PAGE)
+    start = max(0, end - THREAD_PAGE)
     if start > 0:
         head.append(f'<p class="mas"><a class="secundario" href="/messages/ver?n={quote(number, safe="")}'
-                    f'&amp;desde={offset + PAGE}">{th("web.sms.older")}</a></p>')
+                    f'&amp;desde={offset + THREAD_PAGE}">{th("web.sms.older")}</a></p>')
     bubbles = ['<ol class="hilo">']
     for item in items[start:end]:
         kind = item["kind"]
@@ -277,7 +278,8 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
     # sms.js pregunta los estados a /messages/estados y recarga si llegó algo nuevo (FR-5).
     watch = (f'<div hidden id="sms-watch" data-url="/messages/estados?n={e(quote(number, safe=""))}"'
              f' data-count="{len(items)}"></div>')
-    script = '<script src="/assets/sms.js" defer></script>'
+    # #680: hilo.js baja al último mensaje al abrir (y al recargar cuando sms.js ve algo nuevo).
+    script = '<script src="/assets/sms.js" defer></script>\n<script src="/assets/hilo.js" defer></script>'
     return "\n".join(head + bubbles + [reply, watch, script]) + "\n"
 
 
