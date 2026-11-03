@@ -3,7 +3,7 @@
 ## Sin publicar
 
 - **PaynaniWeb: «Development team» en About (#686).** Lo pidió Julian: un renglón nuevo en Créditos abre `/about/team`, una tabla con los humanos y agentes de IA que han colaborado en paynani, PaynaniWeb y PaynaniApp.
-  - Cada fila trae el avatar de GitHub, el nombre, el `@usuario`, si es humano o agente de IA, y los proyectos. El avatar y el nombre abren su perfil de GitHub. En el teléfono, cada fila es una tarjeta.
+  - Cada fila trae el avatar de GitHub, el nombre, el `@usuario`, si es humano o agente de IA, y los proyectos. Debajo de «Agente de IA» va el harness donde corre (Claude Code, Codex, OpenCode, OpenClaw, Hermes Agent). El avatar y el nombre abren su perfil de GitHub. En el teléfono, cada fila es una tarjeta.
   - La lista sale de los commits de los tres repos (Iris[Q32] = A). Daniel Librado, Ares Claude-Tob (pruebas reales, Iris[Q35]), David España y Edith Claude-Tob se agregaron a mano.
   - Los avatares son una copia en `assets/team/` (Iris[Q33] = A): la página no le pide nada a GitHub ni le manda la IP de quien la ve. `scripts/update_team.py` los actualiza antes de cada versión (RELEASING.md §3).
 

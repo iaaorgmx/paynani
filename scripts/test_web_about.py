@@ -148,6 +148,12 @@ ares = next(r for r in rows if "@aresclaudetob" in r)
 check("Iris[Q35]: Ares Claude-Tob, agente, en paynani", (True, True),
       ("team-agent" in ares, '<span class="team-chip">paynani</span>' in ares))
 check("sin la etiqueta «Tester» (Julian)", (False, False), ("Tester" in page, "team-rol" in page))
+metis = next(r for r in rows if "@metisclaudetob" in r)
+julian = next(r for r in rows if "@julianflores" in r)
+check("debajo de «Agente de IA», el harness; un humano no lleva", (True, False),
+      ('<small class="team-harness">Claude Code</small>' in metis, "team-harness" in julian))
+check("cada harness de team.json sale en su fila", sorted(m["harness"] for m in TEAM if m.get("harness")),
+      sorted(re.findall(r'<small class="team-harness">([^<]+)</small>', page)))
 check("sin atributos style en /about/team", [], re.findall(r'\sstyle="', page))
 first = next(m for m in TEAM)
 status, hdrs, data = req("GET", f"/assets/team/{first['avatar']}")

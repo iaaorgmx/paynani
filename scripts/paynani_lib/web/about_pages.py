@@ -140,6 +140,9 @@ def team_body() -> str:
         chips = "".join(f'<span class="team-chip">{_th("project_" + p)}</span>'
                         for p in PROJECTS if p in (m.get("projects") or []))
         kind = _th("type_" + m["type"])
+        # Julian: debajo de «Agente de IA», el harness donde corre (Claude Code, Codex…).
+        harness = (f'<small class="team-harness">{e(m["harness"])}</small>'
+                   if m["type"] == "agent" and m.get("harness") else "")
         rows.append(
             f'<tr><td class="team-avatar"><a href="{e(profile)}" target="_blank" rel="noopener noreferrer"'
             f' title="{_th("profile", name=name)}">'
@@ -147,7 +150,7 @@ def team_body() -> str:
             f' loading="lazy"></a></td>'
             f'<td class="team-name"><a href="{e(profile)}" target="_blank" rel="noopener noreferrer">{name}</a>'
             f'<span class="solo-lector"> {_th("new_tab")}</span><small>@{e(m["login"])}</small></td>'
-            f'<td class="team-type"><span class="team-tipo team-{m["type"]}">{kind}</span></td>'
+            f'<td class="team-type"><span class="team-tipo team-{m["type"]}">{kind}</span>{harness}</td>'
             f'<td class="team-projects">{chips}</td></tr>')
     table = (f'<table class="team-tabla"><caption class="solo-lector">{_th("team")}</caption>'
              f'<thead><tr><th scope="col"><span class="solo-lector">{_th("col_avatar")}</span></th>'
