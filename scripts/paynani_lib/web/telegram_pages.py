@@ -360,12 +360,14 @@ def not_configured_body() -> str:
             f'<p class="lead">{_th("not_configured")}</p>\n')
 
 
-def setup_body(csrf: str, *, error: str = "", username: str = "") -> str:
+def setup_body(csrf: str, *, error: str = "", username: str = "", owner_telegram: str = "") -> str:
     """
     «Cuenta de Telegram» sin bot (#635): el token (`type="password"`, nunca vuelve), el
-    usuario del bot, que se compara con `getMe` (Q282), la casilla «sólo de esta
-    instalación», que también autoriza borrar un webhook (Q283), y la contraseña de la web.
-    Sin el enlace a «Mensajes de Telegram»: sin bot esa página es un 404 (#641).
+    usuario del bot, que se compara con `getMe` (Q282), el Telegram del dueño, que se guarda
+    en su fila del roster para que el bot le conteste desde el primer mensaje (#682), la
+    casilla «sólo de esta instalación», que también autoriza borrar un webhook (Q283), y la
+    contraseña de la web. Sin el enlace a «Mensajes de Telegram»: sin bot esa página es un
+    404 (#641).
     """
     return f"""<p class="lead">{_th("setup.lead")}</p>
 {_error(error)}
@@ -380,6 +382,10 @@ def setup_body(csrf: str, *, error: str = "", username: str = "") -> str:
     <input id="tg-setup-user" name="bot_username" type="text" autocomplete="off" spellcheck="false" maxlength="40"
            value="{e(username)}" placeholder="@" required>
     <p class="hint">{_th("setup.username_help")}</p>
+    <label for="tg-setup-owner">{_th("setup.owner")}</label>
+    <input id="tg-setup-owner" name="owner_telegram" type="text" autocomplete="off" spellcheck="false" maxlength="64"
+           value="{e(owner_telegram)}" placeholder="@" required>
+    <p class="hint">{_th("setup.owner_help")}</p>
     <label class="casilla"><input type="checkbox" name="confirm_dedicated" value="1" required> {_th("setup.dedicated")}</label>
     {_password("tg-setup-password")}
     <button type="submit" class="primario">{_th("setup.save")}</button>

@@ -6,6 +6,10 @@ Un PaynaniWeb real en un puerto libre contra la Bot API falsa (`fake_api.FakeBot
 telegram.env en una carpeta temporal y el arranque del servicio reemplazado: nada sale de
 la máquina ni toca el servicio del host. Cada caso de error termina sin telegram.env, y
 el token no aparece en ninguna página ni en el correo al dueño.
+
+#682: el formulario pide el Telegram del dueño y lo guarda en su fila del roster (que crea la
+columna si falta). Un valor que no sirve, o que ya es de otra fila, se rechaza antes de
+escribir nada; si el roster no se puede escribir después, el bot queda y la página lo dice.
 """
 from __future__ import annotations
 
@@ -151,6 +155,7 @@ tg_env = tg_root / "telegram.env"
 user_file = clone / "web" / "user.json"
 users.create("julian@example.com", "Julián Flores", PASSWORD, user_file)
 owner_mail = []
+roster_mail = []   # los avisos del servicio del roster: nunca send.sh de la instalación
 
 
 def tg_mail():
@@ -170,6 +175,7 @@ class Ctx(app.Context):
 ctx = Ctx(user_file, notifier=notify.Notifier(send=lambda to, s, b: owner_mail.append((to, s, b)),
                                               log=lambda line: None),
           agent_email="agente@example.com", accounts_file=clone / "no-accounts.json",
+          roster_notifier=lambda to, s, b: roster_mail.append((to, s, b)),
           state_dir=clone / "state", roster_path=clone / "roster.md",
           telegram_source=telegram_source.ControlSocket(clone / "state" / "telegram" / "control.sock"),
           telegram_root=tg_root, whatsapp_root=clone)
@@ -218,11 +224,16 @@ check("el token va en type=password con autocomplete=off", True,
       bool(re.search(r'name="token" type="password" autocomplete="off"', page)))
 check("el menú trae «Mensajes de Telegram» y el título es «Cuenta de Telegram»", (True, True),
       ('href="/telegram/messages"' in page, "Cuenta de Telegram" in page))
+check("#682: el formulario pide «Tu usuario de Telegram», obligatorio y vacío", (True, True),
+      ("Tu usuario de Telegram" in page,
+       bool(re.search(r'name="owner_telegram" type="text"[^>]*value=""[^>]*required', page))))
+ROSTER = clone / "roster.md"
+ROSTER_START = ROSTER.read_text(encoding="utf-8")
 
 
 def post(**over):
-    form = {"csrf": csrf, "token": TOKEN, "bot_username": "@NegocioBot", "confirm_dedicated": "1",
-            "password": PASSWORD}
+    form = {"csrf": csrf, "token": TOKEN, "bot_username": "@NegocioBot", "owner_telegram": "@julian_flores",
+            "confirm_dedicated": "1", "password": PASSWORD}
     form.update(over)
     form = {k: v for k, v in form.items() if v is not None}
     return req("POST", "/telegram/setup", form=form, cookie=cookie)
@@ -246,7 +257,23 @@ check("Q282: usuario de otro bot: 400, nada escrito y el usuario se queda en el 
 status, _, page = post(confirm_dedicated=None)
 check("Q283: sin la casilla: 400 y nada escrito", (400, True, False),
       (status, "sólo de esta instalación" in page, tg_env.exists()))
-check("ni un error arrancó el servicio ni mandó correo", (0, 0), (started["calls"], len(tg_mail())))
+# #682: el Telegram del dueño, antes de tocar nada.
+status, _, page = post(owner_telegram=None)
+check("#682: sin el Telegram del dueño: 400 y nada escrito", (400, True, False),
+      (status, "Escribe tu usuario de Telegram" in page, tg_env.exists()))
+status, _, page = post(owner_telegram="@ab")
+check("#682: un @usuario que no cumple la regla: 400, nada escrito y se queda en el campo", (400, False, True),
+      (status, tg_env.exists(), 'value="@ab"' in page))
+ROSTER.write_text(ROSTER_START.replace("| Name | Email |\n|---|---|\n", "| Name | Email | Telegram |\n|---|---|---|\n")
+                  .replace("example.com |\n", "example.com | |\n")
+                  + "| Ana López | ana@example.com | @Julian_Flores |\n", encoding="utf-8")
+before = ROSTER.read_bytes()
+status, _, page = post()
+check("#682: el Telegram ya es de otra fila (sin @ ni mayúsculas): 400, la nombra y nada escrito",
+      (400, True, False, before), (status, "ya es de Ana López" in page, tg_env.exists(), ROSTER.read_bytes()))
+ROSTER.write_text(ROSTER_START, encoding="utf-8")
+check("ni un error arrancó el servicio, mandó correo ni cambió el roster", (0, 0, 0, ROSTER_START),
+      (started["calls"], len(tg_mail()), len(roster_mail), ROSTER.read_text(encoding="utf-8")))
 
 api.set_webhook("https://otra.invalid/hook")
 status, hdrs, _ = post()
@@ -259,9 +286,19 @@ check("arrancó el servicio una vez", 1, started["calls"])
 check("el dueño recibió el aviso con @NegocioBot y sin el token", (1, True, False),
       (len(tg_mail()), "@NegocioBot" in tg_mail()[0][2] if tg_mail() else False,
        any(TOKEN in m[2] or TOKEN.split(":")[1] in m[2] for m in owner_mail)))
+import roster as roster_mod  # noqa: E402
+rows = roster_mod.roster_telegram(ROSTER)
+check("#682: el roster ganó la columna Telegram y la fila del dueño quedó con @julian_flores",
+      (True, "julian@example.com"),
+      ("| Telegram |" in ROSTER.read_text(encoding="utf-8").splitlines()[0],
+       (rows["usernames"].get("julian_flores") or {}).get("address")))
+check("#682: el aviso dice que ya está en el Roster y que le escriba al bot", True,
+      bool(tg_mail()) and "(@julian_flores) quedó en tu fila del Roster" in tg_mail()[0][2])
 status, _, page = req("GET", "/telegram?ok=setup_ok&bot=NegocioBot", cookie=cookie)
 check("después, /telegram es la cuenta con el aviso y sin formulario inicial", (200, True, False),
       (status, "quedó configurado con @NegocioBot" in page, 'action="/telegram/setup"' in page))
+check("#682: y el aviso de la página dice que le escriba a @NegocioBot", True,
+      "Ya estás en el Roster: escríbele a @NegocioBot" in page)
 status, hdrs, _ = post()
 check("con Telegram ya configurado, /telegram/setup no toca nada", (303, TOKEN),
       (status, config.token(config.read(tg_env))))
@@ -282,6 +319,27 @@ for result, ok in (("not-installed", "setup_not_installed"), ("failed", "setup_f
     status, hdrs, _ = post()
     check(f"servicio {result}: guardado y ok={ok}", (303, f"/telegram?ok={ok}&bot=NegocioBot", True),
           (status, hdrs.get("location"), tg_env.exists()))
+
+# #682: con el formulario prellenado de la fila, y si el roster no se deja escribir.
+tg_env.unlink()
+status, _, page = req("GET", "/telegram?lang=es-MX", cookie=cookie)
+check("#682: el formulario trae el Telegram que ya tiene la fila del dueño", True,
+      'name="owner_telegram" type="text" autocomplete="off" spellcheck="false" maxlength="64"\n'
+      '           value="@julian_flores"' in page)
+started["result"] = "started"
+before = ROSTER.read_bytes()
+os.chmod(clone, 0o555)   # roster.md se escribe con un archivo temporal en su carpeta
+try:
+    status, hdrs, _ = post(owner_telegram="@julian_nuevo")
+finally:
+    os.chmod(clone, 0o755)
+check("#682: el roster no se pudo escribir: el bot queda, el roster igual y roster=failed",
+      (303, "/telegram?ok=setup_ok&bot=NegocioBot&roster=failed", True, before),
+      (status, hdrs.get("location"), tg_env.exists(), ROSTER.read_bytes()))
+check("#682: el aviso por correo dice que no se guardó", True,
+      "no se pudo guardar en el Roster" in tg_mail()[-1][2])
+status, _, page = req("GET", "/telegram?ok=setup_ok&bot=NegocioBot&roster=failed", cookie=cookie)
+check("#682: y la página también", True, "No se pudo guardar tu Telegram en el Roster" in page)
 
 check("el token nunca salió en una página", False,
       any(TOKEN in p or TOKEN.split(":")[1] in p for p in PAGES))
