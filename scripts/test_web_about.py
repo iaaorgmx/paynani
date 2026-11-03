@@ -120,6 +120,12 @@ check("team.json: cada miembro con login, nombre, tipo decidido, rol, proyectos 
       [m.get("login") for m in TEAM if not (m.get("login") and m.get("name") and m.get("type") in ("human", "agent")
        and m.get("role") in about_pages.ROLES and m.get("role_scope", "lead") in about_pages.SCOPES
        and set(m.get("projects") or []) <= set(about_pages.PROJECTS) and about_pages.avatar_path(m.get("avatar", "")))])
+import subprocess  # noqa: E402
+
+tracked = subprocess.run(["git", "ls-files", str(about_pages.TEAM_DIR)], cwd=ROOT, capture_output=True,
+                         text=True).stdout.split()
+check("assets/team/ en git: sólo los avatares de team.json (sin uno viejo que quedó al cambiar de formato)",
+      sorted(m["avatar"] for m in TEAM), sorted(Path(f).name for f in tracked) if tracked else sorted(m["avatar"] for m in TEAM))
 check("team.json: sin la cuenta de la organización y sin logins repetidos", (False, len(TEAM)),
       ("iaaorgmx" in {m["login"] for m in TEAM}, len({m["login"].lower() for m in TEAM})))
 check("Iris[Q32] y [Q35], y Julian después: los humanos son Julian, Esteban, Daniel y David",
