@@ -66,6 +66,11 @@ STATIC = {
     "/favicon.ico": (FAVICON, "image/svg+xml"),
 }
 DASHBOARD_JS = "/assets/dashboard.js"   # con sesión (PRD #602 §5): fuera de STATIC
+# Iris[Q3] (#678) y Metis[Q49] = A (#680): una foto o un archivo con id fijo (`f_…` de Webchat,
+# `wa:…`/`wo_…` de WhatsApp, `tg:…`/`tgo:…` de Telegram) nunca cambia de contenido, así que el
+# navegador lo guarda (sólo él, `private`) y no lo vuelve a bajar en cada visita. Los errores
+# siguen con no-store.
+MEDIA_CACHE = ("Cache-Control", "private, max-age=31536000, immutable")
 LANG_COOKIE = "paynani_web_lang"
 MAX_BODY_BYTES = 64 * 1024
 # Catch-All instructions may be 32 KB once saved (PRD #535 FR-6). The form arrives
@@ -1431,7 +1436,7 @@ def make_handler(ctx: Context):
             self._send(200, mime if inline else "application/octet-stream", data,
                        [("Content-Disposition", f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{filename}"),
                         ("Content-Security-Policy", "default-src 'none'; sandbox"),
-                        ("Cache-Control", "private, max-age=31536000, immutable")])
+                        MEDIA_CACHE])
 
         def _webchat_socket(self):
             """
@@ -1768,7 +1773,8 @@ def make_handler(ctx: Context):
                 self._send(*not_found)
                 return
             self._send(200, mime, body, [("Content-Disposition", "inline"),
-                                         ("Content-Security-Policy", "default-src 'none'; sandbox")])
+                                         ("Content-Security-Policy", "default-src 'none'; sandbox"),
+                                         MEDIA_CACHE])
 
         def _telegram_messages(self, *, values: dict | None = None, error: str = "", add_error: str = "",
                                code: int = 200):
@@ -2089,7 +2095,8 @@ def make_handler(ctx: Context):
             GET /whatsapp/file?id=wa:… y /telegram/file?ref=tg:… (#676): un documento recibido.
             El servicio decide en cada pedido y da los bytes; un id mal formado, uno que no
             se puede mostrar, uno fuera de media/ o uno que no existe dan el mismo 404.
-            Siempre como descarga (`attachment`, octet-stream, nosniff, no-store).
+            Siempre como descarga (`attachment`, octet-stream, nosniff). Desde #680 (Metis[Q49]) el
+            navegador la guarda como las fotos (MEDIA_CACHE); los errores siguen con no-store.
             """
             not_found = (404, "text/plain; charset=UTF-8", b"")
             if not valid:
@@ -2110,7 +2117,7 @@ def make_handler(ctx: Context):
             if not body or len(body) > downloads.FILE_MAX_BYTES:
                 self._send(*not_found)
                 return
-            self._send(200, "application/octet-stream", body, downloads.headers(str(data.get("name") or "")))
+            self._send(200, "application/octet-stream", body, downloads.headers(str(data.get("name") or "")) + [MEDIA_CACHE])
 
         def _whatsapp_image(self):
             """
@@ -2147,7 +2154,8 @@ def make_handler(ctx: Context):
                 self._send(*not_found)
                 return
             self._send(200, mime, body, [("Content-Disposition", "inline"),
-                                         ("Content-Security-Policy", "default-src 'none'; sandbox")])
+                                         ("Content-Security-Policy", "default-src 'none'; sandbox"),
+                                         MEDIA_CACHE])
 
         def _whatsapp_current(self):
             """GET /whatsapp/link/current (§11): el QR vigente de la vinculación de esta

@@ -174,10 +174,9 @@ async def main() -> None:
         status, hdrs, body = await call("GET", image_url(roster_photo), cookie=cookie, raw=True)
         check("foto del roster: 200 con los mismos bytes", (200, JPEG), (status, body))
         check("foto del roster: tipo por los primeros bytes", "image/jpeg", hdrs.get("content-type"))
-        check("foto del roster: no-store, nosniff e inline",
-              (True, "nosniff", "inline"),
-              ("no-store" in hdrs.get("cache-control", ""), hdrs.get("x-content-type-options"),
-               hdrs.get("content-disposition")))
+        check("foto del roster: se guarda en el navegador (#680, Metis[Q49]), nosniff e inline",
+              ("private, max-age=31536000, immutable", "nosniff", "inline"),
+              (hdrs.get("cache-control"), hdrs.get("x-content-type-options"), hdrs.get("content-disposition")))
         check("foto del roster: la respuesta no puede correr nada (CSP sandbox)", True,
               "sandbox" in hdrs.get("content-security-policy", ""))
         status, hdrs, body = await call("GET", image_url(roster_png), cookie=cookie, raw=True)
@@ -195,7 +194,8 @@ async def main() -> None:
         # --- fuera del roster ------------------------------------------------------------
         nf_status, nf_hdrs, nf_body = await call("GET", image_url("wa:15550009999:" + "0" * 64), cookie=cookie,
                                                  raw=True)
-        check("un id que no existe: 404", 404, nf_status)
+        check("un id que no existe: 404, y el error no se guarda (no-store)", (404, True),
+              (nf_status, "no-store" in nf_hdrs.get("cache-control", "")))
         status, hdrs, body = await call("GET", image_url(hidden_photo), cookie=cookie, raw=True)
         check("fuera del roster sin Catch-All: el mismo 404 que uno inexistente", (404, nf_body, nf_hdrs.get(
             "content-type")), (status, body, hdrs.get("content-type")))
@@ -289,10 +289,10 @@ async def main() -> None:
               ("<b>plantako-QR.pdf</b>" in page, f"<small>{len(PDF)} B</small>" in page,
                f'<a class="tg-archivo" href="{file_url(doc)}" download>' in page))
         status, hdrs, body = await call("GET", file_url(doc), cookie=cookie, raw=True)
-        check("#676: la descarga trae los mismos bytes, como archivo y nunca en la página",
-              (200, PDF, "application/octet-stream", True, "nosniff", True, True),
+        check("#676: la descarga trae los mismos bytes, como archivo y nunca en la página; se guarda en el navegador (#680)",
+              (200, PDF, "application/octet-stream", True, "nosniff", "private, max-age=31536000, immutable", True),
               (status, body, hdrs.get("content-type"), hdrs.get("content-disposition", "").startswith("attachment;"),
-               hdrs.get("x-content-type-options"), "no-store" in hdrs.get("cache-control", ""),
+               hdrs.get("x-content-type-options"), hdrs.get("cache-control"),
                "sandbox" in hdrs.get("content-security-policy", "")))
         check("#676: el nombre va en filename*", True, "filename*=UTF-8''plantako-QR.pdf" in hdrs.get("content-disposition", ""))
         evil = await document(NUM, PDF, 'malo"\r\n/../x.html', "3EB0D002")
@@ -303,8 +303,9 @@ async def main() -> None:
               (200, "malo____.._x.html", False, False),
               (status, plain.group(1) if plain else None, "\r" in cd or "\n" in cd, "%2F" in cd or "/" in cd.split("''", 1)[-1]))
         hidden_doc = await document(OTHER, PDF, "oculto.pdf", "3EB0D003")
-        status, _, body = await call("GET", file_url(hidden_doc), cookie=cookie, raw=True)
-        check("#676: de fuera del roster: el mismo 404", (404, nf_body), (status, body))
+        status, hdrs, body = await call("GET", file_url(hidden_doc), cookie=cookie, raw=True)
+        check("#676: de fuera del roster: el mismo 404, sin guardarse", (404, nf_body, True),
+              (status, body, "no-store" in hdrs.get("cache-control", "")))
         status, _, body = await call("GET", file_url("wa:15550009999:" + "0" * 64), cookie=cookie, raw=True)
         check("#676: un id que no existe: 404", (404, nf_body), (status, body))
         check("#676: un id mal formado: 404", 404, (await call("GET", "/whatsapp/file?id=../../etc/passwd", cookie=cookie, raw=True))[0])
