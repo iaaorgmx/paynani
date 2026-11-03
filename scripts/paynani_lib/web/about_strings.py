@@ -48,7 +48,6 @@ STRINGS = {
         "project_paynaniapp": "PaynaniApp",
         "profile": "Perfil de GitHub de {name}",
         "avatar_alt": "Avatar de {name}",
-        "role_tester": "Tester · pruebas reales",
     },
     "en-US": {
         "nav": "About",
@@ -96,7 +95,6 @@ STRINGS = {
         "project_paynaniapp": "PaynaniApp",
         "profile": "{name}'s GitHub profile",
         "avatar_alt": "{name}'s avatar",
-        "role_tester": "Tester · real-world testing",
     },
     "es-ES": {
         "nav": "Acerca de",
@@ -144,7 +142,6 @@ STRINGS = {
         "project_paynaniapp": "PaynaniApp",
         "profile": "Perfil de GitHub de {name}",
         "avatar_alt": "Avatar de {name}",
-        "role_tester": "Tester · pruebas reales",
     },
     "fr-FR": {
         "nav": "À propos",
@@ -192,7 +189,6 @@ STRINGS = {
         "project_paynaniapp": "PaynaniApp",
         "profile": "Profil GitHub de {name}",
         "avatar_alt": "Avatar de {name}",
-        "role_tester": "Testeur · tests en conditions réelles",
     },
     "pt-BR": {
         "nav": "Sobre",
@@ -240,7 +236,6 @@ STRINGS = {
         "project_paynaniapp": "PaynaniApp",
         "profile": "Perfil de {name} no GitHub",
         "avatar_alt": "Avatar de {name}",
-        "role_tester": "Tester · testes reais",
     },
 }
 

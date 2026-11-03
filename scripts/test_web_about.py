@@ -8,7 +8,7 @@ botón «Copiar» y que la página pide sesión.
 
 #686: «Development team» en Créditos abre /about/team, la tabla de humanos y agentes con
 su avatar copiado en assets/team/ (Iris[Q33] = A: la página no le pide nada a GitHub),
-cada avatar y nombre con el enlace a su perfil, y los testers (Iris[Q35]) con su rol.
+cada avatar y nombre con el enlace a su perfil, y Daniel y Ares (Iris[Q35]).
 
 Un PaynaniWeb real en un puerto libre; la versión la pasa la prueba.
 """
@@ -142,10 +142,12 @@ check("cada avatar y cada nombre llevan a su perfil de GitHub, en otra pestaña"
 check("Iris[Q33]: los avatares son de /assets/team/, ninguno de GitHub", (len(TEAM), False),
       (len(re.findall(r'<img src="/assets/team/[a-z0-9-]+\.(?:png|jpg)"', page)), "githubusercontent" in page))
 daniel = next(r for r in rows if "@dlibradosmbmx" in r)
-check("Iris[Q35]: Daniel Librado, humano, en paynani, con «Tester · pruebas reales»", (True, True, True),
-      ("team-human" in daniel, '<span class="team-chip">paynani</span>' in daniel, "Tester · pruebas reales" in daniel))
+check("Iris[Q35]: Daniel Librado, humano, en paynani", (True, True),
+      ("team-human" in daniel, '<span class="team-chip">paynani</span>' in daniel))
 ares = next(r for r in rows if "@aresclaudetob" in r)
-check("Iris[Q35]: Ares Claude-Tob, agente, también tester", (True, True), ("team-agent" in ares, "Tester" in ares))
+check("Iris[Q35]: Ares Claude-Tob, agente, en paynani", (True, True),
+      ("team-agent" in ares, '<span class="team-chip">paynani</span>' in ares))
+check("sin la etiqueta «Tester» (Julian)", (False, False), ("Tester" in page, "team-rol" in page))
 check("sin atributos style en /about/team", [], re.findall(r'\sstyle="', page))
 first = next(m for m in TEAM)
 status, hdrs, data = req("GET", f"/assets/team/{first['avatar']}")

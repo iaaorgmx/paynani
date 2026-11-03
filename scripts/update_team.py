@@ -13,9 +13,9 @@ Quién cuenta para cada proyecto, con los commits que GitHub liga a una cuenta:
 - PaynaniWeb: los autores de commits en la web (WEB_PATHS) de iaaorgmx/paynani.
 - PaynaniApp: los contributors de iaaorgmx/PaynaniApp-Agentic e iaaorgmx/PaynaniApp.
 
-El nombre, el tipo (human o agent) y el rol (`role`, por ejemplo «tester») los decide
+El nombre y el tipo (human o agent) los decide
 una persona: una cuenta nueva entra con `type: "?"` y la prueba de la página falla hasta
-que alguien lo escriba en team.json. Alguien sin commits (Daniel y Ares, testers con
+que alguien lo escriba en team.json. Alguien sin commits (Daniel y Ares, que apoyan con
 pruebas reales, Iris[Q35]) se agrega a mano en team.json y el script lo conserva.
 """
 from __future__ import annotations
@@ -88,8 +88,6 @@ def main(check_only: bool) -> int:
         member = {"login": login, "name": old.get("name") or login, "type": old.get("type") or "?",
                   "projects": [p for p in ("paynani", "paynaniweb", "paynaniapp") if p in projects[login]],
                   "avatar": old.get("avatar", "")}
-        if old.get("role"):
-            member["role"] = old["role"]   # «tester» y demás: lo escribe una persona
         if old and old.get("projects") != member["projects"]:
             changes.append(f"proyectos de {login}: {old.get('projects')} -> {member['projects']}")
         members.append(member)

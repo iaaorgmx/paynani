@@ -29,7 +29,6 @@ WEB = "https://iaa.org.mx"
 TEAM_FILE = Path(__file__).with_name("team.json")
 TEAM_DIR = Path(__file__).resolve().parents[1] / "assets" / "team"
 PROJECTS = ("paynani", "paynaniweb", "paynaniapp")
-ROLES = ("tester",)
 
 
 def _th(key: str, **kw) -> str:
@@ -141,9 +140,6 @@ def team_body() -> str:
         chips = "".join(f'<span class="team-chip">{_th("project_" + p)}</span>'
                         for p in PROJECTS if p in (m.get("projects") or []))
         kind = _th("type_" + m["type"])
-        # Iris[Q35]: quien colabora sin commits (pruebas reales) lleva su rol debajo del tipo.
-        role = (f'<small class="team-rol">{_th("role_" + m["role"])}</small>'
-                if m.get("role") in ROLES else "")
         rows.append(
             f'<tr><td class="team-avatar"><a href="{e(profile)}" target="_blank" rel="noopener noreferrer"'
             f' title="{_th("profile", name=name)}">'
@@ -151,7 +147,7 @@ def team_body() -> str:
             f' loading="lazy"></a></td>'
             f'<td class="team-name"><a href="{e(profile)}" target="_blank" rel="noopener noreferrer">{name}</a>'
             f'<span class="solo-lector"> {_th("new_tab")}</span><small>@{e(m["login"])}</small></td>'
-            f'<td class="team-type"><span class="team-tipo team-{m["type"]}">{kind}</span>{role}</td>'
+            f'<td class="team-type"><span class="team-tipo team-{m["type"]}">{kind}</span></td>'
             f'<td class="team-projects">{chips}</td></tr>')
     table = (f'<table class="team-tabla"><caption class="solo-lector">{_th("team")}</caption>'
              f'<thead><tr><th scope="col"><span class="solo-lector">{_th("col_avatar")}</span></th>'
