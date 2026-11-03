@@ -1,0 +1,121 @@
+{
+  "members": [
+    {
+      "login": "andyrubinclaude",
+      "name": "Andy Rubin-Claude",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniapp"
+      ],
+      "avatar": "andyrubinclaude.png"
+    },
+    {
+      "login": "ateneabuffayhermes",
+      "name": "Atenea Buffay-Hermes",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "ateneabuffayhermes.png"
+    },
+    {
+      "login": "balamocodetob",
+      "name": "Balam Ocode-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb"
+      ],
+      "avatar": "balamocodetob.png"
+    },
+    {
+      "login": "EstebanRodriguezG",
+      "name": "Esteban Rodriguez",
+      "type": "human",
+      "projects": [
+        "paynaniapp"
+      ],
+      "avatar": "estebanrodriguezg.jpg"
+    },
+    {
+      "login": "irisclaudetob",
+      "name": "Iris Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb",
+        "paynaniapp"
+      ],
+      "avatar": "irisclaudetob.png"
+    },
+    {
+      "login": "julianflores",
+      "name": "Julian Flores",
+      "type": "human",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "julianflores.jpg"
+    },
+    {
+      "login": "lisabuffaytob",
+      "name": "Lisa Buffay",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "lisabuffaytob.jpg"
+    },
+    {
+      "login": "metisclaudetob",
+      "name": "Metis Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb",
+        "paynaniapp"
+      ],
+      "avatar": "metisclaudetob.png"
+    },
+    {
+      "login": "ocelotlcodextob",
+      "name": "Ocelotl Codex-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb"
+      ],
+      "avatar": "ocelotlcodextob.png"
+    },
+    {
+      "login": "ximenasalazartob",
+      "name": "Ximena Salazar",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "ximenasalazartob.jpg"
+    },
+    {
+      "login": "aresclaudetob",
+      "name": "Ares Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "aresclaudetob.png",
+      "role": "tester"
+    },
+    {
+      "login": "dlibradosmbmx",
+      "name": "Daniel Librado",
+      "type": "human",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "dlibradosmbmx.jpg",
+      "role": "tester"
+    }
+  ]
+}

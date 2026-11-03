@@ -65,6 +65,8 @@ STATIC = {
     "/assets/favicon.svg": (FAVICON, "image/svg+xml"),
     "/favicon.ico": (FAVICON, "image/svg+xml"),
 }
+# #686: los avatares de «Development team», copiados en assets/team/ (Iris[Q33] = A).
+STATIC.update(about_pages.team_assets())
 DASHBOARD_JS = "/assets/dashboard.js"   # con sesión (PRD #602 §5): fuera de STATIC
 # Iris[Q3] (#678) y Metis[Q49] = A (#680): una foto o un archivo con id fijo (`f_…` de Webchat,
 # `wa:…`/`wo_…` de WhatsApp, `tg:…`/`tgo:…` de Telegram) nunca cambia de contenido, así que el
@@ -917,6 +919,10 @@ def make_handler(ctx: Context):
                 version, commit = self.CTX.version
                 self._page(200, title=i18n.t("web.about.title"), body=about_pages.body(version, commit),
                            active="about", icon_name="info")
+                return
+            if self.route == "/about/team":
+                self._page(200, title=i18n.t("web.about.team_title"), body=about_pages.team_body(),
+                           active="about", icon_name="roster")
                 return
             if self.route in ("/api-tokens", "/api-tokens/new", "/api-tokens/detail"):
                 self._tokens_get()
