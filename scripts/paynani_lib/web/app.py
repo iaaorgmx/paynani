@@ -32,6 +32,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from .. import guard, i18n
+from .. import web_uploads
 from ..telegram import uploads as tg_uploads
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
@@ -89,6 +90,8 @@ TG_OUT_REF = re.compile(r"^tgo:[0-9a-f]{32}$")
 TG_FILE_INDEX = re.compile(r"^[0-9]$")
 # El id de un mensaje de WhatsApp recibido (`wa:<cuenta>:<hash>`), para /whatsapp/media (#573).
 WA_MESSAGE_ID = re.compile(r"^wa:[0-9A-Za-z_.+-]{1,40}:[0-9a-f]{64}$")
+# Lo que mandó el dueño por WhatsApp desde la web (#670): `wo_` + 32 hex.
+WA_SENT_ID = re.compile(r"^wo_[0-9a-f]{32}$")
 
 
 def e(value) -> str:
@@ -2053,12 +2056,18 @@ def make_handler(ctx: Context):
             el mismo 404. El tipo sale de los primeros bytes, otra vez aquí.
             """
             mid = self.query.get("id", [""])[0]
+            index = self.query.get("i", [""])[0]
             not_found = (404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
-            if not WA_MESSAGE_ID.match(mid):
+            # Una foto recibida (`wa:…`) o una que mandó el dueño desde la web (`wo_…` y su
+            # índice, #670 FR-4).
+            if not (WA_MESSAGE_ID.match(mid) and not index) and not (WA_SENT_ID.match(mid) and TG_FILE_INDEX.match(index)):
                 self._send(*not_found)
                 return
             try:
-                data = self.CTX.whatsapp().request("whatsapp.image", message_id=mid)
+                if mid.startswith("wo_"):
+                    data = self.CTX.whatsapp().request("whatsapp.image", message_id=mid, index=int(index))
+                else:
+                    data = self.CTX.whatsapp().request("whatsapp.image", message_id=mid)
             except whatsapp_source.Failed as exc:
                 if exc.code in ("service_down", "unavailable"):
                     self._send(503, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
@@ -2117,8 +2126,10 @@ def make_handler(ctx: Context):
                                       f'<p class="lead">{html.escape(whatsapp_pages.error_text(exc.code, exc.fields))}</p>',
                               title_key="web.wa.messages_title", back="/whatsapp/messages")
                 return
-            connected = source.status().get("state") == "connected"
-            reply = whatsapp_pages.reply_box(thread_data, self.session["csrf"], connected, values, error)
+            wa_status = source.status()
+            connected = wa_status.get("state") == "connected"
+            reply = whatsapp_pages.reply_box(thread_data, self.session["csrf"], connected, values, error,
+                                             web_files=wa_status.get("web_files") is True)
             notice = t("web.wa.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
             self._wa_page(code, whatsapp_pages.thread_body(thread_data, reply, notice),
                           title_key="web.wa.messages_title", back="/whatsapp/messages")
@@ -2139,16 +2150,52 @@ def make_handler(ctx: Context):
             sid = self.session["sid"]
             if self.route == "/whatsapp/messages/enviar":
                 values = {"n": post.get("n", "").strip()[:40], "text": post.get("text", "").replace("\r\n", "\n")}
-                if not values["text"].strip() or len(values["text"]) > whatsapp_source.MAX_TEXT:
+                if self.files is None:
+                    self._whatsapp_messages(values=values, error=whatsapp_pages.error_text("malformed"), code=400)
+                    return
+                files = self.files[:web_uploads.MAX_FILES + 1]
+                if (not values["text"].strip() and not files) or len(values["text"]) > whatsapp_source.MAX_TEXT:
                     self._whatsapp_messages(values=values, error=whatsapp_pages.error_text("invalid", {"field": "text"}),
                                             code=400)
                     return
+                # Los archivos van primero al núcleo (#670 FR-5), como en Telegram (#662):
+                # `web_uploads.save` los revisa por los bytes y da un `up_…` de un solo uso.
+                wa_root = self.CTX.state_dir() / "whatsapp"
+                ups, names = [], {}
                 try:
-                    source.request("whatsapp.send", number=values["n"], text=values["text"])
+                    if len(files) > web_uploads.MAX_FILES:
+                        raise web_uploads.Rejected("too_many")
+                    for f in files:
+                        saved = web_uploads.save(wa_root, f["name"][:200], f["data"])
+                        ups.append(saved["upload"])
+                        names[saved["upload"]] = saved["name"]
+                except web_uploads.Rejected as exc:
+                    for ref in ups:
+                        web_uploads.drop(wa_root, ref)
+                    self._whatsapp_messages(values=values, error=whatsapp_pages.error_text(exc.code), code=400)
+                    return
+                try:
+                    if ups:
+                        source.request_slow("whatsapp.send", number=values["n"], text=values["text"], uploads=ups)
+                    else:
+                        source.request("whatsapp.send", number=values["n"], text=values["text"])
                 except whatsapp_source.Failed as exc:
-                    code = {"rate_limited": 429, "unavailable": 503, "not_connected": 409}.get(exc.code, 400)
-                    self._whatsapp_messages(values=values, error=whatsapp_pages.error_text(exc.code, exc.fields),
-                                            code=code)
+                    code = {"rate_limited": 429, "unavailable": 503, "not_connected": 409, "timeout": 504}.get(exc.code, 400)
+                    # Con archivos, un corte por tiempo (del servicio o de la espera) no dice
+                    # si salieron: no se invita a mandarlos otra vez sin revisar el hilo.
+                    unknown = ups and (exc.code == "timeout" or exc.fields.get("timed_out"))
+                    error = whatsapp_pages.error_text("send_unknown" if unknown else exc.code, exc.fields)
+                    sent = [names[u] for u in exc.fields.get("sent_uploads") or [] if u in names]
+                    if sent:
+                        error += " " + i18n.t("web.wa.err.partial", names=", ".join(sent))
+                    # Un fallo definitivo: los que no salieron se borran ya, para no llenar los
+                    # 20 pendientes con reintentos. El siguiente POST sube otra vez.
+                    if ups and not unknown:
+                        done = set(exc.fields.get("sent_uploads") or [])
+                        for ref in ups:
+                            if ref not in done:
+                                web_uploads.drop(wa_root, ref)
+                    self._whatsapp_messages(values=values, error=error, code=code)
                     return
                 self._redirect(f"/whatsapp/messages/ver?n={_quote(values['n'], safe='')}&ok=sent#responder")
                 return
@@ -2538,7 +2585,8 @@ def make_handler(ctx: Context):
             limit = (CATCHALL_BODY_BYTES if urlparse(self.path).path in ("/messages/catch-all", "/whatsapp/catch-all",
                                                                          "/telegram/catch-all")
                      else WEBCHAT_BODY_BYTES if urlparse(self.path).path in ("/webchat/enviar",
-                                                                             "/telegram/messages/enviar")
+                                                                             "/telegram/messages/enviar",
+                                                                             "/whatsapp/messages/enviar")
                      else MAX_BODY_BYTES)
             if length < 0 or length > limit:
                 if urlparse(self.path).path == "/api/agent":
@@ -2560,10 +2608,10 @@ def make_handler(ctx: Context):
                 return
             self.files = []
             content_type = self.headers.get("Content-Type", "")
-            if (self.route in ("/webchat/enviar", "/telegram/messages/enviar")
+            if (self.route in ("/webchat/enviar", "/telegram/messages/enviar", "/whatsapp/messages/enviar")
                     and content_type.lower().startswith("multipart/form-data")):
-                # Sólo Webchat (#648) y contestar en Telegram (#662) aceptan archivos; cualquier
-                # otra ruta sigue con form_fields.
+                # Sólo Webchat (#648) y contestar en Telegram (#662) y en WhatsApp (#670) aceptan
+                # archivos; cualquier otra ruta sigue con form_fields.
                 try:
                     post, self.files = multipart.parse(raw, content_type)
                 except (multipart.Malformed, ValueError):

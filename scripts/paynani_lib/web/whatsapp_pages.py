@@ -49,7 +49,8 @@ def error_text(code: str, fields: dict | None = None) -> str:
         return i18n.t("web.wa.err.rate_limited", s=fields.get("retry_after_s", "?"))
     if code == "invalid":
         return i18n.t("web.wa.err.invalid", field=fields.get("field", "?"))
-    if code in ("unavailable", "already_linked", "not_connected", "not_allowed", "not_started", "not_found"):
+    if code in ("unavailable", "already_linked", "not_connected", "not_allowed", "not_started", "not_found",
+                "too_big", "bad_type", "too_many", "bad_upload", "malformed", "send_unknown"):
         return i18n.t("web.wa.err." + code)
     return i18n.t("web.wa.err.other", code=code)
 
@@ -211,7 +212,8 @@ def _status(m: dict) -> str:
     return f' <span class="estado estado-wa-{e(status)}">{label}</span>'
 
 
-def reply_box(thread: dict, csrf: str, connected: bool, values: dict | None = None, error: str = "") -> str:
+def reply_box(thread: dict, csrf: str, connected: bool, values: dict | None = None, error: str = "",
+              web_files: bool = False) -> str:
     """Responder al pie del hilo, sólo si el servicio dice `can_reply` (FR-20, FR-24)."""
     # Un envío rechazado se dice aquí aunque el cuadro no se dibuje (not_allowed,
     # not_started, not_connected).
@@ -224,21 +226,57 @@ def reply_box(thread: dict, csrf: str, connected: bool, values: dict | None = No
         return f'<section class="responder">{head}<p class="aviso-caja" role="status">{_th("no_reply_connected")}</p></section>'
     text = (values or {}).get("text", "")
     # La barra de Webchat, como en «Mensajes de Telegram» (Julian, #670 FR-1): el cuadro con
-    # todo el ancho, que crece solo (barra.js), y «Enviar» redondo, pegada abajo. El clip llega
-    # cuando el servicio acepte archivos de la web (#670 FR-5 a FR-8).
+    # todo el ancho, que crece solo (barra.js), y «Enviar» redondo, pegada abajo. El clip con
+    # «Foto» y «Archivo» (FR-2) sólo si el servicio acepta archivos de la web (`web_files`);
+    # entonces el texto puede ir vacío y el formulario es multipart.
     name = str(thread.get("name") or "") if thread.get("in_roster") else ""
     placeholder = _th("placeholder", name=name or thread["number"])
-    return f"""<form method="post" action="/whatsapp/messages/enviar" class="wc-escribir barra-escribir wa-escribir" id="responder">
+    clip = attach = form_attrs = ""
+    required = " required"
+    if web_files:
+        form_attrs = ' enctype="multipart/form-data"'
+        required = ""
+        wc = lambda key, **kw: i18n.th("web.wc." + key, **kw)  # noqa: E731 -- los textos del clip son los de Webchat
+        attach = f'\n  <div class="wc-adjuntos" id="wa-adjuntos" data-remove="{wc("remove", name="{name}")}"></div>'
+        clip = f"""
+    <details class="wc-adjuntar">
+      <summary class="wc-clip" title="{_th('files_note')}">{icon("clip")}<span class="solo-lector">{wc('attach')}</span></summary>
+      <div class="wc-menu">
+        <label class="wc-opcion">{icon("photo")}<span>{wc("opt_photo")}</span>
+          <input type="file" name="files" class="wc-archivos" multiple accept="image/jpeg,image/png,image/webp,image/gif"></label>
+        <label class="wc-opcion">{icon("file")}<span>{wc("opt_file")}</span>
+          <input type="file" name="files" class="wc-archivos" multiple accept=".pdf,.txt,.csv,.docx,.xlsx,.zip,application/pdf,text/plain,text/csv,application/zip"></label>
+        <p class="wc-menu-nota">{_th("files_note")}</p>
+      </div>
+    </details>"""
+    scripts = ('<script src="/assets/adjuntos.js" defer></script>\n' if web_files else "") + \
+        '<script src="/assets/barra.js" defer></script>'
+    return f"""<form method="post" action="/whatsapp/messages/enviar" class="wc-escribir barra-escribir wa-escribir{' barra-con-clip' if web_files else ''}" id="responder"{form_attrs}>
   <h3 class="solo-lector">{_th("reply")}</h3>{_error(error)}
   <input type="hidden" name="csrf" value="{e(csrf)}">
-  <input type="hidden" name="n" value="{e(thread["number"])}">
-  <div class="wc-barra">
+  <input type="hidden" name="n" value="{e(thread["number"])}">{attach}
+  <div class="wc-barra">{clip}
     <label for="wa-text" class="solo-lector">{_th("reply_text")}</label>
-    <textarea id="wa-text" name="text" rows="1" maxlength="{MAX_TEXT}" required placeholder="{placeholder}">{e(text)}</textarea>
+    <textarea id="wa-text" name="text" rows="1" maxlength="{MAX_TEXT}"{required} placeholder="{placeholder}">{e(text)}</textarea>
     <button type="submit" class="wc-enviar" aria-label="{_th("send")}" title="{_th("send")}">{icon("send")}</button>
   </div>
 </form>
-<script src="/assets/barra.js" defer></script>"""
+{scripts}"""
+
+
+def _sent_files(mid: str, files: list) -> str:
+    out = []
+    for i, f in enumerate(files):
+        if not isinstance(f, dict):
+            continue
+        fname = str(f.get("name") or "")
+        if f.get("media") and mid.startswith("wo_"):
+            src = f"/whatsapp/media?id={quote(mid, safe='')}&i={i}"
+            out.append(f'<a class="wa-foto" href="{e(src)}" target="_blank" rel="noopener">'
+                       f'<img src="{e(src)}" alt="{e(fname) or kind_label("image")}" loading="lazy"></a>')
+        else:
+            out.append(f'<span class="tg-archivo">{icon("file")}<span>{e(fname) or kind_label(f.get("kind"))}</span></span>')
+    return "".join(out)
 
 
 def thread_body(thread: dict, reply: str, notice: str = "") -> str:
@@ -273,6 +311,11 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
             body = (f'<a class="wa-foto" href="{e(src)}" target="_blank" rel="noopener">'
                     f'<img src="{e(src)}" alt="{kind_label("image")}" loading="lazy"></a>'
                     + (f'<span class="wa-pie">{caption}</span>' if caption else ""))
+        elif out_dir and m.get("files"):
+            # Lo que mandó el dueño desde la web (#670 FR-4): las fotos por /whatsapp/media
+            # con su índice, que vuelve a pedirle permiso al servicio; de un archivo, el nombre.
+            body = _sent_files(str(m.get("id") or ""), m["files"]) + (
+                f'<span class="wa-pie">{e(m.get("text") or "")}</span>' if m.get("text") else "")
         elif m.get("kind") and m.get("kind") != "text":
             caption = e(m.get("text") or "")
             body = kind_label(m.get("kind")) + (f" {caption}" if caption else "")
