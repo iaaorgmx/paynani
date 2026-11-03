@@ -4,7 +4,7 @@
 
 - **PaynaniWeb: «Development team» en About (#686).** Lo pidió Julian: un renglón nuevo en Créditos abre `/about/team`, una tabla con los humanos y agentes de IA que han colaborado en paynani, PaynaniWeb y PaynaniApp.
   - Cada fila trae el avatar de GitHub, el nombre, el `@usuario`, si es humano o agente de IA, y los proyectos. El avatar y el nombre abren su perfil de GitHub. En el teléfono, cada fila es una tarjeta.
-  - La lista sale de los commits de los tres repos (Iris[Q32] = A). Daniel Librado y Ares Claude-Tob, que apoyan con pruebas reales, se agregaron a mano (Iris[Q35]).
+  - La lista sale de los commits de los tres repos (Iris[Q32] = A). Daniel Librado, Ares Claude-Tob (pruebas reales, Iris[Q35]) y David España se agregaron a mano.
   - Los avatares son una copia en `assets/team/` (Iris[Q33] = A): la página no le pide nada a GitHub ni le manda la IP de quien la ve. `scripts/update_team.py` los actualiza antes de cada versión (RELEASING.md §3).
 
 - **PaynaniWeb: la configuración inicial de Telegram pide tu usuario de Telegram y lo guarda en el roster (#682).** Julian configuró el bot y sus primeros mensajes llegaron como «no verificado», porque su fila no tenía Telegram: desde el teléfono parecía que el canal no funcionaba.

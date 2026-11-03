@@ -121,8 +121,8 @@ check("team.json: cada miembro con login, nombre, tipo decidido, proyectos conoc
        and set(m.get("projects") or []) <= set(about_pages.PROJECTS) and about_pages.avatar_path(m.get("avatar", "")))])
 check("team.json: sin la cuenta de la organización y sin logins repetidos", (False, len(TEAM)),
       ("iaaorgmx" in {m["login"] for m in TEAM}, len({m["login"].lower() for m in TEAM})))
-check("Iris[Q32] y [Q35]: los humanos son Julian, Esteban y Daniel",
-      ["EstebanRodriguezG", "dlibradosmbmx", "julianflores"], sorted(m["login"] for m in TEAM if m["type"] == "human"))
+check("Iris[Q32] y [Q35], y Julian después: los humanos son Julian, Esteban, Daniel y David",
+      ["EstebanRodriguezG", "despana76", "dlibradosmbmx", "julianflores"], sorted(m["login"] for m in TEAM if m["type"] == "human"))
 status, hdrs, page = req("GET", "/about/team")
 check("sin sesión, /about/team va a la entrada", (303, True), (status, hdrs.get("location", "").startswith("/login")))
 status, hdrs, page = req("GET", "/about/team?lang=es-MX", cookie=cookie)
