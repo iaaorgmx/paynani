@@ -27,7 +27,8 @@ from .whatsapp_source import MAX_TEXT
 LINKED_STATES = ("connected", "connecting", "disconnected")
 UNLINKED_STATES = ("unlinked", "logged_out")
 KINDS = ("image", "audio", "video", "document", "sticker")
-PAGE = 50
+PAGE = 50                # conversaciones por página de la lista
+THREAD_PAGE = 20         # mensajes por página de un hilo (#680)
 
 
 def _th(key: str, **kw) -> str:
@@ -332,7 +333,8 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
         bubbles.append(f'<li class="sms {css}"><div class="globo"><div class="de">{label}{_status(m)}</div>'
                        f'<div class="texto">{body}</div>{when}</div></li>')
     bubbles.append("</ol>")
-    return "\n".join(out + bubbles + [reply]) + "\n"
+    # #680: hilo.js baja al último mensaje al abrir, como Webchat.
+    return "\n".join(out + bubbles + [reply, '<script src="/assets/hilo.js" defer></script>']) + "\n"
 
 
 IMAGE_MIMES = ("image/jpeg", "image/png", "image/webp")

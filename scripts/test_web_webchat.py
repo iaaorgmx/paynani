@@ -419,14 +419,14 @@ for i in range(120):
 ids = [m["id"] for m in big.messages(limit=500)]
 STORE["now"] = big
 status, _, page = text("/webchat?lang=es-MX", cookie)
-check("con 120 mensajes la página trae los últimos 50", (200, 50, True, False),
-      (status, page.count('" id="w_'), "mensaje 119<" in page, "mensaje 69<" in page))
+check("con 120 mensajes la página trae los últimos 20 (#680)", (200, 20, True, False),
+      (status, page.count('" id="w_'), "mensaje 119<" in page, "mensaje 99<" in page))
 check("y ofrece «Mensajes anteriores» desde el primero que se ve", True,
-      f'<li class="wc-antes" id="wc-antes" data-before="{ids[70]}"><button type="button" class="wc-antes-btn"'
+      f'<li class="wc-antes" id="wc-antes" data-before="{ids[100]}"><button type="button" class="wc-antes-btn"'
       f' data-loading="Cargando…">Mensajes anteriores</button></li>' in page)
-older = json.loads(req("GET", f"/webchat/updates?before={ids[70]}", cookie=cookie)[2])
-check("before: los 50 anteriores, ya dibujados, y que quedan más", (50, True, False, ids[20], True),
-      (older["html"].count('" id="w_'), "mensaje 69<" in older["html"], "mensaje 70<" in older["html"],
+older = json.loads(req("GET", f"/webchat/updates?before={ids[100]}", cookie=cookie)[2])
+check("before: los 20 anteriores, ya dibujados, y que quedan más", (20, True, False, ids[80], True),
+      (older["html"].count('" id="w_'), "mensaje 99<" in older["html"], "mensaje 100<" in older["html"],
        older["before"], older["more"]))
 check("before: lo cargado empieza con su separador de día", True, older["html"].startswith('<li class="wc-dia"'))
 older = json.loads(req("GET", f"/webchat/updates?before={ids[20]}", cookie=cookie)[2])
@@ -436,11 +436,11 @@ check("before inválido o desconocido: nada, sin error", ("", False, "", False),
       tuple(v for q in ("../../x", "w_" + "f" * 32)
             for v in (lambda d: (d["html"], d["more"]))(json.loads(req("GET", f"/webchat/updates?before={q}", cookie=cookie)[2]))))
 few = webchat_source.Fake()
-for i in range(50):
+for i in range(20):
     few.append("owner", f"m{i}", [], owner=OWNER)
 STORE["now"] = few
 page = text("/webchat?lang=es-MX", cookie)[2]
-check("con 50 o menos, el botón está escondido", (50, True), (page.count('" id="w_'), bool(re.search(r'<li class="wc-antes" id="wc-antes" data-before="w_[0-9a-f]+" hidden>', page))))
+check("con 20 o menos, el botón está escondido", (20, True), (page.count('" id="w_'), bool(re.search(r'<li class="wc-antes" id="wc-antes" data-before="w_[0-9a-f]+" hidden>', page))))
 STORE["now"] = store
 check("webchat.js: el botón carga arriba y conserva lo que se ve", (True, True, True),
       tuple(x in (ROOT / "scripts/paynani_lib/assets/webchat.js").read_text()

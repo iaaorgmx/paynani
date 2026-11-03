@@ -301,6 +301,8 @@ body.web-shell {
 .web-shell .estado-handled, .web-shell .estado-closed { color: var(--ink); }
 .web-shell .estado-observed, .web-shell .estado-dispatched, .web-shell .estado-presented { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
 .web-shell .mas { margin-top: 1.25rem; }
+/* #680: mientras hilo.js trae los mensajes anteriores. */
+.web-shell .mas.cargando a { opacity: .5; pointer-events: none; }
 .web-shell a.secundario { display: inline-block; text-decoration: none; }
 .web-shell .volver { margin-top: 0; }
 .web-shell .volver a { color: var(--quiet); text-decoration: none; }

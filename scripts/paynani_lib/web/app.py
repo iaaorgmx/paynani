@@ -57,6 +57,7 @@ STATIC = {
     "/assets/adjuntos.js": (ASSETS / "adjuntos.js", "application/javascript; charset=UTF-8"),
     "/assets/webchat.js": (ASSETS / "webchat.js", "application/javascript; charset=UTF-8"),
     "/assets/barra.js": (ASSETS / "barra.js", "application/javascript; charset=UTF-8"),
+    "/assets/hilo.js": (ASSETS / "hilo.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a
@@ -65,6 +66,11 @@ STATIC = {
     "/favicon.ico": (FAVICON, "image/svg+xml"),
 }
 DASHBOARD_JS = "/assets/dashboard.js"   # con sesión (PRD #602 §5): fuera de STATIC
+# Iris[Q3] (#678) y Metis[Q49] = A (#680): una foto o un archivo con id fijo (`f_…` de Webchat,
+# `wa:…`/`wo_…` de WhatsApp, `tg:…`/`tgo:…` de Telegram) nunca cambia de contenido, así que el
+# navegador lo guarda (sólo él, `private`) y no lo vuelve a bajar en cada visita. Los errores
+# siguen con no-store.
+MEDIA_CACHE = ("Cache-Control", "private, max-age=31536000, immutable")
 LANG_COOKIE = "paynani_web_lang"
 MAX_BODY_BYTES = 64 * 1024
 # Catch-All instructions may be 32 KB once saved (PRD #535 FR-6). The form arrives
@@ -1430,7 +1436,7 @@ def make_handler(ctx: Context):
             self._send(200, mime if inline else "application/octet-stream", data,
                        [("Content-Disposition", f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{filename}"),
                         ("Content-Security-Policy", "default-src 'none'; sandbox"),
-                        ("Cache-Control", "private, max-age=31536000, immutable")])
+                        MEDIA_CACHE])
 
         def _webchat_socket(self):
             """
@@ -1767,7 +1773,8 @@ def make_handler(ctx: Context):
                 self._send(*not_found)
                 return
             self._send(200, mime, body, [("Content-Disposition", "inline"),
-                                         ("Content-Security-Policy", "default-src 'none'; sandbox")])
+                                         ("Content-Security-Policy", "default-src 'none'; sandbox"),
+                                         MEDIA_CACHE])
 
         def _telegram_messages(self, *, values: dict | None = None, error: str = "", add_error: str = "",
                                code: int = 200):
@@ -1793,7 +1800,7 @@ def make_handler(ctx: Context):
                               title_key="web.tg.messages_title", back="/telegram/messages")
                 return
             try:
-                thread_data = source.request("telegram.thread", thread=tid, limit=telegram_pages.PAGE, before=before)
+                thread_data = source.request("telegram.thread", thread=tid, limit=telegram_pages.THREAD_PAGE, before=before)
             except telegram_source.Failed as exc:
                 status = 404 if exc.code in ("not_found", "invalid") else 503
                 self._tg_page(status, back + f'<p class="lead">{html.escape(telegram_pages.error_text(exc.code, exc.fields))}</p>',
@@ -2088,7 +2095,8 @@ def make_handler(ctx: Context):
             GET /whatsapp/file?id=wa:… y /telegram/file?ref=tg:… (#676): un documento recibido.
             El servicio decide en cada pedido y da los bytes; un id mal formado, uno que no
             se puede mostrar, uno fuera de media/ o uno que no existe dan el mismo 404.
-            Siempre como descarga (`attachment`, octet-stream, nosniff, no-store).
+            Siempre como descarga (`attachment`, octet-stream, nosniff). Desde #680 (Metis[Q49]) el
+            navegador la guarda como las fotos (MEDIA_CACHE); los errores siguen con no-store.
             """
             not_found = (404, "text/plain; charset=UTF-8", b"")
             if not valid:
@@ -2109,7 +2117,7 @@ def make_handler(ctx: Context):
             if not body or len(body) > downloads.FILE_MAX_BYTES:
                 self._send(*not_found)
                 return
-            self._send(200, "application/octet-stream", body, downloads.headers(str(data.get("name") or "")))
+            self._send(200, "application/octet-stream", body, downloads.headers(str(data.get("name") or "")) + [MEDIA_CACHE])
 
         def _whatsapp_image(self):
             """
@@ -2146,7 +2154,8 @@ def make_handler(ctx: Context):
                 self._send(*not_found)
                 return
             self._send(200, mime, body, [("Content-Disposition", "inline"),
-                                         ("Content-Security-Policy", "default-src 'none'; sandbox")])
+                                         ("Content-Security-Policy", "default-src 'none'; sandbox"),
+                                         MEDIA_CACHE])
 
         def _whatsapp_current(self):
             """GET /whatsapp/link/current (§11): el QR vigente de la vinculación de esta
@@ -2181,7 +2190,7 @@ def make_handler(ctx: Context):
                 return
             number = (values or {}).get("n") or self.query.get("n", [""])[0]
             try:
-                thread_data = source.request("whatsapp.thread", number=number, limit=whatsapp_pages.PAGE,
+                thread_data = source.request("whatsapp.thread", number=number, limit=whatsapp_pages.THREAD_PAGE,
                                              before=before)
             except whatsapp_source.Failed as exc:
                 status = 404 if exc.code in ("not_found", "invalid") else 503

@@ -24,7 +24,7 @@ from .dashboard import parse
 from .shell import e, icon
 
 MAX_FILES = 10
-PAGE = 50
+PAGE = 20                # mensajes por página (#680; antes 50)
 
 
 def _th(key: str, **kw) -> str:

@@ -377,10 +377,10 @@ escribe con `paynani_lib/webchat/store.py`, sin un servicio aparte.
   - **Si no conecta:** el script vuelve a pedir `/webchat/updates?after=<id>` cada 3 s,
     sólo con la pestaña visible. Sin script, la página funciona igual y se recarga a mano.
   - **Límite:** como mucho 20 conexiones a la vez.
-- **Mensajes anteriores (Q336 = A):** la página trae los últimos 50. Si hay más, arriba
-  aparece «Mensajes anteriores», que pide los 50 de antes a
-  `/webchat/updates?before=<id>` y los pone arriba sin mover lo que se está leyendo. Sin
-  script no aparece.
+- **Mensajes anteriores (Q336 = A):** la página trae los últimos 20 (#680; antes 50). Si
+  hay más, arriba aparece «Mensajes anteriores», que pide los 20 de antes a
+  `/webchat/updates?before=<id>` y los pone arriba sin mover lo que se está leyendo. Desde
+  #680 se pide solo al llegar arriba con el scroll. Sin script no aparece.
 - **Lo que hace el agente** por Webchat cuenta en la página del agente: atendidos hoy,
   tiempo de respuesta, última respuesta y actividad.
 - **Sin el almacén:** si la instalación todavía no trae `webchat/store.py`, la página lo
@@ -400,6 +400,16 @@ escribe con `paynani_lib/webchat/store.py`, sin un servicio aparte.
 - **El log** (`state/web.log`) lleva una línea por petición, con el método y la ruta,
   nunca la consulta ni el cuerpo. `state/web.err.log` lleva los errores, con su
   tipo y sin su texto.
+
+### Al abrir una conversación (#680)
+
+Las conversaciones de WhatsApp, Telegram y SMS abren en el último mensaje, como Webchat, y
+traen los 20 más recientes (`THREAD_PAGE`; las listas de conversaciones siguen de 50 en 50).
+- **`assets/hilo.js`** baja al final al cargar. Como las fotos llegan después y hacen crecer la página, vuelve a bajar cada vez que termina de cargar una, durante 8 segundos, hasta que la persona toque, desplace o use el teclado.
+- **«Mensajes anteriores»** abre la página de los mensajes de antes, también al final. Ese final es justo el mensaje anterior al primero que ya se veía, así que la lectura sigue donde iba.
+- **Después de enviar** la página vuelve con `#responder`, y el final es el mensaje nuevo.
+- **Si la URL trae otra ancla**, la página no se mueve.
+- **Al llegar arriba con el scroll**, `hilo.js` pide solo la página de «Mensajes anteriores» (la misma URL del enlace), toma sus renglones y pone los 20 de antes arriba, sin mover lo que se está leyendo. Para eso mide el primer renglón antes y después, y otra vez cuando termina de cargar una foto nueva. Sigue así mientras haya más. El enlace se queda como respaldo sin JavaScript.
 
 ### WhatsApp
 
