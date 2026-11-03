@@ -654,7 +654,7 @@ body.web-shell {
 .web-shell .about-txt small { color: var(--quiet); font-size: .82rem; }
 .web-shell .about-flecha { color: var(--quiet); }
 /* #686: «Development team», la tabla de humanos y agentes; en el teléfono, una tarjeta por fila. */
-.web-shell .team { max-width: 48rem; }
+.web-shell .team { max-width: 62rem; }
 .web-shell .team-tabla { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); overflow: hidden; }
 .web-shell .team-tabla th { text-align: left; font-size: .78rem; font-weight: 600; color: var(--quiet); text-transform: uppercase; letter-spacing: .04em; padding: .6rem 1rem; border-bottom: 1px solid var(--line); }
 .web-shell .team-tabla td { padding: .65rem 1rem; vertical-align: middle; }
@@ -668,6 +668,14 @@ body.web-shell {
 .web-shell .team-name small { display: block; color: var(--quiet); font-size: .82rem; }
 .web-shell .team-tipo { display: inline-block; font-size: .78rem; font-weight: 600; border-radius: 999px; padding: .15rem .6rem; border: 1px solid var(--line); white-space: nowrap; }
 .web-shell .team-harness { display: block; width: fit-content; margin-top: .35rem; font-size: .78rem; font-weight: 600; white-space: nowrap; border-radius: 999px; padding: .15rem .6rem; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.web-shell .team-rol { display: inline-block; font-size: .78rem; font-weight: 600; border-radius: 999px; padding: .15rem .6rem; border: 1px solid var(--line); white-space: nowrap; }
+.web-shell .team-maintainer { background: var(--accent); border-color: var(--accent); color: #fff; }
+.web-shell .team-committer { background: #f6ecea; border-color: #e7cfcb; color: var(--accent); }
+.web-shell .team-contributor { background: var(--bg); color: var(--ink); }
+@media (prefers-color-scheme: dark) { .web-shell .team-committer { background: #2a1c1b; border-color: #5e3229; } }
+.web-shell .team-alcance { display: block; margin-top: .3rem; font-size: .8rem; color: var(--quiet); }
+.web-shell .team-gob { margin-top: 1rem; font-size: .9rem; }
+.web-shell .team-gob a { color: var(--accent); font-weight: 600; }
 .web-shell .team-human { background: var(--ok-bg); border-color: var(--ok-line); }
 .web-shell .team-agent { background: #f6ecea; border-color: #e7cfcb; color: var(--accent); }
 @media (prefers-color-scheme: dark) { .web-shell .team-agent { background: #2a1c1b; border-color: #5e3229; } }

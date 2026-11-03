@@ -6,10 +6,24 @@
       "type": "agent",
       "projects": [
         "paynani",
+        "paynaniweb",
         "paynaniapp"
       ],
       "avatar": "andyrubinclaude.png",
-      "harness": "Claude Code"
+      "harness": "Claude Code",
+      "role": "maintainer",
+      "role_scope": "app"
+    },
+    {
+      "login": "aresclaudetob",
+      "name": "Ares Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "aresclaudetob.png",
+      "harness": "Claude Code",
+      "role": "contributor"
     },
     {
       "login": "ateneabuffayhermes",
@@ -19,7 +33,8 @@
         "paynani"
       ],
       "avatar": "ateneabuffayhermes.png",
-      "harness": "Hermes Agent"
+      "harness": "Hermes Agent",
+      "role": "committer"
     },
     {
       "login": "balamocodetob",
@@ -30,7 +45,9 @@
         "paynaniweb"
       ],
       "avatar": "balamocodetob.png",
-      "harness": "OpenCode"
+      "harness": "OpenCode",
+      "role": "committer",
+      "role_scope": "review"
     },
     {
       "login": "EstebanRodriguezG",
@@ -39,7 +56,8 @@
       "projects": [
         "paynaniapp"
       ],
-      "avatar": "estebanrodriguezg.jpg"
+      "avatar": "estebanrodriguezg.jpg",
+      "role": "contributor"
     },
     {
       "login": "irisclaudetob",
@@ -51,7 +69,9 @@
         "paynaniapp"
       ],
       "avatar": "irisclaudetob.png",
-      "harness": "Claude Code"
+      "harness": "Claude Code",
+      "role": "maintainer",
+      "role_scope": "web"
     },
     {
       "login": "julianflores",
@@ -66,7 +86,9 @@
       "extra_projects": [
         "paynaniweb",
         "paynaniapp"
-      ]
+      ],
+      "role": "maintainer",
+      "role_scope": "lead"
     },
     {
       "login": "lisabuffaytob",
@@ -76,7 +98,8 @@
         "paynani"
       ],
       "avatar": "lisabuffaytob.jpg",
-      "harness": "OpenClaw"
+      "harness": "OpenClaw",
+      "role": "contributor"
     },
     {
       "login": "metisclaudetob",
@@ -88,7 +111,9 @@
         "paynaniapp"
       ],
       "avatar": "metisclaudetob.png",
-      "harness": "Claude Code"
+      "harness": "Claude Code",
+      "role": "maintainer",
+      "role_scope": "core"
     },
     {
       "login": "ocelotlcodextob",
@@ -99,27 +124,22 @@
         "paynaniweb"
       ],
       "avatar": "ocelotlcodextob.png",
-      "harness": "Codex"
+      "harness": "Codex",
+      "role": "committer"
     },
     {
       "login": "ximenasalazartob",
       "name": "Ximena Salazar",
       "type": "agent",
       "projects": [
-        "paynani"
+        "paynani",
+        "paynaniweb",
+        "paynaniapp"
       ],
       "avatar": "ximenasalazartob.jpg",
-      "harness": "OpenClaw"
-    },
-    {
-      "login": "aresclaudetob",
-      "name": "Ares Claude-Tob",
-      "type": "agent",
-      "projects": [
-        "paynani"
-      ],
-      "avatar": "aresclaudetob.png",
-      "harness": "Claude Code"
+      "harness": "OpenClaw",
+      "role": "committer",
+      "role_scope": "devops"
     },
     {
       "login": "despana76",
@@ -128,7 +148,8 @@
       "projects": [
         "paynani"
       ],
-      "avatar": "despana76.png"
+      "avatar": "despana76.png",
+      "role": "contributor"
     },
     {
       "login": "dlibradosmbmx",
@@ -137,7 +158,8 @@
       "projects": [
         "paynani"
       ],
-      "avatar": "dlibradosmbmx.jpg"
+      "avatar": "dlibradosmbmx.jpg",
+      "role": "contributor"
     },
     {
       "login": "edithclaudetob",
@@ -147,7 +169,8 @@
         "paynani"
       ],
       "avatar": "edithclaudetob.png",
-      "harness": "Claude Code"
+      "harness": "Claude Code",
+      "role": "contributor"
     }
   ]
 }

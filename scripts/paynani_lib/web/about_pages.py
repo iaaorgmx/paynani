@@ -29,6 +29,9 @@ WEB = "https://iaa.org.mx"
 TEAM_FILE = Path(__file__).with_name("team.json")
 TEAM_DIR = Path(__file__).resolve().parents[1] / "assets" / "team"
 PROJECTS = ("paynani", "paynaniweb", "paynaniapp")
+# Iris[Q39] = A: los roles de opensource.guide («Leadership and Governance»), en GOVERNANCE.md.
+ROLES = ("maintainer", "committer", "contributor")
+SCOPES = ("lead", "core", "web", "app", "devops", "review")
 
 
 def _th(key: str, **kw) -> str:
@@ -108,7 +111,8 @@ def team() -> list[dict]:
         members = json.loads(TEAM_FILE.read_text(encoding="utf-8"))["members"]
     except (OSError, ValueError, KeyError):
         return []
-    shown = [m for m in members if m.get("type") in ("human", "agent") and avatar_path(m.get("avatar", ""))]
+    shown = [m for m in members if m.get("type") in ("human", "agent") and m.get("role") in ROLES
+             and avatar_path(m.get("avatar", ""))]
     return sorted(shown, key=lambda m: str(m.get("name") or m["login"]).casefold())
 
 
@@ -143,6 +147,9 @@ def team_body() -> str:
         # Julian: debajo de «Agente de IA», el harness donde corre (Claude Code, Codex…).
         harness = (f'<small class="team-harness">{e(m["harness"])}</small>'
                    if m["type"] == "agent" and m.get("harness") else "")
+        scope = (f'<small class="team-alcance">{_th("scope_" + m["role_scope"])}</small>'
+                 if m.get("role_scope") in SCOPES else "")
+        role = f'<td class="team-role"><span class="team-rol team-{m["role"]}">{_th("role_" + m["role"])}</span>{scope}</td>'
         rows.append(
             f'<tr><td class="team-avatar"><a href="{e(profile)}" target="_blank" rel="noopener noreferrer"'
             f' title="{_th("profile", name=name)}">'
@@ -150,12 +157,15 @@ def team_body() -> str:
             f' loading="lazy"></a></td>'
             f'<td class="team-name"><a href="{e(profile)}" target="_blank" rel="noopener noreferrer">{name}</a>'
             f'<span class="solo-lector"> {_th("new_tab")}</span><small>@{e(m["login"])}</small></td>'
-            f'<td class="team-type"><span class="team-tipo team-{m["type"]}">{kind}</span>{harness}</td>'
+            f'<td class="team-type"><span class="team-tipo team-{m["type"]}">{kind}</span>{harness}</td>' + role +
             f'<td class="team-projects">{chips}</td></tr>')
     table = (f'<table class="team-tabla"><caption class="solo-lector">{_th("team")}</caption>'
              f'<thead><tr><th scope="col"><span class="solo-lector">{_th("col_avatar")}</span></th>'
              f'<th scope="col">{_th("col_name")}</th><th scope="col">{_th("col_type")}</th>'
+             f'<th scope="col">{_th("col_role")}</th>'
              f'<th scope="col">{_th("col_projects")}</th></tr></thead>'
              f'<tbody>{"".join(rows)}</tbody></table>') if rows else f'<p class="quiet">{_th("team_empty")}</p>'
     return (f'<p class="volver"><a href="/about">← {_th("back")}</a></p>'
-            f'<p class="lead">{_th("team_lead")}</p>\n<div class="team">{table}</div>\n')
+            f'<p class="lead">{_th("team_lead")}</p>\n<div class="team">{table}</div>\n'
+            f'<p class="team-gob"><a href="{REPO}/blob/main/GOVERNANCE.md" target="_blank" rel="noopener noreferrer">'
+            f'{_th("governance")}</a><span class="solo-lector"> {_th("new_tab")}</span></p>\n')

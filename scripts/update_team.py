@@ -8,10 +8,13 @@ GitHub (Iris[Q33] = A): todo sale de esta copia.
     python3 scripts/update_team.py            # actualiza y dice qué cambió
     python3 scripts/update_team.py --check    # sólo dice si hay cambios (sale 1 si hay)
 
-Quién cuenta para cada proyecto, con los commits que GitHub liga a una cuenta:
-- paynani: los contributors de iaaorgmx/paynani.
-- PaynaniWeb: los autores de commits en la web (WEB_PATHS) de iaaorgmx/paynani.
-- PaynaniApp: los contributors de iaaorgmx/PaynaniApp-Agentic e iaaorgmx/PaynaniApp.
+Quién cuenta (Julian, 2026-11-03: «cualquier issue o respuesta a un issue califica como
+colaboración», no sólo los commits): quien hizo un commit, abrió un issue o un PR, o lo
+comentó o lo revisó con comentarios.
+- paynani: en iaaorgmx/paynani.
+- PaynaniWeb: commits en la web (WEB_PATHS), o un issue o PR de iaaorgmx/paynani con
+  «PaynaniWeb» en el título, abierto o comentado.
+- PaynaniApp: en iaaorgmx/PaynaniApp-Agentic o iaaorgmx/PaynaniApp.
 
 El nombre, el tipo (human o agent) y, de un agente, su harness (Claude
 Code, Codex, OpenCode, OpenClaw, Hermes Agent…) los decide una persona: una cuenta nueva entra con `type: "?"` y la prueba de la página falla hasta
@@ -47,6 +50,23 @@ def contributors(repo: str) -> set[str]:
     return {c["login"] for c in gh_json(f"repos/{repo}/contributors?per_page=100") if c.get("type") == "User"}
 
 
+def participants(repo: str, title_has: str = "") -> set[str]:
+    """Quien abrió, comentó o revisó con comentarios un issue o PR de `repo`. Con
+    `title_has`, sólo en los que lo traen en el título."""
+    titles, found = {}, set()
+    for i in gh_json(f"repos/{repo}/issues?state=all&per_page=100"):
+        titles[i["number"]] = i.get("title") or ""
+        if (i.get("user") or {}).get("type") == "User" and title_has.lower() in titles[i["number"]].lower():
+            found.add(i["user"]["login"])
+    for path in (f"repos/{repo}/issues/comments?per_page=100", f"repos/{repo}/pulls/comments?per_page=100"):
+        for c in gh_json(path):
+            url = c.get("issue_url") or c.get("pull_request_url") or ""
+            number = int(url.rsplit("/", 1)[-1]) if url.rsplit("/", 1)[-1].isdigit() else 0
+            if (c.get("user") or {}).get("type") == "User" and title_has.lower() in titles.get(number, "").lower():
+                found.add(c["user"]["login"])
+    return found
+
+
 def web_authors() -> set[str]:
     found = set()
     for path in WEB_PATHS:
@@ -72,12 +92,12 @@ def kind_of(data: bytes) -> str:
 def main(check_only: bool) -> int:
     current = {m["login"]: m for m in json.loads(TEAM.read_text(encoding="utf-8"))["members"]} if TEAM.exists() else {}
     projects: dict[str, set[str]] = {}
-    for login in contributors(CORE):
+    for login in contributors(CORE) | participants(CORE):
         projects.setdefault(login, set()).add("paynani")
-    for login in web_authors():
+    for login in web_authors() | participants(CORE, "PaynaniWeb"):
         projects.setdefault(login, set()).add("paynaniweb")
     for repo in APP:
-        for login in contributors(repo):
+        for login in contributors(repo) | participants(repo):
             projects.setdefault(login, set()).add("paynaniapp")
     members, changes = [], []
     for login in sorted(projects, key=str.lower):
@@ -93,6 +113,9 @@ def main(check_only: bool) -> int:
                   "avatar": old.get("avatar", "")}
         if old.get("extra_projects"):
             member["extra_projects"] = old["extra_projects"]
+        for key in ("role", "role_scope"):   # Iris[Q39]: el rol lo decide una persona (GOVERNANCE.md)
+            if old.get(key):
+                member[key] = old[key]
         if old.get("harness"):
             member["harness"] = old["harness"]   # dónde corre un agente: lo escribe una persona
         if old and old.get("projects") != member["projects"]:

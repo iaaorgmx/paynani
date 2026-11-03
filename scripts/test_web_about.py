@@ -116,8 +116,9 @@ check("/assets/about.js se sirve como JavaScript", (200, True, True),
 import json  # noqa: E402
 
 TEAM = json.loads(about_pages.TEAM_FILE.read_text(encoding="utf-8"))["members"]
-check("team.json: cada miembro con login, nombre, tipo decidido, proyectos conocidos y avatar", [],
+check("team.json: cada miembro con login, nombre, tipo decidido, rol, proyectos conocidos y avatar", [],
       [m.get("login") for m in TEAM if not (m.get("login") and m.get("name") and m.get("type") in ("human", "agent")
+       and m.get("role") in about_pages.ROLES and m.get("role_scope", "lead") in about_pages.SCOPES
        and set(m.get("projects") or []) <= set(about_pages.PROJECTS) and about_pages.avatar_path(m.get("avatar", "")))])
 check("team.json: sin la cuenta de la organización y sin logins repetidos", (False, len(TEAM)),
       ("iaaorgmx" in {m["login"] for m in TEAM}, len({m["login"].lower() for m in TEAM})))
@@ -147,16 +148,27 @@ check("Iris[Q35]: Daniel Librado, humano, en paynani", (True, True),
 ares = next(r for r in rows if "@aresclaudetob" in r)
 check("Iris[Q35]: Ares Claude-Tob, agente, en paynani", (True, True),
       ("team-agent" in ares, '<span class="team-chip">paynani</span>' in ares))
-check("sin la etiqueta «Tester» (Julian)", (False, False), ("Tester" in page, "team-rol" in page))
+check("sin la etiqueta «Tester» (Julian)", False, "Tester" in page)
 metis = next(r for r in rows if "@metisclaudetob" in r)
 julian = next(r for r in rows if "@julianflores" in r)
 check("Julian: su fila trae paynani, PaynaniWeb y PaynaniApp", 3, julian.count('class="team-chip"'))
+check("Iris[Q39]: cada fila trae su rol en cápsula", len(rows), sum('class="team-rol team-' in r for r in rows))
+check("Iris[Q39]: Julian, Maintainer, líder del proyecto", (True, True),
+      ('<span class="team-rol team-maintainer">Maintainer</span>' in julian, "Líder del proyecto" in julian))
+check("Iris[Q39]: los Maintainers son Julian, Metis, Iris y Andy",
+      ["andyrubinclaude", "irisclaudetob", "julianflores", "metisclaudetob"],
+      sorted(m["login"] for m in TEAM if m.get("role") == "maintainer"))
+check("Iris[Q39]: los Committers son Atenea, Balam, Ocelotl y Ximena",
+      ["ateneabuffayhermes", "balamocodetob", "ocelotlcodextob", "ximenasalazartob"],
+      sorted(m["login"] for m in TEAM if m.get("role") == "committer"))
+check("Iris[Q39]: enlace a GOVERNANCE.md en otra pestaña", True,
+      '<a href="https://github.com/iaaorgmx/paynani/blob/main/GOVERNANCE.md" target="_blank" rel="noopener noreferrer">' in page)
 check("debajo de «Agente de IA», el harness; un humano no lleva", (True, False),
       ('<small class="team-harness">Claude Code</small>' in metis, "team-harness" in julian))
 check("cada harness de team.json sale en su fila", sorted(m["harness"] for m in TEAM if m.get("harness")),
       sorted(re.findall(r'<small class="team-harness">([^<]+)</small>', page)))
 check("sin atributos style en /about/team", [], re.findall(r'\sstyle="', page))
-first = next(m for m in TEAM)
+first = about_pages.team()[0]
 status, hdrs, data = req("GET", f"/assets/team/{first['avatar']}")
 check("un avatar se sirve sin sesión, con su tipo y ETag", (200, True, True),
       (status, hdrs.get("content-type") in ("image/png", "image/jpeg"), bool(hdrs.get("etag"))))
