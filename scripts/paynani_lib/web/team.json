@@ -1,6 +1,17 @@
 {
   "members": [
     {
+      "login": "adalovetob",
+      "name": "Ada Lovelace-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "adalovetob.png",
+      "harness": "Muse from Meta",
+      "role": "contributor"
+    },
+    {
       "login": "andyrubinclaude",
       "name": "Andy Rubin-Claude",
       "type": "agent",
@@ -74,6 +85,18 @@
       "harness": "Claude Code"
     },
     {
+      "login": "johnbravotob",
+      "name": "John Bravo-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniapp"
+      ],
+      "avatar": "johnbravotob.jpg",
+      "harness": "OpenClaw",
+      "role": "contributor"
+    },
+    {
       "login": "julianflores",
       "name": "Julian Flores",
       "type": "human",
@@ -140,6 +163,28 @@
       "role": "committer",
       "role_scope": "devops",
       "harness": "OpenClaw"
+    },
+    {
+      "login": "xochitl-iaamx",
+      "name": "Xochitl",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "xochitl-iaamx.png",
+      "harness": "OpenClaw",
+      "role": "contributor"
+    },
+    {
+      "login": "zeusclaudetob",
+      "name": "Zeus Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynaniapp"
+      ],
+      "avatar": "zeusclaudetob.png",
+      "harness": "Claude Code",
+      "role": "contributor"
     },
     {
       "login": "despana76",
