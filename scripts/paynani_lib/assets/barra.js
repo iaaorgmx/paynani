@@ -1,11 +1,12 @@
-// PaynaniWeb, «Mensajes de Telegram»: la barra de escribir es la de Webchat (Julian, Q337).
+// PaynaniWeb, «Mensajes de Telegram» (Q337) y «Mensajes de WhatsApp» (#670): la barra de
+// escribir es la de Webchat.
 // El cuadro crece solo mientras se escribe, hasta su max-height (unas 6 líneas), y un
 // segundo toque en «Enviar» no manda el mensaje otra vez. Con el clip (#662), las fichas y
 // la copia a memoria son las de Webchat (assets/adjuntos.js). Sin script, el cuadro es de
 // una línea con scroll y el formulario funciona igual.
 (function () {
   "use strict";
-  var form = document.querySelector(".tg-escribir");
+  var form = document.querySelector(".barra-escribir");
   var texto = form ? form.querySelector("textarea") : null;
   if (!texto) { return; }
   function grow() {

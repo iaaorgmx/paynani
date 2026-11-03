@@ -21,7 +21,7 @@ from urllib.parse import quote
 from .. import i18n
 from ..sms import qr
 from . import mail_pages
-from .shell import e
+from .shell import e, icon
 from .whatsapp_source import MAX_TEXT
 
 LINKED_STATES = ("connected", "connecting", "disconnected")
@@ -223,14 +223,22 @@ def reply_box(thread: dict, csrf: str, connected: bool, values: dict | None = No
     if not connected:
         return f'<section class="responder">{head}<p class="aviso-caja" role="status">{_th("no_reply_connected")}</p></section>'
     text = (values or {}).get("text", "")
-    return f"""<section class="responder">{head}
-<form method="post" action="/whatsapp/messages/enviar" class="formulario">
+    # La barra de Webchat, como en «Mensajes de Telegram» (Julian, #670 FR-1): el cuadro con
+    # todo el ancho, que crece solo (barra.js), y «Enviar» redondo, pegada abajo. El clip llega
+    # cuando el servicio acepte archivos de la web (#670 FR-5 a FR-8).
+    name = str(thread.get("name") or "") if thread.get("in_roster") else ""
+    placeholder = _th("placeholder", name=name or thread["number"])
+    return f"""<form method="post" action="/whatsapp/messages/enviar" class="wc-escribir barra-escribir wa-escribir" id="responder">
+  <h3 class="solo-lector">{_th("reply")}</h3>{_error(error)}
   <input type="hidden" name="csrf" value="{e(csrf)}">
   <input type="hidden" name="n" value="{e(thread["number"])}">
-  <label for="wa-text">{_th("reply_text")}</label>
-  <textarea id="wa-text" name="text" rows="4" maxlength="{MAX_TEXT}" required>{e(text)}</textarea>
-  <button type="submit" class="primario">{_th("send")}</button>
-</form></section>"""
+  <div class="wc-barra">
+    <label for="wa-text" class="solo-lector">{_th("reply_text")}</label>
+    <textarea id="wa-text" name="text" rows="1" maxlength="{MAX_TEXT}" required placeholder="{placeholder}">{e(text)}</textarea>
+    <button type="submit" class="wc-enviar" aria-label="{_th("send")}" title="{_th("send")}">{icon("send")}</button>
+  </div>
+</form>
+<script src="/assets/barra.js" defer></script>"""
 
 
 def thread_body(thread: dict, reply: str, notice: str = "") -> str:
