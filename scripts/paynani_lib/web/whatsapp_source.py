@@ -58,6 +58,10 @@ class Source:
     """Lo que las pantallas usan. `request()` devuelve el `data` del `result` o
     levanta `Failed` con el `code` del `error`."""
 
+    def request_slow(self, kind: str, **fields) -> dict:
+        """Como `request`, para lo que puede tardar: un `whatsapp.send` con archivos (#670)."""
+        return self.request(kind, **fields)
+
     def request(self, kind: str, **fields) -> dict:  # pragma: no cover -- interfaz
         raise NotImplementedError
 
@@ -74,15 +78,25 @@ class Source:
 
 # ---- El servicio, por control.sock (WHATSAPP_BRIDGE.md §11) ----------------------
 class ControlSocket(Source):
+    # Con 1 envío cada 3 s (FR-21), 10 archivos tardan más que una consulta (#670); el
+    # servicio corta a los 150 s (WEB_SEND_TIMEOUT_S) y aquí se espera un poco más.
+    SLOW_TIMEOUT = 180.0
+
     def __init__(self, path: Path, timeout: float = 15.0):
         self.path = Path(path)
         self.timeout = timeout
 
+    def request_slow(self, kind: str, **fields) -> dict:
+        return self._request(kind, max(self.timeout, self.SLOW_TIMEOUT), fields)
+
     def request(self, kind: str, **fields) -> dict:
+        return self._request(kind, self.timeout, fields)
+
+    def _request(self, kind: str, timeout: float, fields: dict) -> dict:
         rid = "q_" + secrets.token_hex(16)
         line = json.dumps({"type": kind, "id": rid, "by": "web", **fields}, ensure_ascii=False) + "\n"
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(self.timeout)
+        sock.settimeout(timeout)
         try:
             sock.connect(str(self.path))
             sock.sendall(line.encode("utf-8"))
@@ -97,6 +111,9 @@ class ControlSocket(Source):
                     return msg.get("data") or {}
                 extra = {k: v for k, v in msg.items() if k not in ("type", "ref", "code", "ok")}
                 raise Failed(str(msg.get("code") or "unavailable"), **extra)
+        except TimeoutError:
+            # Se pidió y no contestó a tiempo: el servicio pudo haberlo hecho de todos modos.
+            raise Failed("unavailable", timed_out=True) from None
         except OSError:
             raise Failed("unavailable")
         finally:

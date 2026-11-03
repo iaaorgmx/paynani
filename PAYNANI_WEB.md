@@ -425,7 +425,12 @@ habla al servicio `paynani-whatsapp` por `state/whatsapp/control.sock`
   escribió por WhatsApp, con WhatsApp conectado. No hay «Nuevo mensaje»: paynani nunca
   escribe primero, ni el agente ni tú desde aquí. Es la barra de Webchat, igual que en
   Telegram (#670): el cuadro de una línea que crece hasta unas 6 (`barra.js`) y «Enviar»
-  redondo, pegada abajo. Por ahora sólo manda texto; el clip llega con el núcleo de #670.
+  redondo, pegada abajo. Si el servicio anuncia `web_files` (#670), lleva el clip
+  («Foto», «Archivo»; `adjuntos.js`):
+  - **El envío:** hasta 10 archivos y 20 MB por mensaje, que salen uno cada pocos segundos
+    (FR-21). La web los sube con `web_uploads.save` y los manda en `whatsapp.send`.
+  - **En el hilo:** las fotos que mandaste se ven por `/whatsapp/media?id=wo_…&i=<n>`, y los
+    demás archivos sólo con su nombre.
 
 ### Telegram
 

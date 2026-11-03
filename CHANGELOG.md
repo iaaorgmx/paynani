@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, «Mensajes de WhatsApp»: fotos y archivos con el clip (#670 FR-2 a FR-4).** La barra de contestar lleva el clip de Webchat y Telegram, con «Foto» y «Archivo»: hasta 10 archivos y 20 MB por mensaje, con el texto como pie de foto. Salen uno cada pocos segundos (FR-21). Las fotos que mandas se ven en el hilo (`/whatsapp/media?id=wo_…&i=<n>`); de los demás archivos queda el nombre. Usa el núcleo de #674 y sólo aparece si el servicio anuncia `web_files`. Avisa de los errores como en Telegram:
+  - un envío parcial dice qué archivos ya salieron;
+  - un corte por tiempo pide revisar la conversación antes de reenviar;
+  - un fallo definitivo borra los archivos que no salieron.
+
 - **WhatsApp: el núcleo para mandar fotos y archivos desde PaynaniWeb (#670 FR-5 a FR-8).** Lo mismo que #665 hizo para Telegram, para que la web ponga el clip en «Mensajes de WhatsApp»:
   - Las subidas de la web viven ahora en un módulo común, `paynani_lib/web_uploads.py`, con las mismas reglas: un `up_…` de 10 minutos y un solo uso, el tipo revisado por los bytes, 0700/0600 y hasta 20 pendientes. `paynani_lib.telegram.uploads` sigue funcionando igual, y WhatsApp usa `state/whatsapp/uploads/`.
   - `whatsapp.send` acepta `uploads` del dueño, nunca junto con `file`: hasta 10 archivos y 20 MB, uno por `send` del puente, con el texto como pie del primero. Cada archivo cuenta para el tope de envío: entre uno y otro se espera el intervalo, y si hoy no caben todos no sale ninguno. Si falla uno, el error trae `sent_uploads` y el hilo lo marca `partial`.
