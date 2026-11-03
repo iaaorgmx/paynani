@@ -406,6 +406,7 @@ check("responder es la barra de Webchat (#670 FR-1): una línea, «Enviar» redo
       ('class="wc-escribir barra-escribir wa-escribir" id="responder"' in page, 'name="text" rows="1"' in page,
        f'class="wc-enviar" aria-label="{th("web.wa.send")}"' in page, '<label for="wa-text" class="solo-lector">' in page,
        f'placeholder="{th("web.wa.placeholder", name="Ana López")}"' in page, '<script src="/assets/barra.js" defer></script>' in page))
+check("#680: el hilo carga hilo.js, que baja al último mensaje", True, '<script src="/assets/hilo.js" defer></script>' in page)
 check("la foto se muestra por su tipo, sin ruta ni contenido", True, th("web.wa.kind.image") in page)
 status, hdrs, _ = req("POST", "/whatsapp/messages/enviar", form={"csrf": csrf, "n": "+15550100001",
                                                                  "text": "Con gusto, <b>los esperamos</b>."},

@@ -237,6 +237,8 @@ check("responder es la barra de Webchat (Q337): una línea, «Enviar» redondo y
        'class="wc-enviar" aria-label="Enviar"' in page, '<label for="tg-text" class="solo-lector">' in page,
        '<script src="/assets/barra.js" defer></script>' in page))
 check("barra.js se sirve", 200, req("GET", "/assets/barra.js")[0])
+check("#680: el hilo carga hilo.js, que baja al último mensaje, y se sirve", (True, 200),
+      ('<script src="/assets/hilo.js" defer></script>' in page, req("GET", "/assets/hilo.js")[0]))
 check("un servicio sin web_files (#662): sin clip, sólo texto y required", (False, False, True),
       ('class="wc-adjuntar"' in page, "multipart/form-data" in page, 'maxlength="4096" required' in page))
 check("adjuntos.js se sirve", 200, req("GET", "/assets/adjuntos.js")[0])

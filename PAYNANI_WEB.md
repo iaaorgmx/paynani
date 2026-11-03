@@ -401,6 +401,14 @@ escribe con `paynani_lib/webchat/store.py`, sin un servicio aparte.
   nunca la consulta ni el cuerpo. `state/web.err.log` lleva los errores, con su
   tipo y sin su texto.
 
+### Al abrir una conversación (#680)
+
+Las conversaciones de WhatsApp, Telegram y SMS abren en el último mensaje, como Webchat.
+- **`assets/hilo.js`** baja al final al cargar. Como las fotos llegan después y hacen crecer la página, vuelve a bajar cada vez que termina de cargar una, durante 8 segundos, hasta que la persona toque, desplace o use el teclado.
+- **«Mensajes anteriores»** abre la página de los mensajes de antes, también al final. Ese final es justo el mensaje anterior al primero que ya se veía, así que la lectura sigue donde iba.
+- **Después de enviar** la página vuelve con `#responder`, y el final es el mensaje nuevo.
+- **Si la URL trae otra ancla**, la página no se mueve.
+
 ### WhatsApp
 
 Con WhatsApp activado en la instalación (PRD #550), el menú agrega «Mensajes de

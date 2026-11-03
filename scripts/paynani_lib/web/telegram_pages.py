@@ -336,7 +336,8 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
         bubbles.append(f'<li class="sms {css}"><div class="globo"><div class="de">{label}{_status(m)}{edited}</div>'
                        f'<div class="texto">{body}</div>{when}</div></li>')
     bubbles.append("</ol>")
-    return "\n".join(out + bubbles + [add, reply]) + "\n"
+    # #680: hilo.js baja al último mensaje al abrir, como Webchat.
+    return "\n".join(out + bubbles + [add, reply, '<script src="/assets/hilo.js" defer></script>']) + "\n"
 
 
 def _sent_files(ref: str, files: list) -> str:

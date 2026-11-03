@@ -332,7 +332,8 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
         bubbles.append(f'<li class="sms {css}"><div class="globo"><div class="de">{label}{_status(m)}</div>'
                        f'<div class="texto">{body}</div>{when}</div></li>')
     bubbles.append("</ol>")
-    return "\n".join(out + bubbles + [reply]) + "\n"
+    # #680: hilo.js baja al último mensaje al abrir, como Webchat.
+    return "\n".join(out + bubbles + [reply, '<script src="/assets/hilo.js" defer></script>']) + "\n"
 
 
 IMAGE_MIMES = ("image/jpeg", "image/png", "image/webp")

@@ -154,6 +154,8 @@ check("la hora de la lista en <time datetime>, corta (sin «hace …»), para ti
       bool(re.search(r'<span class="cuando"><time datetime="[0-9T:-]+Z" title="[^"]+" data-corto>[^<(]+</time></span>', page)))
 
 status, _, page = req("GET", "/messages/ver?n=" + quote(ANA, safe=""), cookie=cookie)
+check("#680: el hilo de SMS carga hilo.js, que baja al último mensaje", (200, True),
+      (status, '<script src="/assets/hilo.js" defer></script>' in page))
 check("la conversación de Ana: 200", 200, status)
 order_in_page = [m for m in re.findall(r'class="(sms sms-\w+|llamada)"', page)]
 check("en orden: recibido, agente, perdida, contestada, dueño",

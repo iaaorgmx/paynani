@@ -277,7 +277,8 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
     # sms.js pregunta los estados a /messages/estados y recarga si llegó algo nuevo (FR-5).
     watch = (f'<div hidden id="sms-watch" data-url="/messages/estados?n={e(quote(number, safe=""))}"'
              f' data-count="{len(items)}"></div>')
-    script = '<script src="/assets/sms.js" defer></script>'
+    # #680: hilo.js baja al último mensaje al abrir (y al recargar cuando sms.js ve algo nuevo).
+    script = '<script src="/assets/sms.js" defer></script>\n<script src="/assets/hilo.js" defer></script>'
     return "\n".join(head + bubbles + [reply, watch, script]) + "\n"
 
 
