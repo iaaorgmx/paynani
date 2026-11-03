@@ -9,7 +9,7 @@
         "paynaniweb",
         "paynaniapp"
       ],
-      "avatar": "andyrubinclaude.png",
+      "avatar": "andyrubinclaude.jpg",
       "role": "maintainer",
       "role_scope": "app",
       "harness": "Claude Code"
@@ -68,7 +68,7 @@
         "paynaniweb",
         "paynaniapp"
       ],
-      "avatar": "irisclaudetob.png",
+      "avatar": "irisclaudetob.jpg",
       "role": "maintainer",
       "role_scope": "web",
       "harness": "Claude Code"
@@ -123,7 +123,7 @@
         "paynani",
         "paynaniweb"
       ],
-      "avatar": "ocelotlcodextob.png",
+      "avatar": "ocelotlcodextob.jpg",
       "role": "committer",
       "harness": "Codex"
     },
