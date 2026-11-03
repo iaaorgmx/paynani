@@ -1794,7 +1794,7 @@ def make_handler(ctx: Context):
                               title_key="web.tg.messages_title", back="/telegram/messages")
                 return
             try:
-                thread_data = source.request("telegram.thread", thread=tid, limit=telegram_pages.PAGE, before=before)
+                thread_data = source.request("telegram.thread", thread=tid, limit=telegram_pages.THREAD_PAGE, before=before)
             except telegram_source.Failed as exc:
                 status = 404 if exc.code in ("not_found", "invalid") else 503
                 self._tg_page(status, back + f'<p class="lead">{html.escape(telegram_pages.error_text(exc.code, exc.fields))}</p>',
@@ -2182,7 +2182,7 @@ def make_handler(ctx: Context):
                 return
             number = (values or {}).get("n") or self.query.get("n", [""])[0]
             try:
-                thread_data = source.request("whatsapp.thread", number=number, limit=whatsapp_pages.PAGE,
+                thread_data = source.request("whatsapp.thread", number=number, limit=whatsapp_pages.THREAD_PAGE,
                                              before=before)
             except whatsapp_source.Failed as exc:
                 status = 404 if exc.code in ("not_found", "invalid") else 503

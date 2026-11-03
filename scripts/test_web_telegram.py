@@ -239,6 +239,14 @@ check("responder es la barra de Webchat (Q337): una línea, «Enviar» redondo y
 check("barra.js se sirve", 200, req("GET", "/assets/barra.js")[0])
 check("#680: el hilo carga hilo.js, que baja al último mensaje, y se sirve", (True, 200),
       ('<script src="/assets/hilo.js" defer></script>' in page, req("GET", "/assets/hilo.js")[0]))
+_seen: list = []
+_real = demo.request
+demo.request = lambda kind, **f: (_seen.append((kind, f.get("limit"))), _real(kind, **f))[1]
+req("GET", f"/telegram/messages/ver?t={roster_thread['thread']}&lang=es-MX", cookie=cookie)
+req("GET", "/telegram/messages?lang=es-MX", cookie=cookie)
+demo.request = _real
+check("#680: un hilo pide 20 mensajes; la lista de conversaciones sigue en 50", (20, 50),
+      (next((lim for k, lim in _seen if k == "telegram.thread"), None), next((lim for k, lim in _seen if k == "telegram.threads"), None)))
 check("un servicio sin web_files (#662): sin clip, sólo texto y required", (False, False, True),
       ('class="wc-adjuntar"' in page, "multipart/form-data" in page, 'maxlength="4096" required' in page))
 check("adjuntos.js se sirve", 200, req("GET", "/assets/adjuntos.js")[0])

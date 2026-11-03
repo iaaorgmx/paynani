@@ -25,7 +25,8 @@ from .shell import e, icon
 from .telegram_source import MAX_TEXT, STATES
 
 KINDS = ("image", "voice", "audio", "video", "document", "sticker", "location", "contact")
-PAGE = 50
+PAGE = 50                # conversaciones por página de la lista
+THREAD_PAGE = 20         # mensajes por página de un hilo (#680)
 RUNNING = ("running",)
 
 

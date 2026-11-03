@@ -5,6 +5,8 @@
 - **PaynaniWeb: las conversaciones de WhatsApp, Telegram y SMS abren en el último mensaje (#680).** Julian lo reportó desde su teléfono: antes abrían al inicio, en «Mensajes anteriores», y había que bajar.
   - **`assets/hilo.js`** baja al final, como ya hacía Webchat. Vuelve a bajar cuando terminan de cargar las fotos, que llegan después y hacen crecer la página, durante 8 segundos o hasta que la persona mueva la página.
   - **«Mensajes anteriores» y `#responder`** también abren al final; con cualquier otra ancla, la página no se mueve.
+  - **20 mensajes por conversación** (Julian, 6:57 AM CST, el mismo día): WhatsApp, Telegram, SMS y Webchat traen los 20 más recientes, antes 50. Las listas de conversaciones siguen de 50 en 50.
+  - **Los anteriores se cargan solos al llegar arriba con el scroll**, sin mover lo que se está leyendo. `hilo.js` pide la misma página que «Mensajes anteriores», y en Webchat se aprieta el botón. El enlace queda como respaldo sin JavaScript.
 
 - **PaynaniWeb: los documentos recibidos por WhatsApp y Telegram, con nombre, tamaño y descarga (#676, Metis[Q11] = A).** Lo pidió Julian, después de mandar el mismo PDF por los dos canales. Antes el hilo sólo decía «[document]». Ahora:
   - el hilo muestra el nombre y el tamaño, «plantako-QR.pdf · 1.6 MB», con un enlace para bajarlo;

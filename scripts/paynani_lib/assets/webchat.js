@@ -203,6 +203,15 @@
   connect();
   bottom();
 
+  // #680: al llegar arriba con el scroll, «Mensajes anteriores» se pide solo (el botón sigue
+  // ahí, y sin JavaScript no hay nada que cambie). Se empieza a observar ya con la página abajo.
+  if (antes && antesBtn && window.IntersectionObserver) {
+    var autoAntes = new IntersectionObserver(function (entries) {
+      if (entries[0].isIntersecting && !antes.hidden && !antesBtn.disabled) { antesBtn.click(); }
+    }, {rootMargin: "200px 0px 0px 0px"});
+    setTimeout(function () { autoAntes.observe(antes); }, 300);
+  }
+
   // El cuadro crece solo mientras se escribe, hasta su max-height (unas 6 líneas; Q321).
   function grow() {
     if (!texto) { return; }

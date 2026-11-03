@@ -191,7 +191,7 @@ status, _, page = req("GET", "/messages?desde=50", cookie=cookie)
 check("la segunda página: 12 y sin «Ver más»", (12, False),
       (len(re.findall(r'href="/messages/ver', page)), "desde=100" in page))
 
-# Una conversación de 60 mensajes: los 50 más recientes y «Ver anteriores».
+# Una conversación de 60 mensajes: los 20 más recientes y «Ver anteriores» (#680: antes 50).
 for n in range(60):
     st.save_inbox(mid(300 + n), {"text": f"mensaje {n}"})
 with open(journal, "a", encoding="utf-8") as fh:
@@ -199,10 +199,14 @@ with open(journal, "a", encoding="utf-8") as fh:
         fh.write(json.dumps({"event_type": "sms.received", "event_id": f"sms:d:y{n}", "sender": {"address": "+15550001111"},
                              "provider_id": f"sms:{mid(300 + n)}", "sent_at": f"2026-10-18T10:{n:02d}:00Z"}) + "\n")
 status, _, page = req("GET", "/messages/ver?n=%2B15550001111", cookie=cookie)
-check("60 mensajes: se ven los 50 más recientes (10 a 59) y «Ver anteriores»", (50, True, False, True),
-      (page.count('class="sms sms-received"'), "mensaje 59" in page, "mensaje 9<" in page, "desde=50" in page))
-status, _, page = req("GET", "/messages/ver?n=%2B15550001111&desde=50", cookie=cookie)
-check("«Ver anteriores»: los 10 primeros", (10, True), (page.count('class="sms sms-received"'), "mensaje 0<" in page))
+check("60 mensajes: se ven los 20 más recientes (40 a 59) y «Ver anteriores» (#680)", (20, True, False, True),
+      (page.count('class="sms sms-received"'), "mensaje 59" in page, "mensaje 39<" in page, "desde=20" in page))
+status, _, page = req("GET", "/messages/ver?n=%2B15550001111&desde=20", cookie=cookie)
+check("«Ver anteriores»: los 20 de antes (20 a 39) y otro «Ver anteriores»", (20, True, True),
+      (page.count('class="sms sms-received"'), "mensaje 20<" in page, "desde=40" in page))
+status, _, page = req("GET", "/messages/ver?n=%2B15550001111&desde=40", cookie=cookie)
+check("«Ver anteriores»: los 20 primeros, sin más", (20, True, False),
+      (page.count('class="sms sms-received"'), "mensaje 0<" in page, "desde=60" in page))
 
 httpd.shutdown()
 httpd.server_close()

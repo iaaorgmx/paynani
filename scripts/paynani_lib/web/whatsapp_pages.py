@@ -27,7 +27,8 @@ from .whatsapp_source import MAX_TEXT
 LINKED_STATES = ("connected", "connecting", "disconnected")
 UNLINKED_STATES = ("unlinked", "logged_out")
 KINDS = ("image", "audio", "video", "document", "sticker")
-PAGE = 50
+PAGE = 50                # conversaciones por página de la lista
+THREAD_PAGE = 20         # mensajes por página de un hilo (#680)
 
 
 def _th(key: str, **kw) -> str:
