@@ -133,10 +133,9 @@ rows = re.findall(r"<tr><td class=\"team-avatar\">.*?</tr>", page, re.S)
 check("una fila por miembro", len(TEAM), len(rows))
 names = [re.search(r'<td class="team-name"><a [^>]*>([^<]+)</a>', r).group(1) for r in rows]
 kinds = [re.search(r'class="team-tipo team-(human|agent)"', r).group(1) for r in rows]
-check("primero los humanos y después los agentes, cada grupo por nombre", True,
-      kinds == sorted(kinds, key=lambda k: k != "human")
-      and all(sorted(n for n, k in zip(names, kinds) if k == g) == [n for n, k in zip(names, kinds) if k == g]
-              for g in ("human", "agent")))
+check("todos en orden alfabético por nombre, humanos y agentes juntos (Julian)", sorted(names, key=str.casefold),
+      names)
+check("y la tabla trae humanos y agentes", {"human", "agent"}, set(kinds))
 check("cada avatar y cada nombre llevan a su perfil de GitHub, en otra pestaña", True, all(
     len(re.findall(r'<a href="https://github\.com/[A-Za-z0-9-]+" target="_blank" rel="noopener noreferrer"', r)) == 2
     for r in rows))

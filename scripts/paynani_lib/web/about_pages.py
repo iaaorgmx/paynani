@@ -103,14 +103,14 @@ def body(version: str, commit: str) -> str:
 
 def team() -> list[dict]:
     """Los miembros de team.json que se pueden mostrar: con tipo decidido (human o agent) y
-    un avatar que existe en assets/team/. Primero los humanos, después los agentes, cada
-    grupo por nombre."""
+    un avatar que existe en assets/team/. Todos en orden alfabético por nombre (Julian,
+    2026-11-03), humanos y agentes juntos."""
     try:
         members = json.loads(TEAM_FILE.read_text(encoding="utf-8"))["members"]
     except (OSError, ValueError, KeyError):
         return []
     shown = [m for m in members if m.get("type") in ("human", "agent") and avatar_path(m.get("avatar", ""))]
-    return sorted(shown, key=lambda m: (m["type"] != "human", str(m.get("name") or m["login"]).lower()))
+    return sorted(shown, key=lambda m: str(m.get("name") or m["login"]).casefold())
 
 
 def avatar_path(name: str) -> Path | None:
