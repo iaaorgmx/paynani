@@ -423,7 +423,9 @@ habla al servicio `paynani-whatsapp` por `state/whatsapp/control.sock`
   número fuera del roster sólo se ven el número y la hora, nunca el texto.
 - **Responder** sólo aparece en la conversación de un contacto del roster que ya
   escribió por WhatsApp, con WhatsApp conectado. No hay «Nuevo mensaje»: paynani nunca
-  escribe primero, ni el agente ni tú desde aquí.
+  escribe primero, ni el agente ni tú desde aquí. Es la barra de Webchat, igual que en
+  Telegram (#670): el cuadro de una línea que crece hasta unas 6 (`barra.js`) y «Enviar»
+  redondo, pegada abajo. Por ahora sólo manda texto; el clip llega con el núcleo de #670.
 
 ### Telegram
 
@@ -467,7 +469,7 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   marcado «no verificado», y la hora; el texto sólo con el Catch-All de Telegram
   activo.
 - **Contestar** usa la barra de Webchat (Q337): el cuadro de una línea, que crece hasta
-  unas 6 (`tg_barra.js`), y «Enviar» redondo, pegada abajo. Si el servicio anuncia
+  unas 6 (`barra.js`), y «Enviar» redondo, pegada abajo. Si el servicio anuncia
   `web_files` (#662), lleva el clip de Webchat («Foto», «Archivo»; `adjuntos.js`):
   - **El envío:** hasta 10 archivos y 20 MB por mensaje; el texto puede ir vacío. La web
     sube cada archivo con `telegram.uploads.save` y manda los `up_…` en

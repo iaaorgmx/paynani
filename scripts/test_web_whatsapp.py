@@ -401,6 +401,11 @@ status, _, page = req("GET", "/whatsapp/messages/ver?n=%2B15550100001&lang=es-MX
 check("un hilo del roster, en orden de hora, con el cuadro de responder", (200, True, True),
       (status, page.index("¿tienen mesa") < page.index("A nombre de Ana"), 'action="/whatsapp/messages/enviar"' in page))
 check("lo que mandó el agente lleva su estado", True, th("web.wa.by_agent") in page and th("web.wa.status.read") in page)
+check("responder es la barra de Webchat (#670 FR-1): una línea, «Enviar» redondo, sin el título ni la etiqueta visibles",
+      (True, True, True, True, True, True),
+      ('class="wc-escribir barra-escribir wa-escribir" id="responder"' in page, 'name="text" rows="1"' in page,
+       f'class="wc-enviar" aria-label="{th("web.wa.send")}"' in page, '<label for="wa-text" class="solo-lector">' in page,
+       f'placeholder="{th("web.wa.placeholder", name="Ana López")}"' in page, '<script src="/assets/barra.js" defer></script>' in page))
 check("la foto se muestra por su tipo, sin ruta ni contenido", True, th("web.wa.kind.image") in page)
 status, hdrs, _ = req("POST", "/whatsapp/messages/enviar", form={"csrf": csrf, "n": "+15550100001",
                                                                  "text": "Con gusto, <b>los esperamos</b>."},
