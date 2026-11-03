@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: menos tráfico por el túnel (Iris[Q3]).** Julian vio 160 MB en tres días en el túnel de una instalación. Casi todo eran fotos de Webchat que se volvían a bajar en cada visita, porque todo iba con `Cache-Control: no-store`. Ahora:
+  - las fotos y archivos de Webchat se guardan en el navegador (`private, max-age=31536000, immutable`): un `f_…` nunca cambia;
+  - el CSS y el JS van con `ETag` y `no-cache`, y responden `304` sin cuerpo si no cambiaron;
+  - las páginas y los datos siguen con `no-store`, igual que las fotos de WhatsApp y Telegram, que el servicio vuelve a autorizar en cada pedido.
+
 - **PaynaniWeb, «Mensajes de WhatsApp»: fotos y archivos con el clip (#670 FR-2 a FR-4).** La barra de contestar lleva el clip de Webchat y Telegram, con «Foto» y «Archivo»: hasta 10 archivos y 20 MB por mensaje, con el texto como pie de foto. Salen uno cada pocos segundos (FR-21). Las fotos que mandas se ven en el hilo (`/whatsapp/media?id=wo_…&i=<n>`); de los demás archivos queda el nombre. Usa el núcleo de #674 y sólo aparece si el servicio anuncia `web_files`. Avisa de los errores como en Telegram:
   - un envío parcial dice qué archivos ya salieron;
   - un corte por tiempo pide revisar la conversación antes de reenviar;

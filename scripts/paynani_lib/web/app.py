@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import hashlib
 import html
 import json
 import os
@@ -578,7 +579,12 @@ def make_handler(ctx: Context):
             self.send_response(code)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            # Una respuesta que trae su propio Cache-Control (los archivos de Webchat y
+            # los estáticos, Iris[Q3]) no lleva además el `no-store` de siempre.
+            own_cache = any(name.lower() == "cache-control" for name, _ in extra or ())
             for name, value in guard.SECURITY_HEADERS:
+                if own_cache and name == "Cache-Control":
+                    continue
                 if name == "Referrer-Policy":
                     # `no-referrer` (el de server.py) hace que el navegador mande
                     # `Origin: null` en un POST de la misma página, y entonces
@@ -762,8 +768,23 @@ def make_handler(ctx: Context):
             except OSError:
                 self._send(404, "text/plain; charset=UTF-8", b"")
                 return True
-            self._send(200, kind, data)
+            self._send_cached(kind, data)
             return True
+
+        def _send_cached(self, kind: str, data: bytes, private: bool = False):
+            """
+            El CSS y el JS (Iris[Q3]): el navegador los guarda pero pregunta cada vez
+            (`no-cache`) con su ETag, y si no cambiaron recibe un 304 sin cuerpo. Antes
+            cada página los bajaba completos (~1.3 MB por el túnel).
+            """
+            tag = '"' + hashlib.sha256(data).hexdigest()[:20] + '"'
+            cache = ("private, no-cache" if private else "no-cache")
+            headers = [("ETag", tag), ("Cache-Control", cache)]
+            wanted = [t.strip() for t in self.headers.get("If-None-Match", "").split(",")]
+            if tag in wanted or "*" in wanted:
+                self._send(304, kind, b"", headers)
+                return
+            self._send(200, kind, data, headers)
 
         def _same_origin(self) -> bool:
             """Un POST trae Origin (o Referer) de esta misma dirección. Junto con
@@ -840,7 +861,8 @@ def make_handler(ctx: Context):
             if self.route == DASHBOARD_JS:
                 # PRD #602 §5: el script del Dashboard también pide sesión (revisión de
                 # Ximena en #605), por eso no está en STATIC.
-                self._send(200, "application/javascript; charset=UTF-8", (ASSETS / "dashboard.js").read_bytes())
+                self._send_cached("application/javascript; charset=UTF-8", (ASSETS / "dashboard.js").read_bytes(),
+                                  private=True)
                 return
             if self.route.startswith("/email/"):
                 self._email()
@@ -1401,9 +1423,13 @@ def make_handler(ctx: Context):
                 return
             inline = mime in ("image/jpeg", "image/png", "image/webp", "image/gif")
             filename = quote(str(name or "archivo"), safe="")
+            # Iris[Q3]: un `f_…` nunca cambia de contenido, así que el navegador lo guarda
+            # (sólo en ese navegador, `private`) y no lo vuelve a bajar en cada visita.
+            # Antes, cada vez que se abría Webchat se bajaban otra vez todas las fotos.
             self._send(200, mime if inline else "application/octet-stream", data,
                        [("Content-Disposition", f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{filename}"),
-                        ("Content-Security-Policy", "default-src 'none'; sandbox")])
+                        ("Content-Security-Policy", "default-src 'none'; sandbox"),
+                        ("Cache-Control", "private, max-age=31536000, immutable")])
 
         def _webchat_socket(self):
             """

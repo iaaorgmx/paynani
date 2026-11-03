@@ -230,6 +230,25 @@ check("web.css: el celular usa :target sin JavaScript (FR-16)", True, ".lateral:
 check("web.css: el escritorio es el complemento exacto del celular, sin hueco entre 900 y 901 px", True,
       "@media not all and (max-width: 900px)" in css and "min-width: 901px" not in css)
 
+# ---- Iris[Q3]: el CSS y el JS con ETag; si no cambiaron, 304 sin cuerpo ----------------
+def _get(path, headers=None):
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+    c.request("GET", path, headers={"Host": HOST, **(headers or {})})
+    r = c.getresponse(); body = r.read(); c.close()
+    return r.status, r.headers, body
+
+
+_st, _h, _body = _get("/assets/web.css")
+_tag = _h.get("ETag") or ""
+check("web.css: 200 con ETag y un solo Cache-Control, no-cache (no no-store)", (200, True, ["no-cache"]),
+      (_st, _tag.startswith('"') and len(_tag) > 10, _h.get_all("Cache-Control")))
+_st, _h, _body = _get("/assets/web.css", {"If-None-Match": _tag})
+check("con el mismo ETag: 304 sin cuerpo", (304, b"", _tag), (_st, _body, _h.get("ETag")))
+_st, _h, _body = _get("/assets/web.css", {"If-None-Match": '"otro"'})
+check("con otro ETag: 200 completo", (200, True), (_st, len(_body) > 1000))
+_st, _h, _ = _get("/login")
+check("las páginas siguen sin caché (no-store)", True, "no-store" in (_h.get("Cache-Control") or ""))
+
 httpd.shutdown()
 httpd.server_close()
 print(f"\n{passed} passed, {failed} failed")
