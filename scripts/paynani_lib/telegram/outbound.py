@@ -46,6 +46,9 @@ MAX_CAPTION = 1024
 MAX_TOTAL = 8 * MAX_MESSAGE        # un send más largo se rechaza (`too_long`)
 MAX_UPLOAD = 50 * 1024 * 1024      # lo que deja subir la Bot API
 MAX_PHOTO = 10 * 1024 * 1024
+# #676: un documento recibido que PaynaniWeb deja descargar. En base64 por control.sock son
+# ~27 MB en una línea; la web pone el mismo tope (telegram_source.FILE_MAX_BYTES).
+FILE_MAX_BYTES = 20 * 1024 * 1024
 PHOTO_MIMES = ("image/jpeg", "image/png", "image/webp")
 TYPING_EVERY_S = 4.0
 TYPING_MAX_S = 120.0
@@ -568,6 +571,8 @@ class Outbound:
             media = m.get("media") or {}
             if media.get("path"):
                 item["media"] = {"mime": media.get("mime"), "bytes": media.get("bytes")}
+            if m.get("filename"):
+                item["filename"] = m["filename"]      # #676: el nombre de un documento
             out[t]["messages"].append(item)
         for s in self.store.sent():
             t = s.get("thread")
@@ -664,6 +669,46 @@ class Outbound:
         except OSError:
             raise _refused("not_found") from None
         return {"mime": media["mime"], "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
+
+    def file(self, msg: dict) -> dict:
+        """
+        #676: un documento recibido, para que PaynaniWeb lo deje descargar. Las reglas de
+        `image`: sólo de un mensaje que el hilo muestra hoy. Además, como `whatsapp.file`:
+        el archivo directamente dentro de media/, abierto sin seguir enlaces, regular y de
+        hasta FILE_MAX_BYTES. Todo lo que no se sirve da el mismo not_found.
+        """
+        ref = str(msg.get("ref") or "")
+        try:
+            data = self.store.inbox(ref) if self.store and ref.startswith("tg:") else None
+        except ValueError:
+            data = None
+        media = (data or {}).get("media") or {}
+        if not data or data.get("kind") != "document" or not media.get("path"):
+            raise _refused("not_found")
+        known, links = self._known()
+        visible = contacts.recognized_now(known, links, data.get("user", 0)) is not None or \
+            (data.get("catch_all") and self._catch_active())
+        if not visible:
+            raise _refused("not_found")
+        root = os.path.abspath(self.root / "media")
+        path = os.path.abspath(str(media["path"]))
+        if os.path.dirname(path) != root:
+            raise _refused("not_found")
+        try:
+            if stat.S_ISLNK(os.lstat(root).st_mode):
+                raise _refused("not_found")
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+        except OSError:
+            raise _refused("not_found") from None
+        with os.fdopen(fd, "rb") as fh:
+            info = os.fstat(fh.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > FILE_MAX_BYTES:
+                raise _refused("not_found")
+            body = fh.read(FILE_MAX_BYTES + 1)
+        if len(body) > FILE_MAX_BYTES:
+            raise _refused("not_found")
+        return {"name": str(data.get("filename") or ""), "mime": str(media.get("mime") or ""),
+                "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
 
     def _sent_image(self, ref: str, index) -> dict:
         """La copia de una foto que el dueño mandó desde la web (#662), si su hilo se ve hoy."""

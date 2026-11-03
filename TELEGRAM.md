@@ -196,6 +196,7 @@ servicio asigna y guarda en `chats.json`. Nunca es un id de Telegram.
 | `telegram.stream_open`, `telegram.stream_append`, `telegram.stream_close` | Respuesta por partes (FR-22) | terminal (`send --stream`) |
 | `telegram.draft` | Borrador de avance (FR-24) | terminal |
 | `telegram.image` | La foto de un mensaje recibido | web |
+| `telegram.file` | Un documento recibido, para descargarlo (#676) | web |
 | `telegram.watch` | Avisos sin pedirlos | web, pasarela |
 | `telegram.roster_candidate` | El id de alguien fuera del roster, para «Agregar al roster» (FR-15) | sólo web |
 | `telegram.token_check` | Prueba un token nuevo con `getMe` (FR-10 paso 1) | web, terminal |
@@ -362,6 +363,15 @@ Como `whatsapp.image` (#573): `{"ref": "tg:…"}` → `{"mime", "bytes", "data"}
 cada pedido con las reglas de FR-17, y cualquier rechazo es el mismo `not_found`.
 También `{"ref": "tgo:…", "index": 0}`: la foto número `index` (entero desde 0) que el
 dueño mandó desde la web (#662), mientras la persona siga en el roster.
+
+#### `telegram.file`
+
+Como `whatsapp.file` (#676): `{"ref": "tg:…"}` → `{"name", "mime", "bytes", "data"}`, sólo de un
+documento recibido (`kind: "document"`) de un mensaje que el hilo muestra hoy (FR-17).
+
+- El archivo tiene que estar directamente dentro de `media/`, abierto con `O_NOFOLLOW`, y ser regular de hasta 20 MB (`outbound.FILE_MAX_BYTES`).
+- Cualquier rechazo es el mismo `not_found`.
+- `telegram.thread` trae `filename` en los mensajes recibidos que lo tienen.
 
 #### `telegram.watch`
 

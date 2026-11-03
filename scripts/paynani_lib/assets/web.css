@@ -738,6 +738,10 @@ body.web-shell {
 /* Un archivo que mandó el dueño desde la web (#662): sólo el nombre, sin descarga. */
 .web-shell .tg-archivo { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; margin-bottom: 6px; border-radius: 10px; background: #ffffffaa; border: 1px solid var(--line); }
 .web-shell .tg-archivo svg { width: 18px; height: 18px; color: var(--accent); flex: none; }
+/* #676: un documento recibido se descarga desde la ficha. */
+.web-shell a.tg-archivo { color: inherit; text-decoration: none; }
+.web-shell a.tg-archivo:hover b, .web-shell a.tg-archivo:focus-visible b { text-decoration: underline; }
+.web-shell .tg-archivo small { color: var(--quiet); margin-left: 6px; }
 .web-shell .wc-adjuntar { position: relative; flex: none; }
 .web-shell .wc-adjuntar > summary { list-style: none; }
 .web-shell .wc-adjuntar > summary::-webkit-details-marker { display: none; }

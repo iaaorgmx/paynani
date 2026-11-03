@@ -2,6 +2,17 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: los documentos recibidos por WhatsApp y Telegram, con nombre, tamaño y descarga (#676, Metis[Q11] = A).** Lo pidió Julian, después de mandar el mismo PDF por los dos canales. Antes el hilo sólo decía «[document]». Ahora:
+  - el hilo muestra el nombre y el tamaño, «plantako-QR.pdf · 1.6 MB», con un enlace para bajarlo;
+  - sin nombre sigue saliendo el tipo, y de más de 20 MB queda el nombre sin enlace.
+  - **Núcleo:** `whatsapp.file` y `telegram.file` dan los bytes con las reglas de las fotos (#573):
+    - sólo de un mensaje que el hilo muestra;
+    - el archivo dentro de `media/`, sin enlaces simbólicos, regular y de hasta 20 MB;
+    - todo lo demás, el mismo `not_found`.
+
+    `telegram.thread` trae `filename`.
+  - **La web:** `/whatsapp/file` y `/telegram/file` responden siempre como descarga (`attachment` con el nombre limpio, `octet-stream`, `nosniff`, `no-store`, CSP `sandbox`).
+
 - **PaynaniWeb: menos tráfico por el túnel (Iris[Q3]).** Julian vio 160 MB en tres días en el túnel de una instalación. Casi todo eran fotos de Webchat que se volvían a bajar en cada visita, porque todo iba con `Cache-Control: no-store`. Ahora:
   - las fotos y archivos de Webchat se guardan en el navegador (`private, max-age=31536000, immutable`): un `f_…` nunca cambia;
   - el CSS y el JS van con `ETag` y `no-cache`, y responden `304` sin cuerpo si no cambiaron;

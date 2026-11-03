@@ -7,6 +7,9 @@ revisar. Por eso upgrade_plan.py reinicia los dos cuando cambia este archivo.
 from __future__ import annotations
 
 IMAGE_MAX_BYTES = 10 * 1024 * 1024
+# #676: un documento recibido que PaynaniWeb deja descargar. En base64 por control.sock son
+# ~27 MB en una línea; la web pone el mismo tope (whatsapp_source.FILE_MAX_BYTES).
+FILE_MAX_BYTES = 20 * 1024 * 1024
 
 
 def image_mime(head: bytes) -> str | None:

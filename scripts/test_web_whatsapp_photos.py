@@ -262,6 +262,64 @@ async def main() -> None:
         status, _, body = await call("GET", image_url(roster_photo), cookie=cookie, raw=True)
         check("vuelve al roster: se sirve otra vez", (200, JPEG), (status, body))
 
+        # --- #676: los documentos recibidos, con nombre, tamaño y descarga -----------------
+        PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+
+        async def document(sender, body, name, key, path=None, ext="pdf"):
+            if path is None:
+                sha = hashlib.sha256(body + os.urandom(8)).hexdigest()
+                path = state / "whatsapp" / "media" / f"{sha}.{ext}"
+                path.write_bytes(body)
+                os.chmod(path, 0o600)
+            media = {"path": str(path), "mime": "application/pdf", "bytes": len(body), "filename": name}
+            await svc.sup.request("fake.message", from_e164=sender, kind="document", text=None, media=media, key_id=key)
+            for _ in range(100):
+                for m in svc.store.received():
+                    if m.get("key_id") == key:
+                        return m["event_id"]
+                await asyncio.sleep(0.05)
+            raise AssertionError("no llegó " + key)
+
+        def file_url(mid):
+            return "/whatsapp/file?id=" + quote(mid, safe="")
+
+        doc = await document(NUM, PDF, "plantako-QR.pdf", "3EB0D001")
+        status, _, page = await call("GET", "/whatsapp/messages/ver?n=" + quote(NUM, safe=""), cookie=cookie)
+        check("#676: el documento en el hilo con su nombre, su tamaño y el enlace de descarga", (True, True, True),
+              ("<b>plantako-QR.pdf</b>" in page, f"<small>{len(PDF)} B</small>" in page,
+               f'<a class="tg-archivo" href="{file_url(doc)}" download>' in page))
+        status, hdrs, body = await call("GET", file_url(doc), cookie=cookie, raw=True)
+        check("#676: la descarga trae los mismos bytes, como archivo y nunca en la página",
+              (200, PDF, "application/octet-stream", True, "nosniff", True, True),
+              (status, body, hdrs.get("content-type"), hdrs.get("content-disposition", "").startswith("attachment;"),
+               hdrs.get("x-content-type-options"), "no-store" in hdrs.get("cache-control", ""),
+               "sandbox" in hdrs.get("content-security-policy", "")))
+        check("#676: el nombre va en filename*", True, "filename*=UTF-8''plantako-QR.pdf" in hdrs.get("content-disposition", ""))
+        evil = await document(NUM, PDF, 'malo"\r\n/../x.html', "3EB0D002")
+        status, hdrs, _ = await call("GET", file_url(evil), cookie=cookie, raw=True)
+        cd = hdrs.get("content-disposition", "")
+        plain = re.search(r'filename="([^"]*)"', cd)
+        check("#676: un nombre con comillas, salto de línea o / sale limpio",
+              (200, "malo____.._x.html", False, False),
+              (status, plain.group(1) if plain else None, "\r" in cd or "\n" in cd, "%2F" in cd or "/" in cd.split("''", 1)[-1]))
+        hidden_doc = await document(OTHER, PDF, "oculto.pdf", "3EB0D003")
+        status, _, body = await call("GET", file_url(hidden_doc), cookie=cookie, raw=True)
+        check("#676: de fuera del roster: el mismo 404", (404, nf_body), (status, body))
+        status, _, body = await call("GET", file_url("wa:15550009999:" + "0" * 64), cookie=cookie, raw=True)
+        check("#676: un id que no existe: 404", (404, nf_body), (status, body))
+        check("#676: un id mal formado: 404", 404, (await call("GET", "/whatsapp/file?id=../../etc/passwd", cookie=cookie, raw=True))[0])
+        outside_doc = state / "whatsapp" / "outbox" / ("b" * 64 + ".pdf")
+        outside_doc.write_bytes(PDF)
+        out = await document(NUM, PDF, "fuera.pdf", "3EB0D004", path=outside_doc)
+        check("#676: una ruta fuera de media/: 404", 404, (await call("GET", file_url(out), cookie=cookie, raw=True))[0])
+        target = state / "whatsapp" / "media" / ("c" * 64 + ".pdf")
+        target.write_bytes(PDF)
+        link = state / "whatsapp" / "media" / ("d" * 64 + ".pdf")
+        os.symlink(target, link)
+        linked = await document(NUM, PDF, "enlace.pdf", "3EB0D005", path=link)
+        check("#676: un enlace simbólico dentro de media/: 404", 404, (await call("GET", file_url(linked), cookie=cookie, raw=True))[0])
+        check("#676: una foto no se baja por /whatsapp/file", 404, (await call("GET", file_url(roster_photo), cookie=cookie, raw=True))[0])
+
         # --- sin sesión, sin WhatsApp, sin servicio ---------------------------------------
         status, _, body = await call("GET", image_url(roster_photo), raw=True)
         check("sin sesión: no se sirve la foto", (True, False), (status in (302, 303, 401, 403), body == JPEG))

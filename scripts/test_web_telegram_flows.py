@@ -28,7 +28,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -272,6 +272,32 @@ try:
     # El que salió lo borra el núcleo (aquí el falso no lo hace); el que no salió lo borra la web.
     check("un fallo definitivo borra el up_ que no salió (revisión de Metis en #666)", (2, False),
           (len(seen_ups), (state / "telegram" / "uploads" / seen_ups[-1]).exists() if seen_ups else None))
+
+    # #676: un documento recibido, con nombre, tamaño y descarga por /telegram/file.
+    api.private_message(ANA, document=(PDF, "menú del día.pdf", "application/pdf"), first_name="Ana")
+    st, _, page = req("GET", f"/telegram/messages/ver?t={ana['thread']}&lang=es-MX", cookie=ck)
+    page = until(lambda: (lambda p: p if "menú del día.pdf" in p else None)(
+        req("GET", f"/telegram/messages/ver?t={ana['thread']}&lang=es-MX", cookie=ck)[2])) or page
+    link = re.search(r'<a class="tg-archivo" href="(/telegram/file\?ref=tg[^"]+)" download>', page)
+    check("#676: el documento en el hilo con su nombre, su tamaño y el enlace de descarga", (True, True, True),
+          ("<b>menú del día.pdf</b>" in page, f"<small>{len(PDF)} B</small>" in page, bool(link)))
+    if link:
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+        c.request("GET", link.group(1).replace("&amp;", "&"), headers={"Host": "agente.test", "Cookie": ck})
+        r = c.getresponse(); body = r.read(); hh = {k.lower(): v for k, v in r.getheaders()}; c.close()
+        check("#676: la descarga trae los mismos bytes, como archivo, nosniff y no-store",
+              (200, PDF, "application/octet-stream", True, "nosniff", True),
+              (r.status, body, hh.get("content-type"), hh.get("content-disposition", "").startswith("attachment;"),
+               hh.get("x-content-type-options"), "no-store" in hh.get("cache-control", "")))
+        check("#676: el nombre en UTF-8 va en filename*", True,
+              "filename*=UTF-8''men%C3%BA%20del%20d%C3%ADa.pdf" in hh.get("content-disposition", ""))
+    api.private_message(PEDRO, document=(PDF, "oculto.pdf", "application/pdf"), first_name="Pedro")
+    hidden_ref = until(lambda: next((ref for ref in service.store.inbox_refs()
+                                     if (service.store.inbox(ref) or {}).get("filename") == "oculto.pdf"), None))
+    check("#676: el documento de Pedro (fuera del roster) da 404", (True, 404),
+          (bool(hidden_ref), req("GET", "/telegram/file?ref=" + quote(str(hidden_ref or ""), safe=""), cookie=ck)[0]))
+    check("#676: una ref inventada o mal formada: 404", (404, 404),
+          (req("GET", "/telegram/file?ref=tg%3Ainventada", cookie=ck)[0], req("GET", "/telegram/file?ref=../x", cookie=ck)[0]))
 
     st, _, page = req("GET", f"/telegram/messages/ver?t={pedro['thread']}&lang=es-MX", cookie=ck)
     check("Pedro: oculto, sin responder y con «Agregar al roster»", (200, True, False, True),

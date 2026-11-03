@@ -20,7 +20,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from .. import i18n
-from . import mail_pages
+from . import downloads, mail_pages
 from .shell import e, icon
 from .telegram_source import MAX_TEXT, STATES
 
@@ -319,6 +319,12 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
             # Lo que mandó el dueño desde la web (#662): las fotos por /telegram/media con
             # su índice, que vuelve a pedirle permiso al servicio; de un archivo, el nombre.
             body = _sent_files(str(m.get("ref") or ""), m["files"]) + (
+                f'<span class="wa-pie">{e(m.get("text") or "")}</span>' if m.get("text") else "")
+        elif m.get("kind") == "document" and not out_dir and m.get("filename") and (m.get("media") or {}):
+            # #676: el nombre y el tamaño, con la descarga por /telegram/file, que vuelve a
+            # pedirle permiso al servicio en cada pedido.
+            href = "/telegram/file?ref=" + quote(str(m.get("ref") or ""), safe="")
+            body = downloads.row(href, m["filename"], m["media"].get("bytes"), kind_label("document")) + (
                 f'<span class="wa-pie">{e(m.get("text") or "")}</span>' if m.get("text") else "")
         elif m.get("kind") and m.get("kind") != "text":
             caption = e(m.get("text") or "")
