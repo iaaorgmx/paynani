@@ -150,6 +150,7 @@ check("Iris[Q35]: Ares Claude-Tob, agente, en paynani", (True, True),
 check("sin la etiqueta «Tester» (Julian)", (False, False), ("Tester" in page, "team-rol" in page))
 metis = next(r for r in rows if "@metisclaudetob" in r)
 julian = next(r for r in rows if "@julianflores" in r)
+check("Julian: su fila trae paynani, PaynaniWeb y PaynaniApp", 3, julian.count('class="team-chip"'))
 check("debajo de «Agente de IA», el harness; un humano no lleva", (True, False),
       ('<small class="team-harness">Claude Code</small>' in metis, "team-harness" in julian))
 check("cada harness de team.json sale en su fila", sorted(m["harness"] for m in TEAM if m.get("harness")),

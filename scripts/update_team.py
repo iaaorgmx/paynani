@@ -15,7 +15,8 @@ Quién cuenta para cada proyecto, con los commits que GitHub liga a una cuenta:
 
 El nombre, el tipo (human o agent) y, de un agente, su harness (Claude
 Code, Codex, OpenCode, OpenClaw, Hermes Agent…) los decide una persona: una cuenta nueva entra con `type: "?"` y la prueba de la página falla hasta
-que alguien lo escriba en team.json. Alguien sin commits (Daniel y Ares, que apoyan con
+que alguien lo escriba en team.json. `extra_projects` suma proyectos a mano a los que
+salen de los commits (Julian pidió PaynaniWeb y PaynaniApp en su fila). Alguien sin commits (Daniel y Ares, que apoyan con
 pruebas reales, Iris[Q35]) se agrega a mano en team.json y el script lo conserva.
 """
 from __future__ import annotations
@@ -83,11 +84,15 @@ def main(check_only: bool) -> int:
         if login in SKIP:
             continue
         old = current.get(login, {})
+        # `extra_projects`: lo que una persona agregó a mano (Julian en su fila), además de los commits.
+        projects[login] |= set(old.get("extra_projects") or [])
         if not old:
             changes.append(f"nuevo: {login} (escribe su name y type en team.json)")
         member = {"login": login, "name": old.get("name") or login, "type": old.get("type") or "?",
                   "projects": [p for p in ("paynani", "paynaniweb", "paynaniapp") if p in projects[login]],
                   "avatar": old.get("avatar", "")}
+        if old.get("extra_projects"):
+            member["extra_projects"] = old["extra_projects"]
         if old.get("harness"):
             member["harness"] = old["harness"]   # dónde corre un agente: lo escribe una persona
         if old and old.get("projects") != member["projects"]:

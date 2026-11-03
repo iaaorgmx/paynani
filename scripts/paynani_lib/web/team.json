@@ -58,9 +58,15 @@
       "name": "Julian Flores",
       "type": "human",
       "projects": [
-        "paynani"
+        "paynani",
+        "paynaniweb",
+        "paynaniapp"
       ],
-      "avatar": "julianflores.jpg"
+      "avatar": "julianflores.jpg",
+      "extra_projects": [
+        "paynaniweb",
+        "paynaniapp"
+      ]
     },
     {
       "login": "lisabuffaytob",
