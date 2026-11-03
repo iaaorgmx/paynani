@@ -195,7 +195,8 @@ class Store:
             if rec.get("receipt"):
                 sid = by_key.get(rec.get("key_id", ""))
                 if sid and sid in out:
-                    out[sid]["status"] = rec["status"]
+                    if out[sid].get("status") != "partial":   # #670: el recibo de uno no tapa el resto
+                        out[sid]["status"] = rec["status"]
                     out[sid]["status_at"] = rec.get("at")
                 continue
             sid = rec.get("id")

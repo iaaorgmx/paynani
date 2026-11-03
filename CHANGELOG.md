@@ -4,6 +4,14 @@
 
 - **PaynaniWeb, «Mensajes de WhatsApp»: el cuadro de contestar es la barra de Telegram y Webchat (#670 FR-1).** Lo pidió Julian. Es una sola barra pegada abajo: el cuadro empieza en una línea y crece hasta unas 6 mientras se escribe, con el placeholder «Escríbele a <nombre>…», y «Enviar» es el botón redondo. El título «Responder» y la etiqueta «Mensaje» quedan para lectores de pantalla, y un segundo toque no manda el mensaje dos veces. Por ahora sólo texto: el clip llega con el núcleo de #670. `tg_barra.js` pasa a ser `barra.js`, la misma para las dos páginas.
 
+- **WhatsApp: el núcleo para mandar fotos y archivos desde PaynaniWeb (#670 FR-5 a FR-8).** Lo mismo que #665 hizo para Telegram, para que la web ponga el clip en «Mensajes de WhatsApp»:
+  - Las subidas de la web viven ahora en un módulo común, `paynani_lib/web_uploads.py`, con las mismas reglas: un `up_…` de 10 minutos y un solo uso, el tipo revisado por los bytes, 0700/0600 y hasta 20 pendientes. `paynani_lib.telegram.uploads` sigue funcionando igual, y WhatsApp usa `state/whatsapp/uploads/`.
+  - `whatsapp.send` acepta `uploads` del dueño, nunca junto con `file`: hasta 10 archivos y 20 MB, uno por `send` del puente, con el texto como pie del primero. Cada archivo cuenta para el tope de envío: entre uno y otro se espera el intervalo, y si hoy no caben todos no sale ninguno. Si falla uno, el error trae `sent_uploads` y el hilo lo marca `partial`.
+  - `whatsapp.thread` trae los archivos enviados (`files`, sin rutas), y `whatsapp.image` da las fotos enviadas con `{message_id, index}`.
+  - `whatsapp.status` anuncia `web_files: true`.
+
+  El clip en la web lo hace Iris en otro PR. `WHATSAPP_BRIDGE.md` §11; `test_whatsapp_uploads.py`.
+
 - **PaynaniWeb y la API con un teléfono «solo Webchat» (#671, PaynaniApp-Agentic#175).** Cuando el teléfono emparejado es la PaynaniApp sólo para Webchat:
   - **Dashboard:** la fila del teléfono dice «sólo Webchat, sin SMS», sin la batería. Con la app cerrada, la píldora queda gris («App cerrada») y no roja, porque no es un apagón. `/dashboard.json` da `app_closed`.
   - **«Mensajes de texto»:** «Nuevo SMS» y el cuadro de responder muestran que ese teléfono no manda SMS, en lugar de «Actualiza PaynaniApp».
