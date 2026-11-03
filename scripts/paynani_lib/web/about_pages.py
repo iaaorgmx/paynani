@@ -9,9 +9,15 @@ marco de shell.py.
   externos abren en otra pestaña con `rel="noopener noreferrer"`. «Reportar un problema»
   abre un issue nuevo en paynani con la versión ya escrita (Q276=A).
 - El estado de la instalación no va aquí: está en el Dashboard (Q277=A).
+- «Development team» (#686): un renglón de Créditos que abre `/about/team`, la tabla de
+  humanos y agentes con su avatar de GitHub. Los datos y los avatares son una copia
+  (`team.json`, `assets/team/`, `scripts/update_team.py`): la página no le pide nada a
+  GitHub (Iris[Q33] = A).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from urllib.parse import quote
 
 from .. import i18n
@@ -20,6 +26,12 @@ from .shell import e, icon
 
 REPO = "https://github.com/iaaorgmx/paynani"
 WEB = "https://iaa.org.mx"
+TEAM_FILE = Path(__file__).with_name("team.json")
+TEAM_DIR = Path(__file__).resolve().parents[1] / "assets" / "team"
+PROJECTS = ("paynani", "paynaniweb", "paynaniapp")
+# Iris[Q39] = A: los roles de opensource.guide («Leadership and Governance»), en GOVERNANCE.md.
+ROLES = ("maintainer", "committer", "contributor")
+SCOPES = ("lead", "core", "web", "app", "devops", "review")
 
 
 def _th(key: str, **kw) -> str:
@@ -39,11 +51,14 @@ def report_url(version: str, commit: str) -> str:
     return f"{REPO}/issues/new?body={quote(body, safe='')}"
 
 
-def _row(ico: str, title: str, detail: str, href: str = "") -> str:
+def _row(ico: str, title: str, detail: str, href: str = "", internal: bool = False) -> str:
     inner = (f'<span class="about-ico">{icon(ico)}</span>'
              f'<span class="about-txt"><b>{title}</b><small>{detail}</small></span>')
     if not href:
         return f'<li><div class="about-row">{inner}</div></li>'
+    if internal:
+        return (f'<li><a class="about-row" href="{e(href)}">{inner}'
+                f'<span class="about-flecha" aria-hidden="true">›</span></a></li>')
     return (f'<li><a class="about-row" href="{e(href)}" target="_blank" rel="noopener noreferrer">{inner}'
             f'<span class="about-flecha" aria-hidden="true">↗</span>'
             f'<span class="solo-lector">{_th("new_tab")}</span></a></li>')
@@ -78,8 +93,79 @@ def body(version: str, commit: str) -> str:
       _row("python", _th("built"), _th("built_detail")),
       _row("font", _th("logo_font"), _th("logo_font_detail")),
       _row("shapes", _th("icons"), _th("icons_detail")),
+      _row("roster", _th("team"), _th("team_detail"), "/about/team", internal=True),
   ])}
   <p class="about-copy">{_th("copyright")}</p>
 </div>
 <script src="/assets/about.js" defer></script>
 """
+
+
+# ---- Development team (#686) -------------------------------------------------------------
+
+def team() -> list[dict]:
+    """Los miembros de team.json que se pueden mostrar: con tipo decidido (human o agent) y
+    un avatar que existe en assets/team/. Todos en orden alfabético por nombre (Julian,
+    2026-11-03), humanos y agentes juntos."""
+    try:
+        members = json.loads(TEAM_FILE.read_text(encoding="utf-8"))["members"]
+    except (OSError, ValueError, KeyError):
+        return []
+    shown = [m for m in members if m.get("type") in ("human", "agent") and m.get("role") in ROLES
+             and avatar_path(m.get("avatar", ""))]
+    return sorted(shown, key=lambda m: str(m.get("name") or m["login"]).casefold())
+
+
+def avatar_path(name: str) -> Path | None:
+    """El archivo de un avatar de assets/team/, sólo con un nombre limpio (`login.png` o `.jpg`)."""
+    import re
+    if not re.fullmatch(r"[a-z0-9-]{1,39}\.(png|jpg)", name or ""):
+        return None
+    path = TEAM_DIR / name
+    return path if path.is_file() else None
+
+
+def team_assets() -> dict:
+    """Las entradas de STATIC para los avatares (`/assets/team/<archivo>`)."""
+    out = {}
+    for m in team():
+        kind = "image/png" if m["avatar"].endswith(".png") else "image/jpeg"
+        out[f"/assets/team/{m['avatar']}"] = (TEAM_DIR / m["avatar"], kind)
+    return out
+
+
+def team_body() -> str:
+    """La tabla: avatar y nombre (los dos llevan al perfil de GitHub), el @usuario, si es
+    humano o agente, y en qué proyectos colaboró. En el teléfono, cada fila es una tarjeta."""
+    rows = []
+    for m in team():
+        profile = f"https://github.com/{quote(m['login'], safe='')}"
+        name = e(m.get("name") or m["login"])
+        chips = "".join(f'<span class="team-chip">{_th("project_" + p)}</span>'
+                        for p in PROJECTS if p in (m.get("projects") or []))
+        kind = _th("type_" + m["type"])
+        # Julian: debajo de «Agente de IA», el harness donde corre (Claude Code, Codex…).
+        harness = (f'<small class="team-harness">{e(m["harness"])}</small>'
+                   if m["type"] == "agent" and m.get("harness") else "")
+        scope = (f'<small class="team-alcance">{_th("scope_" + m["role_scope"])}</small>'
+                 if m.get("role_scope") in SCOPES else "")
+        role = f'<td class="team-role"><span class="team-rol team-{m["role"]}">{_th("role_" + m["role"])}</span>{scope}</td>'
+        rows.append(
+            f'<tr><td class="team-avatar"><a href="{e(profile)}" target="_blank" rel="noopener noreferrer"'
+            f' title="{_th("profile", name=name)}">'
+            f'<img src="/assets/team/{e(m["avatar"])}" alt="{_th("avatar_alt", name=name)}" width="48" height="48"'
+            f' loading="lazy"></a></td>'
+            f'<td class="team-name"><a href="{e(profile)}" target="_blank" rel="noopener noreferrer">{name}</a>'
+            f'<span class="solo-lector"> {_th("new_tab")}</span><small>@{e(m["login"])}</small></td>'
+            f'<td class="team-type"><span class="team-tipo team-{m["type"]}">{kind}</span>{harness}</td>' + role +
+            f'<td class="team-projects">{chips}</td></tr>')
+    table = (f'<table class="team-tabla"><caption class="solo-lector">{_th("team")}</caption>'
+             f'<thead><tr><th scope="col"><span class="solo-lector">{_th("col_avatar")}</span></th>'
+             f'<th scope="col">{_th("col_name")}</th><th scope="col">{_th("col_type")}</th>'
+             f'<th scope="col">{_th("col_role")}</th>'
+             f'<th scope="col">{_th("col_projects")}</th></tr></thead>'
+             f'<tbody>{"".join(rows)}</tbody></table>') if rows else f'<p class="quiet">{_th("team_empty")}</p>'
+    return (f'<p class="volver"><a href="/about">← {_th("back")}</a></p>'
+            f'<p class="lead">{_th("team_lead")}</p>\n<div class="team">{table}</div>\n'
+            f'<p class="team-gob"><a href="{REPO}/blob/main/GOVERNANCE.md" target="_blank" rel="noopener noreferrer">'
+            f'{_th("governance")}</a><span class="solo-lector"> {_th("new_tab")}</span></p>\n')

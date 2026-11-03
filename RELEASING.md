@@ -37,6 +37,17 @@ printf '%s\n' "0.7.2" > VERSION
 hosts actualizan bien y su propio comando les dice, para siempre, que siguen
 atrasados. Las releases anteriores lo hacen en un commit llamado «Publica X».
 
+En el mismo PR, actualiza «Development team» de PaynaniWeb (#686):
+
+```bash
+python3 scripts/update_team.py
+```
+
+Necesita `gh` con acceso a iaaorgmx/PaynaniApp-Agentic. Si dice `nuevo: <login>`,
+escribe su `name` y su `type` (`human` o `agent`) en `scripts/paynani_lib/web/team.json`
+antes del PR; `test_web_about` falla mientras alguno tenga `type: "?"`. A nadie se le
+quita de la lista solo: eso lo decide una persona.
+
 ## 4. PR de release, revisado por alguien más
 
 Como cualquier otro cambio, por la regla de `AGENTS.md`. Pide explícitamente

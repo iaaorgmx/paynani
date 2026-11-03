@@ -1,0 +1,221 @@
+{
+  "members": [
+    {
+      "login": "adalovetob",
+      "name": "Ada Lovelace-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "adalovetob.png",
+      "harness": "Muse from Meta",
+      "role": "contributor"
+    },
+    {
+      "login": "andyrubinclaude",
+      "name": "Andy Rubin-Claude",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb",
+        "paynaniapp"
+      ],
+      "avatar": "andyrubinclaude.jpg",
+      "role": "maintainer",
+      "role_scope": "app",
+      "harness": "Claude Code"
+    },
+    {
+      "login": "aresclaudetob",
+      "name": "Ares Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "aresclaudetob.png",
+      "role": "contributor",
+      "harness": "Claude Code"
+    },
+    {
+      "login": "ateneabuffayhermes",
+      "name": "Atenea Buffay-Hermes",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "ateneabuffayhermes.png",
+      "role": "committer",
+      "harness": "Hermes Agent"
+    },
+    {
+      "login": "balamocodetob",
+      "name": "Balam Ocode-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb"
+      ],
+      "avatar": "balamocodetob.png",
+      "role": "committer",
+      "role_scope": "review",
+      "harness": "OpenCode"
+    },
+    {
+      "login": "EstebanRodriguezG",
+      "name": "Esteban Rodriguez",
+      "type": "human",
+      "projects": [
+        "paynaniapp"
+      ],
+      "avatar": "estebanrodriguezg.jpg",
+      "role": "contributor"
+    },
+    {
+      "login": "irisclaudetob",
+      "name": "Iris Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb",
+        "paynaniapp"
+      ],
+      "avatar": "irisclaudetob.jpg",
+      "role": "maintainer",
+      "role_scope": "web",
+      "harness": "Claude Code"
+    },
+    {
+      "login": "johnbravotob",
+      "name": "John Bravo-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniapp"
+      ],
+      "avatar": "johnbravotob.jpg",
+      "harness": "OpenClaw",
+      "role": "contributor"
+    },
+    {
+      "login": "julianflores",
+      "name": "Julian Flores",
+      "type": "human",
+      "projects": [
+        "paynani",
+        "paynaniweb",
+        "paynaniapp"
+      ],
+      "avatar": "julianflores.jpg",
+      "extra_projects": [
+        "paynaniweb",
+        "paynaniapp"
+      ],
+      "role": "maintainer",
+      "role_scope": "lead"
+    },
+    {
+      "login": "lisabuffaytob",
+      "name": "Lisa Buffay",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "lisabuffaytob.jpg",
+      "role": "contributor",
+      "harness": "OpenClaw"
+    },
+    {
+      "login": "metisclaudetob",
+      "name": "Metis Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb",
+        "paynaniapp"
+      ],
+      "avatar": "metisclaudetob.jpg",
+      "role": "maintainer",
+      "role_scope": "core",
+      "harness": "Claude Code"
+    },
+    {
+      "login": "ocelotlcodextob",
+      "name": "Ocelotl Codex-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb"
+      ],
+      "avatar": "ocelotlcodextob.jpg",
+      "role": "committer",
+      "harness": "Codex"
+    },
+    {
+      "login": "ximenasalazartob",
+      "name": "Ximena Salazar",
+      "type": "agent",
+      "projects": [
+        "paynani",
+        "paynaniweb",
+        "paynaniapp"
+      ],
+      "avatar": "ximenasalazartob.jpg",
+      "role": "committer",
+      "role_scope": "devops",
+      "harness": "OpenClaw"
+    },
+    {
+      "login": "xochitl-iaamx",
+      "name": "Xochitl",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "xochitl-iaamx.png",
+      "harness": "OpenClaw",
+      "role": "contributor"
+    },
+    {
+      "login": "zeusclaudetob",
+      "name": "Zeus Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynaniapp"
+      ],
+      "avatar": "zeusclaudetob.png",
+      "harness": "Claude Code",
+      "role": "contributor"
+    },
+    {
+      "login": "despana76",
+      "name": "David España",
+      "type": "human",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "despana76.png",
+      "role": "contributor"
+    },
+    {
+      "login": "dlibradosmbmx",
+      "name": "Daniel Librado",
+      "type": "human",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "dlibradosmbmx.jpg",
+      "role": "contributor"
+    },
+    {
+      "login": "edithclaudetob",
+      "name": "Edith Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "edithclaudetob.png",
+      "harness": "Claude Code",
+      "role": "contributor"
+    }
+  ]
+}
