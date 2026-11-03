@@ -20,7 +20,7 @@ from urllib.parse import quote
 
 from .. import i18n
 from ..sms import qr
-from . import mail_pages
+from . import downloads, mail_pages
 from .shell import e, icon
 from .whatsapp_source import MAX_TEXT
 
@@ -315,6 +315,13 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
             # Lo que mandó el dueño desde la web (#670 FR-4): las fotos por /whatsapp/media
             # con su índice, que vuelve a pedirle permiso al servicio; de un archivo, el nombre.
             body = _sent_files(str(m.get("id") or ""), m["files"]) + (
+                f'<span class="wa-pie">{e(m.get("text") or "")}</span>' if m.get("text") else "")
+        elif m.get("kind") == "document" and not out_dir and (m.get("media") or {}).get("filename"):
+            # #676: el nombre y el tamaño, con la descarga por /whatsapp/file, que vuelve a
+            # pedirle permiso al servicio en cada pedido.
+            media = m["media"]
+            href = "/whatsapp/file?id=" + quote(str(m.get("id") or ""), safe="")
+            body = downloads.row(href, media["filename"], media.get("bytes"), kind_label("document")) + (
                 f'<span class="wa-pie">{e(m.get("text") or "")}</span>' if m.get("text") else "")
         elif m.get("kind") and m.get("kind") != "text":
             caption = e(m.get("text") or "")

@@ -2,6 +2,17 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: los documentos recibidos por WhatsApp y Telegram, con nombre, tamaño y descarga (#676, Metis[Q11] = A).** Lo pidió Julian, después de mandar el mismo PDF por los dos canales. Antes el hilo sólo decía «[document]». Ahora:
+  - el hilo muestra el nombre y el tamaño, «plantako-QR.pdf · 1.6 MB», con un enlace para bajarlo;
+  - sin nombre sigue saliendo el tipo, y de más de 20 MB queda el nombre sin enlace.
+  - **Núcleo:** `whatsapp.file` y `telegram.file` dan los bytes con las reglas de las fotos (#573):
+    - sólo de un mensaje que el hilo muestra;
+    - el archivo dentro de `media/`, sin enlaces simbólicos, regular y de hasta 20 MB;
+    - todo lo demás, el mismo `not_found`.
+
+    `telegram.thread` trae `filename`.
+  - **La web:** `/whatsapp/file` y `/telegram/file` responden siempre como descarga (`attachment` con el nombre limpio, `octet-stream`, `nosniff`, `no-store`, CSP `sandbox`).
+
 - **PaynaniWeb, «Mensajes de WhatsApp»: fotos y archivos con el clip (#670 FR-2 a FR-4).** La barra de contestar lleva el clip de Webchat y Telegram, con «Foto» y «Archivo»: hasta 10 archivos y 20 MB por mensaje, con el texto como pie de foto. Salen uno cada pocos segundos (FR-21). Las fotos que mandas se ven en el hilo (`/whatsapp/media?id=wo_…&i=<n>`); de los demás archivos queda el nombre. Usa el núcleo de #674 y sólo aparece si el servicio anuncia `web_files`. Avisa de los errores como en Telegram:
   - un envío parcial dice qué archivos ya salieron;
   - un corte por tiempo pide revisar la conversación antes de reenviar;

@@ -1000,7 +1000,8 @@ class TelegramService(Outbound):
 # Los tipos de outbound.py (TG-4) y el método que los contesta.
 _OUT_TYPES = {"telegram.send": "send", "telegram.draft": "draft", "telegram.stream_open": "stream_open",
               "telegram.stream_append": "stream_append", "telegram.stream_close": "stream_close",
-              "telegram.threads": "threads", "telegram.thread": "thread", "telegram.image": "image"}
+              "telegram.threads": "threads", "telegram.thread": "thread", "telegram.image": "image",
+              "telegram.file": "file"}
 
 
 async def _write(writer: asyncio.StreamWriter, obj: dict) -> None:

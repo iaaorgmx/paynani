@@ -793,6 +793,29 @@ class WhatsAppService:
             raise Refused("not_found") from None
         return {"mime": mime, "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
 
+    def file(self, message_id: str) -> dict:
+        """
+        #676: un documento recibido, para que PaynaniWeb lo deje descargar. Las mismas
+        reglas que `image` (#573): sólo de un mensaje que el hilo mostraría (FR-16a),
+        recalculado en cada pedido, y el archivo dentro de media/ (`Store.read_file`).
+        Todo lo que no se sirve da el mismo not_found.
+        """
+        mid = str(message_id or "")
+        data = self.store.inbox(mid.rsplit(":", 1)[-1]) if mid.startswith("wa:") else None
+        if not data or data.get("event_id") != mid or data.get("kind") != "document":
+            raise Refused("not_found")
+        party = data.get("from_e164") or data.get("lid") or "?"
+        view = {"dir": "in", "catch_all": bool(data.get("catch_all"))}
+        if not self._visible(view, party in self._phones(), self._catch_all_active()):
+            raise Refused("not_found")
+        try:
+            body = self.store.read_file(data)
+        except LookupError:
+            raise Refused("not_found") from None
+        media = data.get("media") or {}
+        return {"name": str(media.get("filename") or ""), "mime": str(media.get("mime") or ""),
+                "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
+
     def _sent_image(self, sid: str, index) -> dict:
         """#670 FR-7: la copia de una foto que el dueño mandó desde la web, si el hilo se ve hoy."""
         if not isinstance(index, int) or isinstance(index, bool):
@@ -870,6 +893,8 @@ class WhatsAppService:
                                        msg.get("uploads"))
             elif kind == "whatsapp.image":
                 data = self.image(str(msg.get("message_id") or ""), msg.get("index", 0))
+            elif kind == "whatsapp.file":
+                data = self.file(str(msg.get("message_id") or ""))
             elif kind == "whatsapp.watch":
                 if writer is not None:
                     self.watchers.add(writer)

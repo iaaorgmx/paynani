@@ -37,7 +37,7 @@ from ..telegram import uploads as tg_uploads
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
 from . import about_strings, agent_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (about_pages, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (about_pages, downloads, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -861,10 +861,11 @@ def make_handler(ctx: Context):
                 self._sms_statuses()
                 return
             if self.route in ("/whatsapp", "/whatsapp/link/current", "/whatsapp/messages", "/whatsapp/messages/ver",
-                              "/whatsapp/media"):
+                              "/whatsapp/media", "/whatsapp/file"):
                 self._whatsapp_get()
                 return
-            if self.route in ("/telegram", "/telegram/messages", "/telegram/messages/ver", "/telegram/media"):
+            if self.route in ("/telegram", "/telegram/messages", "/telegram/messages/ver", "/telegram/media",
+                              "/telegram/file"):
                 self._telegram_get()
                 return
             if self.route in ("/roster", "/roster/editar", "/roster/quitar", "/roster/reglas"):
@@ -1682,6 +1683,10 @@ def make_handler(ctx: Context):
             if self.route == "/telegram/media":
                 self._telegram_image()
                 return
+            if self.route == "/telegram/file":
+                self._download(lambda: self.CTX.telegram().request("telegram.file", ref=self.query.get("ref", [""])[0]),
+                               TG_REF.match(self.query.get("ref", [""])[0]), telegram_source.Failed)
+                return
             if self.route == "/telegram":
                 done = self.query.get("ok", [""])[0]
                 notice = ""
@@ -2026,6 +2031,10 @@ def make_handler(ctx: Context):
             if self.route == "/whatsapp/media":
                 self._whatsapp_image()
                 return
+            if self.route == "/whatsapp/file":
+                self._download(lambda: self.CTX.whatsapp().request("whatsapp.file", message_id=self.query.get("id", [""])[0]),
+                               WA_MESSAGE_ID.match(self.query.get("id", [""])[0]), whatsapp_source.Failed)
+                return
             if self.route == "/whatsapp":
                 done = self.query.get("ok", [""])[0]
                 notice = i18n.t("web.wa.ok_" + done) if done in ("unlinked", "unlinked_local", "canceled") else ""
@@ -2047,6 +2056,34 @@ def make_handler(ctx: Context):
             self._wa_page(status_code, whatsapp_pages.account_body(status, self.session["csrf"], current=current,
                                                                   code=code_info, notice=notice, error=error,
                                                                   number=number))
+
+        def _download(self, ask, valid, failed):
+            """
+            GET /whatsapp/file?id=wa:… y /telegram/file?ref=tg:… (#676): un documento recibido.
+            El servicio decide en cada pedido y da los bytes; un id mal formado, uno que no
+            se puede mostrar, uno fuera de media/ o uno que no existe dan el mismo 404.
+            Siempre como descarga (`attachment`, octet-stream, nosniff, no-store).
+            """
+            not_found = (404, "text/plain; charset=UTF-8", b"")
+            if not valid:
+                self._send(*not_found)
+                return
+            try:
+                data = ask()
+            except failed as exc:
+                if exc.code in ("service_down", "unavailable"):
+                    self._send(503, "text/plain; charset=UTF-8", b"")
+                else:
+                    self._send(*not_found)
+                return
+            try:
+                body = base64.b64decode(str(data.get("data") or ""), validate=True)
+            except (ValueError, TypeError):
+                body = b""
+            if not body or len(body) > downloads.FILE_MAX_BYTES:
+                self._send(*not_found)
+                return
+            self._send(200, "application/octet-stream", body, downloads.headers(str(data.get("name") or "")))
 
         def _whatsapp_image(self):
             """

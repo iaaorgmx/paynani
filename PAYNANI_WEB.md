@@ -419,7 +419,8 @@ habla al servicio `paynani-whatsapp` por `state/whatsapp/control.sock`
   cancela la vinculación. **El código** se muestra una sola vez, en la respuesta que
   lo pidió; recargar ya no lo enseña. Ninguno de los dos se guarda.
 - **Las conversaciones**: lo que llegó, lo que mandó el agente con su estado y lo que
-  contestaste tú. Un archivo se muestra por su tipo («[foto]»), sin descargarlo. De un
+  contestaste tú. Una foto se ve en el globo; un documento, con su nombre, su tamaño y la
+  descarga por `/whatsapp/file` (#676); lo demás, por su tipo («[audio]»). De un
   número fuera del roster sólo se ven el número y la hora, nunca el texto.
 - **Responder** sólo aparece en la conversación de un contacto del roster que ya
   escribió por WhatsApp, con WhatsApp conectado. No hay «Nuevo mensaje»: paynani nunca
@@ -469,7 +470,8 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   terminar, te llega un correo con el bot nuevo, sin el token.
 - **Las conversaciones:** lo que llegó, lo que mandó el agente y lo que contestaste
   tú. Un mensaje editado lo dice, y una foto se ve en el globo (`/telegram/media`,
-  que se la pide al servicio cada vez). Un hilo se nombra por un id opaco (`t_…`),
+  que se la pide al servicio cada vez). Un documento sale con su nombre, su tamaño y la
+  descarga por `/telegram/file` (#676). Un hilo se nombra por un id opaco (`t_…`),
   nunca por un id de Telegram. De alguien fuera del roster se ven el nombre que dio,
   marcado «no verificado», y la hora; el texto sólo con el Catch-All de Telegram
   activo.
@@ -510,6 +512,7 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
 - Nunca se muestra un secreto: ni la contraseña de la web, ni la de una cuenta de
   correo, ni el `.env`. El formulario de agregar cuenta no devuelve la contraseña
   del correo cuando hay un error.
+- **Los documentos recibidos** por WhatsApp y Telegram (#676) se bajan siempre como archivo: `attachment` con el nombre limpio (sin `/`, `\\`, comillas ni saltos de línea, y con `filename*` en UTF-8), `application/octet-stream`, `nosniff`, `no-store` y `CSP sandbox`. Así un `.html` o un `.svg` que alguien mande no corre en el origen de PaynaniWeb. El servicio los da en cada pedido sólo si el mensaje se ve en el hilo, y nunca más de 20 MB.
 - Todo lo que viene de un correo, un SMS, el roster o las reglas se escapa antes de
   ir a la página. El HTML de un correo se muestra como texto, sin enlaces activos.
 

@@ -456,6 +456,7 @@ necesitan:
 | `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta), que el servicio valida siempre contra FR-22, sin importar `by`. La pasarela y la web nunca mandan `file`. La web manda en cambio `uploads` (#670, ver abajo) |
 | `whatsapp.watch` | Avisos sin pedirlos | Nuevo. Ver abajo |
 | `whatsapp.image` | La foto de un mensaje recibido, o de una que mandó el dueño desde la web, para PaynaniWeb | Nuevo (#573, #670). Ver abajo. La pasarela no lo anuncia ni lo reenvía |
+| `whatsapp.file` | Un documento recibido, para descargarlo desde PaynaniWeb | Nuevo (#676). Ver abajo. La pasarela no lo anuncia ni lo reenvía |
 
 ### Archivos desde PaynaniWeb: `uploads` (#670)
 
@@ -587,6 +588,22 @@ PaynaniWeb lo usa para mostrar en «WhatsApp messages» la foto de un mensaje re
   `sandbox`. Cualquier rechazo es el mismo 404; con el servicio caído, 503. La API de
   PaynaniWeb (WA-6) no da archivos.
 
+
+### `whatsapp.file` (#676)
+
+PaynaniWeb lo usa para descargar un documento recibido (`kind: "document"`):
+
+```json
+{"type": "whatsapp.file", "id": "q_…", "by": "web", "message_id": "wa:<cuenta>:<hash>"}
+{"type": "result", "ref": "q_…", "ok": true, "data": {"name": "menu.pdf", "mime": "application/pdf", "bytes": 1663857, "data": "<base64>"}}
+```
+
+- **Las mismas reglas que `whatsapp.image`:**
+  - sólo de un mensaje que el hilo mostraría (FR-16a), recalculado en cada pedido;
+  - el archivo directamente dentro de `state/whatsapp/media/`, abierto con `O_NOFOLLOW`, regular y con el tamaño revisado después de abrirlo.
+- **Hasta 20 MB** (`media.FILE_MAX_BYTES`): en base64 son unos 27 MB en una sola línea del socket. PaynaniWeb pone el mismo tope.
+- **Cualquier otra cosa da el mismo `not_found`:** un id que no existe, uno que no es documento, uno que no se mostraría, uno fuera de `media/`, un enlace o un archivo más grande.
+- `name` es el `filename` que trajo el mensaje. PaynaniWeb lo limpia antes de usarlo en `Content-Disposition`.
 ### `whatsapp.watch`
 
 ```json

@@ -20,7 +20,7 @@ import stat
 import time
 from pathlib import Path
 
-from .media import IMAGE_MAX_BYTES, image_mime  # #573, compartido con PaynaniWeb
+from .media import FILE_MAX_BYTES, IMAGE_MAX_BYTES, image_mime  # #573 y #676, compartidos con PaynaniWeb
 
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 # Un archivo de media/ como lo guarda el puente: su sha256 y una extensión corta.
@@ -138,13 +138,13 @@ class Store:
         data["media"] = dict(data["media"], path=None, sha256=None, skipped="hidden")
         self.save_inbox(message_hash, data)
 
-    def read_image(self, data: dict) -> tuple[bytes, str]:
+    def _read_media(self, data: dict, limit: int) -> bytes:
         """
-        #573: los bytes de la foto de un mensaje recibido. La ruta guardada no se confía:
-        tiene que ser un archivo con nombre de media/ directamente dentro de media/, se
-        abre sin seguir enlaces simbólicos, tiene que ser un archivo regular de hasta
-        IMAGE_MAX_BYTES, y el tipo sale de sus primeros bytes. Cualquier otra cosa es
-        LookupError, y quien llama responde lo mismo que si no existiera.
+        Los bytes del archivo de un mensaje recibido (#573, #676). La ruta guardada no se
+        confía: tiene que ser un archivo con nombre de media/ directamente dentro de
+        media/, se abre sin seguir enlaces simbólicos y tiene que ser un archivo regular de
+        hasta `limit`. Cualquier otra cosa es LookupError, y quien llama responde lo mismo
+        que si no existiera.
         """
         raw_path = (data.get("media") or {}).get("path")
         if not isinstance(raw_path, str) or not raw_path:
@@ -162,15 +162,24 @@ class Store:
             raise LookupError("no se abre") from None
         with os.fdopen(fd, "rb") as fh:
             info = os.fstat(fh.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_size > IMAGE_MAX_BYTES:
+            if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
                 raise LookupError("no es un archivo regular o es grande")
-            body = fh.read(IMAGE_MAX_BYTES + 1)
-        if len(body) > IMAGE_MAX_BYTES:
+            body = fh.read(limit + 1)
+        if len(body) > limit:
             raise LookupError("creció al leerlo")
+        return body
+
+    def read_image(self, data: dict) -> tuple[bytes, str]:
+        """#573: la foto de un mensaje recibido; el tipo sale de sus primeros bytes."""
+        body = self._read_media(data, IMAGE_MAX_BYTES)
         mime = image_mime(body[:16])
         if mime is None:
             raise LookupError("no es una imagen")
         return body, mime
+
+    def read_file(self, data: dict) -> bytes:
+        """#676: un documento recibido, de hasta FILE_MAX_BYTES, con las mismas reglas."""
+        return self._read_media(data, FILE_MAX_BYTES)
 
     # --- enviados (FR-23) ---------------------------------------------------------
     def new_sent_id(self) -> str:
