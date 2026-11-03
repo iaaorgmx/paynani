@@ -32,7 +32,7 @@ CORE = "iaaorgmx/paynani"
 APP = ("iaaorgmx/PaynaniApp-Agentic", "iaaorgmx/PaynaniApp")
 WEB_PATHS = ("scripts/paynani_lib/web", "scripts/paynani_lib/assets", "PAYNANI_WEB.md")
 SKIP = {"iaaorgmx"}            # la cuenta de la organización no es una persona
-SIZE = 96
+SIZE = 96                      # lo que se pide; los identicons de GitHub llegan de 420 px igual (Metis en #687)
 
 
 def gh_json(path: str) -> list:
