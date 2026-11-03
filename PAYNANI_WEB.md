@@ -515,6 +515,11 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
 - **Los documentos recibidos** por WhatsApp y Telegram (#676) se bajan siempre como archivo: `attachment` con el nombre limpio (sin `/`, `\\`, comillas ni saltos de línea, y con `filename*` en UTF-8), `application/octet-stream`, `nosniff`, `no-store` y `CSP sandbox`. Así un `.html` o un `.svg` que alguien mande no corre en el origen de PaynaniWeb. El servicio los da en cada pedido sólo si el mensaje se ve en el hilo, y nunca más de 20 MB.
 - Todo lo que viene de un correo, un SMS, el roster o las reglas se escapa antes de
   ir a la página. El HTML de un correo se muestra como texto, sin enlaces activos.
+- **La caché del navegador (Iris[Q3]):**
+  - Las páginas y los datos van con `Cache-Control: no-store`: el navegador no guarda nada.
+  - El CSS y el JS van con `no-cache` y un `ETag`, así que el navegador pregunta cada vez y recibe `304` sin cuerpo si no cambiaron.
+  - Las fotos y archivos de Webchat (`/webchat/file?ref=f_…`) van con `private, max-age=31536000, immutable`: un `f_…` nunca cambia de contenido, así que se bajan una sola vez por navegador y no en cada visita.
+  - Las fotos de WhatsApp y Telegram siguen con `no-store`, porque el servicio vuelve a decidir en cada pedido si se pueden ver (FR-16a, FR-17).
 
 ## Problemas
 

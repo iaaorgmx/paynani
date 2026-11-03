@@ -227,10 +227,17 @@ check("la página muestra la conversación: el texto escapado y el nombre del ag
 # ---- Los adjuntos ------------------------------------------------------------------
 photo, pdf = msg["files"][0]["ref"], msg["files"][1]["ref"]
 status, hdrs, data = req("GET", f"/webchat/file?ref={photo}", cookie=cookie)
-check("la foto: inline como image/png, en sandbox y sin caché", (200, "image/png", True, True, PNG),
+check("la foto: inline como image/png, en sandbox", (200, "image/png", True, True, PNG),
       (status, hdrs.get("content-type"), hdrs.get("content-disposition", "").startswith("inline"),
        "sandbox" in hdrs.get("content-security-policy", ""), data))
 check("con nosniff", "nosniff", hdrs.get("x-content-type-options"))
+# Iris[Q3]: un f_… no cambia nunca; el navegador lo guarda y no lo vuelve a bajar en cada
+# visita (antes, cada vez que se abría Webchat, todas las fotos otra vez por el túnel).
+_c = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+_c.request("GET", f"/webchat/file?ref={photo}", headers={"Host": HOST, "Cookie": cookie})
+_r = _c.getresponse(); _r.read(); _cache = _r.headers.get_all("Cache-Control") or []; _c.close()
+check("la foto se guarda en el navegador: un solo Cache-Control, privado, de un año e inmutable",
+      ["private, max-age=31536000, immutable"], _cache)
 status, hdrs, _ = req("GET", f"/webchat/file?ref={pdf}", cookie=cookie)
 check("el PDF: como descarga (attachment) y octet-stream, con su nombre", (200, "application/octet-stream", True),
       (status, hdrs.get("content-type"), hdrs.get("content-disposition", "").startswith("attachment; filename*=UTF-8''lista.pdf")))
