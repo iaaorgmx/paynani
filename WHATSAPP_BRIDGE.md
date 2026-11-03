@@ -446,16 +446,53 @@ necesitan:
 
 | `type` | Qué hace | Diferencia con §12 |
 |---|---|---|
-| `whatsapp.status` | Estado | Igual |
+| `whatsapp.status` | Estado | Trae `web_files: true` (#670): `whatsapp.send` acepta `uploads` de PaynaniWeb. Sin el campo, la web deja la barra sólo con texto |
 | `whatsapp.link` | Empieza a vincular | Acepta `mode: "qr"` además de `"code"`, y el `result` trae `link_id` (ver abajo) |
 | `whatsapp.link_current` | El QR o código vigente de una vinculación | Nuevo. Pide `link_id` |
 | `whatsapp.link_cancel` | Cancela | Igual |
 | `whatsapp.unlink` | Desvincula | Igual |
 | `whatsapp.threads` | Hilos | Igual |
 | `whatsapp.thread` | Un hilo | Igual |
-| `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta), que el servicio valida siempre contra FR-22, sin importar `by`. La pasarela y la web no aceptan archivos de sus propios clientes, así que nunca mandan `file` |
+| `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta), que el servicio valida siempre contra FR-22, sin importar `by`. La pasarela y la web nunca mandan `file`. La web manda en cambio `uploads` (#670, ver abajo) |
 | `whatsapp.watch` | Avisos sin pedirlos | Nuevo. Ver abajo |
-| `whatsapp.image` | La foto de un mensaje recibido, para PaynaniWeb | Nuevo (#573). Ver abajo. La pasarela no lo anuncia ni lo reenvía |
+| `whatsapp.image` | La foto de un mensaje recibido, o de una que mandó el dueño desde la web, para PaynaniWeb | Nuevo (#573, #670). Ver abajo. La pasarela no lo anuncia ni lo reenvía |
+
+### Archivos desde PaynaniWeb: `uploads` (#670)
+
+Igual que en Telegram (#662, `TELEGRAM.md`): la web no elige rutas. Sube cada archivo con
+`paynani_lib.web_uploads.save(state/whatsapp, nombre, bytes)`, en su propio proceso, y
+recibe un `up_…`. Se guarda en `state/whatsapp/uploads/` (0700/0600), vale 10 minutos y
+una sola vez, y el tipo se revisa por los bytes con las reglas de Webchat (fotos JPEG,
+PNG, WebP y GIF; PDF, TXT, CSV, DOCX, XLSX y ZIP). Hasta 20 pendientes.
+
+```json
+{"type": "whatsapp.send", "id": "q_…", "by": "web", "number": "+52…", "text": "el menú de hoy",
+ "uploads": ["up_…", "up_…"]}
+```
+
+- Sólo el dueño (`by` web o `phone:…`), y nunca junto con `file`: si no, `invalid` con
+  `field: "uploads"`.
+- Hasta 10 archivos y 20 MB entre todos (`too_many`, `too_big`). Un `up_` que no existe,
+  venció, se repite o ya está saliendo en otro envío da `bad_upload`.
+- Un `send` del puente por archivo, en orden, con el texto como pie del primero.
+- Cada archivo cuenta para FR-21. Entre uno y otro el servicio espera el intervalo, no lo
+  rechaza: 10 archivos con 1 envío cada 3 s tardan unos 30 s. Si hoy no caben todos,
+  `rate_limited` y no sale ninguno. Si se acaban 150 s antes de mandarlos todos, `timeout`.
+- Cada `up_` se borra en cuanto sale. Si falla uno, el error del puente trae
+  `sent_uploads` con los que ya salieron; los demás quedan para reintentar hasta que
+  venzan. El hilo marca el envío `partial`.
+
+`whatsapp.thread` trae, en lo enviado, `files: [{name, kind, size, media?}]`, sin rutas.
+`media` (`mime`, `bytes`) sólo va en las fotos, que el servicio copia a `media/`. La web
+las pide con `whatsapp.image` y su índice:
+
+```json
+{"type": "whatsapp.image", "id": "q_…", "by": "web", "message_id": "wo_…", "index": 0}
+```
+
+Como con las recibidas (#573), se decide en cada pedido: si el contacto ya no está en
+el roster, `not_found`. Lo demás (un índice fuera de rango, un archivo que no es foto)
+también da `not_found`.
 
 ### Vincular: `link_id` y `whatsapp.link_current`
 

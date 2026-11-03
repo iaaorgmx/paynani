@@ -69,6 +69,8 @@ class Fake:
         self.hung = False
         self.silent_link = False
         self.quiet_logout = False
+        self.sends: list[dict] = []          # #670: lo que salió, para fake.sends
+        self.fail_after: int | None = None   # #670: cuántos `send` más salen antes de fallar
 
     # --- estado ---
     def creds(self) -> Path:
@@ -192,8 +194,15 @@ class Fake:
                 return fail(ref, "not_allowed", "no es un archivo regular")
         elif not text:
             return fail(ref, "missing_field", field="text")
+        if self.fail_after is not None:
+            if self.fail_after <= 0:
+                return fail(ref, "send_failed", "fake.fail_after")
+            self.fail_after -= 1
         key = "3EB0" + secrets.token_hex(8).upper()
         chat = to[1:] + "@s.whatsapp.net"
+        self.sends.append({"to": to, "text": text, "key_id": key,
+                           "file": {"mime": f.get("mime"), "filename": f.get("filename"),
+                                    "size": Path(f["path"]).stat().st_size} if f else None})
         result(ref, {"key_id": key, "chat": chat, "sent_at": iso()})
         out({"type": "receipt", "key_id": key, "chat": chat, "status": "server", "at": iso()})
 
@@ -241,6 +250,16 @@ class Fake:
              "chat": jid, "from": {"e164": e164, "jid": jid, "lid": lid},
              "push_name": msg.get("push_name"), "sent_at": msg.get("sent_at") or iso(),
              "kind": msg.get("kind") or "text", "text": msg.get("text"), "media": msg.get("media")})
+        result(ref)
+
+    def do_fake_sends(self, ref, msg) -> None:
+        """#670: lo que salió por `send` (sin los bytes de los archivos)."""
+        result(ref, {"sends": self.sends})
+
+    def do_fake_fail_after(self, ref, msg) -> None:
+        """#670: deja salir `n` envíos más y falla los siguientes; sin `n`, vuelve a mandar todo."""
+        n = msg.get("n")
+        self.fail_after = n if isinstance(n, int) else None
         result(ref)
 
     def do_fake_call(self, ref, msg) -> None:
