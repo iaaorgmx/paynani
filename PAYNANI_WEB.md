@@ -462,6 +462,14 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   con el bot, sin el token. Con un token ya puesto pero desactivado, la página no muestra
   el formulario: sólo pide `paynani telegram enable` (#641). La página no enlaza a
   «Mensajes de Telegram», que sin bot es un 404.
+- **Tu usuario de Telegram** (#682), en el mismo formulario y obligatorio: tu `@usuario` o
+  tu id numérico. Se guarda en la columna Telegram de tu fila del roster (la del correo de
+  la cuenta de la web; si no está, la del dueño), con `roster.save`, que crea la columna si
+  falta. Así el bot te contesta desde el primer mensaje; sin esto, tus mensajes llegaban
+  como «no verificado» y parecía que el canal no funcionaba. Si ya está en tu fila, el
+  campo viene lleno. Antes de escribir nada se revisa que tenga la forma de Telegram y que
+  no sea de otra fila. Si después el roster no se puede escribir, el bot ya quedó: la
+  página y el correo lo dicen, y se agrega desde Roster.
 - **La cuenta** (`/telegram` con bot): el estado del servicio, el `@usuario` del bot, desde
   cuándo funciona, la última consulta a Telegram y cuántos mensajes llegaron y
   salieron hoy. Si otro programa lee el mismo bot o tiene un webhook, o si Telegram
