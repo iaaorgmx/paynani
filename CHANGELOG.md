@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: la configuración inicial de Telegram pide tu usuario de Telegram y lo guarda en el roster (#682).** Julian configuró el bot y sus primeros mensajes llegaron como «no verificado», porque su fila no tenía Telegram: desde el teléfono parecía que el canal no funcionaba.
+  - El formulario de `/telegram` trae «Tu usuario de Telegram», obligatorio (Iris[Q25] = A), y se guarda tal cual en la columna Telegram de la fila del dueño. La columna se crea si falta.
+  - Un valor sin la forma de Telegram, o que ya es de otra fila, se rechaza antes de escribir nada.
+  - La página y el correo dicen «escríbele a @bot». Si el roster no se pudo escribir, el bot queda y los dos lo dicen.
+
 - **PaynaniWeb: las conversaciones de WhatsApp, Telegram y SMS abren en el último mensaje (#680).** Julian lo reportó desde su teléfono: antes abrían al inicio, en «Mensajes anteriores», y había que bajar.
   - **`assets/hilo.js`** baja al final, como ya hacía Webchat. Vuelve a bajar cuando terminan de cargar las fotos, que llegan después y hacen crecer la página, durante 8 segundos o hasta que la persona mueva la página.
   - **«Mensajes anteriores» y `#responder`** también abren al final; con cualquier otra ancla, la página no se mueve.

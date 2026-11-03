@@ -1730,6 +1730,11 @@ def make_handler(ctx: Context):
                     if not bot:
                         bot = self.CTX.telegram().status().get("bot_username") or "?"
                     notice = i18n.t(f"web.tg.{done}", bot=bot)
+                    if done.startswith("setup"):
+                        # #682: si la fila del dueño quedó con su Telegram, que le escriba al bot.
+                        failed = self.query.get("roster", [""])[0] == "failed"
+                        notice += " " + i18n.t("web.tg.setup.owner_failed" if failed else "web.tg.setup.owner_ok",
+                                               bot=bot)
                 self._telegram_bot(notice=notice)
                 return
             self._telegram_messages()
@@ -1982,10 +1987,55 @@ def make_handler(ctx: Context):
             self._telegram_bot(error=i18n.t("web.tg.rollback", reason=str(data.get("reason") or "?")), code=409)
 
         # ---- La configuración inicial de Telegram (#635, Q279 y Q281 a Q283) -------
-        def _telegram_setup_page(self, *, error: str = "", username: str = "", code: int = 200):
+        def _telegram_setup_page(self, *, error: str = "", username: str = "", owner_telegram: str | None = None,
+                                 code: int = 200):
             """GET /telegram sin bot: el formulario de la cuenta. El token nunca vuelve a la
-            página; el usuario del bot sí, para no tener que escribirlo otra vez."""
-            self._tg_page(code, telegram_pages.setup_body(self.session["csrf"], error=error, username=username))
+            página; el usuario del bot sí, para no tener que escribirlo otra vez. El Telegram
+            del dueño viene de su fila del roster si ya tiene uno (#682)."""
+            if owner_telegram is None:
+                member, _ = self._tg_owner_row()
+                owner_telegram = (member or {}).get("telegram", "")
+            self._tg_page(code, telegram_pages.setup_body(self.session["csrf"], error=error, username=username,
+                                                          owner_telegram=owner_telegram))
+
+        def _tg_owner_row(self) -> tuple[dict | None, str]:
+            """(la fila del dueño en el roster principal, su `etag`). La del correo de la
+            cuenta de la web; si no está, la del dueño (la primera Human). None si no hay."""
+            import roster as roster_mod
+            listing = self._rq("roster.list", account=None)
+            data = listing.get("data") or {}
+            members = data.get("members") or []
+            mine = roster_mod.normalise(str((self.user or {}).get("email") or ""))
+            member = (next((m for m in members if mine and roster_mod.normalise(m.get("email", "")) == mine), None)
+                      or next((m for m in members if m.get("owner")), None))
+            return member, str(data.get("etag") or "")
+
+        def _tg_owner_problem(self, value: str, member: dict | None) -> str:
+            """Por qué no se puede guardar `value` en la fila del dueño (#682), o "". Se revisa
+            antes de setup.initial para que, si falla, no se escriba nada."""
+            import roster as roster_mod
+            wanted = roster_mod.telegram_value(value)
+            if wanted is None:
+                return i18n.t("web.tg.setup.err.owner_invalid")
+            if member is None:
+                return i18n.t("web.tg.setup.err.owner_row")
+            listing = self._rq("roster.list", account=None)
+            for other in (listing.get("data") or {}).get("members") or []:
+                if other["row"] != member["row"] and roster_mod.telegram_value(other.get("telegram", "")) == wanted:
+                    return i18n.t("web.tg.setup.err.owner_taken", name=other.get("name") or "?")
+            return ""
+
+        def _tg_owner_save(self, value: str, member: dict, etag: str) -> bool:
+            """Guarda `value` en la columna Telegram de la fila del dueño, con `roster.save`
+            como la página del roster (crea la columna si falta, Q269). Si ya lo tenía, nada."""
+            import roster as roster_mod
+            if roster_mod.telegram_value(member.get("telegram", "")) == roster_mod.telegram_value(value):
+                return True
+            fields = {"name": member.get("name", ""), "email": member.get("email", ""), "type": member.get("type", ""),
+                      "github": member.get("github", ""), "phones": list(member.get("phones") or []),
+                      "telegram": value}
+            res = self._rq("roster.save", account=None, row=member["row"], member=fields, etag=etag)
+            return res.get("type") == "result"
 
         def _telegram_setup(self, post: dict):
             """
@@ -2001,10 +2051,18 @@ def make_handler(ctx: Context):
                 self._redirect("/telegram")
                 return
             username = post.get("bot_username", "").strip()[:40]
+            owner_tg = post.get("owner_telegram", "").strip()[:64]
             password = post.get("password", "")[:users.MAX_PASSWORD]
             problem = self._check_current(password) if password else i18n.th("web.tg.err.password")
             if problem:
-                self._telegram_setup_page(error=problem, username=username, code=403 if password else 400)
+                self._telegram_setup_page(error=problem, username=username, owner_telegram=owner_tg,
+                                          code=403 if password else 400)
+                return
+            # #682: el Telegram del dueño va a su fila del roster; si no se puede, no se escribe nada.
+            member, etag = self._tg_owner_row()
+            problem = self._tg_owner_problem(owner_tg, member)
+            if problem:
+                self._telegram_setup_page(error=problem, username=username, owner_telegram=owner_tg, code=400)
                 return
             token = post.get("token", "").strip()
             try:
@@ -2012,17 +2070,24 @@ def make_handler(ctx: Context):
                                         env=self.CTX.telegram_env())
             except tg_setup.SetupError as exc:
                 code = 502 if exc.code == tg_setup.UNREACHABLE else 409 if exc.code == tg_setup.ALREADY else 400
-                self._telegram_setup_page(error=i18n.t("web.tg.setup.err." + exc.code), username=username, code=code)
+                self._telegram_setup_page(error=i18n.t("web.tg.setup.err." + exc.code), username=username,
+                                          owner_telegram=owner_tg, code=code)
                 return
             finally:
                 token = ""
                 post.pop("token", None)
+            # El bot ya quedó: si el roster cambió entretanto o no se pudo escribir, la página
+            # lo dice y se agrega desde Roster.
+            saved = self._tg_owner_save(owner_tg, member, etag)
             started = self.CTX.telegram_start()
             bot = done["bot_username"] or "?"
-            self.CTX.notifier.owner(self.user, i18n.t("web.tg.setup.mail_subject"),
-                                    i18n.t("web.tg.setup.mail_body", ip=self.ip, bot=bot))
+            body = i18n.t("web.tg.setup.mail_body", ip=self.ip, bot=bot)
+            body += "\n\n" + i18n.t("web.tg.setup.mail_owner" if saved else "web.tg.setup.mail_owner_failed",
+                                    bot=bot, owner=owner_tg)
+            self.CTX.notifier.owner(self.user, i18n.t("web.tg.setup.mail_subject"), body)
             result = {"started": "setup_ok", "not-installed": "setup_not_installed"}.get(started, "setup_failed")
-            self._redirect(f"/telegram?ok={result}&bot={quote(bot, safe='')}")
+            self._redirect(f"/telegram?ok={result}&bot={quote(bot, safe='')}"
+                           + ("" if saved else "&roster=failed"))
 
         # ---- WhatsApp (PRD #550 FR-7, FR-24; WA-5 #557) ----------------------------
         # Toda respuesta de aquí sale con Cache-Control: no-store (guard.SECURITY_HEADERS):

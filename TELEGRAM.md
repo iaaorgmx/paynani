@@ -509,7 +509,9 @@ conectada, la pasarela cierra con `1012`, como con WhatsApp.
   pasa por el servicio, que todavía no corre. Llama a `telegram/setup.py`, lo mismo que
   `setup` (§5): `getMe`, el `@usuario` escrito contra el de `getMe`, la casilla «sólo
   de esta instalación» (que también autoriza `deleteWebhook`), `telegram.env` 0600 y
-  arrancar el servicio. Con token, la página usa `telegram.status`, y para cambiar el token
+  arrancar el servicio. También pide el Telegram del dueño y lo guarda en su fila del
+  roster con `roster.save` (#682), para que el bot le conteste desde el primer mensaje.
+  Con token, la página usa `telegram.status`, y para cambiar el token
   `telegram.token_check` y `telegram.token_apply`, después de pedir la contraseña de la
   web. El campo del token es `type="password"`, con `autocomplete="off"`, y la página
   que lo recibe responde `Cache-Control: no-store`.
