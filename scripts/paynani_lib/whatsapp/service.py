@@ -34,7 +34,9 @@ import ledger  # noqa: E402
 import phone  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
+from .. import web_uploads  # noqa: E402
 from . import bridge, config  # noqa: E402
+from .media import IMAGE_MAX_BYTES, image_mime  # noqa: E402
 from .store import Store, now_utc  # noqa: E402
 
 REQUEST_ID = re.compile(r"^q_[0-9a-f]{32}$")
@@ -48,6 +50,8 @@ LINK_WAIT_S = 20        # cuánto espera `whatsapp.link` el primer QR o código
 CODE_TTL_S = 180
 QR_TTL_S = 20
 FILE_SEND_KINDS = ("agent", "terminal")
+WEB_SEND_TIMEOUT_S = 150  # #670: la web espera 180 s; con 1 envío cada 3 s, 10 archivos son ~30 s,
+                          # más lo que tarde el puente en subir cada uno
 
 
 MAX_SOCKET_PATH = 103   # sun_path: 104 en macOS, 108 en Linux, con el NUL al final
@@ -131,6 +135,8 @@ class WhatsAppService:
         self._tasks: list[asyncio.Task] = []
         self._bg: set[asyncio.Task] = set()
         self._sock_id: tuple[int, int] | None = None
+        self._uploads_busy: set[str] = set()   # #670: los up_ de un envío en curso
+        self._send_lock = asyncio.Lock()        # #670: los archivos de un envío salen seguidos
 
     # --- ciclo de vida ------------------------------------------------------------
     async def start(self) -> None:
@@ -505,7 +511,8 @@ class WhatsAppService:
         if state in (None, "unknown", "bridge_down"):
             state = "connecting" if self.store.link_info() else "unlinked"
         return {"state": state, "me": st.get("me") or self.store.link_info().get("me"),
-                "since": st.get("since"), "linking": self._linking(), "link_number": None}
+                "since": st.get("since"), "linking": self._linking(), "link_number": None,
+                "web_files": True}          # #670 FR-8: whatsapp.send acepta `uploads` de PaynaniWeb
 
     # --- enviar (FR-19 a FR-23) ----------------------------------------------------------
     def attach_dirs(self) -> list[Path]:
@@ -537,14 +544,17 @@ class WhatsAppService:
                 return Path(real_parent) / path.name
         raise Refused("not_allowed", "fuera de outbox/ y de WHATSAPP_ATTACH_DIRS", reason="file_dir")
 
-    async def send(self, number: str, text: str, by: str, file: str | None = None) -> dict:
+    async def send(self, number: str, text: str, by: str, file: str | None = None,
+                   uploads: list | None = None) -> dict:
         e164 = phone.to_e164(number) if number else None
         if not e164:
             raise Refused("invalid", "el número no es E.164", field="number", reason="number")
         text = text if isinstance(text, str) else ""
         if len(text) > MAX_TEXT:
             raise Refused("invalid", "más de 4,000 caracteres", field="text", reason="too_long")
-        if not text.strip() and not file:
+        if uploads is not None and (author(by) != "owner" or file):
+            raise Refused("invalid", "sólo el dueño manda archivos subidos, y sin `file` (#670)", field="uploads")
+        if not text.strip() and not file and not uploads:
             raise Refused("invalid", "texto vacío", field="text", reason="empty")
         phones = self._phones()
         if e164 not in phones:
@@ -556,9 +566,10 @@ class WhatsAppService:
             raise Refused("not_allowed", "las reglas del contacto dicen reply.sms: never", reason="reply_never")
         if e164 not in self.store.wrote_since_link():
             raise Refused("not_started", "el contacto no ha escrito por WhatsApp desde que se vinculó")
+        if uploads is not None:
+            return await self._send_uploads(e164, text, by, uploads)
         path = self.check_file(file) if file else None
-        wait = self.store.rate_check(config.setting("WHATSAPP_SEND_INTERVAL_S", self.settings),
-                                     config.setting("WHATSAPP_SEND_PER_DAY", self.settings))
+        wait = self._rate_wait(1)
         if wait:
             raise Refused("rate_limited", f"espera {wait} s", retry_after_s=wait)
         sid = self.store.new_sent_id()
@@ -582,6 +593,103 @@ class WhatsAppService:
         return {"message": {"id": sid, "dir": "out", "by": record["by"], "at": record["at"], "kind": "file"
                             if path else "text", "text": text, "status": "sent"}}
 
+    def _rate_wait(self, count: int) -> int | None:
+        """FR-21 para `count` envíos seguidos: None si el primero sale ya y caben todos hoy."""
+        interval = config.setting("WHATSAPP_SEND_INTERVAL_S", self.settings)
+        per_day = config.setting("WHATSAPP_SEND_PER_DAY", self.settings)
+        wait = self.store.rate_check(interval, per_day)
+        if wait or count <= 1:
+            return wait
+        # No caben todos hoy: mejor no mandar ninguno que dejar el mensaje a medias.
+        room = per_day - (count - 1)
+        if room <= 0:
+            return 86400
+        return self.store.rate_check(0, room)
+
+    async def _send_uploads(self, e164: str, text: str, by: str, ups) -> dict:
+        """
+        #670 FR-6: los archivos que el dueño subió desde PaynaniWeb (`web_uploads`), un
+        `send` del puente por archivo, con el texto como pie del primero. Cada uno cuenta
+        para FR-21: entre uno y otro se espera el intervalo, en vez de rechazarlo. Un `up_`
+        sale una sola vez: mientras se manda nadie más lo toma, y se borra en cuanto sale.
+        """
+        try:
+            files = web_uploads.take(self.layout.root, ups)
+        except web_uploads.Rejected as exc:
+            raise Refused(exc.code, exc.detail, field="uploads") from None
+        refs = [f["upload"] for f in files]
+        if self._uploads_busy.intersection(refs):
+            raise Refused("bad_upload", "otro envío ya los está mandando", field="uploads")
+        self._uploads_busy.update(refs)       # antes del primer await
+        try:
+            async with self._send_lock:
+                wait = self._rate_wait(len(files))
+                if wait:
+                    raise Refused("rate_limited", f"espera {wait} s", retry_after_s=wait)
+                return await self._send_files(e164, text, by, files)
+        finally:
+            self._uploads_busy.difference_update(refs)
+
+    async def _send_files(self, e164: str, text: str, by: str, files: list[dict]) -> dict:
+        sid = self.store.new_sent_id()
+        record = {"id": sid, "to": e164, "text": text, "by": author(by), "at": now_utc(), "status": "sending",
+                  "file": files[0]["name"], "files": [self._keep_photo(f) for f in files], "parts": len(files)}
+        self.store.record_sent(record)
+        interval = config.setting("WHATSAPP_SEND_INTERVAL_S", self.settings)
+        deadline = time.monotonic() + WEB_SEND_TIMEOUT_S
+        delivered = 0
+        try:
+            for i, f in enumerate(files):
+                if i:
+                    pause = self.store.rate_check(interval, 1 << 30) or 0
+                    if time.monotonic() + pause > deadline:
+                        raise Refused("timeout", "no alcanzó el tiempo para mandar todos")
+                    await asyncio.sleep(pause)
+                self.store.rate_take()
+                try:
+                    data = await self.sup.request(
+                        "send", to=e164, text=text if i == 0 else "",
+                        file={"path": str(self.layout.root / web_uploads.DIR / f["upload"]), "mime": f["mime"],
+                              "filename": f["name"]})
+                except bridge.BridgeError as exc:
+                    raise Refused(_bridge_code(exc.code), exc.detail or "") from None
+                web_uploads.drop(self.layout.root, f["upload"])   # un solo uso: ya salió
+                delivered += 1
+                self.store.record_sent({"id": sid, "key_id": data.get("key_id"), "delivered": delivered})
+        except Refused as exc:
+            # Lo que ya salió no se repite al reintentar; lo demás queda para otro intento.
+            self.store.record_sent({"id": sid, "status": "partial" if delivered else "failed",
+                                    "delivered": delivered, "error": exc.code})
+            self._notify("threads")
+            if delivered:
+                exc.extra["sent_uploads"] = [f["upload"] for f in files[:delivered]]
+            raise
+        self.store.record_sent({"id": sid, "status": "sent"})
+        self._notify("threads")
+        return {"message": {"id": sid, "dir": "out", "by": record["by"], "at": record["at"], "kind": "file",
+                            "text": text, "status": "sent", "files": [_public_file(x) for x in record["files"]]}}
+
+    def _keep_photo(self, f: dict) -> dict:
+        """Lo que queda en sent.jsonl de un archivo de la web; una foto, con su copia en media/ (FR-7)."""
+        item = {"name": f["name"], "kind": f.get("kind"), "size": f["size"]}
+        data = f.get("data") or b""
+        mime = image_mime(data[:16]) if f.get("kind") == "image" else None
+        if mime and len(data) <= IMAGE_MAX_BYTES:
+            import hashlib
+            ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}.get(mime, "bin")
+            path = self.layout.media / f"{hashlib.sha256(data).hexdigest()}.{ext}"
+            with contextlib.suppress(OSError):
+                if not path.exists():
+                    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+                    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                    with os.fdopen(fd, "wb") as fh:
+                        fh.write(data)
+                        fh.flush()
+                        os.fsync(fh.fileno())
+                    os.replace(tmp, path)
+                item["media"] = {"path": str(path), "mime": mime, "bytes": len(data)}
+        return item
+
     # --- hilos (FR-16a, FR-24, FR-25) -------------------------------------------------
     def _messages(self) -> dict[str, list[dict]]:
         """{número o lid: [mensajes]} con todo lo recibido y enviado."""
@@ -595,9 +703,13 @@ class WhatsAppService:
                 "media": {k: media.get(k) for k in ("mime", "bytes", "filename", "seconds")} | {"kind": m.get("kind")}
                 if media else None})
         for s in self.store.sent():
-            out.setdefault(s.get("to") or "?", []).append({
-                "id": s.get("id"), "dir": "out", "by": s.get("by"), "at": s.get("at"),
-                "kind": "file" if s.get("file") else "text", "text": s.get("text"), "status": s.get("status")})
+            item = {"id": s.get("id"), "dir": "out", "by": s.get("by"), "at": s.get("at"),
+                    "kind": "file" if s.get("file") else "text", "text": s.get("text"), "status": s.get("status")}
+            if s.get("files"):          # #670 FR-7: lo que el dueño mandó desde la web, sin rutas
+                item["files"] = [_public_file(f) for f in s["files"]]
+            elif s.get("file"):
+                item["files"] = [{"name": s["file"]}]
+            out.setdefault(s.get("to") or "?", []).append(item)
         for msgs in out.values():
             msgs.sort(key=lambda m: m.get("at") or "", reverse=True)
         return out
@@ -657,7 +769,7 @@ class WhatsAppService:
                 "messages": [self._public(m, self._visible(m, in_roster, catch_active)) for m in page],
                 "next_before": page[-1].get("at") if len(msgs) > limit else None}
 
-    def image(self, message_id: str) -> dict:
+    def image(self, message_id: str, index=0) -> dict:
         """
         #573: la foto de un mensaje recibido, para PaynaniWeb. Sólo si su texto también
         se mostraría (FR-16a), recalculado en cada pedido: apagar el Catch-All o sacar al
@@ -666,6 +778,8 @@ class WhatsAppService:
         mismo not_found.
         """
         mid = str(message_id or "")
+        if mid.startswith("wo_"):
+            return self._sent_image(mid, index)
         data = self.store.inbox(mid.rsplit(":", 1)[-1]) if mid.startswith("wa:") else None
         if not data or data.get("event_id") != mid or data.get("kind") != "image":
             raise Refused("not_found")
@@ -675,6 +789,20 @@ class WhatsAppService:
             raise Refused("not_found")
         try:
             body, mime = self.store.read_image(data)
+        except LookupError:
+            raise Refused("not_found") from None
+        return {"mime": mime, "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
+
+    def _sent_image(self, sid: str, index) -> dict:
+        """#670 FR-7: la copia de una foto que el dueño mandó desde la web, si el hilo se ve hoy."""
+        if not isinstance(index, int) or isinstance(index, bool):
+            raise Refused("not_found")
+        rec = next((s for s in self.store.sent() if s.get("id") == sid), None)
+        files = (rec or {}).get("files") or []
+        if not 0 <= index < len(files) or rec.get("to") not in self._phones():
+            raise Refused("not_found")
+        try:
+            body, mime = self.store.read_image(files[index])
         except LookupError:
             raise Refused("not_found") from None
         return {"mime": mime, "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
@@ -738,9 +866,10 @@ class WhatsAppService:
             elif kind == "whatsapp.thread":
                 data = self.thread(str(msg.get("number") or ""), msg.get("limit", 50), msg.get("before"))
             elif kind == "whatsapp.send":
-                data = await self.send(str(msg.get("number") or ""), msg.get("text") or "", by, msg.get("file"))
+                data = await self.send(str(msg.get("number") or ""), msg.get("text") or "", by, msg.get("file"),
+                                       msg.get("uploads"))
             elif kind == "whatsapp.image":
-                data = self.image(str(msg.get("message_id") or ""))
+                data = self.image(str(msg.get("message_id") or ""), msg.get("index", 0))
             elif kind == "whatsapp.watch":
                 if writer is not None:
                     self.watchers.add(writer)
@@ -766,6 +895,15 @@ def author(by: str) -> str:
     if by == "web" or by.startswith("phone:"):
         return "owner"
     return "agent"
+
+
+def _public_file(f: dict) -> dict:
+    """Un archivo enviado, para `whatsapp.thread`: sin la ruta en disco (#670 FR-7)."""
+    out = {k: f.get(k) for k in ("name", "kind", "size") if f.get(k) is not None}
+    media = f.get("media") or {}
+    if media.get("path"):
+        out["media"] = {"mime": media.get("mime"), "bytes": media.get("bytes")}
+    return out
 
 
 def _limit(value) -> int:
