@@ -123,6 +123,15 @@
         "paynani"
       ],
       "avatar": "dlibradosmbmx.jpg"
+    },
+    {
+      "login": "edithclaudetob",
+      "name": "Edith Claude-Tob",
+      "type": "agent",
+      "projects": [
+        "paynani"
+      ],
+      "avatar": "edithclaudetob.png"
     }
   ]
 }
