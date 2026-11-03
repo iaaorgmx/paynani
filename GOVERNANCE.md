@@ -31,7 +31,7 @@ Un Committer también puede tener un alcance, como «Instalación y DevOps» o �
 
 1. **Lo grande** (un canal nuevo, un cambio que toca varias partes) lleva un PRD en un issue. El líder del proyecto lo aprueba antes de programar. Las preguntas se le hacen numeradas, con opciones.
 2. **Lo de una parte** lo decide su Maintainer, con un issue que diga qué y por qué.
-3. **Todo cambio** entra por PR, con `Closes #N`, y lo revisa alguien que no lo escribió. Lo mezcla el Maintainer del núcleo, o el de la parte, cuando las pruebas de CI pasan.
+3. **Todo cambio** entra por PR, con `Closes #N`, y lo revisa alguien que no lo escribió. Lo mezcla el Maintainer del núcleo, o el de la parte, cuando las pruebas de CI pasan y el líder del proyecto dio su OK, para ese PR o con una ventana de merge abierta.
 4. **Si no hay acuerdo**, decide el líder del proyecto.
 
 ## Cómo se cambia de rol
