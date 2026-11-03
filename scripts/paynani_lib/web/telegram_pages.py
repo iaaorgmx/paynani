@@ -215,7 +215,7 @@ def reply_box(thread: dict, csrf: str, running: bool, values: dict | None = None
         return f'<section class="responder">{head}<p class="aviso-caja" role="status">{_th("no_reply_state")}</p></section>'
     text = (values or {}).get("text", "")
     # La barra de Webchat (Julian, mockup aprobado; Q337 = B): el cuadro con todo el ancho,
-    # que crece solo (tg_barra.js), y «Enviar» redondo, pegada abajo. El clip con «Foto» y
+    # que crece solo (barra.js), y «Enviar» redondo, pegada abajo. El clip con «Foto» y
     # «Archivo» sólo si el servicio acepta archivos de la web (`web_files`, #662); entonces
     # el texto puede ir vacío y el formulario es multipart.
     name = str(thread.get("name") or "")
@@ -240,8 +240,8 @@ def reply_box(thread: dict, csrf: str, running: bool, values: dict | None = None
       </div>
     </details>"""
     scripts = ('<script src="/assets/adjuntos.js" defer></script>\n' if web_files else "") + \
-        '<script src="/assets/tg_barra.js" defer></script>'
-    return f"""<form method="post" action="/telegram/messages/enviar" class="wc-escribir tg-escribir{' tg-con-clip' if web_files else ''}" id="responder"{form_attrs}>
+        '<script src="/assets/barra.js" defer></script>'
+    return f"""<form method="post" action="/telegram/messages/enviar" class="wc-escribir barra-escribir tg-escribir{' barra-con-clip' if web_files else ''}" id="responder"{form_attrs}>
   <h3 class="solo-lector">{_th("reply")}</h3>{_error(error)}
   <input type="hidden" name="csrf" value="{e(csrf)}">
   <input type="hidden" name="t" value="{e(thread["thread"])}">{attach}

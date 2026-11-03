@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, «Mensajes de WhatsApp»: el cuadro de contestar es la barra de Telegram y Webchat (#670 FR-1).** Lo pidió Julian. Es una sola barra pegada abajo: el cuadro empieza en una línea y crece hasta unas 6 mientras se escribe, con el placeholder «Escríbele a <nombre>…», y «Enviar» es el botón redondo. El título «Responder» y la etiqueta «Mensaje» quedan para lectores de pantalla, y un segundo toque no manda el mensaje dos veces. Por ahora sólo texto: el clip llega con el núcleo de #670. `tg_barra.js` pasa a ser `barra.js`, la misma para las dos páginas.
+
 - **PaynaniWeb y la API con un teléfono «solo Webchat» (#671, PaynaniApp-Agentic#175).** Cuando el teléfono emparejado es la PaynaniApp sólo para Webchat:
   - **Dashboard:** la fila del teléfono dice «sólo Webchat, sin SMS», sin la batería. Con la app cerrada, la píldora queda gris («App cerrada») y no roja, porque no es un apagón. `/dashboard.json` da `app_closed`.
   - **«Mensajes de texto»:** «Nuevo SMS» y el cuadro de responder muestran que ese teléfono no manda SMS, en lugar de «Actualiza PaynaniApp».

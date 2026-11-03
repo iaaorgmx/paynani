@@ -233,10 +233,10 @@ check("un hilo del roster: mensajes en orden de hora y el cuadro de responder", 
        'action="/telegram/messages/enviar"' in page))
 check("un mensaje editado lo dice", True, f'({th("web.tg.edited")})' in page)
 check("responder es la barra de Webchat (Q337): una línea, «Enviar» redondo y su script", (True, True, True, True, True),
-      ('class="wc-escribir tg-escribir" id="responder"' in page, 'name="text" rows="1"' in page,
+      ('class="wc-escribir barra-escribir tg-escribir" id="responder"' in page, 'name="text" rows="1"' in page,
        'class="wc-enviar" aria-label="Enviar"' in page, '<label for="tg-text" class="solo-lector">' in page,
-       '<script src="/assets/tg_barra.js" defer></script>' in page))
-check("tg_barra.js se sirve", 200, req("GET", "/assets/tg_barra.js")[0])
+       '<script src="/assets/barra.js" defer></script>' in page))
+check("barra.js se sirve", 200, req("GET", "/assets/barra.js")[0])
 check("un servicio sin web_files (#662): sin clip, sólo texto y required", (False, False, True),
       ('class="wc-adjuntar"' in page, "multipart/form-data" in page, 'maxlength="4096" required' in page))
 check("adjuntos.js se sirve", 200, req("GET", "/assets/adjuntos.js")[0])
