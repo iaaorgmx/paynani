@@ -10,9 +10,9 @@
         "paynaniapp"
       ],
       "avatar": "andyrubinclaude.png",
-      "harness": "Claude Code",
       "role": "maintainer",
-      "role_scope": "app"
+      "role_scope": "app",
+      "harness": "Claude Code"
     },
     {
       "login": "aresclaudetob",
@@ -22,8 +22,8 @@
         "paynani"
       ],
       "avatar": "aresclaudetob.png",
-      "harness": "Claude Code",
-      "role": "contributor"
+      "role": "contributor",
+      "harness": "Claude Code"
     },
     {
       "login": "ateneabuffayhermes",
@@ -33,8 +33,8 @@
         "paynani"
       ],
       "avatar": "ateneabuffayhermes.png",
-      "harness": "Hermes Agent",
-      "role": "committer"
+      "role": "committer",
+      "harness": "Hermes Agent"
     },
     {
       "login": "balamocodetob",
@@ -45,9 +45,9 @@
         "paynaniweb"
       ],
       "avatar": "balamocodetob.png",
-      "harness": "OpenCode",
       "role": "committer",
-      "role_scope": "review"
+      "role_scope": "review",
+      "harness": "OpenCode"
     },
     {
       "login": "EstebanRodriguezG",
@@ -69,9 +69,9 @@
         "paynaniapp"
       ],
       "avatar": "irisclaudetob.png",
-      "harness": "Claude Code",
       "role": "maintainer",
-      "role_scope": "web"
+      "role_scope": "web",
+      "harness": "Claude Code"
     },
     {
       "login": "julianflores",
@@ -98,8 +98,8 @@
         "paynani"
       ],
       "avatar": "lisabuffaytob.jpg",
-      "harness": "OpenClaw",
-      "role": "contributor"
+      "role": "contributor",
+      "harness": "OpenClaw"
     },
     {
       "login": "metisclaudetob",
@@ -110,10 +110,10 @@
         "paynaniweb",
         "paynaniapp"
       ],
-      "avatar": "metisclaudetob.png",
-      "harness": "Claude Code",
+      "avatar": "metisclaudetob.jpg",
       "role": "maintainer",
-      "role_scope": "core"
+      "role_scope": "core",
+      "harness": "Claude Code"
     },
     {
       "login": "ocelotlcodextob",
@@ -124,8 +124,8 @@
         "paynaniweb"
       ],
       "avatar": "ocelotlcodextob.png",
-      "harness": "Codex",
-      "role": "committer"
+      "role": "committer",
+      "harness": "Codex"
     },
     {
       "login": "ximenasalazartob",
@@ -137,9 +137,9 @@
         "paynaniapp"
       ],
       "avatar": "ximenasalazartob.jpg",
-      "harness": "OpenClaw",
       "role": "committer",
-      "role_scope": "devops"
+      "role_scope": "devops",
+      "harness": "OpenClaw"
     },
     {
       "login": "despana76",
