@@ -806,3 +806,15 @@ body.web-shell {
   .web-shell .wc-agente .globo { background: #2a1c1b; border-color: #5e3229; }
   .web-shell .wc-archivo { background: #ffffff0d; }
 }
+
+/* PRD #685: el menú al tocar un mensaje (msgmenu.js), como el de Telegram Web. */
+.web-shell li[data-menu] > .globo { cursor: pointer; }
+.web-shell li[data-menu]:focus { outline: none; }
+.web-shell li[data-menu]:focus-visible > .globo { box-shadow: 0 0 0 2px var(--accent); }
+.web-shell li.msj-activo > .globo { box-shadow: 0 0 0 2px var(--accent), 0 4px 16px rgba(0,0,0,.12); }
+.menu-msj { position: fixed; z-index: 60; display: flex; flex-direction: column; gap: 8px; }
+.menu-msj .menu-lista { background: var(--card, #fff); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 6px 0; box-shadow: 0 6px 24px rgba(0,0,0,.18); min-width: 200px; }
+.menu-msj .menu-lista button { display: flex; align-items: center; gap: 14px; width: 100%; border: 0; background: none; padding: 11px 18px; font: inherit; color: inherit; text-align: left; cursor: pointer; min-height: 44px; }
+.menu-msj .menu-lista button:hover, .menu-msj .menu-lista button:focus-visible { background: var(--bg); outline: none; }
+.menu-msj .menu-lista svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; flex: none; }
+.msj-aviso { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 61; background: var(--ink); color: var(--bg); border-radius: 999px; padding: .5rem 1rem; font-size: .9rem; box-shadow: 0 4px 16px rgba(0,0,0,.2); max-width: calc(100vw - 32px); }

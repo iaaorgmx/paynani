@@ -19,7 +19,7 @@ import datetime as dt
 from urllib.parse import quote
 
 from .. import i18n
-from . import agent_pages, when
+from . import agent_pages, msgmenu, when
 from .dashboard import parse
 from .shell import e, icon
 
@@ -79,7 +79,8 @@ def bubbles(messages: list[dict], now: dt.datetime, agent_name: str, last_day: d
         who = "" if mine else f'<div class="de">{e(agent_name)}</div>'
         text = f'<div class="texto">{e(m.get("text", ""))}</div>' if m.get("text") else ""
         stamp = f'<time datetime="{e(m.get("at", ""))}">{local.strftime("%H:%M")}</time>'
-        rows.append(f'<li class="wc {"wc-yo" if mine else "wc-agente"}" id="{e(m.get("id", ""))}">'
+        # PRD #685: el menú al tocar el mensaje (los de aquí ya están guardados: siempre lleva).
+        rows.append(f'<li class="wc {"wc-yo" if mine else "wc-agente"}" id="{e(m.get("id", ""))}"{msgmenu.item(True)}>'
                     f'<div class="globo">{who}{_files(m.get("files") or [])}{text}{stamp}</div></li>')
     return "".join(rows)
 
@@ -162,9 +163,10 @@ def body(messages: list[dict], now: dt.datetime, summary: dict | None, csrf: str
     last = messages[-1]["id"] if messages else ""
     return f"""<div class="wc-pag" data-after="{e(last)}">
   {head}
-  <ol class="wc-hilo" id="wc-hilo" aria-live="polite">{older_row(messages[0]["id"], more) if messages else ""}{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
+  <ol class="wc-hilo" id="wc-hilo" aria-live="polite"{msgmenu.list_attrs()}>{older_row(messages[0]["id"], more) if messages else ""}{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
   {composer(csrf, name, text, error)}
 </div>
 <script src="/assets/adjuntos.js" defer></script>
 <script src="/assets/webchat.js" defer></script>
+{msgmenu.SCRIPT}
 """

@@ -20,7 +20,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from .. import i18n
-from . import downloads, mail_pages
+from . import downloads, mail_pages, msgmenu
 from .shell import e, icon
 from .telegram_source import MAX_TEXT, STATES
 
@@ -298,7 +298,7 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
     if thread.get("next_before"):
         out.append(f'<p class="mas"><a class="secundario" href="/telegram/messages/ver?t={quote(tid, safe="")}'
                    f'&amp;antes={quote(str(thread["next_before"]), safe="")}">{_th("older")}</a></p>')
-    bubbles = ['<ol class="hilo">']
+    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs()}>']
     messages = sorted(thread.get("messages") or [], key=lambda m: str(m.get("at") or ""))
     for m in messages:
         out_dir = m.get("dir") == "out"
@@ -334,11 +334,13 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
             body = e(m.get("text") or "")
         edited = f' <span class="quiet">({_th("edited")})</span>' if m.get("edited") else ""
         when = mail_pages.list_time(m.get("at") or "")
-        bubbles.append(f'<li class="sms {css}"><div class="globo"><div class="de">{label}{_status(m)}{edited}</div>'
+        # PRD #685: el menú al tocar el mensaje, sólo en los que ya llegaron o salieron.
+        bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("telegram", m))}>'
+                       f'<div class="globo"><div class="de">{label}{_status(m)}{edited}</div>'
                        f'<div class="texto">{body}</div>{when}</div></li>')
     bubbles.append("</ol>")
     # #680: hilo.js baja al último mensaje al abrir, como Webchat.
-    return "\n".join(out + bubbles + [add, reply, '<script src="/assets/hilo.js" defer></script>']) + "\n"
+    return "\n".join(out + bubbles + [add, reply, '<script src="/assets/hilo.js" defer></script>', msgmenu.SCRIPT]) + "\n"
 
 
 def _sent_files(ref: str, files: list) -> str:
