@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **Telegram y WhatsApp: el hilo marca lo que no se puede citar ni reaccionar (#707).** Un mensaje nuestro sin el id de la plataforma trae `"actions": false` en `telegram.thread` y `whatsapp.thread`, para que PaynaniWeb sólo ofrezca «Copiar». En Telegram son los envíos de antes de #700, que no guardaban el `message_id`; en los dos, lo que no llegó a salir (TELEGRAM.md, WHATSAPP_BRIDGE.md).
+
 - **PaynaniWeb, Telegram y WhatsApp: las reacciones del contacto se ven sin recargar (PRD #685 F3).** Con la pestaña a la vista, la página pide cada 15 s las reacciones de los mensajes cargados y redibuja sólo los que cambiaron. Lo acordamos con Metis en #704.
 
 - **PaynaniWeb, Webchat: las reacciones se ven en vivo (PRD #685 F3).** Una reacción del agente a un mensaje viejo aparece sin recargar: el WebSocket vigila `reactions.jsonl` y manda sólo los globos que cambiaron. Lo pidió Metis en #702.
