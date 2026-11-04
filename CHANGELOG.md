@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **WhatsApp: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en WhatsApp.
+  - `whatsapp.react` pone, cambia o quita la reacción del número vinculado, una por mensaje y con cualquier emoji (uno solo). El puente la manda con `react`, y no cuenta para el tope de envíos.
+  - El puente ya no descarta las reacciones que llegan (`reactionMessage`), y cada mensaje de `whatsapp.thread` trae `reactions` (`[{emoji, count, mine}]`).
+  - Cuando un contacto reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Ana López +1… reaccionó ❤️ a «…»». Fuera del roster sin Catch-All sólo dice «reacción de un número fuera del roster». Las nuestras no avisan.
+  - El agente reacciona con `paynani whatsapp react wa:… 👍` (`--remove` la quita), y `whatsapp thread` y `event show wa:… --body` muestran las reacciones (WHATSAPP_BRIDGE.md §4, §5, §10 y §11).
 - **Webchat: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en el Webchat.
   - `store.react(ref, emoji, by=)` pone, cambia o quita la reacción del dueño o del agente, una por mensaje y por lado, y cada mensaje del hilo trae `reactions` (`[{emoji, count, mine}]`). Acepta cualquier emoji, uno solo, y compara «❤» con «❤️» como la misma.
   - Cuando el dueño reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Julian Flores (PaynaniWeb) reaccionó 👍 a «…»». Las del agente no avisan.

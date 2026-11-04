@@ -257,6 +257,10 @@ def main(argv: list[str] | None = None) -> int:
     wa_thread.add_argument("number")
     wa_thread.add_argument("--limit", type=int, default=50, help="Messages to show (1 to 100, default 50).")
     wa_thread.add_argument("--json", action="store_true", help="Print the service's answer as JSON.")
+    wa_react = wa_sub.add_parser("react", help="React as the linked number to a message of a roster conversation (PRD #685 F3).")
+    wa_react.add_argument("ref", help="The message (wa:… or wo_…, from whatsapp thread).")
+    wa_react.add_argument("emoji", nargs="?", default="", help="One emoji; another replaces it.")
+    wa_react.add_argument("--remove", action="store_true", help="Remove the number's reaction.")
 
     tg_parser = subparsers.add_parser("telegram", help="Telegram bot: setup, status and token change (TELEGRAM.md).")
     tg_sub = tg_parser.add_subparsers(dest="tg_command", required=True)
@@ -473,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "whatsapp":
         from paynani_lib.whatsapp import cli as wa_cli
         return {"status": wa_cli.run_status, "link": wa_cli.run_link, "unlink": wa_cli.run_unlink,
-                "send": wa_cli.run_send, "thread": wa_cli.run_thread}[args.wa_command](args)
+                "send": wa_cli.run_send, "thread": wa_cli.run_thread, "react": wa_cli.run_react}[args.wa_command](args)
     if args.command == "telegram":
         from paynani_lib.telegram import cli as tg_cli
         return {"setup": tg_cli.run_setup, "status": tg_cli.run_status, "token": tg_cli.run_token,

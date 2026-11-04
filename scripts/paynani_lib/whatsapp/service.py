@@ -34,6 +34,7 @@ import ledger  # noqa: E402
 import phone  # noqa: E402
 import roster as roster_mod  # noqa: E402
 
+from .. import emoji as emoji_mod  # noqa: E402
 from .. import web_uploads  # noqa: E402
 from . import bridge, config  # noqa: E402
 from .media import IMAGE_MAX_BYTES, image_mime  # noqa: E402
@@ -268,6 +269,8 @@ class WhatsAppService:
         try:
             if kind == "message":
                 await self._message(msg)
+            elif kind == "reaction":
+                self._reaction(msg)
             elif kind == "call":
                 self._call(msg)
             elif kind == "receipt":
@@ -336,6 +339,63 @@ class WhatsAppService:
         if in_roster:
             self._push_allowed_soon()
         self._notify("threads")
+
+    def _reaction(self, msg: dict) -> None:
+        """
+        PRD #685 FR-13, FR-16a: la reacción de un contacto a un mensaje que paynani tiene. Guarda
+        la suya (`theirs`) y escribe un evento `kind: "reaction"`. Una reacción a un mensaje que
+        no está, o una que no cambia nada, no deja nada.
+        """
+        me = self._me()
+        account = ev.whatsapp_account(me)
+        chat = str(msg.get("chat") or "")
+        key_id = str(msg.get("key_id") or "")
+        target = str((msg.get("target") or {}).get("key_id") or "")
+        if not chat or not key_id or not target:
+            return
+        mhash = ev.whatsapp_message_hash(account, chat, key_id)
+        pending = self.store.inbox(mhash)
+        if (pending or {}).get("journaled"):
+            return  # FR-11a: WhatsApp la volvió a entregar
+        sender = msg.get("from") or {}
+        e164 = phone.to_e164(sender.get("e164")) if sender.get("e164") else None
+        original = self.store.inbox(ev.whatsapp_message_hash(account, chat, target))
+        if original and original.get("journaled") and original.get("type", "whatsapp.received") == "whatsapp.received":
+            ref = original.get("event_id")
+        else:
+            original = next((m for m in self.store.sent()
+                             if m.get("key_id") == target and (e164 is None or m.get("to") == e164)), None)
+            ref = (original or {}).get("id")
+        if not ref:
+            return
+        new = str(msg.get("emoji") or "")
+        before = (pending or {}).get("old") if pending else self.store.reactions().get(ref, {}).get("theirs") or ""
+        before = before or ""
+        if not pending and emoji_mod.emoji_key(before) == emoji_mod.emoji_key(new):
+            return                  # nada cambió; con `pending`, una caída dejó el aviso sin escribir
+        phones = self._phones()
+        in_roster = bool(e164 and e164 in phones)
+        catch = self._catch_all() if not in_roster else None
+        visible = in_roster or (catch or {}).get("status") == "active"
+        envelope = ev.whatsapp_reaction_event(
+            account=account, message_hash=mhash, e164=e164, lid=sender.get("lid"),
+            sender_name=phones.get(e164, "") if in_roster else "", roster_match=in_roster,
+            emoji=new or before, removed=not new, excerpt=quote_excerpt(original) if visible else "",
+            sent_at=str(msg.get("sent_at") or ""), local_time=time.strftime("%H:%M:%S"),
+            rules=self._rules_note(e164) if in_roster else None, catch_all=catch)
+        data = {"type": "whatsapp.reaction", "account_me": me, "chat": chat, "key_id": key_id,
+                "from_e164": e164, "lid": sender.get("lid"), "target": ref, "emoji": new, "old": before,
+                "sent_at": msg.get("sent_at"), "received_at": now_utc(),
+                "catch_all": (catch or {}).get("status") == "active",
+                "event_id": envelope["event_id"], "journaled": False}
+        self.store.save_inbox(mhash, data)
+        self.store.set_reaction(ref, "theirs", new)
+        ev.append(self.journal, envelope)
+        ledger.observed(self.ledger_path, envelope)
+        data["journaled"] = True
+        self.store.save_inbox(mhash, data)
+        self.log(envelope["notification_text"])
+        self._notify("reaction", ref=ref)
 
     def _reply_of(self, quote, account: str, chat: str, e164: str | None) -> dict | None:
         """
@@ -540,7 +600,8 @@ class WhatsAppService:
         return {"state": state, "me": st.get("me") or self.store.link_info().get("me"),
                 "since": st.get("since"), "linking": self._linking(), "link_number": None,
                 "web_files": True,          # #670 FR-8: whatsapp.send acepta `uploads` de PaynaniWeb
-                "replies": True}            # PRD #685 F2: whatsapp.send acepta `reply_to`
+                "replies": True,            # PRD #685 F2: whatsapp.send acepta `reply_to`
+                "reactions": "any"}         # PRD #685 F3: whatsapp.react acepta cualquier emoji
 
     # --- enviar (FR-19 a FR-23) ----------------------------------------------------------
     def attach_dirs(self) -> list[Path]:
@@ -657,6 +718,46 @@ class WhatsAppService:
         bridge_quote = ({"key_id": str(key_id), "from_me": from_me, "text": str(original.get("text") or "")[:1000]}
                         if key_id else None)
         return {"ref": ref, "excerpt": excerpt, "bridge": bridge_quote}
+
+    async def react(self, ref: str, emoji: str, by: str) -> dict:
+        """
+        PRD #685 F3 (contrato de FR-14): pone (`emoji`) o quita (`""`) la reacción de la cuenta
+        en un mensaje (`wa:` o `wo_`). Una por mensaje; otra la reemplaza. Cualquier emoji, pero
+        uno solo (`invalid`, `reason: bad_emoji`). Fuera del roster es `not_allowed` (FR-17). No
+        cuenta para el tope de envíos. Devuelve `{"ref", "reactions"}`.
+        """
+        if not isinstance(ref, str) or not ref:
+            raise Refused("missing_field", "ref", field="ref")
+        if not isinstance(emoji, str):
+            raise Refused("invalid", "emoji", field="emoji")
+        emoji = emoji.strip()
+        if emoji and not emoji_mod.valid_emoji(emoji):
+            raise Refused("invalid", "un solo emoji", field="emoji", reason="bad_emoji")
+        if ref.startswith("wa:"):
+            original = next((m for m in self.store.received() if m.get("event_id") == ref), None)
+            party, from_me = (original or {}).get("from_e164"), False
+        elif ref.startswith("wo_"):
+            original = next((m for m in self.store.sent() if m.get("id") == ref), None)
+            party, from_me = (original or {}).get("to"), True
+        else:
+            original, party, from_me = None, None, False
+        if not original or not original.get("key_id"):
+            raise Refused("not_found", "ese mensaje no existe")
+        if not party or party not in self._phones():
+            raise Refused("not_allowed", "el número no está en roster.md (Phone)", reason="roster")
+        current = self.store.reactions().get(ref, {})
+        if emoji_mod.emoji_key(current.get("ours") or "") != emoji_mod.emoji_key(emoji):
+            target = {"key_id": str(original["key_id"]), "from_me": from_me}
+            if not from_me and original.get("chat"):
+                target["chat"] = original["chat"]
+            try:
+                await self.sup.request("react", to=party, target=target, emoji=emoji)
+            except bridge.BridgeError as exc:
+                raise Refused(_bridge_code(exc.code), exc.detail or "") from None
+            current = self.store.set_reaction(ref, "ours", emoji)
+            self.log(f"whatsapp.react {ref}" + ("" if emoji else " (quitada)"))
+            self._notify("reaction", ref=ref)
+        return {"ref": ref, "reactions": _reactions_view(current)}
 
     def _rate_wait(self, count: int) -> int | None:
         """FR-21 para `count` envíos seguidos: None si el primero sale ya y caben todos hoy."""
@@ -868,10 +969,14 @@ class WhatsAppService:
             return self._visible(m, in_roster, catch_active)
 
         rows = []
+        reactions = self.store.reactions()
         for m in page:
             row = self._public(m, visible(m))
             if "_reply" in m and not row.get("hidden"):
                 row["reply_to"] = self._public_quote(m["_reply"], contact, all_msgs, visible)
+            found = _reactions_view(reactions.get(m.get("id"))) if not row.get("hidden") else []
+            if found:
+                row["reactions"] = found        # PRD #685 F3; sin reacciones no viene
             rows.append(row)
         return {"number": party, "name": phones.get(party) if in_roster else None, "in_roster": in_roster,
                 "can_reply": in_roster and party in self.store.wrote_since_link(),
@@ -940,8 +1045,8 @@ class WhatsAppService:
         return {"mime": mime, "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
 
     # --- el socket (§11) -------------------------------------------------------------------
-    def _notify(self, what: str) -> None:
-        line = (json.dumps({"type": "whatsapp.changed", "what": what}) + "\n").encode()
+    def _notify(self, what: str, **extra) -> None:
+        line = (json.dumps({"type": "whatsapp.changed", "what": what, **extra}) + "\n").encode()
         for w in list(self.watchers):
             try:
                 w.write(line)
@@ -1000,6 +1105,8 @@ class WhatsAppService:
             elif kind == "whatsapp.send":
                 data = await self.send(str(msg.get("number") or ""), msg.get("text") or "", by, msg.get("file"),
                                        msg.get("uploads"), msg.get("reply_to"))
+            elif kind == "whatsapp.react":
+                data = await self.react(msg.get("ref"), msg.get("emoji", ""), by)
             elif kind == "whatsapp.image":
                 data = self.image(str(msg.get("message_id") or ""), msg.get("index", 0))
             elif kind == "whatsapp.file":
@@ -1029,6 +1136,22 @@ def author(by: str) -> str:
     if by == "web" or by.startswith("phone:"):
         return "owner"
     return "agent"
+
+
+def _reactions_view(current: dict | None) -> list[dict]:
+    """`[{emoji, count, mine}]` (FR-14): `ours` es la de la cuenta (la ponga el dueño o el
+    agente), `theirs` la del contacto. Primero la nuestra, luego por `count`."""
+    groups: dict[str, dict] = {}
+    for side in ("ours", "theirs"):
+        emoji = (current or {}).get(side) or ""
+        if not emoji:
+            continue
+        g = groups.setdefault(emoji_mod.emoji_key(emoji), {"emoji": emoji, "count": 0, "mine": False})
+        g["count"] += 1
+        if side == "ours":
+            g["mine"] = True
+            g["emoji"] = emoji
+    return sorted(groups.values(), key=lambda g: (not g["mine"], -g["count"]))
 
 
 def _quote_record(quote: dict) -> dict:

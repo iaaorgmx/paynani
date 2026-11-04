@@ -168,6 +168,22 @@ export function quoteContext(quote, toJid, ownJid) {
   };
 }
 
+// PRD #685 F3: una reacción que entra, o null. `key_id` es el del mensaje al que reaccionó;
+// `emoji` vacío es que la quitó. Sin descargar nada.
+export function reactionOf(message) {
+  const r = unwrap(message)?.reactionMessage;
+  if (!r || !r.key || !r.key.id) return null;
+  return { key_id: String(r.key.id), emoji: typeof r.text === 'string' ? r.text.slice(0, 16) : '' };
+}
+
+// PRD #685 F3: el contenido de sendMessage para poner (o quitar, con '') una reacción.
+// `target` es {key_id, from_me, chat}: el mensaje es nuestro (`from_me`) o del contacto, en `chat`.
+export function reactContent(target, emoji) {
+  if (!target || typeof target.key_id !== 'string' || !target.key_id || !target.chat) return null;
+  return { react: { text: typeof emoji === 'string' ? emoji : '',
+    key: { remoteJid: target.chat, fromMe: Boolean(target.from_me), id: target.key_id } } };
+}
+
 // Lo que Baileys necesita de un logger (pino). Sólo pasan los errores, y sólo su
 // texto: nunca el objeto, que puede traer un mensaje, un JID o una llave (§8).
 export function makeLogger(write) {

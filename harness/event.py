@@ -699,6 +699,53 @@ def whatsapp_event(*, account, message_hash, e164, lid, sender_name, kind, text,
     return record
 
 
+def whatsapp_reaction_event(*, account, message_hash, e164, lid, sender_name, roster_match, emoji, removed,
+                            excerpt, sent_at, local_time, observed_at=None, rules=None, catch_all=None):
+    """
+    Un contacto de WhatsApp puso, cambió o quitó su reacción a un mensaje (PRD #685 FR-16a).
+    `message_hash` es el de la reacción (su propio key_id), así que el `event_id` no es el del
+    mensaje. `emoji` es la nueva, o la que quitó si `removed`. Fuera del roster sin Catch-All,
+    el aviso no dice el emoji ni el extracto.
+    """
+    eid = f"{account}:{message_hash}"
+    who = " ".join(p for p in (sender_name, e164 or "número sin resolver") if p)
+    quoted = f"«{safe_excerpt(excerpt or '', 40)}»"
+    action = f"quitó su reacción {emoji} de {quoted}" if removed else f"reaccionó {emoji} a {quoted}"
+    if roster_match:
+        note = f", {_rules_tag(rules)}" if rules else ""
+        line = f"[whatsapp {local_time}{note}, roster] {who} {action}"
+    elif catch_all and catch_all.get("status") == "active":
+        line = f"[whatsapp {local_time}, catch-all: {catch_all['file']}] {who} {action}"
+    elif catch_all:
+        line = f"[whatsapp {local_time}, catch-all inválido] {who}: reacción de un número fuera del roster"
+    else:
+        line = f"[whatsapp {local_time}] {who}: reacción de un número fuera del roster"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": WHATSAPP_RECEIVED,
+        "event_id": eid,
+        "source": "paynani",
+        "channel": "whatsapp",
+        "account": account,
+        "observed_at": observed_at or _now(),
+        "sent_at": sent_at or "",
+        "kind": "reaction",
+        "sender": {"name": sender_name or "", "address": e164 or ""},
+        "roster_match": bool(roster_match),
+        "authenticated_sender": False,
+        "provider_id": f"whatsapp:{message_hash}",
+        "inspection_command": f"scripts/paynani event show {eid}",
+    }
+    if lid and not e164:
+        record["sender"]["lid"] = str(lid)
+    if roster_match and rules:
+        record["rules"] = {"file": rules["file"], "status": rules["status"]}
+    if not roster_match and catch_all:
+        record["catch_all"] = {"file": catch_all["file"], "status": catch_all["status"]}
+    record["notification_text"] = f"{line} [{record['inspection_command']}]"
+    return record
+
+
 def whatsapp_call_event(*, kind, account, call_id, e164, caller_name, started_at, roster_match,
                         local_time, video=False, observed_at=None):
     """Una llamada de WhatsApp (FR-18): call.missed o call.answered con `channel: whatsapp`."""
