@@ -2,7 +2,7 @@
 
 ## Sin publicar
 
-- **PaynaniWeb: reaccionar a un mensaje viejo del bot dice por qué no se puede (#707).** Lo que el bot mandó antes de #700 no tiene id en Telegram, y reaccionar daba «Inténtalo otra vez». Ahora el aviso dice que el mensaje es anterior a las reacciones. Lo encontró Julian al probar. Además, una respuesta que salió sin cita dice «no se pudo citar el original» (antes «el original ya no estaba», que no era cierto en este caso), y la barra «Respondiendo a…» dice el nombre del agente, como la cita que guarda el servicio, y no «Agente». Con la marca `actions: false` del núcleo (#709), el menú de esos mensajes sólo trae «Copiar»: ni Responder ni reacciones.
+- **PaynaniWeb: reaccionar a un mensaje viejo del bot dice por qué no se puede (#707).** Lo que el bot mandó antes de #700 no tiene id en Telegram, y reaccionar daba «Inténtalo otra vez». Ahora el aviso dice «A este mensaje no se le puede reaccionar.». Lo encontró Julian al probar. Además, una respuesta que salió sin cita dice «no se pudo citar el original» (antes «el original ya no estaba», que no era cierto en este caso), y la barra «Respondiendo a…» dice el nombre del agente, como la cita que guarda el servicio, y no «Agente». Con la marca `actions: false` del núcleo (#709), el menú de esos mensajes sólo trae «Copiar»: ni Responder ni reacciones.
 
 - **PaynaniWeb, Telegram y WhatsApp: las reacciones del contacto se ven sin recargar (PRD #685 F3).** Con la pestaña a la vista, la página pide cada 15 s las reacciones de los mensajes cargados y redibuja sólo los que cambiaron. Lo acordamos con Metis en #704.
 

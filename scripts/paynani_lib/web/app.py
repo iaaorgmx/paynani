@@ -1601,8 +1601,8 @@ def make_handler(ctx: Context):
                         return
                     data = source.request("telegram.react" if telegram else "whatsapp.react", ref=ref, emoji=emoji)
             except (telegram_source.Failed, whatsapp_source.Failed) as exc:
-                # #707: un mensaje del bot anterior a las reacciones no tiene id en el canal; el aviso
-                # lo dice en lugar de invitar a intentar otra vez.
+                # #707: un mensaje sin id en el canal (de antes de #700, o que no llegó a salir) no
+                # se puede reaccionar; el aviso lo dice en lugar de invitar a intentar otra vez.
                 text = i18n.t("web.msgmenu.react_old") if exc.code == "not_found" else failed
                 reply(429 if exc.code == "rate_limited" else 400, {"ok": False, "error": text, "code": exc.code})
                 return

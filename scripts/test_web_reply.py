@@ -172,7 +172,7 @@ TGT = {"thread": "t_" + "c" * 32, "name": "Ana", "in_roster": True, "can_reply":
 page = telegram_pages.thread_body(TGT, "", replies=True, agent_name="Iris Claude-Tob")
 check("#707: el renglón del agente dice su nombre (data-name), el del dueño sigue igual", (True, True),
       ('data-ref="tgo:1" data-menu tabindex="0" aria-haspopup="menu" data-name="Iris Claude-Tob"' in page,
-       'data-ref="tgo:2" data-menu tabindex="0" aria-haspopup="menu" data-name="Tú"' in page or 'data-ref="tgo:2"' in page))
+       'data-ref="tgo:2" data-menu tabindex="0" aria-haspopup="menu" data-name="Tú"' in page))
 TGT["messages"].append({"dir": "out", "by": "agent", "at": "2026-11-03T14:02:00Z", "text": "viejo", "ref": "tgo:3",
                         "status": "sent", "actions": False})
 page = telegram_pages.thread_body(TGT, "", replies=True, agent_name="Iris Claude-Tob")
