@@ -24,6 +24,7 @@ state/webchat/                 0700
   outbox/                      0700  de aquí toma archivos `paynani webchat send --file`
   typing.json                  0600  {"until": "…Z"} mientras el agente escribe
   draft.json                   0600  {"text", "at"} el borrador de `webchat send --stream`
+  reactions.jsonl              0600  una reacción puesta o quitada por línea (PRD #685 F3)
 ```
 
 - **Nada de esto se sirve directo por la web.** Las fotos y los archivos salen por
@@ -64,6 +65,24 @@ Un mensaje que responde a otro trae `reply_to`, con una copia de la cita hecha a
 - Un mensaje que no es respuesta no trae `reply_to`. PaynaniWeb ofrece «Responder» porque
   `append` acepta `reply_to` (`webchat_pages.replies`).
 
+### Las reacciones (PRD #685 F3)
+
+Un mensaje con reacciones trae `reactions`; sin reacciones, el campo no viene:
+
+```json
+"reactions": [{"emoji": "❤️", "count": 2, "mine": true}, {"emoji": "👀", "count": 1, "mine": false}]
+```
+
+- Hay dos lados: el dueño (desde la web) y el agente (desde la CLI). «La nuestra» (`mine`) es
+  la del dueño, y la del agente cuenta como de la otra persona. Primero va la nuestra y luego
+  por `count`.
+- Cada lado pone una por mensaje: otra la reemplaza y `""` la quita (FR-11). Acepta cualquier
+  emoji, pero uno solo (`store.valid_emoji`).
+- El emoji se compara sin el selector de variación (U+FE0F): «❤» y «❤️» son la misma.
+- `reactions.jsonl` guarda cada cambio (`{"ref", "by", "emoji", "at"}`, y `event_id` si es del
+  dueño); vale la última línea de cada lado. `messages.jsonl` no cambia.
+- PaynaniWeb ofrece reaccionar porque el almacén tiene `react` (`webchat_pages.reacts`).
+
 ### Límites
 
 | Qué | Límite | Error |
@@ -94,6 +113,8 @@ store.draft(now=None, *, state_dir=None) -> dict | None
 store.draft_set(text, *, state_dir=None) -> None
 store.draft_clear(*, state_dir=None) -> None
 store.message_for_event(event_id, *, state_dir=None) -> dict | None
+store.react(ref, emoji, *, by="owner", owner=None, state_dir=None) -> dict
+store.reaction_for_event(event_id, *, state_dir=None) -> dict | None
 ```
 
 - **`append(by, text, files)`**: `files` es `[(nombre, bytes)]`. Con `by="owner"` pide
@@ -116,6 +137,10 @@ store.message_for_event(event_id, *, state_dir=None) -> dict | None
   servidor del WebSocket manda como `message.delta` lo que cambió desde su último envío.
   `append("agent", …)` lo borra bajo el mismo lock en que guarda el mensaje final, y uno
   sin cambios por más de 10 minutos cuenta como `None`.
+- **`react(ref, emoji, by=)`** (§3): devuelve `{"ref", "reactions"}`. Con `by="owner"` escribe
+  el evento de reacción de la sección 5; con `by="agent"` no avisa. Poner la misma que ya
+  está, o quitar una que no hay, no cambia nada. Errores: `Rejected` con `not_found` (el
+  `w_…` no existe) o `bad_emoji`.
 
 La web ya validó la sesión y el CSRF antes de llamar: el módulo confía en ese llamado y no
 vuelve a pedir contraseña. `state_dir` sale de `paths.state_dir()`; las pruebas lo pasan.
@@ -144,6 +169,10 @@ vuelve a pedir contraseña. `state_dir` sale de `paths.state_dir()`; las pruebas
 - `append()` escribe el evento en `events.jsonl` y su `observed` en `lifecycle.jsonl`.
 - **Una respuesta** (FR-16) agrega el extracto citado después de «(PaynaniWeb)»:
   `Julian Flores (PaynaniWeb) (respondiendo a «¿Te mando el reporte?»): El de la semana`.
+- **Una reacción del dueño** (FR-16a) es otro `webchat.received`, con `kind: "reaction"`, un
+  `event_id` `wc:` propio (no el del mensaje) y `reaction: {ref, emoji, removed}`:
+  `Julian Flores (PaynaniWeb) reaccionó 👍 a «Sí, te lo mandé al correo»`, o «quitó su reacción
+  👍 de «…»». Cambiarla por otra da un solo aviso, con la nueva. Las del agente no avisan.
 
 ## 6. Lo que hace el agente (W-2)
 
@@ -161,7 +190,11 @@ vuelve a pedir contraseña. `state_dir` sale de `paths.state_dir()`; las pruebas
   dicen «(respondiendo a «…»)».
 - `scripts/paynani event show wc:… --body`: el texto completo y la ruta local de cada
   adjunto, para que el agente los lea. Si el mensaje responde a otro, imprime antes el
-  texto citado completo (`--- in reply to <nombre> (w_…) ---`).
+  texto citado completo (`--- in reply to <nombre> (w_…) ---`). De una reacción imprime
+  `--- reaction: 👍 on w_… ---` (o `removed 👍`) y el mensaje completo.
+- `scripts/paynani webchat react w_… 👍`: la reacción del agente, una por mensaje (otra la
+  reemplaza); `--remove` la quita. No avisa a nadie. `webchat thread` muestra las reacciones
+  al final del renglón: `[👍 dueño, ❤️ agente]`.
 
 ## 7. PaynaniWeb (Iris)
 

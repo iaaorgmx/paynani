@@ -614,7 +614,24 @@ def _show_telegram(record, args) -> int:
 # y sólo salen con --body; el sobre nunca trae el texto completo.
 _WEBCHAT_SAFE_FIELDS = ("event_id", "event_type", "channel", "account", "observed_at", "sent_at",
                         "kind", "sender", "roster_match", "authenticated_sender", "provider_id",
-                        "notification_text", "inspection_command", "rules")
+                        "notification_text", "inspection_command", "rules", "reaction")
+
+
+def _show_webchat_reaction(record, args, wc_store) -> int:
+    """PRD #685 FR-16a: la reacción y el mensaje completo al que reaccionó el dueño."""
+    row = wc_store.reaction_for_event(args.event_id, state_dir=state_dir())
+    if row is None:
+        print("reaction not found in state/webchat/", file=sys.stderr)
+        return 1
+    reaction = record.get("reaction") or {}
+    message = wc_store.message(row["ref"], state_dir=state_dir()) or {}
+    what = row.get("emoji") or f"removed {reaction.get('emoji') or '?'}"
+    text = str(message.get("text") or wc_store.excerpt_of(message) or "")
+    print(f"\n--- reaction: {what} on {row['ref']} ---")
+    print(text, end="" if text.endswith("\n") else "\n")
+    print(f"--- authorized: the owner, from PaynaniWeb; react with scripts/paynani webchat react "
+          f"{row['ref']} <emoji>, or answer with scripts/paynani webchat send ---")
+    return 0
 
 
 def _show_webchat(record, args) -> int:
@@ -626,6 +643,8 @@ def _show_webchat(record, args) -> int:
     print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     if not args.body:
         return 0
+    if record.get("kind") == "reaction":
+        return _show_webchat_reaction(record, args, wc_store)
     message = wc_store.message_for_event(args.event_id, state_dir=state_dir())
     if message is None:
         print("body not found in state/webchat/", file=sys.stderr)

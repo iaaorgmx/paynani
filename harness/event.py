@@ -906,6 +906,40 @@ def webchat_event(*, message_id, owner_name, owner_email, text, files, sent_at, 
     return record
 
 
+def webchat_reaction_event(*, event_hex, message_id, owner_name, owner_email, emoji, removed,
+                           excerpt, sent_at, local_time, observed_at=None):
+    """
+    El dueño puso o quitó una reacción en el Webchat (PRD #685 FR-16a). `event_id` es `wc:` +
+    32 hex nuevos (no los del mensaje: una reacción no es un mensaje). `emoji` es la que puso,
+    o la que quitó si `removed`. `excerpt` es una línea del mensaje al que reaccionó. Lo que
+    pone el agente no avisa, así que esto sólo sale de la web.
+    """
+    ref = "wc:" + event_hex
+    who = owner_name or owner_email or "el dueño"
+    quoted = f"«{safe_excerpt(excerpt or '', 40)}»"
+    action = f"quitó su reacción {emoji} de {quoted}" if removed else f"reaccionó {emoji} a {quoted}"
+    line = f"[webchat {local_time}, roster] {who} (PaynaniWeb) {action}"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": WEBCHAT_RECEIVED,
+        "event_id": ref,
+        "source": "paynani",
+        "channel": "webchat",
+        "account": "webchat",
+        "observed_at": observed_at or _now(),
+        "sent_at": sent_at or "",
+        "kind": "reaction",
+        "sender": {"name": owner_name or "", "address": owner_email or ""},
+        "roster_match": True,
+        "authenticated_sender": True,
+        "provider_id": "webchat:" + event_hex,
+        "reaction": {"ref": message_id, "emoji": emoji, "removed": bool(removed)},
+        "inspection_command": f"scripts/paynani event show {ref}",
+    }
+    record["notification_text"] = f"{line} [{record['inspection_command']}]"
+    return record
+
+
 def telegram_health_event(*, state, account, local_time, reason=None, observed_at=None):
     """De la instalación, sin remitente (TELEGRAM.md §3). Nunca el token ni un id."""
     if state not in _TG_HEALTH_TEXT:
