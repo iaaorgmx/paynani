@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el menú al tocar un mensaje, primera parte: Copiar (PRD #685, F1).** Lo pidió Julian, como el de Telegram Web.
+  - En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje (o el clic derecho, o Enter con el renglón enfocado) abre un menú con **Copiar**. Copia el texto sin el nombre ni la hora y avisa «Copiado».
+  - Tocar un enlace, una foto o un botón dentro del globo sigue haciendo lo de siempre.
+  - No hay menú en los mensajes ocultos ni en los que se están enviando o fallaron.
+  - **Responder** (F2) y las reacciones (F3) vienen después, en el mismo menú.
+
 - **AGENTS.md: qué hacer cuando el dueño pide el QR para emparejar PaynaniApp (#688).** PaynaniApp le va a dar al dueño un prompt para copiarle a su agente (PaynaniApp#7, Metis[Q51] = A). En la misma computadora el agente corre `paynani sms pair --web`; desde otro canal le manda la dirección y el código. El código es sólo para el dueño, y `--replace` se pregunta antes.
 
 - **PaynaniWeb: «Development team» en About (#686).** Lo pidió Julian: un renglón nuevo en Créditos abre `/about/team`, una tabla con los humanos y agentes de IA que han colaborado en paynani, PaynaniWeb y PaynaniApp.

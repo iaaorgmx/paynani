@@ -411,6 +411,18 @@ traen los 20 más recientes (`THREAD_PAGE`; las listas de conversaciones siguen 
 - **Si la URL trae otra ancla**, la página no se mueve.
 - **Al llegar arriba con el scroll**, `hilo.js` pide solo la página de «Mensajes anteriores» (la misma URL del enlace), toma sus renglones y pone los 20 de antes arriba, sin mover lo que se está leyendo. Para eso mide el primer renglón antes y después, y otra vez cuando termina de cargar una foto nueva. Sigue así mientras haya más. El enlace se queda como respaldo sin JavaScript.
 
+### Al tocar un mensaje (PRD #685)
+
+En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje abre un menú junto a él, como en Telegram Web (`assets/msgmenu.js`). También se abre con clic derecho, o con Enter cuando el renglón tiene el foco (cada renglón con menú es enfocable con Tab). La primera parte (F1) trae sólo **Copiar**:
+- **Copiar** copia el texto del mensaje (y el pie de una foto), sin el nombre, el estado ni la hora, y avisa «Copiado» abajo de la pantalla. Usa el portapapeles del navegador y, si no hay permiso, `execCommand("copy")`. Si ninguno funciona, el aviso dice que se copie a mano.
+- **No abre el menú** tocar un enlace, una foto, un archivo o un botón dentro del globo, ni soltar el dedo después de seleccionar texto: eso hace lo de siempre.
+- **El menú se cierra** con Escape (el foco vuelve al mensaje), con un toque fuera, al desplazar la página o al elegir una opción.
+- **No hay menú** en los mensajes ocultos (fuera del roster sin Catch-All), ni en los que se están enviando o fallaron (`msgmenu.has_menu`): en SMS, `queued`, `accepted`, `failed`, `rejected` y `expired`; en WhatsApp y Telegram, `sending` y `failed`. Tampoco en «escribiendo…» ni en el borrador de Webchat.
+- **Los mensajes que llegan después** (Webchat, o los anteriores que se cargan al subir) también lo tienen: el script escucha en todo el documento.
+- **Sin JavaScript** no hay menú, y el texto se puede seleccionar como siempre.
+
+Las partes siguientes agregan **Responder** (F2) y las reacciones (F3) al mismo menú. En SMS sólo habrá «Copiar» (Iris[Q28] = A).
+
 ### WhatsApp
 
 Con WhatsApp activado en la instalación (PRD #550), el menú agrega «Mensajes de

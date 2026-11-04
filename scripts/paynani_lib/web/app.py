@@ -37,7 +37,7 @@ from .. import web_uploads
 from ..telegram import uploads as tg_uploads
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
-from . import about_strings, agent_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
+from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (about_pages, downloads, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
@@ -58,6 +58,7 @@ STATIC = {
     "/assets/webchat.js": (ASSETS / "webchat.js", "application/javascript; charset=UTF-8"),
     "/assets/barra.js": (ASSETS / "barra.js", "application/javascript; charset=UTF-8"),
     "/assets/hilo.js": (ASSETS / "hilo.js", "application/javascript; charset=UTF-8"),
+    "/assets/msgmenu.js": (ASSETS / "msgmenu.js", "application/javascript; charset=UTF-8"),
     # PRD #491 FR-22: la guía de la API para agentes, sin autenticación.
     "/api/agents.md": (ASSETS / "api_agents.md", "text/markdown; charset=UTF-8"),
     # The brand favicon, from brand/ so there is one copy. /favicon.ico is what a

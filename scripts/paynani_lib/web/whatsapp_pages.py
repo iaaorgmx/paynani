@@ -20,7 +20,7 @@ from urllib.parse import quote
 
 from .. import i18n
 from ..sms import qr
-from . import downloads, mail_pages
+from . import downloads, mail_pages, msgmenu
 from .shell import e, icon
 from .whatsapp_source import MAX_TEXT
 
@@ -294,7 +294,7 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
     if thread.get("next_before"):
         out.append(f'<p class="mas"><a class="secundario" href="/whatsapp/messages/ver?n={quote(number, safe="")}'
                    f'&amp;antes={quote(thread["next_before"], safe="")}">{_th("older")}</a></p>')
-    bubbles = ['<ol class="hilo">']
+    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs()}>']
     for m in reversed(thread.get("messages") or []):
         out_dir = m.get("dir") == "out"
         css = {"agent": "sms-agent", "owner": "sms-human", "api": "sms-agent"}.get(m.get("by"), "sms-agent") \
@@ -330,11 +330,13 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
         else:
             body = e(m.get("text") or "")
         when = mail_pages.list_time(m.get("at") or "")
-        bubbles.append(f'<li class="sms {css}"><div class="globo"><div class="de">{label}{_status(m)}</div>'
+        # PRD #685: el menú al tocar el mensaje, sólo en los que ya llegaron o salieron.
+        bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("whatsapp", m))}>'
+                       f'<div class="globo"><div class="de">{label}{_status(m)}</div>'
                        f'<div class="texto">{body}</div>{when}</div></li>')
     bubbles.append("</ol>")
     # #680: hilo.js baja al último mensaje al abrir, como Webchat.
-    return "\n".join(out + bubbles + [reply, '<script src="/assets/hilo.js" defer></script>']) + "\n"
+    return "\n".join(out + bubbles + [reply, '<script src="/assets/hilo.js" defer></script>', msgmenu.SCRIPT]) + "\n"
 
 
 IMAGE_MIMES = ("image/jpeg", "image/png", "image/webp")

@@ -18,7 +18,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from .. import i18n
-from . import mail_pages
+from . import mail_pages, msgmenu
 from .shell import e
 
 PAGE = 50                # conversaciones por página de la lista
@@ -256,7 +256,7 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
     if start > 0:
         head.append(f'<p class="mas"><a class="secundario" href="/messages/ver?n={quote(number, safe="")}'
                     f'&amp;desde={offset + THREAD_PAGE}">{th("web.sms.older")}</a></p>')
-    bubbles = ['<ol class="hilo">']
+    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs()}>']
     for item in items[start:end]:
         kind = item["kind"]
         when = e(_local(item["local"]))
@@ -272,14 +272,16 @@ def thread_body(number: str, who: str, items: list[dict], offset: int, pause_unt
         owner = th("web.sms.by_owner_web") if item.get("via") == "web" else th("web.sms.by_owner")
         label = {"received": e(who), "agent": th("web.sms.by_agent"), "human": owner}[kind]
         body = e(item.get("text") or "") or f'<span class="quiet">{th("web.sms.no_text")}</span>'
-        bubbles.append(f'<li class="sms sms-{kind}"><div class="globo"><div class="de">{label}{_status(item["status"], item.get("error", ""), item.get("id", ""))}</div>'
+        # PRD #685: el menú al tocar el mensaje (en SMS sólo «Copiar», Iris[Q28] = A).
+        bubbles.append(f'<li class="sms sms-{kind}"{msgmenu.item(msgmenu.has_menu("sms", item))}>'
+                       f'<div class="globo"><div class="de">{label}{_status(item["status"], item.get("error", ""), item.get("id", ""))}</div>'
                        f'<div class="texto">{body}</div><time>{when}</time></div></li>')
     bubbles.append("</ol>")
     # sms.js pregunta los estados a /messages/estados y recarga si llegó algo nuevo (FR-5).
     watch = (f'<div hidden id="sms-watch" data-url="/messages/estados?n={e(quote(number, safe=""))}"'
              f' data-count="{len(items)}"></div>')
     # #680: hilo.js baja al último mensaje al abrir (y al recargar cuando sms.js ve algo nuevo).
-    script = '<script src="/assets/sms.js" defer></script>\n<script src="/assets/hilo.js" defer></script>'
+    script = '<script src="/assets/sms.js" defer></script>\n<script src="/assets/hilo.js" defer></script>\n' + msgmenu.SCRIPT
     return "\n".join(head + bubbles + [reply, watch, script]) + "\n"
 
 
