@@ -128,6 +128,10 @@ para pruebas, sección 9) usando la biblioteca estándar. Sólo usa estos métod
   dice (`[documento: factura.pdf, rechazado: tipo]`) y no queda nada en disco. Sólo se
   baja el archivo de alguien del roster, o de fuera con el Catch-All activo; de los
   demás no se pide ni `getFile`.
+- **Una respuesta** (PRD #685 FR-16): si el mensaje cita otro (`reply_to_message`), el aviso
+  dice `Ana López (respondiendo a «Sí, a las 8»): Perfecto`, sólo si el mensaje se muestra.
+  El inbox guarda `reply_to` (`ref`, `excerpt`, `from_bot`), y `event show tg:… --body`
+  imprime antes el texto citado completo (`--- in reply to the agent (tgo:…) ---`).
 
 ### Quién es quién (FR-11 a FR-13)
 
@@ -216,6 +220,9 @@ servicio asigna y guarda en `chats.json`. Nunca es un id de Telegram.
 `web_files: true`: `telegram.send` acepta `uploads` de PaynaniWeb (#662). Un servicio
 sin el campo no los acepta, y la web deja la barra sólo con texto.
 
+`replies: true`: `telegram.send` acepta `reply_to` y los hilos traen la cita (PRD #685 F2).
+Sin el campo, PaynaniWeb no ofrece «Responder».
+
 `state`: `starting`, `running`, `offline`, `conflict`, `token_invalid`,
 `journal_mismatch`, `stopped` o `service_down`. `conflict` trae
 `reason: "webhook"` o `reason: "409"`. Nunca trae el token, el `bot_id` ni ids de
@@ -269,14 +276,36 @@ Catch-All de Telegram activo.
   `name`. Nunca trae rutas.
 - La terminal y el agente pueden pedir el hilo con `contact` en lugar de `thread`.
 - Fuera del roster sin Catch-All activo: `messages` va vacío y `hidden: true`.
+- **La cita (PRD #685 F2).** Un mensaje que responde a otro, mandado o recibido, trae
+  `"reply_to": {"ref": "tg:…", "name": "Ana López", "excerpt": "¿Tienen mesa a las 8?", "missing": false}`.
+  - `ref` es el `tg:` o `tgo:` del original, o `null` si es de antes de paynani; entonces
+    `excerpt` es el que mandó Telegram (FR-9).
+  - `name` es el del contacto, o el del agente (`AGENT_EMAIL_FROM_NAME`, o el @usuario del
+    bot) si el original es nuestro.
+  - `excerpt` va en una línea, hasta 100 caracteres; una foto sin texto es `📷` y un
+    documento, `📄 nombre`.
+  - `missing: true` si el envío salió `dropped`.
+  - Un mensaje que no es respuesta no trae `reply_to`. Nunca trae el `message_id`.
 
 #### `telegram.send`
 
 ```json
 {"type": "telegram.send", "id": "q_…", "by": "agent", "thread": "t_…", "text": "…"}
 {"type": "telegram.send", "id": "q_…", "by": "terminal", "contact": "Ana López", "text": "…", "file": "/ruta/en/outbox"}
+{"type": "telegram.send", "id": "q_…", "by": "web", "thread": "t_…", "text": "Sí, a las 8", "reply_to": "tg:…"}
 {"type": "result", "ref": "q_…", "ok": true, "data": {"ref": "tgo:…", "status": "sent", "at": "…"}}
 ```
+
+- `reply_to` (PRD #685 F2, opcional): el `tg:` o `tgo:` de un mensaje de ese mismo hilo.
+  - La primera parte sale con `reply_parameters` y `allow_sending_without_reply`.
+  - El resultado trae `reply: "native"` si Telegram lo citó, o `"dropped"` si ya no tenía
+    el original y salió sin cita (FR-7).
+  - Si el ref no existe, es `invalid` con `field: "reply_to"` y `reason: "not_found"`; si
+    es de otro hilo, `reason: "other_thread"`.
+  - Si el envío iba a editar un borrador (`--stream`), el borrador se borra y la respuesta
+    sale nueva, porque una edición no cita.
+  - El servicio guarda en `outbox.jsonl` el `message_id` de lo que mandó, para poder
+    citarlo y reconocerlo cuando alguien le responde. Nunca sale del servicio.
 
 - `thread` o `contact` (el nombre o el email de la fila del roster). Uno de los dos. Un
   nombre que está en más de una fila da `conflict` y no manda nada: hay que usar el
@@ -430,7 +459,7 @@ paynani telegram setup                   # lee el token de stdin (FR-9)
 paynani telegram status
 paynani telegram threads
 paynani telegram thread <contacto>
-paynani telegram send <contacto> "<texto>" [--file <ruta>]
+paynani telegram send <contacto> "<texto>" [--file <ruta>] [--reply-to tg:…|tgo:…]
 paynani telegram send <contacto> --stream < texto
 paynani telegram draft <contacto> "<texto>"
 paynani telegram token                   # cambio de token, lee de stdin (FR-10)

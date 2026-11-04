@@ -312,15 +312,19 @@ class WhatsAppService:
                                        voice_note=bool((media or {}).get("voice_note")),
                                        filename=(media or {}).get("filename"), show_name=visible)
         text = msg.get("text") if isinstance(msg.get("text"), str) else ""
+        reply = self._reply_of(msg.get("quote"), account, chat, e164)
         envelope = ev.whatsapp_event(
             account=account, message_hash=mhash, e164=e164, lid=lid, sender_name=name, kind=kind,
             text=text if visible else "", media_label=label if visible else "", sent_at=str(msg.get("sent_at") or ""),
-            roster_match=in_roster, local_time=time.strftime("%H:%M:%S"), rules=rules_note, catch_all=catch)
+            roster_match=in_roster, local_time=time.strftime("%H:%M:%S"), rules=rules_note, catch_all=catch,
+            reply_excerpt=(reply or {}).get("excerpt") if visible else None)
         data = {"type": "whatsapp.received", "account_me": me, "chat": chat, "key_id": key_id,
                 "from_e164": e164, "lid": lid, "push_name": msg.get("push_name"), "kind": kind,
                 "text": text, "media": media, "sent_at": msg.get("sent_at"), "received_at": now_utc(),
                 "catch_all": (catch or {}).get("status") == "active",
                 "event_id": envelope["event_id"], "journaled": False}
+        if reply is not None:
+            data["reply_to"] = reply
         self.store.save_inbox(mhash, data)
         ev.append(self.journal, envelope)
         ledger.observed(self.ledger_path, envelope)
@@ -332,6 +336,29 @@ class WhatsAppService:
         if in_roster:
             self._push_allowed_soon()
         self._notify("threads")
+
+    def _reply_of(self, quote, account: str, chat: str, e164: str | None) -> dict | None:
+        """
+        PRD #685 F2 (FR-9): la cita de un mensaje que entra, de `quote` del puente. `{ref,
+        excerpt, from_me}`: `ref` es el `wa:` o `wo_` del original si paynani lo tiene, o null
+        si es de antes (entonces el extracto es el que mandó WhatsApp). Ningún key_id sale.
+        """
+        if not isinstance(quote, dict) or not quote.get("key_id"):
+            return None
+        key_id = str(quote["key_id"])
+        from_me = bool(quote.get("from_me"))
+        original = None
+        if from_me:
+            original = next((m for m in self.store.sent()
+                             if m.get("key_id") == key_id and (e164 is None or m.get("to") == e164)), None)
+            ref = (original or {}).get("id")
+        else:
+            original = self.store.inbox(ev.whatsapp_message_hash(account, chat, key_id))
+            ref = (original or {}).get("event_id") if original and original.get("journaled") else None
+            original = original if ref else None
+        excerpt = quote_excerpt(original) if original else quote_excerpt(
+            {"text": quote.get("text"), "kind": quote.get("kind"), "media": {"filename": quote.get("filename")}})
+        return {"ref": ref, "excerpt": excerpt, "from_me": from_me}
 
     def _call(self, msg: dict) -> None:
         status = msg.get("status")
@@ -512,7 +539,8 @@ class WhatsAppService:
             state = "connecting" if self.store.link_info() else "unlinked"
         return {"state": state, "me": st.get("me") or self.store.link_info().get("me"),
                 "since": st.get("since"), "linking": self._linking(), "link_number": None,
-                "web_files": True}          # #670 FR-8: whatsapp.send acepta `uploads` de PaynaniWeb
+                "web_files": True,          # #670 FR-8: whatsapp.send acepta `uploads` de PaynaniWeb
+                "replies": True}            # PRD #685 F2: whatsapp.send acepta `reply_to`
 
     # --- enviar (FR-19 a FR-23) ----------------------------------------------------------
     def attach_dirs(self) -> list[Path]:
@@ -545,7 +573,7 @@ class WhatsAppService:
         raise Refused("not_allowed", "fuera de outbox/ y de WHATSAPP_ATTACH_DIRS", reason="file_dir")
 
     async def send(self, number: str, text: str, by: str, file: str | None = None,
-                   uploads: list | None = None) -> dict:
+                   uploads: list | None = None, reply_to=None) -> dict:
         e164 = phone.to_e164(number) if number else None
         if not e164:
             raise Refused("invalid", "el número no es E.164", field="number", reason="number")
@@ -566,8 +594,11 @@ class WhatsAppService:
             raise Refused("not_allowed", "las reglas del contacto dicen reply.sms: never", reason="reply_never")
         if e164 not in self.store.wrote_since_link():
             raise Refused("not_started", "el contacto no ha escrito por WhatsApp desde que se vinculó")
+        if reply_to is not None and not isinstance(reply_to, str):
+            raise Refused("invalid", "reply_to", field="reply_to")
+        quote = self._reply_target(e164, reply_to) if reply_to is not None else None
         if uploads is not None:
-            return await self._send_uploads(e164, text, by, uploads)
+            return await self._send_uploads(e164, text, by, uploads, quote)
         path = self.check_file(file) if file else None
         wait = self._rate_wait(1)
         if wait:
@@ -575,9 +606,13 @@ class WhatsAppService:
         sid = self.store.new_sent_id()
         record = {"id": sid, "to": e164, "text": text, "by": author(by), "at": now_utc(),
                   "status": "sending", "file": path.name if path else None}
+        if quote is not None:
+            record["reply_to"] = _quote_record(quote)
         self.store.record_sent(record)
         self.store.rate_take()
         fields: dict[str, Any] = {"to": e164, "text": text}
+        if quote is not None and quote.get("bridge"):
+            fields["quote"] = quote["bridge"]
         if path:
             import mimetypes
             fields["file"] = {"path": str(path), "mime": mimetypes.guess_type(path.name)[0]
@@ -590,8 +625,38 @@ class WhatsAppService:
             raise Refused(_bridge_code(exc.code), exc.detail or "") from None
         self.store.record_sent({"id": sid, "status": "sent", "key_id": data.get("key_id")})
         self._notify("threads")
-        return {"message": {"id": sid, "dir": "out", "by": record["by"], "at": record["at"], "kind": "file"
-                            if path else "text", "text": text, "status": "sent"}}
+        out = {"message": {"id": sid, "dir": "out", "by": record["by"], "at": record["at"], "kind": "file"
+                           if path else "text", "text": text, "status": "sent"}}
+        if quote is not None:
+            out["reply"] = "native" if quote.get("bridge") else "dropped"
+        return out
+
+    def _reply_target(self, e164: str, ref: str) -> dict:
+        """
+        PRD #685 F2 (contrato de FR-14): el mensaje que se cita, de la conversación con este
+        número, que entró (`wa:`) o que salió (`wo_`). `{"ref", "excerpt", "bridge"}`; `bridge`
+        es lo que el puente necesita (`key_id`, `from_me`, `text`), o None si el original no
+        tiene `key_id` (no salió): entonces se manda sin cita (`dropped`).
+        """
+        if ref.startswith("wa:"):
+            original = next((m for m in self.store.received() if m.get("event_id") == ref), None)
+            party = (original or {}).get("from_e164")
+            from_me = False
+        elif ref.startswith("wo_"):
+            original = next((m for m in self.store.sent() if m.get("id") == ref), None)
+            party = (original or {}).get("to")
+            from_me = True
+        else:
+            original, party, from_me = None, None, False
+        if not original:
+            raise Refused("invalid", "ese mensaje no existe", field="reply_to", reason="not_found")
+        if party != e164:
+            raise Refused("invalid", "ese mensaje es de otra conversación", field="reply_to", reason="other_thread")
+        excerpt = quote_excerpt(original)
+        key_id = original.get("key_id")
+        bridge_quote = ({"key_id": str(key_id), "from_me": from_me, "text": str(original.get("text") or "")[:1000]}
+                        if key_id else None)
+        return {"ref": ref, "excerpt": excerpt, "bridge": bridge_quote}
 
     def _rate_wait(self, count: int) -> int | None:
         """FR-21 para `count` envíos seguidos: None si el primero sale ya y caben todos hoy."""
@@ -606,7 +671,7 @@ class WhatsAppService:
             return 86400
         return self.store.rate_check(0, room)
 
-    async def _send_uploads(self, e164: str, text: str, by: str, ups) -> dict:
+    async def _send_uploads(self, e164: str, text: str, by: str, ups, quote: dict | None = None) -> dict:
         """
         #670 FR-6: los archivos que el dueño subió desde PaynaniWeb (`web_uploads`), un
         `send` del puente por archivo, con el texto como pie del primero. Cada uno cuenta
@@ -626,14 +691,16 @@ class WhatsAppService:
                 wait = self._rate_wait(len(files))
                 if wait:
                     raise Refused("rate_limited", f"espera {wait} s", retry_after_s=wait)
-                return await self._send_files(e164, text, by, files)
+                return await self._send_files(e164, text, by, files, quote)
         finally:
             self._uploads_busy.difference_update(refs)
 
-    async def _send_files(self, e164: str, text: str, by: str, files: list[dict]) -> dict:
+    async def _send_files(self, e164: str, text: str, by: str, files: list[dict], quote: dict | None = None) -> dict:
         sid = self.store.new_sent_id()
         record = {"id": sid, "to": e164, "text": text, "by": author(by), "at": now_utc(), "status": "sending",
                   "file": files[0]["name"], "files": [self._keep_photo(f) for f in files], "parts": len(files)}
+        if quote is not None:
+            record["reply_to"] = _quote_record(quote)
         self.store.record_sent(record)
         interval = config.setting("WHATSAPP_SEND_INTERVAL_S", self.settings)
         deadline = time.monotonic() + WEB_SEND_TIMEOUT_S
@@ -646,11 +713,12 @@ class WhatsAppService:
                         raise Refused("timeout", "no alcanzó el tiempo para mandar todos")
                     await asyncio.sleep(pause)
                 self.store.rate_take()
+                extra = {"quote": quote["bridge"]} if i == 0 and quote and quote.get("bridge") else {}
                 try:
                     data = await self.sup.request(
                         "send", to=e164, text=text if i == 0 else "",
                         file={"path": str(self.layout.root / web_uploads.DIR / f["upload"]), "mime": f["mime"],
-                              "filename": f["name"]})
+                              "filename": f["name"]}, **extra)
                 except bridge.BridgeError as exc:
                     raise Refused(_bridge_code(exc.code), exc.detail or "") from None
                 web_uploads.drop(self.layout.root, f["upload"])   # un solo uso: ya salió
@@ -666,8 +734,11 @@ class WhatsAppService:
             raise
         self.store.record_sent({"id": sid, "status": "sent"})
         self._notify("threads")
-        return {"message": {"id": sid, "dir": "out", "by": record["by"], "at": record["at"], "kind": "file",
-                            "text": text, "status": "sent", "files": [_public_file(x) for x in record["files"]]}}
+        out = {"message": {"id": sid, "dir": "out", "by": record["by"], "at": record["at"], "kind": "file",
+                           "text": text, "status": "sent", "files": [_public_file(x) for x in record["files"]]}}
+        if quote is not None:
+            out["reply"] = "native" if quote.get("bridge") else "dropped"
+        return out
 
     def _keep_photo(self, f: dict) -> dict:
         """Lo que queda en sent.jsonl de un archivo de la web; una foto, con su copia en media/ (FR-7)."""
@@ -702,6 +773,8 @@ class WhatsAppService:
                 "text": m.get("text"), "catch_all": bool(m.get("catch_all")),
                 "media": {k: media.get(k) for k in ("mime", "bytes", "filename", "seconds")} | {"kind": m.get("kind")}
                 if media else None})
+            if isinstance(m.get("reply_to"), dict):
+                out[party][-1]["_reply"] = m["reply_to"]      # PRD #685 F2; se publica en thread()
         for s in self.store.sent():
             item = {"id": s.get("id"), "dir": "out", "by": s.get("by"), "at": s.get("at"),
                     "kind": "file" if s.get("file") else "text", "text": s.get("text"), "status": s.get("status")}
@@ -709,6 +782,8 @@ class WhatsAppService:
                 item["files"] = [_public_file(f) for f in s["files"]]
             elif s.get("file"):
                 item["files"] = [{"name": s["file"]}]
+            if isinstance(s.get("reply_to"), dict):
+                item["_reply"] = s["reply_to"]
             out.setdefault(s.get("to") or "?", []).append(item)
         for msgs in out.values():
             msgs.sort(key=lambda m: m.get("at") or "", reverse=True)
@@ -720,7 +795,28 @@ class WhatsAppService:
     def _public(self, msg: dict, visible: bool) -> dict:
         if not visible:
             return {"id": msg.get("id"), "dir": msg.get("dir"), "at": msg.get("at"), "hidden": True}
-        return {k: v for k, v in msg.items() if k != "catch_all"}
+        return {k: v for k, v in msg.items() if k != "catch_all" and not k.startswith("_")}
+
+    def _agent_name(self) -> str:
+        """El nombre del agente en una cita a lo que mandamos: AGENT_EMAIL_FROM_NAME."""
+        with contextlib.suppress(Exception):
+            from paynani_lib import envfile  # noqa: PLC0415
+            return str(envfile.read_env().get("AGENT_EMAIL_FROM_NAME") or "")
+        return ""
+
+    def _public_quote(self, q: dict, contact_name: str, msgs: list[dict], visible) -> dict:
+        """
+        La cita de `whatsapp.thread` (contrato de FR-14): `{ref, name, excerpt, missing}`. Un
+        original que la conversación oculta hoy no deja ver su texto: `name` y `excerpt` null.
+        """
+        ref = q.get("ref") if isinstance(q.get("ref"), str) else None
+        if ref:
+            original = next((m for m in msgs if m.get("id") == ref), None)
+            if original is not None and not visible(original):
+                return {"ref": ref, "name": None, "excerpt": None, "missing": bool(q.get("missing"))}
+        ours = (ref or "").startswith("wo_") or (ref is None and q.get("from_me"))
+        return {"ref": ref, "name": self._agent_name() if ours else contact_name,
+                "excerpt": str(q.get("excerpt") or "")[:100], "missing": bool(q.get("missing"))}
 
     def threads(self, limit: int = 50, before: str | None = None) -> dict:
         limit = _limit(limit)
@@ -763,10 +859,23 @@ class WhatsAppService:
         catch_active = self._catch_all_active()
         if before:
             msgs = [m for m in msgs if (m.get("at") or "") < before]
+        all_msgs = msgs
         page = msgs[:limit]
+        contact = phones.get(party) if in_roster else (next((m.get("push_name") for m in all_msgs
+                                                            if m.get("push_name")), None) or party)
+
+        def visible(m):
+            return self._visible(m, in_roster, catch_active)
+
+        rows = []
+        for m in page:
+            row = self._public(m, visible(m))
+            if "_reply" in m and not row.get("hidden"):
+                row["reply_to"] = self._public_quote(m["_reply"], contact, all_msgs, visible)
+            rows.append(row)
         return {"number": party, "name": phones.get(party) if in_roster else None, "in_roster": in_roster,
                 "can_reply": in_roster and party in self.store.wrote_since_link(),
-                "messages": [self._public(m, self._visible(m, in_roster, catch_active)) for m in page],
+                "messages": rows,
                 "next_before": page[-1].get("at") if len(msgs) > limit else None}
 
     def image(self, message_id: str, index=0) -> dict:
@@ -890,7 +999,7 @@ class WhatsAppService:
                 data = self.thread(str(msg.get("number") or ""), msg.get("limit", 50), msg.get("before"))
             elif kind == "whatsapp.send":
                 data = await self.send(str(msg.get("number") or ""), msg.get("text") or "", by, msg.get("file"),
-                                       msg.get("uploads"))
+                                       msg.get("uploads"), msg.get("reply_to"))
             elif kind == "whatsapp.image":
                 data = self.image(str(msg.get("message_id") or ""), msg.get("index", 0))
             elif kind == "whatsapp.file":
@@ -920,6 +1029,27 @@ def author(by: str) -> str:
     if by == "web" or by.startswith("phone:"):
         return "owner"
     return "agent"
+
+
+def _quote_record(quote: dict) -> dict:
+    """Lo que queda en sent.jsonl de una cita: sin el key_id del original."""
+    return {"ref": quote["ref"], "excerpt": quote["excerpt"], "missing": not quote.get("bridge")}
+
+
+def quote_excerpt(data: dict) -> str:
+    """El extracto de una cita (contrato de FR-14): una línea, hasta 100. Sin texto, una foto es
+    «📷» y un documento «📄 nombre»."""
+    text = " ".join(str(data.get("text") or "").split())
+    if text:
+        return text[:100]
+    kind = data.get("kind")
+    if kind == "image":
+        return "📷"
+    media = data.get("media") or {}
+    name = media.get("filename") or data.get("file") or ""
+    if kind in ("document", "file") or name:
+        return f"📄 {name}".strip()[:100]
+    return ""
 
 
 def _public_file(f: dict) -> dict:

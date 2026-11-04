@@ -145,3 +145,33 @@ test('credsLinked: QR y código vinculados; código pendiente y vacío no (#604)
   assert.equal(credsLinked(null), false);
   assert.equal(credsLinked(undefined), false);
 });
+
+test('quoteOf: la cita de un mensaje que entra (PRD #685 F2)', async () => {
+  const { quoteOf } = await import('../lib.js');
+  const reply = { extendedTextMessage: { text: 'Sí', contextInfo: {
+    stanzaId: 'ABC123', participant: '15550001111:3@s.whatsapp.net',
+    quotedMessage: { conversation: '¿Tienen mesa?' } } } };
+  assert.deepEqual(quoteOf(reply), { key_id: 'ABC123', participant: '15550001111@s.whatsapp.net',
+    text: '¿Tienen mesa?', kind: 'text', filename: null });
+  const photo = { imageMessage: { caption: 'esta', contextInfo: { stanzaId: 'P1', participant: '1@lid',
+    quotedMessage: { documentMessage: { fileName: 'menu.pdf', mimetype: 'application/pdf' } } } } };
+  assert.equal(quoteOf(photo).kind, 'document');
+  assert.equal(quoteOf(photo).filename, 'menu.pdf');
+  assert.equal(quoteOf({ ephemeralMessage: { message: reply } }).key_id, 'ABC123');
+  assert.equal(quoteOf({ conversation: 'hola' }), null);
+  assert.equal(quoteOf({ extendedTextMessage: { text: 'x', contextInfo: { mentionedJid: [] } } }), null);
+  assert.equal(quoteOf(null), null);
+});
+
+test('quoteContext: el contextInfo de una respuesta (PRD #685 F2)', async () => {
+  const { quoteContext } = await import('../lib.js');
+  const to = '15550001111@s.whatsapp.net';
+  const me = '15559990000@s.whatsapp.net';
+  assert.deepEqual(quoteContext({ key_id: 'K1', from_me: false, text: 'hola' }, to, me),
+    { stanzaId: 'K1', participant: to, quotedMessage: { conversation: 'hola' } });
+  assert.equal(quoteContext({ key_id: 'K2', from_me: true, text: null }, to, me).participant, me);
+  assert.equal(quoteContext({ key_id: 'K2', from_me: true, text: null }, to, me).quotedMessage.conversation, '');
+  assert.equal(quoteContext(null, to, me), null);
+  assert.equal(quoteContext({ key_id: '' }, to, me), null);
+  assert.equal(quoteContext({ key_id: 'K3', from_me: true }, to, null), null);
+});

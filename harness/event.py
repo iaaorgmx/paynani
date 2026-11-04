@@ -651,7 +651,8 @@ def whatsapp_kind_label(kind, *, seconds=None, voice_note=False, filename=None, 
 
 
 def whatsapp_event(*, account, message_hash, e164, lid, sender_name, kind, text, media_label,
-                   sent_at, roster_match, local_time, observed_at=None, rules=None, catch_all=None):
+                   sent_at, roster_match, local_time, observed_at=None, rules=None, catch_all=None,
+                   reply_excerpt=None):
     """
     Un mensaje directo de WhatsApp (FR-11, FR-14), con el mismo sobre que un SMS. El
     texto y el archivo no van aquí: viven en state/whatsapp/inbox/ y media/, y salen con
@@ -660,6 +661,8 @@ def whatsapp_event(*, account, message_hash, e164, lid, sender_name, kind, text,
     eid = f"{account}:{message_hash}"
     who_number = e164 or "número sin resolver"
     who = " ".join(p for p in (sender_name, who_number) if p)
+    if reply_excerpt:   # PRD #685 FR-16: sólo un mensaje que se muestra trae el extracto
+        who += f" (respondiendo a «{safe_excerpt(reply_excerpt, 40)}»)"
     excerpt = " ".join(p for p in (media_label, safe_excerpt(text or "")) if p)
     if roster_match:
         note = f", {_rules_tag(rules)}" if rules else ""
@@ -782,18 +785,21 @@ def telegram_kind_label(kind, *, filename=None, show_name=True):
 
 def telegram_event(*, account, ref, digest, sender_name, kind, text, media_label, sent_at,
                    roster_match, local_time, observed_at=None, rules=None, catch_all=None,
-                   edits=None):
+                   edits=None, reply_excerpt=None):
     """
     Un mensaje privado de Telegram (PRD #609 FR-16), o su edición si `edits` es la
     referencia del original (FR-16a). `event_id` es la referencia opaca `tg:…` (FR-5):
     ningún id de Telegram entra al evento. El texto no va aquí; vive en el inbox privado
-    del bot y sale con `paynani event show --body`.
+    del bot y sale con `paynani event show --body`. `reply_excerpt`: el extracto del mensaje
+    que cita, si es una respuesta (PRD #685 FR-16); sólo para un mensaje que se muestra.
     """
     if roster_match:
         who = sender_name or "contacto del roster"
     else:
         who = f"{sender_name} (no verificado)" if sender_name else "alguien (no verificado)"
     verb = " editó su mensaje" if edits else ""
+    if reply_excerpt:
+        verb += f" (respondiendo a «{safe_excerpt(reply_excerpt, 40)}»)"
     excerpt = " ".join(p for p in (media_label, safe_excerpt(text or "")) if p)
     if roster_match:
         note = f", {_rules_tag(rules)}" if rules else ""

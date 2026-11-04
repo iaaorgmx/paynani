@@ -211,11 +211,19 @@ def run_send(args) -> int:
     fields = {"number": args.number, "text": text}
     if args.file:
         fields["file"] = str(Path(args.file).expanduser().absolute())
+    reply_to = getattr(args, "reply_to", None)
+    if reply_to is not None:
+        if not (reply_to.startswith("wa:") or reply_to.startswith("wo_")):
+            print("--reply-to es el id de un mensaje de la conversación (wa:… o wo_…, de whatsapp thread)",
+                  file=sys.stderr)
+            return 2
+        fields["reply_to"] = reply_to
     data, rc = _call(args, "whatsapp.send", **fields)
     if rc:
         return rc
     msg = data.get("message") or {}
-    print(f"{msg.get('id')}\t{msg.get('status')}")
+    note = {"native": f"\treply_to {reply_to}", "dropped": "\treply dropped: the original has no WhatsApp id"}
+    print(f"{msg.get('id')}\t{msg.get('status')}{note.get(data.get('reply'), '')}")
     return 0
 
 
@@ -234,5 +242,8 @@ def run_thread(args) -> int:
             print(f"{m.get('at')} {arrow} (oculto: fuera del roster)")
             continue
         extra = f" [{m['status']}]" if m.get("status") else ""
-        print(f"{m.get('at')} {arrow} {m.get('text') or '[' + str(m.get('kind')) + ']'}{extra}")
+        quote = m.get("reply_to") or {}
+        cited = ("(se mandó sin cita) " if quote.get("missing")
+                 else f"(respondiendo a «{quote.get('excerpt') or '…'}») " if quote else "")
+        print(f"{m.get('at')} {m.get('id')} {arrow} {cited}{m.get('text') or '[' + str(m.get('kind')) + ']'}{extra}")
     return 0
