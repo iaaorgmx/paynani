@@ -48,7 +48,10 @@ def sha(path: Path) -> str:
         return ""
 
 
-REAL = [Path.home() / ".claude/workspace/paynani/.env", Path.home() / ".config/himalaya/config.toml"]
+import paths  # noqa: E402
+
+# El .env de esta instalación, donde sea que esté (Metis en #696), y la configuración de Himalaya.
+REAL = [paths.env_file(), Path.home() / ".config/himalaya/config.toml"]
 BEFORE = [sha(p) for p in REAL]
 
 
