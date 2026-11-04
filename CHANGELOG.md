@@ -2,6 +2,25 @@
 
 ## Sin publicar
 
+## 0.22.0 (2026-11-04)
+
+### Si actualizas desde 0.21.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.22.0
+python3 scripts/upgrade_plan.py --from v0.21.0     # y haz lo que imprima
+```
+
+El plan reinicia el listener, el despachador, la pasarela SMS, PaynaniWeb, WhatsApp y Telegram. No hay servicios nuevos, pasos de instalación ni dependencias nuevas del puente de WhatsApp (`package.json` no cambió). `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien.
+
+- **Las reacciones de los contactos llegan al agente** con los tipos de evento de siempre (`telegram.received`, `whatsapp.received`, `webchat.received`) y `kind: "reaction"`. **Hermes no cambia sus rutas.** El agente las lee con `scripts/paynani event show <id> --body`, como cualquier mensaje, y no tiene que contestarlas.
+- **Telegram** pide `message_reaction` a la API en cuanto se reinicia el servicio. No hay nada que configurar en BotFather.
+- **Para probarlo:** en PaynaniWeb, toca un mensaje de una conversación de WhatsApp, Telegram o Webchat. El menú trae Copiar, Responder y la fila de reacciones. Los mensajes del bot de antes de esta versión sólo traen Copiar (#707).
+- **CI (para quien contribuye):** `suite-macos` ya no corre en cada PR. Ponle la etiqueta `macos` a un PR que toque la instalación en macOS (#710).
+- **PaynaniApp 1.0.5** (Google Play) usa `agent.get` y `agent.changed` de la pasarela para el menú «AI Agent» (#692). Con una paynani anterior, ese menú no muestra el agente.
+
 - **CI: menos minutos de GitHub Actions (Metis[Q59] = A).** Lo pidió Julian: depender lo menos posible del cómputo de GitHub. Del 1 al 4 de noviembre corrieron 198 `tests` y 198 `bootstrap-e2e`, y casi todo el uso era `suite-macos` (unos 17 min por corrida, y un minuto de macOS cuenta como diez de Linux).
   - `suite-macos` ya no corre en cada PR. Corre en el PR del release (rama `release/*`), en un PR con la etiqueta `macos`, al empujar una etiqueta `v*` y a mano (`workflow_dispatch`). Pon la etiqueta `macos` a un PR que toque `install_macos.py`, `bootstrap_macos.py`, rutas, o algo que dependa de una herramienta GNU o BSD.
   - `bootstrap-e2e` corre sólo si el PR toca el instalador (`bootstrap.sh`, `scripts/install.sh`, `systemd/`, `VERSION`, …), y a mano.
@@ -142,6 +161,7 @@
   El clip en la web lo hace Iris en otro PR. `telegram/uploads.py`; `test_telegram_send.py`.
 
   Después de la revisión: un `up_` que otro envío está mandando da `bad_upload`. Lo que ya salió en un envío parcial no se repite, y el error lo dice en `sent_uploads`. Un `up_` sin su `.json` se borra a los 10 minutos (Iris y Andy en #665).
+- **Docs: las referencias a issues de la app apuntan a PaynaniApp-Agentic (#669, Q340 = B).** Desde el 11-02, PaynaniApp es la app pública de Google Play y el código anterior vive en PaynaniApp-Agentic. Las ligas a issues viejos de la app en los documentos de paynani ahora llevan a PaynaniApp-Agentic.
 
 ## 0.21.0 (2026-11-01)
 
