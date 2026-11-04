@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **WhatsApp: responder citando un mensaje, el núcleo (PRD #685, F2).** Con esto PaynaniWeb ya muestra «Responder» en WhatsApp.
+  - `whatsapp.send` acepta `reply_to` (un `wa:` o `wo_` de la misma conversación), y el puente lo manda con el `contextInfo` de WhatsApp.
+  - El puente lee la cita de lo que entra (`quote`), y `whatsapp.thread` la trae en lo que salió y en lo que entró, también cuando alguien cita algo de antes de paynani.
+  - El aviso al agente dice «(respondiendo a «…»)», y `event show wa:… --body` imprime antes el texto citado.
+  - El agente cita con `paynani whatsapp send <número> --reply-to wa:…` (WHATSAPP_BRIDGE.md §4, §5 y §11).
 - **PaynaniWeb: el menú al tocar un mensaje, primera parte: Copiar (PRD #685, F1).** Lo pidió Julian, como el de Telegram Web.
   - En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje (o el clic derecho, o Enter con el renglón enfocado) abre un menú con **Copiar**. Copia el texto sin el nombre ni la hora y avisa «Copiado».
   - Tocar un enlace, una foto o un botón dentro del globo sigue haciendo lo de siempre.

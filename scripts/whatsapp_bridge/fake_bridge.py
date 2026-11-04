@@ -6,7 +6,7 @@ Habla el mismo protocolo que index.js, por stdin y stdout, sin red ni Baileys. L
 órdenes `fake.*`, que el puente real no tiene, simulan lo que haría WhatsApp:
 
     fake.link_done      termina la vinculación en curso (escribe auth/creds.json)
-    fake.message        un mensaje que llega: from_e164, text, kind, key_id, lid, push_name
+    fake.message        un mensaje que llega: from_e164, text, kind, key_id, lid, push_name, quote
     fake.call           una llamada: from_e164, status (missed|answered)
     fake.disconnect     se cae la conexión (status disconnected)
     fake.reconnect      vuelve (status connected)
@@ -200,7 +200,7 @@ class Fake:
             self.fail_after -= 1
         key = "3EB0" + secrets.token_hex(8).upper()
         chat = to[1:] + "@s.whatsapp.net"
-        self.sends.append({"to": to, "text": text, "key_id": key,
+        self.sends.append({"to": to, "text": text, "key_id": key, "quote": msg.get("quote"),
                            "file": {"mime": f.get("mime"), "filename": f.get("filename"),
                                     "size": Path(f["path"]).stat().st_size} if f else None})
         result(ref, {"key_id": key, "chat": chat, "sent_at": iso()})
@@ -249,7 +249,8 @@ class Fake:
         out({"type": "message", "key_id": msg.get("key_id") or "3EB0" + secrets.token_hex(8).upper(),
              "chat": jid, "from": {"e164": e164, "jid": jid, "lid": lid},
              "push_name": msg.get("push_name"), "sent_at": msg.get("sent_at") or iso(),
-             "kind": msg.get("kind") or "text", "text": msg.get("text"), "media": msg.get("media")})
+             "kind": msg.get("kind") or "text", "text": msg.get("text"), "media": msg.get("media"),
+             "quote": msg.get("quote")})          # PRD #685 F2: {key_id, from_me, text, kind, filename}
         result(ref)
 
     def do_fake_sends(self, ref, msg) -> None:

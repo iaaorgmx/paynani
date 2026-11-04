@@ -168,7 +168,7 @@ responde `result` igual: no es un error.
 {"type": "message", "key_id": "3EB0C4…", "chat": "1XXXXXXXXXX@s.whatsapp.net",
  "from": {"e164": "+1XXXXXXXXXX", "jid": "1XXXXXXXXXX@s.whatsapp.net", "lid": null},
  "push_name": "Ana", "sent_at": "2026-10-28T19:10:02Z",
- "kind": "text", "text": "Hola, ¿tienen mesa para 4 hoy?", "media": null}
+ "kind": "text", "text": "Hola, ¿tienen mesa para 4 hoy?", "media": null, "quote": null}
 ```
 
 - **Sólo mensajes directos.** El puente descarta antes de mandarlos y sin guardar nada
@@ -188,6 +188,10 @@ responde `result` igual: no es un error.
 - `push_name` es el nombre que el contacto se puso en WhatsApp. Es texto del
   remitente: no autoriza nada y sólo se muestra si el número está en el roster.
 - `sent_at` es la hora del mensaje según WhatsApp, en UTC.
+- **`quote`** (PRD #685 F2): si el mensaje responde a otro, lo que trae su `contextInfo`:
+  `{"key_id": "3EB0…", "from_me": false, "text": "¿Tienen mesa?", "kind": "text", "filename": null}`.
+  `from_me` dice si el original es nuestro (el `participant` es la cuenta vinculada).
+  `text` es el del original, hasta 1,000. Sin cita, `null`.
 
 **`kind` y `media`:**
 
@@ -262,6 +266,11 @@ contesta ni rechaza llamadas.
 - El tope de envío (FR-21: 1 cada 3 s y 200 al día) lo lleva el **servicio**, que
   contesta `rate_limited` sin pasarle la orden al puente. El puente no reintenta un
   envío fallido.
+- **`quote`** (PRD #685 F2, opcional): `{"key_id", "from_me", "text"}` del mensaje que se
+  cita. El puente le pone al mensaje un `contextInfo` con `stanzaId`, `participant` (el
+  contacto, o la cuenta vinculada si `from_me`) y `quotedMessage`, y WhatsApp lo dibuja
+  como respuesta. El servicio lo arma desde su almacén; el texto citado nunca lo manda
+  la web.
 
 Respuesta:
 
@@ -446,17 +455,38 @@ necesitan:
 
 | `type` | Qué hace | Diferencia con §12 |
 |---|---|---|
-| `whatsapp.status` | Estado | Trae `web_files: true` (#670): `whatsapp.send` acepta `uploads` de PaynaniWeb. Sin el campo, la web deja la barra sólo con texto |
+| `whatsapp.status` | Estado | Trae `web_files: true` (#670): `whatsapp.send` acepta `uploads` de PaynaniWeb. Sin el campo, la web deja la barra sólo con texto. Trae `replies: true` (PRD #685 F2): `whatsapp.send` acepta `reply_to` |
 | `whatsapp.link` | Empieza a vincular | Acepta `mode: "qr"` además de `"code"`, y el `result` trae `link_id` (ver abajo) |
 | `whatsapp.link_current` | El QR o código vigente de una vinculación | Nuevo. Pide `link_id` |
 | `whatsapp.link_cancel` | Cancela | Igual |
 | `whatsapp.unlink` | Desvincula | Igual |
 | `whatsapp.threads` | Hilos | Igual |
-| `whatsapp.thread` | Un hilo | Igual |
+| `whatsapp.thread` | Un hilo | Un mensaje que responde a otro trae `reply_to` (ver abajo) |
 | `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta), que el servicio valida siempre contra FR-22, sin importar `by`. La pasarela y la web nunca mandan `file`. La web manda en cambio `uploads` (#670, ver abajo) |
 | `whatsapp.watch` | Avisos sin pedirlos | Nuevo. Ver abajo |
 | `whatsapp.image` | La foto de un mensaje recibido, o de una que mandó el dueño desde la web, para PaynaniWeb | Nuevo (#573, #670). Ver abajo. La pasarela no lo anuncia ni lo reenvía |
 | `whatsapp.file` | Un documento recibido, para descargarlo desde PaynaniWeb | Nuevo (#676). Ver abajo. La pasarela no lo anuncia ni lo reenvía |
+
+### Responder citando un mensaje: `reply_to` (PRD #685 F2)
+
+- **En `whatsapp.send`**, `reply_to` es el `wa:` o `wo_` de un mensaje de la conversación
+  con ese número.
+  - Si no existe, es `invalid` con `field: "reply_to"` y `reason: "not_found"`; si es de
+    otra conversación, `reason: "other_thread"`.
+  - El resultado trae `reply: "native"`, o `"dropped"` si el original no tiene el
+    `key_id` de WhatsApp (un envío que falló) y salió sin cita.
+  - Con `uploads`, cita el primer archivo. La cita no cuenta aparte para FR-21: es el
+    mismo envío.
+- **En `whatsapp.thread`**, un mensaje que responde a otro, mandado o recibido, trae
+  `"reply_to": {"ref": "wa:…", "name": "Ana López", "excerpt": "¿Tienen mesa?", "missing": false}`.
+  - `ref` es `null` si el original es de antes de paynani; entonces `excerpt` es el que
+    mandó WhatsApp (FR-9).
+  - `name` es el del contacto, o el del agente (`AGENT_EMAIL_FROM_NAME`) si el original
+    es nuestro.
+  - Un original que la conversación oculta hoy trae `name` y `excerpt` en `null`.
+  - El `key_id` nunca sale.
+- **El aviso al agente** (FR-16) dice `Ana López +1… (respondiendo a «¿Tienen mesa?»): …`,
+  sólo si el mensaje se muestra, y `event show wa:… --body` imprime antes el texto citado.
 
 ### Archivos desde PaynaniWeb: `uploads` (#670)
 
@@ -631,6 +661,7 @@ lo da el cliente que revisa sus propias barreras.
 
 ### `paynani whatsapp`
 
-La terminal y el agente usan esta misma interfaz. `paynani whatsapp send` sale con
+La terminal y el agente usan esta misma interfaz. `paynani whatsapp send <número> --reply-to wa:…`
+cita un mensaje, y `paynani whatsapp thread` muestra el id de cada uno. `paynani whatsapp send` sale con
 código 2 y el `code` en stderr para `not_allowed`, `not_started` y `rate_limited`,
 como `paynani sms send`, y con 1 si el servicio no corre.

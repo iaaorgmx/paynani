@@ -250,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
     wa_send.add_argument("number", help="Recipient number; it must be in roster.md and have written since linking.")
     wa_send.add_argument("text", nargs="*", help="Message text (max 4000 characters).")
     wa_send.add_argument("--file", help="A file inside state/whatsapp/outbox/ or WHATSAPP_ATTACH_DIRS.")
+    wa_send.add_argument("--reply-to", metavar="ID",
+                         help="Quote a message of the conversation (its wa:… or wo_… id, from whatsapp thread).")
     wa_send.add_argument("--by", choices=("agent", "terminal"), default="agent", help="Who sends, as shown in the thread (default agent).")
     wa_thread = wa_sub.add_parser("thread", help="Show the WhatsApp conversation with a number.")
     wa_thread.add_argument("number")
