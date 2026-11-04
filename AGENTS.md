@@ -623,7 +623,8 @@ a mail body does not count.
   screen. Run `scripts/paynani sms pair` and send them, by that same channel, the
   address and the code to type in the app. Tell them the code lasts 10 minutes.
 - If a phone is already paired, `sms pair` refuses. Ask your human before using
-  `--replace`: it revokes the phone that is paired now.
+  `--replace`: it revokes the phone that is paired now. With `--web`, the same
+  applies to «Revoke» on the page: ask your human first.
 - With no gateway running, or no `PAYNANI_SMS_PUBLIC_URL`, there is nothing to
   pair with yet: point them to `SMS_GATEWAY.md` §9 instead of inventing an address.
 
