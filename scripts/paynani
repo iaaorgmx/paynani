@@ -292,6 +292,8 @@ def main(argv: list[str] | None = None) -> int:
     wc_send = wc_sub.add_parser("send", help="Answer the owner; marks the open webchat.received events replied.")
     wc_send.add_argument("text", nargs="*", help="The message; without it (and without --file), read from stdin.")
     wc_send.add_argument("--file", action="append", help="A file from state/webchat/outbox/ (repeatable).")
+    wc_send.add_argument("--reply-to", metavar="ID",
+                         help="Quote a message of the conversation (its w_… id, from webchat thread).")
     wc_send.add_argument("--stream", action="store_true",
                          help="Read stdin as it arrives; PaynaniWeb shows it while it is written.")
     wc_typing = wc_sub.add_parser("typing", help="Show «writing…» in PaynaniWeb for a while.")

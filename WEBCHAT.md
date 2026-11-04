@@ -46,6 +46,24 @@ state/webchat/                 0700
 - En el disco cada archivo guarda además su tipo real (`type`). `messages()` no lo
   devuelve; `file_path()` lo usa para el MIME.
 
+### La cita (PRD #685 F2)
+
+Un mensaje que responde a otro trae `reply_to`, con una copia de la cita hecha al guardarlo:
+
+```json
+"reply_to": {"ref": "w_<32 hex>", "name": "Metis Claude-Tob", "excerpt": "¿Te mando el reporte?", "missing": false}
+```
+
+- `append(..., reply_to="w_…")` la arma. `name` es el del agente (`AGENT_EMAIL_FROM_NAME`)
+  si el original es suyo, o el del dueño (su sesión, o el `owner_name` que guarda cada mensaje suyo).
+- `excerpt` va en una línea, hasta 100 caracteres. Una foto sin texto es `📷` y un
+  documento, `📄 nombre`.
+- Si el `w_…` ya no está en la conversación, el mensaje se guarda igual, sin cita:
+  `{"ref": null, "name": "", "excerpt": "", "missing": true}` (FR-7). Un `reply_to` sin
+  forma de `w_…` es `Rejected("bad_reply")`.
+- Un mensaje que no es respuesta no trae `reply_to`. PaynaniWeb ofrece «Responder» porque
+  `append` acepta `reply_to` (`webchat_pages.replies`).
+
 ### Límites
 
 | Qué | Límite | Error |
@@ -124,6 +142,8 @@ vuelve a pedir contraseña. `state_dir` sale de `paths.state_dir()`; las pruebas
   WhatsApp: `[foto]`, `[documento: factura.pdf]`. El extracto pasa por `safe_excerpt`, así
   que un salto de línea en el texto no fabrica una línea falsa.
 - `append()` escribe el evento en `events.jsonl` y su `observed` en `lifecycle.jsonl`.
+- **Una respuesta** (FR-16) agrega el extracto citado después de «(PaynaniWeb)»:
+  `Julian Flores (PaynaniWeb) (respondiendo a «¿Te mando el reporte?»): El de la semana`.
 
 ## 6. Lo que hace el agente (W-2)
 
@@ -133,11 +153,15 @@ vuelve a pedir contraseña. `state_dir` sale de `paths.state_dir()`; las pruebas
   Los que ya están `handled`, `replied` o `closed` no se tocan. Sin texto lee stdin.
 - `scripts/paynani webchat send --stream`: lee stdin mientras llega, lo deja en
   `draft.json` cada 0.3 s y al final guarda el mensaje.
+- `--reply-to w_…` en `webchat send` (con o sin `--stream`) cita un mensaje de la
+  conversación (§3). Si ya no está, sale sin cita y lo dice («reply dropped»).
 - `scripts/paynani webchat typing [--seconds N] [--off]`.
 - `scripts/paynani webchat thread [--limit N]`: la conversación, con los mensajes del
-  agente.
+  agente. Cada renglón lleva el `w_…` del mensaje, para `--reply-to`, y las respuestas
+  dicen «(respondiendo a «…»)».
 - `scripts/paynani event show wc:… --body`: el texto completo y la ruta local de cada
-  adjunto, para que el agente los lea.
+  adjunto, para que el agente los lea. Si el mensaje responde a otro, imprime antes el
+  texto citado completo (`--- in reply to <nombre> (w_…) ---`).
 
 ## 7. PaynaniWeb (Iris)
 

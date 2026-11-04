@@ -646,6 +646,13 @@ def _show_webchat(record, args) -> int:
         print("body not found in state/webchat/", file=sys.stderr)
         return 1
     text = str(message.get("text") or "")
+    quote = message.get("reply_to")
+    if quote and quote.get("ref"):
+        # PRD #685 FR-16: el texto citado completo, arriba del mensaje.
+        original = wc_store.message(quote["ref"], state_dir=state_dir()) or {}
+        quoted = str(original.get("text") or quote.get("excerpt") or "")
+        print(f"\n--- in reply to {quote.get('name') or '?'} ({quote['ref']}) ---")
+        print(quoted, end="" if quoted.endswith("\n") else "\n")
     print("\n--- verified body ---")
     print(text, end="" if text.endswith("\n") else "\n")
     for f in message.get("files", []):
@@ -656,5 +663,6 @@ def _show_webchat(record, args) -> int:
         path, mime, name = found
         print(f"--- attachment: {name}, {mime}, {f.get('size')} bytes ---")
         print(path)
-    print("--- authorized: the owner, from PaynaniWeb; answer with scripts/paynani webchat send ---")
+    print(f"--- authorized: the owner, from PaynaniWeb; answer with scripts/paynani webchat send "
+          f"(quote it with --reply-to {message.get('id')}) ---")
     return 0
