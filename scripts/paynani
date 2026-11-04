@@ -250,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
     wa_send.add_argument("number", help="Recipient number; it must be in roster.md and have written since linking.")
     wa_send.add_argument("text", nargs="*", help="Message text (max 4000 characters).")
     wa_send.add_argument("--file", help="A file inside state/whatsapp/outbox/ or WHATSAPP_ATTACH_DIRS.")
+    wa_send.add_argument("--reply-to", metavar="ID",
+                         help="Quote a message of the conversation (its wa:… or wo_… id, from whatsapp thread).")
     wa_send.add_argument("--by", choices=("agent", "terminal"), default="agent", help="Who sends, as shown in the thread (default agent).")
     wa_thread = wa_sub.add_parser("thread", help="Show the WhatsApp conversation with a number.")
     wa_thread.add_argument("number")
@@ -302,6 +304,10 @@ def main(argv: list[str] | None = None) -> int:
     wc_thread = wc_sub.add_parser("thread", help="Show the conversation, the agent's messages included.")
     wc_thread.add_argument("--limit", type=int, default=50, help="Messages to show (1 to 100, default 50).")
     wc_thread.add_argument("--json", action="store_true", help="Print it as JSON.")
+    wc_react = wc_sub.add_parser("react", help="React to a message of the conversation (PRD #685 F3).")
+    wc_react.add_argument("ref", help="The message (its w_… id, from webchat thread).")
+    wc_react.add_argument("emoji", nargs="?", default="", help="The emoji; one per message, another replaces it.")
+    wc_react.add_argument("--remove", action="store_true", help="Remove the agent's reaction.")
 
     account_parser = subparsers.add_parser(
         "account", help="Additional mail accounts in accounts.json (#276)."
@@ -477,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "webchat":
         from paynani_lib.webchat import cli as wc_cli
         return {"send": wc_cli.run_send, "typing": wc_cli.run_typing,
-                "thread": wc_cli.run_thread}[args.wc_command](args)
+                "thread": wc_cli.run_thread, "react": wc_cli.run_react}[args.wc_command](args)
     if args.command == "openclaw":
         if args.openclaw_command == "probe":
             return openclaw_cli.run_probe(args)

@@ -4,6 +4,15 @@
 
 - **PaynaniWeb, Webchat: las reacciones se ven en vivo (PRD #685 F3).** Una reacción del agente a un mensaje viejo aparece sin recargar: el WebSocket vigila `reactions.jsonl` y manda sólo los globos que cambiaron. Lo pidió Metis en #702.
 
+- **Webchat: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en el Webchat.
+  - `store.react(ref, emoji, by=)` pone, cambia o quita la reacción del dueño o del agente, una por mensaje y por lado, y cada mensaje del hilo trae `reactions` (`[{emoji, count, mine}]`). Acepta cualquier emoji, uno solo, y compara «❤» con «❤️» como la misma.
+  - Cuando el dueño reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Julian Flores (PaynaniWeb) reaccionó 👍 a «…»». Las del agente no avisan.
+  - El agente reacciona con `paynani webchat react w_… 👍` (`--remove` la quita), y `webchat thread` y `event show wc:… --body` muestran las reacciones (WEBCHAT.md §3 a §6).
+- **WhatsApp: responder citando un mensaje, el núcleo (PRD #685, F2).** Con esto PaynaniWeb ya muestra «Responder» en WhatsApp.
+  - `whatsapp.send` acepta `reply_to` (un `wa:` o `wo_` de la misma conversación), y el puente lo manda con el `contextInfo` de WhatsApp.
+  - El puente lee la cita de lo que entra (`quote`), y `whatsapp.thread` la trae en lo que salió y en lo que entró, también cuando alguien cita algo de antes de paynani.
+  - El aviso al agente dice «(respondiendo a «…»)», y `event show wa:… --body` imprime antes el texto citado.
+  - El agente cita con `paynani whatsapp send <número> --reply-to wa:…` (WHATSAPP_BRIDGE.md §4, §5 y §11).
 - **Telegram: responder citando un mensaje, el núcleo (PRD #685, F2).** Con esto PaynaniWeb ya muestra «Responder» en Telegram.
   - `telegram.send` acepta `reply_to` (un `tg:` o `tgo:` del mismo hilo) y sale con la cita nativa de Telegram. Si Telegram ya no tiene el original, sale sin cita (`reply: dropped`).
   - `telegram.thread` trae la cita en lo que salió y en lo que entró, también cuando alguien responde a un mensaje de antes de paynani.

@@ -651,7 +651,8 @@ def whatsapp_kind_label(kind, *, seconds=None, voice_note=False, filename=None, 
 
 
 def whatsapp_event(*, account, message_hash, e164, lid, sender_name, kind, text, media_label,
-                   sent_at, roster_match, local_time, observed_at=None, rules=None, catch_all=None):
+                   sent_at, roster_match, local_time, observed_at=None, rules=None, catch_all=None,
+                   reply_excerpt=None):
     """
     Un mensaje directo de WhatsApp (FR-11, FR-14), con el mismo sobre que un SMS. El
     texto y el archivo no van aquí: viven en state/whatsapp/inbox/ y media/, y salen con
@@ -660,6 +661,8 @@ def whatsapp_event(*, account, message_hash, e164, lid, sender_name, kind, text,
     eid = f"{account}:{message_hash}"
     who_number = e164 or "número sin resolver"
     who = " ".join(p for p in (sender_name, who_number) if p)
+    if reply_excerpt:   # PRD #685 FR-16: sólo un mensaje que se muestra trae el extracto
+        who += f" (respondiendo a «{safe_excerpt(reply_excerpt, 40)}»)"
     excerpt = " ".join(p for p in (media_label, safe_excerpt(text or "")) if p)
     if roster_match:
         note = f", {_rules_tag(rules)}" if rules else ""
@@ -905,6 +908,40 @@ def webchat_event(*, message_id, owner_name, owner_email, text, files, sent_at, 
     }
     if rules:
         record["rules"] = {"file": rules["file"], "status": rules["status"]}
+    record["notification_text"] = f"{line} [{record['inspection_command']}]"
+    return record
+
+
+def webchat_reaction_event(*, event_hex, message_id, owner_name, owner_email, emoji, removed,
+                           excerpt, sent_at, local_time, observed_at=None):
+    """
+    El dueño puso o quitó una reacción en el Webchat (PRD #685 FR-16a). `event_id` es `wc:` +
+    32 hex nuevos (no los del mensaje: una reacción no es un mensaje). `emoji` es la que puso,
+    o la que quitó si `removed`. `excerpt` es una línea del mensaje al que reaccionó. Lo que
+    pone el agente no avisa, así que esto sólo sale de la web.
+    """
+    ref = "wc:" + event_hex
+    who = owner_name or owner_email or "el dueño"
+    quoted = f"«{safe_excerpt(excerpt or '', 40)}»"
+    action = f"quitó su reacción {emoji} de {quoted}" if removed else f"reaccionó {emoji} a {quoted}"
+    line = f"[webchat {local_time}, roster] {who} (PaynaniWeb) {action}"
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "event_type": WEBCHAT_RECEIVED,
+        "event_id": ref,
+        "source": "paynani",
+        "channel": "webchat",
+        "account": "webchat",
+        "observed_at": observed_at or _now(),
+        "sent_at": sent_at or "",
+        "kind": "reaction",
+        "sender": {"name": owner_name or "", "address": owner_email or ""},
+        "roster_match": True,
+        "authenticated_sender": True,
+        "provider_id": "webchat:" + event_hex,
+        "reaction": {"ref": message_id, "emoji": emoji, "removed": bool(removed)},
+        "inspection_command": f"scripts/paynani event show {ref}",
+    }
     record["notification_text"] = f"{line} [{record['inspection_command']}]"
     return record
 

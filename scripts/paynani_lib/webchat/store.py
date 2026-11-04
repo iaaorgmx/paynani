@@ -11,6 +11,7 @@ la terminal, en el mismo host y con el mismo usuario. Las dos partes usan este m
       outbox/                      0700  de aquí toma archivos `paynani webchat send --file`
       typing.json                  0600  {"until": "…Z"} mientras el agente escribe
       draft.json                   0600  {"text", "at"} el borrador de `webchat send --stream`
+      reactions.jsonl              0600  una reacción puesta o quitada por línea (PRD #685 F3)
 
 El nombre original de un archivo sólo vive en `files[].name`; nunca llega a una ruta.
 Cada mensaje del dueño escribe además el evento `webchat.received` (harness/event.py)
@@ -330,7 +331,155 @@ def message(msg_id: str, *, state_dir: Path | None = None) -> dict | None:
     """Un mensaje por su `w_…`, o None."""
     if not _MSG_ID.match(str(msg_id or "")):
         return None
-    return next((_public(m) for m in _all(state_dir) if m.get("id") == msg_id), None)
+    found = next((m for m in _all(state_dir) if m.get("id") == msg_id), None)
+    return _public(found, _reaction_state(state_dir)) if found is not None else None
+
+
+# --- reacciones (PRD #685 F3) ---------------------------------------------------------
+
+_VS16 = "\ufe0f"
+MAX_EMOJI = 16
+
+
+def emoji_key(emoji: str) -> str:
+    """El emoji sin el selector de variación (U+FE0F), para comparar «❤» con «❤️» (Iris, #685)."""
+    return str(emoji or "").replace(_VS16, "")
+
+
+def _clusters(emoji: str) -> int:
+    """Cuántos emojis hay: un emoji sigue con el selector de variación, el tono de piel, el
+    keycap, las etiquetas de una bandera, o con otro unido por ZWJ; una bandera son dos letras
+    regionales."""
+    count, prev, regional = 0, "", False
+    for c in emoji:
+        o = ord(c)
+        joins = (c in (_VS16, "\u200d", "\u20e3") or 0x1F3FB <= o <= 0x1F3FF
+                 or 0xE0020 <= o <= 0xE007F or prev == "\u200d")
+        if 0x1F1E6 <= o <= 0x1F1FF:
+            joins = joins or regional
+            regional = not regional
+        else:
+            regional = False
+        if not joins:
+            count += 1
+        prev = c
+    return count
+
+
+def valid_emoji(emoji: str) -> bool:
+    """Un solo emoji: hasta 16 caracteres, sin letras, espacios ni signos ASCII (salvo las
+    teclas #, * y 0-9 de un keycap). Webchat acepta cualquiera (FR-10)."""
+    if not isinstance(emoji, str) or not emoji or len(emoji) > MAX_EMOJI:
+        return False
+    if not any(ord(c) >= 0x2000 and c not in (_VS16, "\u200d") for c in emoji):
+        return False
+    if not all((ord(c) >= 0x2000 and not c.isspace()) or c in "#*0123456789" for c in emoji):
+        return False
+    return _clusters(emoji) == 1
+
+
+def _reaction_rows(state_dir: Path | None) -> list[dict]:
+    path = root(state_dir) / "reactions.jsonl"
+    out = []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                with contextlib.suppress(ValueError):
+                    obj = json.loads(line)
+                    if (isinstance(obj, dict) and _MSG_ID.match(str(obj.get("ref", "")))
+                            and obj.get("by") in ("owner", "agent")):
+                        out.append(obj)
+    except FileNotFoundError:
+        return []
+    return out
+
+
+def _reaction_state(state_dir: Path | None) -> dict[str, dict[str, str]]:
+    """`{w_…: {"owner": emoji, "agent": emoji}}`: la última de cada uno; "" la quitó."""
+    state: dict[str, dict[str, str]] = {}
+    for row in _reaction_rows(state_dir):
+        state.setdefault(row["ref"], {})[row["by"]] = str(row.get("emoji") or "")
+    return state
+
+
+def reactions_of(current: dict[str, str] | None) -> list[dict]:
+    """
+    Las reacciones de un mensaje como las pide FR-14: `[{emoji, count, mine}]`, primero la
+    nuestra y luego por `count`. En Webchat «la nuestra» es la del dueño; la del agente cuenta
+    como de la otra persona.
+    """
+    groups: dict[str, dict] = {}
+    for by in ("owner", "agent"):
+        emoji = (current or {}).get(by) or ""
+        if not emoji:
+            continue
+        g = groups.setdefault(emoji_key(emoji), {"emoji": emoji, "count": 0, "mine": False})
+        g["count"] += 1
+        if by == "owner":
+            g["mine"] = True
+            g["emoji"] = emoji
+    return sorted(groups.values(), key=lambda g: (not g["mine"], -g["count"]))
+
+
+def react(ref: str, emoji: str, *, by: str = "owner", owner: dict | None = None,
+          state_dir: Path | None = None) -> dict:
+    """
+    Pone (`emoji`) o quita (`""`) la reacción del dueño (`by="owner"`, desde la web) o del
+    agente (`by="agent"`, desde la CLI) en el mensaje `ref` (`w_…`). Una por mensaje y por
+    parte: otra la reemplaza (FR-11). Devuelve `{"ref", "reactions"}`.
+
+    La del dueño avisa al agente (FR-16a) con un evento `wc:` de `kind: "reaction"`; la del
+    agente no avisa. Poner la misma que ya está, o quitar una que no hay, no cambia nada ni
+    avisa. Errores: `Rejected("not_found")` y `Rejected("bad_emoji")`.
+    """
+    if by not in ("owner", "agent"):
+        raise ValueError(f"by debe ser owner o agent, no {by!r}")
+    emoji = str(emoji or "").strip()
+    if emoji and not valid_emoji(emoji):
+        raise Rejected("bad_emoji", emoji[:MAX_EMOJI])
+    if not _MSG_ID.match(str(ref or "")):
+        raise Rejected("not_found", str(ref)[:40])
+    r = _dirs(state_dir)
+    envelope = None
+    with _locked(r):
+        original = next((m for m in _all(state_dir) if m.get("id") == ref), None)
+        if original is None:
+            raise Rejected("not_found", ref)
+        current = _reaction_state(state_dir).get(ref, {})
+        before = current.get(by) or ""
+        if emoji_key(before) != emoji_key(emoji):
+            row = {"ref": ref, "by": by, "emoji": emoji, "at": _now_z()}
+            if by == "owner":
+                hexpart = secrets.token_hex(16)
+                row["event_id"] = "wc:" + hexpart
+                name = _owner_name({}, owner) or _last_owner_name(state_dir)
+                envelope = ev.webchat_reaction_event(
+                    event_hex=hexpart, message_id=ref, owner_name=name,
+                    owner_email=(owner or {}).get("email", ""), emoji=emoji or before,
+                    removed=not emoji, excerpt=excerpt_of(original), sent_at=row["at"],
+                    local_time=time.strftime("%H:%M:%S"), observed_at=row["at"])
+            _append_line(r / "reactions.jsonl", row)
+            current = dict(current, **{by: emoji})
+    if envelope is not None:
+        state = r.parent
+        ev.append(state / "events.jsonl", envelope)
+        ledger.observed(ledger.path_for(state / "events.jsonl"), envelope)
+    return {"ref": ref, "reactions": reactions_of(current)}
+
+
+def _last_owner_name(state_dir: Path | None) -> str:
+    for m in reversed(_all(state_dir)):
+        if m.get("by") == "owner" and m.get("owner_name"):
+            return str(m["owner_name"])
+    return ""
+
+
+def reaction_for_event(event_id: str, *, state_dir: Path | None = None) -> dict | None:
+    """La reacción del dueño de un evento `wc:<hex>` de `kind: "reaction"`, o None."""
+    event_id = str(event_id or "")
+    if not event_id.startswith("wc:"):
+        return None
+    return next((row for row in _reaction_rows(state_dir) if row.get("event_id") == event_id), None)
 
 
 def _append_line(path: Path, obj: dict) -> None:
@@ -362,11 +511,15 @@ def _all(state_dir: Path | None) -> list[dict]:
     return out
 
 
-def _public(message: dict) -> dict:
-    """Lo que ven la web y la CLI: sin el tipo interno de cada archivo."""
+def _public(message: dict, reactions: dict[str, dict[str, str]] | None = None) -> dict:
+    """Lo que ven la web y la CLI: sin el tipo interno de cada archivo, y con `reactions`
+    si el mensaje tiene alguna (FR-14; sin reacciones, el campo no viene)."""
     out = dict(message)
     out["files"] = [{k: f[k] for k in ("n", "name", "kind", "size", "ref") if k in f}
                     for f in message.get("files", [])]
+    found = reactions_of((reactions or {}).get(message.get("id")))
+    if found:
+        out["reactions"] = found
     return out
 
 
@@ -384,7 +537,8 @@ def messages(after: str | None = None, limit: int = 50, before: str | None = Non
     if before:
         rows = rows[:ids.index(before)] if before in ids else []
     limit = max(1, int(limit))
-    return [_public(m) for m in rows[-limit:]]
+    reactions = _reaction_state(state_dir)
+    return [_public(m, reactions) for m in rows[-limit:]]
 
 
 def file_path(ref: str, *, state_dir: Path | None = None) -> tuple[Path, str, str] | None:
