@@ -285,7 +285,7 @@ def sender(by) -> str:
 
 
 def thread_body(thread: dict, reply: str, add: str = "", notice: str = "", replies: bool = False,
-                reactions=None, csrf: str = "") -> str:
+                reactions=None, csrf: str = "", agent_name: str = "") -> str:
     """Un hilo. `thread` es el `data` de `telegram.thread`: los mensajes llegan del más
     reciente al más viejo (como `whatsapp.thread`) y se dibujan en orden de hora."""
     tid = str(thread.get("thread") or "")
@@ -339,9 +339,10 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "", repli
         when = mail_pages.list_time(m.get("at") or "")
         # PRD #685: el menú al tocar el mensaje, sólo en los que ya llegaron o salieron.
         # Quién lo escribió, en texto (item() lo escapa), para la barra «Respondiendo a…».
-        name = i18n.t("web.tg." + {"agent": "by_agent", "owner": "by_owner", "api": "by_api"}.get(
+        # #707: el del agente es su nombre (como en la cita que guarda el servicio), no «Agente».
+        name = agent_name if out_dir and m.get("by") == "agent" and agent_name else i18n.t("web.tg." + {"agent": "by_agent", "owner": "by_owner", "api": "by_api"}.get(
             who_sent, "sent_prefix")) if out_dir else who
-        bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("telegram", m), str(m.get("ref") or ""), name)}>'
+        bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("telegram", m), str(m.get("ref") or ""), name, m.get("actions") is not False)}>'
                        f'<div class="globo"><div class="de">{label}{_status(m)}{edited}</div>'
                        f'{msgmenu.quote(m.get("reply_to"))}<div class="texto">{body}</div>{when}'
                        f'{msgmenu.reactions(m.get("reactions"))}</div></li>')

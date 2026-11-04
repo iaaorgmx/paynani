@@ -150,6 +150,11 @@ _, _, page = req("GET", f"/telegram/messages/ver?t={tid}&lang=es-MX", cookie=coo
 check("la página dibuja la reacción bajo el globo, resaltada", True, 'class="reac reac-mia" data-emoji="👍"' in page)
 status, _, body = req("POST", URL, cookie=cookie, form={"csrf": csrf, "ref": ref, "emoji": ""})
 check("«» quita la nuestra (FR-11)", (200, []), (status, json.loads(body).get("reactions")))
+status, _, body = req("POST", URL, cookie=cookie, form={"csrf": csrf, "ref": "tgo:noexiste", "emoji": "👍"})
+check("#707: un mensaje sin id en el canal (not_found): el aviso dice que no se puede, no «inténtalo otra vez»",
+      (400, "not_found", True, False), (status, json.loads(body).get("code"),
+                                      "no se le puede reaccionar" in json.loads(body).get("error", ""),
+                                      "Inténtalo" in json.loads(body).get("error", "")))
 status, _, body = req("POST", URL, cookie=cookie, form={"csrf": csrf, "ref": ref, "emoji": "🤡"})
 check("una que el bot no acepta: 400 con el aviso, y el código del servicio", (400, "invalid", True),
       (status, json.loads(body).get("code"), "No se pudo poner la reacción" in json.loads(body).get("error", "")))
@@ -203,6 +208,8 @@ html = webchat_pages.bubbles([{"id": "w_" + "1" * 32, "by": "agent", "at": "2026
 check("Webchat: la reacción del dueño bajo el globo del agente", True, 'class="reac reac-mia" data-emoji="👍"' in html)
 
 js = (ROOT / "scripts" / "paynani_lib" / "assets" / "msgmenu.js").read_text(encoding="utf-8")
+check("#707: con data-solo-copiar el menú no trae Responder ni reacciones", True,
+      all(x in js for x in ('row.hasAttribute("data-solo-copiar")', "!only && w.reply", "only ? null : allowedReactions")))
 check("msgmenu.js consulta cada 15 s sólo con la pestaña a la vista, y redibuja sólo lo que cambió", True,
       all(x in js for x in ("data-msgmenu-poll", "POLL_MS = 15000", 'visibilityState !== "visible"', "want !== shown(row)",
                             "seq !== reactSeq")))
