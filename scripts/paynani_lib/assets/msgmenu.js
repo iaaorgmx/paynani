@@ -214,6 +214,15 @@
     if (first) { first.focus({ preventScroll: true }); }
   }
 
+  // Webchat avisa por su WebSocket cuando cambian las reacciones de un mensaje (las del agente).
+  document.addEventListener("msgmenu:reactions", function (ev) {
+    var items = (ev && ev.detail) || {};
+    Object.keys(items).forEach(function (id) {
+      var row = findRow(id);
+      if (row) { renderChips(row, items[id]); }
+    });
+  });
+
   // Telegram y WhatsApp no tienen WebSocket: con la pestaña a la vista, cada 15 s se piden las
   // reacciones de los mensajes cargados (`data-msgmenu-poll`) y se redibujan sólo los que cambiaron.
   (function poll() {
