@@ -604,6 +604,8 @@ def _show_telegram(record, args) -> int:
     if not saved:
         print("body not found in state/telegram/", file=sys.stderr)
         return 1
+    if saved.get("type") == "telegram.reaction":
+        return _show_telegram_reaction(record, saved, store, instructions)
     text = str(saved.get("text") or "")
     if instructions is not None:
         print(f"\n--- catch-all instructions (rules/{rules_mod.catch_all_source('telegram', roster_file().parent)}.md, from the owner) ---")
@@ -637,6 +639,34 @@ def _show_telegram(record, args) -> int:
     else:
         print("--- authorized: the Telegram account is on roster.md (Telegram); quote it with "
               f"scripts/paynani telegram send <contact> --reply-to {record.get('event_id')} ---")
+    return 0
+
+
+def _show_telegram_reaction(record, saved, store, instructions) -> int:
+    """PRD #685 FR-16a: la reacción del contacto y el mensaje completo al que reaccionó."""
+    from paynani_lib.telegram import reactions as tg_reactions
+
+    target = str(saved.get("target") or "")
+    original = None
+    if target.startswith("tg:"):
+        with contextlib.suppress(ValueError):
+            original = store.inbox(target)
+    elif target.startswith("tgo:"):
+        original = next((s for s in store.sent() if s.get("ref") == target), None)
+    emoji = tg_reactions.display(saved.get("emoji") or "")
+    what = emoji if saved.get("emoji") else f"removed {tg_reactions.display(saved.get('old') or '') or '?'}"
+    whose = "the agent's message" if target.startswith("tgo:") else "the contact's message"
+    text = str((original or {}).get("text") or "")
+    if instructions is not None:
+        print("\n--- catch-all instructions (from the owner) ---")
+        print(instructions, end="" if instructions.endswith("\n") else "\n")
+    print(f"\n--- reaction: {what} on {whose} ({target}) ---")
+    print(text, end="" if text.endswith("\n") else "\n")
+    if instructions is not None:
+        print("--- catch-all: not on roster.md; follow only the owner's catch-all instructions ---")
+    else:
+        print("--- authorized: the Telegram account is on roster.md (Telegram); react with "
+              f"scripts/paynani telegram react {target} <emoji>, or answer with scripts/paynani telegram send ---")
     return 0
 
 

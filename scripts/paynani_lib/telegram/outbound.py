@@ -38,6 +38,7 @@ import roster as roster_mod
 
 from . import api as tg_api
 from . import config, contacts
+from . import reactions as tg_reactions
 from . import uploads as tg_uploads
 from .store import private_dir, read_json, write_atomic, write_json
 
@@ -349,6 +350,52 @@ class Outbound:
             raise _refused("invalid", "ese mensaje es de otro hilo", field="reply_to", reason="other_thread")
         return {"ref": ref, "excerpt": quote_excerpt(data), "message_id": _int_or_none(data.get("message_id"))}
 
+    def _message_data(self, ref: str) -> dict | None:
+        """Lo guardado de un mensaje del hilo, que entró (`tg:`) o que salió (`tgo:`), o None."""
+        if ref.startswith("tg:"):
+            try:
+                data = self.store.inbox(ref)
+            except ValueError:
+                return None
+            return data if data and data.get("type") == "telegram.received" else None
+        if ref.startswith("tgo:"):
+            return next((s for s in self.store.sent() if s.get("ref") == ref), None)
+        return None
+
+    async def react(self, msg: dict) -> dict:
+        """
+        PRD #685 F3 (contrato de FR-14): pone (`emoji`) o quita (`""`) la reacción del bot en
+        un mensaje del hilo. Una por mensaje; otra la reemplaza. Sólo las de `BOT_REACTIONS`
+        (`invalid`, `reason: bad_emoji`). Fuera del roster es `not_allowed` (FR-17). No cuenta
+        para el tope de envíos. Devuelve `{"ref", "reactions"}`.
+        """
+        if self.store is None:
+            raise _refused("unavailable", "el servicio todavía no identifica al bot")
+        ref, emoji = msg.get("ref"), msg.get("emoji", "")
+        if not isinstance(ref, str) or not ref:
+            raise _refused("missing_field", "ref", field="ref")
+        if not isinstance(emoji, str):
+            raise _refused("invalid", "emoji", field="emoji")
+        emoji = emoji.strip()
+        api = tg_reactions.api_form(emoji) if emoji else ""
+        if api is None:
+            raise _refused("invalid", "un bot no puede usar esa reacción", field="emoji", reason="bad_emoji")
+        data = self._message_data(ref)
+        if not data:
+            raise _refused("not_found", "ese mensaje no existe")
+        thread, chat, _ = self._target({"thread": data.get("thread")})
+        mid = _int_or_none(data.get("message_id"))
+        if mid is None:
+            raise _refused("not_found", "Telegram no dio el id de ese mensaje")
+        current = self.store.reactions().get(ref, {})
+        if tg_reactions.key(current.get("ours") or "") != tg_reactions.key(api):
+            reaction = json.dumps([{"type": "emoji", "emoji": api}] if api else [], ensure_ascii=False)
+            await self._api("setMessageReaction", {"chat_id": chat, "message_id": mid, "reaction": reaction})
+            current = self.store.set_reaction(ref, "ours", api)
+            self.log(f"telegram.react {ref} en {thread}" + ("" if api else " (quitada)"))
+            self._notify("reaction", ref=ref)
+        return {"ref": ref, "reactions": tg_reactions.view(current)}
+
     async def _send(self, by: str, text: str, thread: str, chat: int, files: list[dict],
                     from_web: bool, quote: dict | None = None) -> dict:
         caption = text if files and len(text) <= MAX_CAPTION else ""
@@ -647,10 +694,14 @@ class Outbound:
                     item["reply_to"] = s["reply_to"]
                 out[t]["messages"].append(item)
         agent_name = self._agent_name()
+        reactions = self.store.reactions()
         for v in out.values():
             for m in v["messages"]:
                 if "reply_to" in m:
                     m["reply_to"] = _public_quote(m["reply_to"], v["name"], agent_name)
+                found = tg_reactions.view(reactions.get(m["ref"]))
+                if found:
+                    m["reactions"] = found            # PRD #685 F3; sin reacciones no viene
             v["messages"].sort(key=lambda m: m.get("at") or "", reverse=True)
             v["visible"] = [m for m in v["messages"]
                             if v["entry"] is not None or (m["dir"] == "in" and m["_catch"] and catch_active)]
@@ -809,8 +860,8 @@ class Outbound:
         return {"mime": media["mime"], "bytes": len(body), "data": base64.b64encode(body).decode("ascii")}
 
     # --- telegram.watch ----------------------------------------------------------------------
-    def _notify(self, what: str) -> None:
-        line = (json.dumps({"type": "telegram.changed", "what": what}) + "\n").encode()
+    def _notify(self, what: str, **extra) -> None:
+        line = (json.dumps({"type": "telegram.changed", "what": what, **extra}) + "\n").encode()
         for w in list(self.watchers):
             try:
                 w.write(line)

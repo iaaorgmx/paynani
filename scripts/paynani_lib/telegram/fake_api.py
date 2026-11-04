@@ -42,6 +42,7 @@ class FakeBotAPI:
         self._next_update = 1000
         self._next_message = {}          # chat_id -> siguiente message_id
         self.deleted = set()             # message_id que Telegram «borró»: una cita a ellos no sale (PRD #685 F2)
+        self.reactions = {}              # (chat_id, message_id) -> la reacción del bot (PRD #685 F3)
         self._files = {}                 # file_id -> (file_path, bytes)
         self._fail = {}                  # método -> [(status, retry_after), ...]
         self._polling = 0
@@ -149,6 +150,15 @@ class FakeBotAPI:
                                "file_size": declared_size if declared_size is not None else len(data)}
         uid = self._push({"message": msg})
         return uid, msg["message_id"]
+
+    def reaction(self, user_id, message_id, new=None, old=None, first_name="Prueba", username=None):
+        """PRD #685 F3: un `message_reaction` del contacto. `new`/`old` es un emoji o None."""
+        upd = {"chat": {"id": user_id, "type": "private", "first_name": first_name},
+               "message_id": int(message_id), "user": self._user(user_id, first_name, username),
+               "date": int(time.time()),
+               "old_reaction": [{"type": "emoji", "emoji": old}] if old else [],
+               "new_reaction": [{"type": "emoji", "emoji": new}] if new else []}
+        return self._push({"message_reaction": upd})
 
     def edit_message(self, user_id, message_id, text, first_name="Prueba"):
         msg = {"message_id": message_id, "date": int(time.time()), "edit_date": int(time.time()),
@@ -306,6 +316,22 @@ class FakeBotAPI:
         self._record("editMessageText", p)
         return _ok({"message_id": int(p.get("message_id") or 0), "text": p.get("text"),
                     "chat": {"id": int(p.get("chat_id")), "type": "private"}})
+
+    def _m_setMessageReaction(self, p):
+        """PRD #685 F3: sólo una reacción estándar, como con un bot real (REACTION_INVALID)."""
+        from .reactions import BOT_REACTIONS  # noqa: PLC0415
+        reaction = p.get("reaction") or []
+        if isinstance(reaction, str):
+            reaction = json.loads(reaction)
+        if len(reaction) > 1:
+            return 400, _err(400, "Bad Request: REACTIONS_TOO_MANY")
+        for r in reaction:
+            if r.get("type") != "emoji" or r.get("emoji") not in BOT_REACTIONS:
+                return 400, _err(400, "Bad Request: REACTION_INVALID")
+        self._record("setMessageReaction", p)
+        self.reactions[(int(p.get("chat_id")), int(p.get("message_id")))] = \
+            (reaction[0]["emoji"] if reaction else None)
+        return _ok(True)
 
     def _m_deleteMessage(self, p):
         self._record("deleteMessage", p)

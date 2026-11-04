@@ -47,6 +47,7 @@ from . import api as tg_api  # noqa: E402
 from . import config  # noqa: E402
 from . import contacts  # noqa: E402
 from . import media as tg_media  # noqa: E402
+from . import reactions as tg_reactions  # noqa: E402
 from .outbound import Outbound, _Refused, quote_excerpt  # noqa: E402
 from .store import BotStore, canonical_hash, new_ref, private_dir, read_json, write_json  # noqa: E402
 
@@ -56,7 +57,7 @@ ALIAS_RE = re.compile(r"^[0-9a-f]{16}$")
 MAX_LINE = 256 * 1024
 MAX_SOCKET_PATH = 103
 POLL_TIMEOUT_S = 30
-ALLOWED_UPDATES = ["message", "edited_message", "my_chat_member"]
+ALLOWED_UPDATES = ["message", "edited_message", "my_chat_member", "message_reaction"]   # PRD #685 FR-13
 OFFLINE_ALERT_S = 600          # TELEGRAM.md §3: `offline` tras 10 minutos sin Telegram
 TOKEN_RETRY_S = 300            # con 401, se vuelve a probar getMe cada 5 minutos
 WEBHOOK_RETRY_S = 60           # con webhook, se vuelve a mirar cada minuto, sin tocarlo
@@ -286,7 +287,8 @@ class TelegramService(Outbound):
                "counters": dict(self.counters, sent_today=self._sent_today(),
                                 send_limit_day=config.setting("TELEGRAM_SEND_PER_DAY", self.settings)),
                "web_files": True,          # #662: telegram.send acepta `uploads` de PaynaniWeb
-               "replies": True}            # PRD #685 F2: telegram.send acepta `reply_to`
+               "replies": True,            # PRD #685 F2: telegram.send acepta `reply_to`
+               "reactions": tg_reactions.display_list()}   # PRD #685 F3: lo que acepta telegram.react
         if self.reason:
             out["reason"] = self.reason
         return out
@@ -519,9 +521,14 @@ class TelegramService(Outbound):
             return False
         message = update.get("message") or update.get("edited_message")
         member = update.get("my_chat_member")
-        chat = (message or member or {}).get("chat") or {}
+        reaction = update.get("message_reaction")
+        chat = (message or member or reaction or {}).get("chat") or {}
         if chat.get("type") in GROUP_TYPES:
             return await self._leave(chat)                 # FR-19: sin salir, no se confirma
+        if isinstance(reaction, dict):
+            if chat.get("type") == "private":
+                self._handle_reaction(u, digest, entry, reaction)
+            return True
         if not message or chat.get("type") != "private":
             return True                                    # bloqueos y otros: nada que guardar
         if "edited_message" in update:
@@ -665,6 +672,63 @@ class TelegramService(Outbound):
         if reply is not None:
             inbox["reply_to"] = reply
         return inbox, envelope
+
+    # --- reacciones que llegan (PRD #685 FR-13, FR-16a) --------------------------------
+    def _handle_reaction(self, u: int, digest: str, entry: dict | None, update: dict) -> None:
+        """
+        `message_reaction` de un chat privado: guarda la reacción del contacto en el mensaje
+        (`theirs`) y escribe un evento `kind: "reaction"`. Una reacción a un mensaje que paynani
+        no tiene, la del propio bot, o una que no cambia nada, sólo se confirma.
+        """
+        user = update.get("user") or {}
+        try:
+            chat_id, mid = int(update["chat"]["id"]), int(update["message_id"])
+        except (KeyError, TypeError, ValueError):
+            return
+        if user.get("is_bot") or not user:
+            return                                          # la nuestra ya quedó al ponerla
+        thread = self.store.chat_thread(chat_id)
+        if thread is None:
+            return
+        ref = self.store.find_message(chat_id, mid)
+        data = self.store.inbox(ref) if ref else None
+        if ref is None:
+            sent = self.store.find_sent(thread, mid)
+            ref, data = (sent.get("ref"), sent) if sent else (None, None)
+        if ref is None:
+            return
+        new = tg_reactions.first_emoji(update.get("new_reaction"))
+        old = tg_reactions.first_emoji(update.get("old_reaction"))
+        before = self.store.reactions().get(ref, {}).get("theirs") or ""
+        if entry is None and tg_reactions.key(before) == tg_reactions.key(new):
+            return                                          # nada cambió
+        event_ref = entry["ref"] if entry else new_ref()
+        if entry:
+            if self._events_with({event_ref}).get(event_ref) == digest or self._in_ledger(event_ref):
+                self._finish(u, event_ref)
+                return
+        else:
+            self.store.journal_begin(u, event_ref, digest)
+        self.store.set_reaction(ref, "theirs", new)
+        roster_entry, name = self._sender(user)
+        in_roster = roster_entry is not None
+        catch = self._catch_all() if not in_roster else None
+        caught = (catch or {}).get("status") == "active"
+        emoji = tg_reactions.display(new or old or before)
+        envelope = ev.telegram_reaction_event(
+            account=self.account, ref=event_ref, digest=digest, sender_name=name,
+            roster_match=in_roster, emoji=emoji, removed=not new,
+            excerpt=quote_excerpt(data or {}) if (in_roster or caught) else "",
+            sent_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(update.get("date") or time.time()))),
+            local_time=time.strftime("%H:%M:%S"),
+            rules=self._rules_note(roster_entry) if in_roster else None, catch_all=catch)
+        inbox = {"type": "telegram.reaction", "chat": chat_id, "user": int(user.get("id", chat_id)),
+                 "thread": thread, "target": ref, "emoji": new, "removed": not new, "old": old or before,
+                 "sent_at": envelope["sent_at"], "received_at": now_utc(), "in_roster": in_roster,
+                 "catch_all": caught, "hash": digest, "envelope": envelope, "journaled": False}
+        self.store.save_inbox(event_ref, inbox)
+        self._write_event(u, event_ref, inbox, envelope)
+        self._notify("reaction", ref=ref)
 
     def _reply_of(self, message: dict, chat_id: int, thread: str) -> dict | None:
         """
@@ -1030,7 +1094,7 @@ class TelegramService(Outbound):
 _OUT_TYPES = {"telegram.send": "send", "telegram.draft": "draft", "telegram.stream_open": "stream_open",
               "telegram.stream_append": "stream_append", "telegram.stream_close": "stream_close",
               "telegram.threads": "threads", "telegram.thread": "thread", "telegram.image": "image",
-              "telegram.file": "file"}
+              "telegram.file": "file", "telegram.react": "react"}
 
 
 async def _write(writer: asyncio.StreamWriter, obj: dict) -> None:

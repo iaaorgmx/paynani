@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **Telegram: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en Telegram.
+  - `telegram.react` pone, cambia o quita la reacción del bot (`setMessageReaction`), una por mensaje, y sólo con las reacciones estándar que puede usar un bot, que `telegram.status` trae en `reactions`.
+  - El servicio pide `message_reaction` en `allowed_updates` y guarda la reacción del contacto. Cada mensaje de `telegram.thread` trae `reactions` (`[{emoji, count, mine}]`).
+  - Cuando un contacto reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Ana López reaccionó ❤️ a «…»». Fuera del roster sin Catch-All sólo dice «reacción de alguien fuera del roster». Las del bot no avisan.
+  - El agente reacciona con `paynani telegram react tg:… 👍` (`--remove` la quita), y `telegram thread` y `event show tg:… --body` muestran las reacciones (TELEGRAM.md §2 a §5 y §9).
 - **WhatsApp: responder citando un mensaje, el núcleo (PRD #685, F2).** Con esto PaynaniWeb ya muestra «Responder» en WhatsApp.
   - `whatsapp.send` acepta `reply_to` (un `wa:` o `wo_` de la misma conversación), y el puente lo manda con el `contextInfo` de WhatsApp.
   - El puente lee la cita de lo que entra (`quote`), y `whatsapp.thread` la trae en lo que salió y en lo que entró, también cuando alguien cita algo de antes de paynani.
