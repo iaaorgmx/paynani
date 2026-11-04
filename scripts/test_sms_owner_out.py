@@ -223,7 +223,10 @@ async def main():
     until = gw._iso_epoch(e.get("pause_until"))
     check("at=2099: la pausa empieza con la hora de la pasarela", True,
           until is not None and until <= time.time() + 30 * 60 + 5)
-    check("at=2099: el evento no lleva el año 2099", False, "2099" in json.dumps(e))
+    # Sólo las horas: los ids al azar del evento pueden traer «2099» por casualidad (#694).
+    times = [str(v) for k, v in e.items() if isinstance(v, str) and (k == "at" or k.endswith("_at") or k == "pause_until")]
+    check("at=2099: el evento no lleva el año 2099", [], [v for v in times if v.startswith("2099")])
+    check("at=2099: sí se revisaron horas", True, len(times) > 0)
     await ws.close()
     await asyncio.sleep(0.3)
 
