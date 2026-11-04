@@ -30,7 +30,7 @@ from pathlib import Path
 from . import api_replies
 from . import config as sms_config
 from . import roster_api
-from . import telegram_api, webchat_api, whatsapp_api
+from . import agent_api, telegram_api, webchat_api, whatsapp_api
 from . import store as store_mod
 from .websocket import ConnectionClosed, WebSocket, accept_key
 
@@ -190,7 +190,8 @@ class Gateway:
                  web_port: int = WEB_PORT, web_host: str = "127.0.0.1", api_tokens_path: Path | None = None,
                  whatsapp: whatsapp_api.WhatsAppRelay | None = None, whatsapp_check_s: float = 5.0,
                  telegram: telegram_api.TelegramRelay | None = None,
-                 webchat: webchat_api.WebchatRelay | None = None):
+                 webchat: webchat_api.WebchatRelay | None = None,
+                 agent: agent_api.AgentRelay | None = None):
         self.store = store_mod.Store(state_dir)
         self.journal = Path(journal)
         self.ledger_path = ledger.path_for(self.journal)
@@ -229,6 +230,8 @@ class Gateway:
         # Webchat desde PaynaniApp (§13). Sin uno dado, no hay usuario de PaynaniWeb y no se
         # anuncia: sms_gateway.py pasa el de la instalación.
         self.webchat = webchat or webchat_api.WebchatRelay(state_dir, log=log)
+        # El agente para PaynaniApp (#692): sin uno dado, no se anuncia `agent.get`.
+        self.agent = agent or agent_api.AgentRelay(log=log)
         # 0 apaga el reenvío: fuera de /sms/ se responde 404, como antes de #434.
         self.web_port = web_port
         self.web_host = web_host
@@ -686,7 +689,8 @@ class Gateway:
                    "heartbeat_s": self.heartbeat_s, "allowed": allowed,
                    "max_out_per_hour": self.max_out_per_hour,
                    "accepts": list(ACCEPTS) + self.whatsapp.accepts(ws.wa_configured)
-                   + self.telegram.accepts(ws.tg_configured) + self.webchat.accepts(ws.wc_available),
+                   + self.telegram.accepts(ws.tg_configured) + self.webchat.accepts(ws.wc_available)
+                   + self.agent.accepts(ws.wc_available),
                    "grants": list(ws.wa_grants) + list(ws.wc_grants)}
         if SERVER_VERSION:
             welcome["server_version"] = SERVER_VERSION
@@ -701,6 +705,8 @@ class Gateway:
             tasks.append(asyncio.create_task(self.telegram.watch(device_id, lambda what: self._tg_changed(ws, what))))
         if ws.wc_available:
             tasks.append(asyncio.create_task(self.webchat.watch(lambda what, extra: self._wc_changed(ws, what, extra))))
+            if self.agent.accepts(True):
+                tasks.append(asyncio.create_task(self.agent.watch(lambda status: self._agent_changed(ws, status))))
         try:
             while True:
                 raw = await ws.recv()
@@ -803,6 +809,23 @@ class Gateway:
             return
         try:
             await self._send(ws, {"type": "webchat.changed", "what": what, **extra})
+        except (ConnectionClosed, ConnectionError, OSError):
+            pass
+
+    async def _agent_changed(self, ws: WebSocket, status: str) -> None:
+        """`agent.changed` a la conexión con `webchat.owner` (#692)."""
+        if ws.closed or agent_api.GRANT not in getattr(ws, "wc_grants", []):
+            return
+        try:
+            await self._send(ws, {"type": "agent.changed", "status": status})
+        except (ConnectionClosed, ConnectionError, OSError):
+            pass
+
+    async def _agent(self, ws: WebSocket, msg: dict) -> None:
+        """Un `agent.get` de la app (#692)."""
+        response = await self.agent.handle(msg, grants=getattr(ws, "wc_grants", []))
+        try:
+            await self._send(ws, response)
         except (ConnectionClosed, ConnectionError, OSError):
             pass
 
@@ -1017,6 +1040,11 @@ class Gateway:
         elif kind in webchat_api.TYPES:
             # Como tarea: un mensaje con archivos tarda en guardarse (§13).
             task = asyncio.create_task(self._webchat(ws, device_id, msg))
+            self.roster_tasks.add(task)
+            task.add_done_callback(self.roster_tasks.discard)
+        elif kind in agent_api.TYPES:
+            # Como tarea: leer el ledger para el modelo puede tardar.
+            task = asyncio.create_task(self._agent(ws, msg))
             self.roster_tasks.add(task)
             task.add_done_callback(self.roster_tasks.discard)
         elif kind == "hello":

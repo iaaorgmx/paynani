@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **La pasarela le manda a PaynaniApp el estado del agente (#692).** Lo pidió Julian: en la app, el menú «AI Agent» con el agente y su estado, como en PaynaniWeb, y al tocarlo la pantalla «Agente» (PaynaniApp#11, Metis[Q56] = A). `agent.get` responde el modelo de `/agent` (`web/agent.py`), con las fechas en UTC y sin enlaces, y `agent.changed` avisa cuando el estado cambia (se revisa cada 30 segundos). Va sólo al teléfono emparejado del dueño, con el mismo `webchat.owner` de Webchat (SMS_GATEWAY.md §13).
+
 - **AGENTS.md: qué hacer cuando el dueño pide el QR para emparejar PaynaniApp (#688).** PaynaniApp le va a dar al dueño un prompt para copiarle a su agente (PaynaniApp#7, Metis[Q51] = A). En la misma computadora el agente corre `paynani sms pair --web`; desde otro canal le manda la dirección y el código. El código es sólo para el dueño, y `--replace` se pregunta antes.
 
 - **PaynaniWeb: «Development team» en About (#686).** Lo pidió Julian: un renglón nuevo en Créditos abre `/about/team`, una tabla con los humanos y agentes de IA que han colaborado en paynani, PaynaniWeb y PaynaniApp.
