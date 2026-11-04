@@ -50,6 +50,8 @@ quita de la lista solo: eso lo decide una persona.
 
 ## 4. PR de release, revisado por alguien más
 
+La rama del PR se llama `release/X.Y.Z`: así corre `suite-macos`, que en los demás PRs no corre (Metis[Q59] = A). Como el PR sube `VERSION`, también corre `bootstrap-e2e`. No lo mezcles hasta que los dos pasen.
+
 Como cualquier otro cambio, por la regla de `AGENTS.md`. Pide explícitamente
 que revisen **si el CHANGELOG dice la verdad**, no si está bien redactado.
 

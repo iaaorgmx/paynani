@@ -3,10 +3,29 @@ name: tests
 # Every pull request, and every commit that lands on main. The second one is not
 # redundant: it catches a merge whose result differs from what either side
 # tested, which is the case a per-PR check cannot see.
+#
+# suite-macos runs only where it pays for itself (Metis[Q59] = A, 2026-11-04):
+# a macOS minute counts as ten Linux minutes and the job takes ~17, so running
+# it on every push was almost all of this repository's Actions usage. It runs on
+# a release PR (branch release/*), on a PR labelled `macos`, on a version tag,
+# and by hand (workflow_dispatch). Label a PR `macos` when it touches
+# install_macos.py, bootstrap_macos.py, paths or anything a GNU-vs-BSD tool
+# difference could break.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+# A new commit on the same PR cancels the run of the old one instead of letting
+# it finish. A push (main, a tag) gets a group of its own commit, so no run on
+# main is ever cancelled or replaced: GitHub keeps only one pending run per
+# group, and a group per ref would drop the middle one of three quick merges.
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -54,6 +73,12 @@ jobs:
   # Not a required check yet, deliberately. Let it report first; make it block
   # once what it reports is understood.
   suite-macos:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'pull_request' &&
+       (startsWith(github.head_ref, 'release/') ||
+        contains(github.event.pull_request.labels.*.name, 'macos')))
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

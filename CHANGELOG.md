@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **CI: menos minutos de GitHub Actions (Metis[Q59] = A).** Lo pidió Julian: depender lo menos posible del cómputo de GitHub. Del 1 al 4 de noviembre corrieron 198 `tests` y 198 `bootstrap-e2e`, y casi todo el uso era `suite-macos` (unos 17 min por corrida, y un minuto de macOS cuenta como diez de Linux).
+  - `suite-macos` ya no corre en cada PR. Corre en el PR del release (rama `release/*`), en un PR con la etiqueta `macos`, al empujar una etiqueta `v*` y a mano (`workflow_dispatch`). Pon la etiqueta `macos` a un PR que toque `install_macos.py`, `bootstrap_macos.py`, rutas, o algo que dependa de una herramienta GNU o BSD.
+  - `bootstrap-e2e` corre sólo si el PR toca el instalador (`bootstrap.sh`, `scripts/install.sh`, `systemd/`, `VERSION`, …), y a mano.
+  - `suite-linux` sigue en cada PR y en `main`. Un commit nuevo en el mismo PR cancela la corrida anterior.
+  - Antes de pedir revisión se siguen corriendo las pruebas en el host propio, y el PR dice cuáles pasaron.
+
 - **PaynaniWeb: reaccionar a un mensaje viejo del bot dice por qué no se puede (#707).** Lo que el bot mandó antes de #700 no tiene id en Telegram, y reaccionar daba «Inténtalo otra vez». Ahora el aviso dice «A este mensaje no se le puede reaccionar.». Lo encontró Julian al probar. Además, una respuesta que salió sin cita dice «no se pudo citar el original» (antes «el original ya no estaba», que no era cierto en este caso), y la barra «Respondiendo a…» dice el nombre del agente, como la cita que guarda el servicio, y no «Agente». Con la marca `actions: false` del núcleo (#709), el menú de esos mensajes sólo trae «Copiar»: ni Responder ni reacciones.
 
 - **Telegram y WhatsApp: el hilo marca lo que no se puede citar ni reaccionar (#707).** Un mensaje nuestro sin el id de la plataforma trae `"actions": false` en `telegram.thread` y `whatsapp.thread`, para que PaynaniWeb sólo ofrezca «Copiar». En Telegram son los envíos de antes de #700, que no guardaban el `message_id`; en los dos, lo que no llegó a salir (TELEGRAM.md, WHATSAPP_BRIDGE.md).
