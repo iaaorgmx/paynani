@@ -210,6 +210,15 @@
     if (first) { first.focus({ preventScroll: true }); }
   }
 
+  // Webchat avisa por su WebSocket cuando cambian las reacciones de un mensaje (las del agente).
+  document.addEventListener("msgmenu:reactions", function (ev) {
+    var items = (ev && ev.detail) || {};
+    Object.keys(items).forEach(function (id) {
+      var row = findRow(id);
+      if (row) { renderChips(row, items[id]); }
+    });
+  });
+
   // Tocar una reacción bajo el globo: la nuestra se quita; otra, se pone (FR-12).
   document.addEventListener("click", function (ev) {
     var chip = ev.target.closest && ev.target.closest(".reacciones .reac");

@@ -178,6 +178,10 @@
       else if (data.type === "messages") { showDraft(null); addHtml(data.html, data.after); }
       else if (data.type === "typing") { showTyping(!!data.on && !(borrador && !borrador.hidden)); }
       else if (data.type === "message.delta") { showDraft(data.text); }
+      else if (data.type === "reactions") {
+        // PRD #685 F3: msgmenu.js vuelve a dibujar las reacciones de esos globos.
+        document.dispatchEvent(new CustomEvent("msgmenu:reactions", {detail: data.items || {}}));
+      }
       else if (data.type === "message.accepted") {
         delete pending[data.request_id];
       } else if (data.type === "error") {

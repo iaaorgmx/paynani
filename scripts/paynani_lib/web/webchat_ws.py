@@ -44,8 +44,8 @@ ERRORS = {"empty": "EMPTY", "too_long": "MESSAGE_TOO_LARGE", "too_big": "MESSAGE
 
 def signature(store):
     """`mtime` y tamaño de lo que puede cambiar (revisión de Metis en #650): la conversación,
-    typing, el borrador y el ledger. Con el almacén del núcleo (`root()`); con otro, None,
-    y entonces se relee en cada vuelta."""
+    typing, el borrador, las reacciones (PRD #685 F3) y el ledger. Con el almacén del núcleo
+    (`root()`); con otro, None, y entonces se relee en cada vuelta."""
     if not hasattr(store, "root"):
         return None
     try:
@@ -53,7 +53,8 @@ def signature(store):
     except Exception:  # noqa: BLE001 -- sin firma, se relee
         return None
     out = []
-    for path in (r / "messages.jsonl", r / "typing.json", r / "draft.json", r.parent / "lifecycle.jsonl"):
+    for path in (r / "messages.jsonl", r / "typing.json", r / "draft.json", r / "reactions.jsonl",
+                 r.parent / "lifecycle.jsonl"):
         try:
             st = path.stat()
             out.append((st.st_mtime_ns, st.st_size))
@@ -96,6 +97,9 @@ def serve(conn: ws.Conn, store, *, csrf_ok, owner: dict, render, texts: dict, cl
     draft = None
     next_poll = next_ping = 0.0
     seen_sig, refreshed = object(), 0.0
+    # PRD #685 F3: las reacciones de los últimos mensajes, para mandar sólo las que cambian (una
+    # del agente a un mensaje viejo se ve sin recargar). La primera vuelta sólo las anota.
+    reactions_seen: dict | None = None
     try:
         while True:
             now = clock()
@@ -117,6 +121,13 @@ def serve(conn: ws.Conn, store, *, csrf_ok, owner: dict, render, texts: dict, cl
                 if on != typing:
                     typing = on
                     _send(conn, type="typing", on=on)
+                if callable(getattr(store, "react", None)):
+                    now_reacts = {m["id"]: m.get("reactions") or [] for m in store.messages(limit=50) if m.get("id")}
+                    if reactions_seen is not None:
+                        changed = {k: v for k, v in now_reacts.items() if reactions_seen.get(k, []) != v}
+                        if changed:
+                            _send(conn, type="reactions", items=changed)
+                    reactions_seen = now_reacts
                 current = store.draft() if hasattr(store, "draft") else None
                 text = (current or {}).get("text") if current else None
                 if text != draft:

@@ -191,6 +191,75 @@ check("Webchat: la reacción del dueño bajo el globo del agente", True, 'class=
 js = (ROOT / "scripts" / "paynani_lib" / "assets" / "msgmenu.js").read_text(encoding="utf-8")
 check("msgmenu.js: la fila, el selector con buscador en «any», la misma la quita y las de abajo son botones", True,
       all(x in js for x in ("reactionRow", "selector-buscar", 'bare(mine) === bare(emoji) ? ""', ".reacciones .reac")))
+# ---- Webchat en vivo: una reacción del agente a un mensaje viejo, sin recargar --------------------
+from paynani_lib.web import webchat_ws  # noqa: E402
+
+
+class Rooted:
+    def __init__(self, r):
+        self._r = r
+
+    def root(self):
+        return self._r
+
+
+wr = Path(tempfile.mkdtemp()) / "webchat"
+wr.mkdir()
+sig0 = webchat_ws.signature(Rooted(wr))
+(wr / "reactions.jsonl").write_text('{"x": 1}\n', encoding="utf-8")
+check("signature() cambia cuando cambia reactions.jsonl (se vuelve a leer)", True, webchat_ws.signature(Rooted(wr)) != sig0)
+check("webchat.js pasa las reacciones del WebSocket a msgmenu.js, y msgmenu.js las dibuja", (True, True),
+      ('"msgmenu:reactions"' in (ROOT / "scripts/paynani_lib/assets/webchat.js").read_text(),
+       'addEventListener("msgmenu:reactions"' in js))
+# serve() de punta a punta con el almacén del núcleo (Metis en #703): un Conn falso y un reloj que
+# avanza en cada recv, sobre un PAYNANI_STATE temporal. Sin store.react (antes de #702), no aplica.
+import os  # noqa: E402
+
+os.environ["PAYNANI_STATE"] = str(Path(tempfile.mkdtemp()) / "state")
+Path(os.environ["PAYNANI_STATE"]).mkdir()
+from paynani_lib.webchat import store as wc_store  # noqa: E402
+from paynani_lib.web import websocket as wsmod  # noqa: E402
+
+if callable(getattr(wc_store, "react", None)):
+    first = wc_store.append("owner", "¿Ya quedó?", [], owner={"name": "Julián", "email": "julian@example.com"})
+    sent: list[dict] = []
+    t = [0.0]
+    steps = [lambda: None, lambda: None,
+             lambda: wc_store.react(first["id"], "👍", by="agent"), lambda: None, lambda: None,
+             lambda: wc_store.react(first["id"], "", by="agent"), lambda: None, lambda: None]
+
+    class FakeConn:
+        def __init__(self):
+            self.hello = True
+
+        def recv(self, timeout):
+            if self.hello:
+                self.hello = False
+                return (wsmod.TEXT, json.dumps({"type": "connect", "csrf": "ok", "after": first["id"]}))
+            t[0] += 5.0
+            if not steps:
+                raise wsmod.Closed()
+            steps.pop(0)()
+            return None
+
+        def send_text(self, text):
+            sent.append(json.loads(text))
+
+        def send(self, opcode, payload=b""):
+            pass
+
+        def close(self, code=1000):
+            pass
+
+    webchat_ws.serve(FakeConn(), wc_store, csrf_ok=lambda tok: tok == "ok", owner={"name": "Julián"},
+                     render=lambda new, day: ("", day), texts={}, clock=lambda: t[0])
+    got = [m for m in sent if m.get("type") == "reactions"]
+    check("serve(): la primera vuelta no manda reactions; después, el 👍 del agente y luego []",
+          [{first["id"]: [{"emoji": "👍", "count": 1, "mine": False}]}, {first["id"]: []}],
+          [m.get("items") for m in got])
+else:
+    check("serve() con reacciones: el almacén todavía no tiene react (antes de #702), no aplica", True, True)
+
 check("el .env y Himalaya de la instalación no cambiaron", BEFORE, [sha(p) for p in REAL])
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
