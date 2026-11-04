@@ -12,11 +12,43 @@ name: bootstrap-e2e
 #
 # Not a required check yet: let it report first, make it block once its
 # failures are understood (same rule as suite-macos in tests.yml).
+#
+# Only when what it exercises changes (Metis[Q59] = A, 2026-11-04): the
+# installer, the units, the version machinery, the e2e harness itself -- and
+# VERSION, so every release PR runs it. Anything else, run it by hand.
 on:
   pull_request:
+    paths:
+      - bootstrap.sh
+      - VERSION
+      - systemd/**
+      - scripts/install.sh
+      - scripts/install_manifest.py
+      - scripts/bootstrap_user.py
+      - scripts/bootstrap_e2e.sh
+      - scripts/fake_mail_server.py
+      - scripts/version.sh
+      - scripts/upgrade_plan.py
+      - .github/workflows/bootstrap-e2e.yml
   push:
     branches: [main]
+    paths:
+      - bootstrap.sh
+      - VERSION
+      - systemd/**
+      - scripts/install.sh
+      - scripts/install_manifest.py
+      - scripts/bootstrap_user.py
+      - scripts/bootstrap_e2e.sh
+      - scripts/fake_mail_server.py
+      - scripts/version.sh
+      - scripts/upgrade_plan.py
+      - .github/workflows/bootstrap-e2e.yml
   workflow_dispatch:
+
+concurrency:
+  group: bootstrap-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
