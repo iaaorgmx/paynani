@@ -5,6 +5,7 @@ Lo que el servicio de WhatsApp guarda en state/whatsapp/ (PRD #550 FR-11, FR-20,
     sent.jsonl          una línea por envío y por cada cambio de estado (FR-23)
     link.json           cuándo se vinculó la cuenta (FR-20 cuenta desde ahí); sin secretos
     rate.json           los envíos recientes, para el tope de FR-21
+    reactions.json      la reacción de la cuenta y la del contacto por mensaje (PRD #685 F3)
 
 Todo con 0600 en carpetas 0700 (Layout.prepare()). Nada de esto lleva el QR, el código
 de vinculación ni nada de auth/.
@@ -96,11 +97,35 @@ class Store:
         self._write(self.inbox_path(message_hash), data)
 
     def received(self):
-        """Cada mensaje recibido guardado, sin orden."""
+        """Cada mensaje recibido guardado, sin orden. Las reacciones (PRD #685 F3) también viven en
+        inbox/, pero no son mensajes: no salen aquí."""
         for path in (self.root / "inbox").glob("*.json"):
             data = self._read(path, None)
-            if isinstance(data, dict) and data.get("journaled"):
+            if isinstance(data, dict) and data.get("journaled") and data.get("type") != "whatsapp.reaction":
                 yield data
+
+    # --- reacciones (PRD #685 F3) ----------------------------------------------
+    def reactions(self) -> dict[str, dict]:
+        """`{ref (wa:… o wo_…): {"ours": emoji, "theirs": emoji}}`."""
+        data = self._read(self.root / "reactions.json", {})
+        return {k: v for k, v in data.items() if isinstance(v, dict)} if isinstance(data, dict) else {}
+
+    def set_reaction(self, ref: str, side: str, emoji: str) -> dict:
+        """Guarda la de un lado (`ours` o `theirs`); "" la quita. Devuelve las del mensaje."""
+        if side not in ("ours", "theirs"):
+            raise ValueError("side es ours o theirs")
+        data = self.reactions()
+        current = dict(data.get(ref) or {})
+        if emoji:
+            current[side] = emoji
+        else:
+            current.pop(side, None)
+        if current:
+            data[ref] = current
+        else:
+            data.pop(ref, None)
+        self._write(self.root / "reactions.json", data)
+        return current
 
     def wrote_since_link(self) -> set[str]:
         """

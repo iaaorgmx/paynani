@@ -13,7 +13,7 @@ import {
   parseLine, refOf, isDirectChat, isLidJid, isPnJid, normalizeJid, pnJidToE164,
   e164ToJid, extForMime, classify, unwrap, makeLogger, receiptStatus, callOutcome,
   sendContent, quietConsole, resolveJid, credsLinked, quoteOf, quoteContext,
-} from './lib.js';
+  reactionOf, reactContent } from './lib.js';
 
 process.umask(0o077);
 
@@ -245,6 +245,15 @@ async function onUpsert(s, { messages, type }) {
     const key = msg.key || {};
     if (key.fromMe || !isDirectChat(key.remoteJid) || !msg.message) continue;
     if (unwrap(msg.message)?.protocolMessage?.type === 5 /* HISTORY_SYNC_NOTIFICATION */) continue;
+    const reaction = reactionOf(msg.message);
+    if (reaction) { // PRD #685 F3: el servicio busca el mensaje por su key_id
+      const from = await resolveSender(s, key);
+      const ts = Number(msg.messageTimestamp || 0);
+      out({ type: 'reaction', key_id: key.id, chat: from.jid, from, push_name: msg.pushName || null,
+        sent_at: ts ? new Date(ts * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z') : nowIso(),
+        target: { key_id: reaction.key_id }, emoji: reaction.emoji });
+      continue;
+    }
     const info = classify(msg.message);
     if (!info) continue;
     const from = await resolveSender(s, key);
@@ -317,6 +326,24 @@ async function send(ref, msg) {
   }
 }
 
+// PRD #685 F3: la reacción de la cuenta. No cuenta para el tope de envíos (eso lo lleva el servicio).
+async function react(ref, msg) {
+  if (state.state !== 'connected' || !sock) return fail(ref, 'not_connected');
+  if (!E164_RE.test(msg.to || '')) return fail(ref, 'missing_field', 'to en E.164', { field: 'to' });
+  if (!allowed.has(msg.to)) return fail(ref, 'not_allowed', 'el número no está en allowed');
+  if (typeof msg.emoji !== 'string' || msg.emoji.length > 16) return fail(ref, 'missing_field', 'emoji', { field: 'emoji' });
+  const target = msg.target && typeof msg.target === 'object'
+    ? { ...msg.target, chat: msg.target.chat || e164ToJid(msg.to) } : null;
+  const content = reactContent(target, msg.emoji);
+  if (!content) return fail(ref, 'missing_field', 'target', { field: 'target' });
+  try {
+    await sock.sendMessage(e164ToJid(msg.to), content);
+    result(ref, { at: nowIso() });
+  } catch (e) {
+    fail(ref, 'send_failed', String(e?.output?.statusCode || e?.name || 'error'));
+  }
+}
+
 // --- órdenes ----------------------------------------------------------------
 
 async function handle(msg) {
@@ -336,6 +363,7 @@ async function handle(msg) {
       allowed = new Set(msg.allowed.filter((n) => E164_RE.test(n)));
       return result(ref, { count: allowed.size });
     case 'send': return send(ref, msg);
+    case 'react': return react(ref, msg);
     case 'read':
       if (!cfg.read_receipts) return result(ref);
       if (state.state !== 'connected') return fail(ref, 'not_connected');

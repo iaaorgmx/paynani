@@ -245,5 +245,38 @@ def run_thread(args) -> int:
         quote = m.get("reply_to") or {}
         cited = ("(se mandó sin cita) " if quote.get("missing")
                  else f"(respondiendo a «{quote.get('excerpt') or '…'}») " if quote else "")
+        if m.get("reactions"):
+            extra += " " + _reactions_label(m["reactions"])
         print(f"{m.get('at')} {m.get('id')} {arrow} {cited}{m.get('text') or '[' + str(m.get('kind')) + ']'}{extra}")
+    return 0
+
+
+def _reactions_label(reactions: list[dict]) -> str:
+    """`[👍 nuestra, ❤️ contacto]`: «la nuestra» (`mine`) es la de la cuenta."""
+    out = []
+    for r in reactions:
+        if r.get("count", 1) > 1:
+            out.append(f"{r.get('emoji')} ×{r['count']}")
+        else:
+            out.append(f"{r.get('emoji')} {'nuestra' if r.get('mine') else 'contacto'}")
+    return "[" + ", ".join(out) + "]"
+
+
+def run_react(args) -> int:
+    """La reacción de la cuenta (PRD #685 F3); `--remove` la quita. No avisa ni cuenta para el tope."""
+    if not (args.ref.startswith("wa:") or args.ref.startswith("wo_")):
+        print("ref es el id de un mensaje de la conversación (wa:… o wo_…, de whatsapp thread)", file=sys.stderr)
+        return 2
+    if args.remove and args.emoji:
+        print("--remove no lleva emoji", file=sys.stderr)
+        return 2
+    if not args.remove and not args.emoji:
+        print("falta el emoji (o --remove para quitar la reacción)", file=sys.stderr)
+        return 2
+    emoji = "" if args.remove else args.emoji
+    data, rc = _call(args, "whatsapp.react", ref=args.ref, emoji=emoji)
+    if rc:
+        return rc
+    label = _reactions_label(data.get("reactions") or [])
+    print(f"{data.get('ref')}\t{'removed' if not emoji else 'reacted ' + emoji}\t{label}")
     return 0
