@@ -430,7 +430,16 @@ En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje abre un menú
   - Si el canal ya no encontró el original al mandar, dice «Se mandó sin cita».
 - **Fuera del roster** (WhatsApp) no hay «Responder» ni citas.
 
-Las reacciones (F3) van en el mismo menú. En SMS sólo hay «Copiar» (Iris[Q28] = A).
+**Las reacciones** (F3, FR-10 a FR-12) aparecen sólo cuando el canal reacciona: `reactions` en el estado de Telegram (la lista que acepta un bot) o de WhatsApp (`"any"`), o un almacén de Webchat con `react`.
+- **En el menú**, arriba de las opciones, va la fila 👍 👌 ❤️ 👀 🔥 😭 👎 y una flecha al selector.
+  - **Telegram:** la fila y el selector sólo traen las reacciones de la lista del bot. Si alguna de las 7 no está, se completa con las de la lista, y el selector dice «Un bot de Telegram solo puede usar estas».
+  - **WhatsApp y Webchat:** el selector trae una lista amplia, con un buscador por palabras en español e inglés.
+- **Elegir una** la manda por `/telegram/messages/reaccionar`, `/whatsapp/messages/reaccionar` o `/webchat/reaccionar` (POST con `ref`, `emoji` y el CSRF). La respuesta es JSON con las reacciones del mensaje, y la página las dibuja sin recargar. Elegir la nuestra otra vez la quita (`emoji` vacío).
+- **El servidor** sólo la pasa al servicio si el canal reacciona, si el `ref` tiene forma de mensaje de ese canal y si el emoji es un emoji: hasta 16 caracteres, sin letras ni marcas de HTML. Qué emojis acepta lo decide el servicio.
+- **Bajo el globo** van las reacciones del mensaje, con cuántas si son más de una. La nuestra va resaltada (`aria-pressed`): tocarla la quita, y tocar otra la pone.
+- **Fuera del roster** (WhatsApp) no hay reacciones.
+
+En SMS sólo hay «Copiar» (Iris[Q28] = A).
 
 ### WhatsApp
 

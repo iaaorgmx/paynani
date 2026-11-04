@@ -38,7 +38,7 @@ from ..telegram import uploads as tg_uploads
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
 from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (about_pages, downloads, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -98,6 +98,8 @@ TG_REF = re.compile(r"^tg:[A-Za-z0-9_.:-]{1,120}$")
 TG_ANY_REF = re.compile(r"^tgo?:[A-Za-z0-9_.:-]{1,120}$")
 TG_THREAD = re.compile(r"^t_[0-9a-f]{32}$")
 WC_ID = re.compile(r"^w_[0-9a-f]{32}$")   # un mensaje de Webchat (PRD #685 F2: lo que se cita)
+# PRD #685 F3: poner o quitar la reacción de la cuenta a un mensaje (msgmenu.js, responde JSON).
+REACT_ROUTES = ("/telegram/messages/reaccionar", "/whatsapp/messages/reaccionar", "/webchat/reaccionar")
 # Lo que mandó el dueño desde la web (#662): `tgo:` + 32 hex, y la foto por su índice.
 TG_OUT_REF = re.compile(r"^tgo:[0-9a-f]{32}$")
 TG_FILE_INDEX = re.compile(r"^[0-9]$")
@@ -1390,7 +1392,8 @@ def make_handler(ctx: Context):
             self._page(code, title=title, icon_name="webchat", active="webchat", wide=True,
                        body=webchat_pages.body(messages, self.CTX.now(), summary, self.session["csrf"],
                                                typing=typing, available=store is not None, text=text, error=error,
-                                               more=more, replies=webchat_pages.replies(store), reply_to=reply_to))
+                                               more=more, replies=webchat_pages.replies(store), reply_to=reply_to,
+                                               reactions=webchat_pages.reacts(store)))
 
         def _webchat_get(self):
             store = self.CTX.webchat
@@ -1519,6 +1522,47 @@ def make_handler(ctx: Context):
                 self._webchat_page(400 if code else 500, text=text, error=i18n.t("web.wc.err." + key))
                 return
             self._redirect("/webchat")
+
+        def _react_post(self, post: dict):
+            """
+            POST /<canal>/…/reaccionar (PRD #685 F3, contrato de FR-14): `ref` y `emoji` («» quita
+            la nuestra). Sólo si el canal reacciona; el servicio revisa la lista, el hilo y el
+            roster. Responde JSON con las reacciones del mensaje, para que msgmenu.js las dibuje.
+            """
+            def reply(code: int, obj: dict):
+                self._send(code, "application/json; charset=UTF-8", json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+
+            ref = post.get("ref", "").strip()[:130]
+            emoji = post.get("emoji", "").strip()[:16]
+            failed = i18n.t("web.msgmenu.react_failed")
+            if not msgmenu.valid_emoji(emoji):
+                reply(400, {"ok": False, "error": failed})
+                return
+            try:
+                if self.route == "/webchat/reaccionar":
+                    store = self.CTX.webchat
+                    if not webchat_pages.reacts(store) or not WC_ID.match(ref):
+                        reply(404, {"ok": False, "error": failed})
+                        return
+                    data = store.react(ref, emoji, by="owner") or {}
+                else:
+                    telegram = self.route.startswith("/telegram/")
+                    if telegram and not self.CTX.telegram_configured():
+                        reply(404, {"ok": False, "error": failed})
+                        return
+                    source = self.CTX.telegram() if telegram else self.CTX.whatsapp()
+                    good = TG_ANY_REF.match(ref) if telegram else (WA_MESSAGE_ID.match(ref) or WA_SENT_ID.match(ref))
+                    if not good or msgmenu.reactions_allowed(source.status().get("reactions")) is None:
+                        reply(404, {"ok": False, "error": failed})
+                        return
+                    data = source.request("telegram.react" if telegram else "whatsapp.react", ref=ref, emoji=emoji)
+            except (telegram_source.Failed, whatsapp_source.Failed) as exc:
+                reply(429 if exc.code == "rate_limited" else 400, {"ok": False, "error": failed, "code": exc.code})
+                return
+            except Exception as exc:  # noqa: BLE001 -- el Rejected del almacén de Webchat
+                reply(400, {"ok": False, "error": failed, "code": webchat_source.rejected_code(exc) or "failed"})
+                return
+            reply(200, {"ok": True, "reactions": [r for r in data.get("reactions") or [] if isinstance(r, dict)]})
 
         # ---- Nuevo correo (#590 cambio 2) ----------------------------------------
         def _compose(self, match: dict, *, values: dict | None = None, error: str = "", code: int = 200):
@@ -1831,7 +1875,9 @@ def make_handler(ctx: Context):
                                              web_files=status.get("web_files") is True, replies=replies)
             add = telegram_pages.add_box(thread_data, self.session["csrf"], add_error)
             notice = t("web.tg.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
-            self._tg_page(code, telegram_pages.thread_body(thread_data, reply, add, notice, replies=replies),
+            self._tg_page(code, telegram_pages.thread_body(thread_data, reply, add, notice, replies=replies,
+                                                           reactions=status.get("reactions"),
+                                                           csrf=self.session["csrf"]),
                           title_key="web.tg.messages_title", back="/telegram/messages")
 
         def _telegram_post(self, post: dict):
@@ -2290,7 +2336,9 @@ def make_handler(ctx: Context):
             reply = whatsapp_pages.reply_box(thread_data, self.session["csrf"], connected, values, error,
                                              web_files=wa_status.get("web_files") is True, replies=replies)
             notice = t("web.wa.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
-            self._wa_page(code, whatsapp_pages.thread_body(thread_data, reply, notice, replies=replies),
+            self._wa_page(code, whatsapp_pages.thread_body(thread_data, reply, notice, replies=replies,
+                                                           reactions=wa_status.get("reactions"),
+                                                           csrf=self.session["csrf"]),
                           title_key="web.wa.messages_title", back="/whatsapp/messages")
 
         def _whatsapp_post(self, post: dict):
@@ -2802,6 +2850,9 @@ def make_handler(ctx: Context):
         def dispatch_post(self, post: dict):
             if self.route == "/webchat/enviar":
                 self._webchat_post(post)
+                return
+            if self.route in REACT_ROUTES:
+                self._react_post(post)
                 return
             if self.route in ("/api-tokens/new", "/api-tokens/revoke", "/api-tokens/agent-replies"):
                 self._tokens_post(post)

@@ -284,7 +284,8 @@ def sender(by) -> str:
     return "api" if by == "api" else ""
 
 
-def thread_body(thread: dict, reply: str, add: str = "", notice: str = "", replies: bool = False) -> str:
+def thread_body(thread: dict, reply: str, add: str = "", notice: str = "", replies: bool = False,
+                reactions=None, csrf: str = "") -> str:
     """Un hilo. `thread` es el `data` de `telegram.thread`: los mensajes llegan del más
     reciente al más viejo (como `whatsapp.thread`) y se dibujan en orden de hora."""
     tid = str(thread.get("thread") or "")
@@ -299,7 +300,8 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "", repli
         out.append(f'<p class="mas"><a class="secundario" href="/telegram/messages/ver?t={quote(tid, safe="")}'
                    f'&amp;antes={quote(str(thread["next_before"]), safe="")}">{_th("older")}</a></p>')
     # PRD #685 F2: con `replies` (telegram.status), el menú suma «Responder».
-    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies)}>']
+    # F3: con `reactions` (telegram.status), la fila y el selector, sólo con la lista del bot.
+    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies, reactions=reactions, react_url="/telegram/messages/reaccionar", csrf=csrf)}>']
     messages = sorted(thread.get("messages") or [], key=lambda m: str(m.get("at") or ""))
     for m in messages:
         out_dir = m.get("dir") == "out"
@@ -341,7 +343,8 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "", repli
             who_sent, "sent_prefix")) if out_dir else who
         bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("telegram", m), str(m.get("ref") or ""), name)}>'
                        f'<div class="globo"><div class="de">{label}{_status(m)}{edited}</div>'
-                       f'{msgmenu.quote(m.get("reply_to"))}<div class="texto">{body}</div>{when}</div></li>')
+                       f'{msgmenu.quote(m.get("reply_to"))}<div class="texto">{body}</div>{when}'
+                       f'{msgmenu.reactions(m.get("reactions"))}</div></li>')
     bubbles.append("</ol>")
     # #680: hilo.js baja al último mensaje al abrir, como Webchat.
     return "\n".join(out + bubbles + [add, reply, '<script src="/assets/hilo.js" defer></script>', msgmenu.SCRIPT]) + "\n"
