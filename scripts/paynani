@@ -443,6 +443,8 @@ def main(argv: list[str] | None = None) -> int:
         from paynani_lib.sms import cli as sms_cli
         if args.sms_command == "pair":
             if args.web:
+                if args.replace:
+                    sms_cli.revoke_for_replace()  # #690: antes --web ignoraba --replace
                 return onboard.run(port=args.port, mode="sms_pair")
             return sms_cli.run_pair(args)
         if args.sms_command == "devices":

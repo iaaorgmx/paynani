@@ -209,6 +209,14 @@ def run_thread(args) -> int:
     return 0
 
 
+def revoke_for_replace(store=None) -> None:
+    """`sms pair --replace`, con o sin `--web` (#690): revoca el teléfono emparejado, si hay."""
+    store = store or _store()
+    device = store.revoke()
+    if device:
+        print(f"Teléfono {device['device_id']} revocado. Si estaba conectado, se cierra al reconectar.")
+
+
 def run_pair(args) -> int:
     store = _store()
     device = store.device()
@@ -217,8 +225,7 @@ def run_pair(args) -> int:
               "(DEC-3). Usa --replace para revocarlo y emparejar otro.", file=sys.stderr)
         return 2
     if device and args.replace:
-        store.revoke()
-        print(f"Teléfono {device['device_id']} revocado. Si estaba conectado, se cierra al reconectar.")
+        revoke_for_replace(store)
     base = (args.url or os.environ.get("PAYNANI_SMS_PUBLIC_URL", "")).rstrip("/")
     if not base:
         print("Falta la dirección pública de la pasarela: --url https://<túnel> o "

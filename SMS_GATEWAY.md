@@ -1658,6 +1658,49 @@ Los errores HTTP traen `{"error": "<code>"}` con los mismos códigos de abajo.
 - **Sin cola:** no pasa por la cola de la app ni recibe `ack`. Si se pierde, la app lo
   nota al volver a pedir `webchat.thread`.
 
+
+### `agent.get` y `agent.changed`: el agente (#692)
+
+Para el renglón del agente en el menú «AI Agent» de la app y la pantalla «Agente»
+(PaynaniApp#11), los mismos datos que `/agent` en PaynaniWeb.
+
+- **Anuncio:** `agent.get` va en `accepts` con las mismas condiciones que
+  `webchat.thread`, y responde sólo a la conexión con `webchat.owner`; a las demás,
+  `forbidden`.
+
+```json
+{"type": "agent.get", "id": "q_…"}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "name": "Metis", "email": "…", "runtime": "claudecode", "runtime_label": "Claude Code",
+  "kind": "watch", "status": "online",
+  "session": {"live": true, "armed_at": "2026-11-04T06:11:01Z", "expires_at": "2026-11-04T06:41:01Z"},
+  "last_accepted": "…", "dispatcher": "active", "listener": "active",
+  "handled": {"replied": 2, "closed": 16}, "waiting": 0,
+  "last_reply": {"at": "…", "who": "…", "channel": "webchat"}, "reply_median_s": 42.0,
+  "version": {"installed": "0.21.0", "latest": "0.21.0", "checked_at": "…"},
+  "roster_count": 18, "phone": {…}, "whatsapp": "connected",
+  "telegram": {"state": "running", "bot_username": "…"},
+  "activity": [{"at": "…", "channel": "mail", "state": "replied", "who": "…", "what": "Re: …"}]}}
+```
+
+- **Contenido:** el modelo de `web/agent.py` `build()`, sin `now` (la app tiene
+  `server_time`) y sin los `href` de `activity`. Las fechas van en ISO UTC; lo que no se
+  sabe, en `null` (`whatsapp` y `telegram` sin ese canal configurado).
+- **`status`:** `online`, `no_session`, `offline` o `unknown`, el semáforo de PaynaniWeb.
+- **Si no se puede armar** (un archivo a medias), `unavailable`. La app vuelve a pedir.
+
+```json
+{"type": "agent.changed", "status": "no_session"}
+```
+
+- **Sin `id` ni `ref`**, como `webchat.changed`. La pasarela lee el estado cada 30
+  segundos y avisa sólo cuando cambia; una lectura que falla no cuenta como cambio.
+- **A quién llega:** a toda conexión con `webchat.owner`.
+- **Qué hace la app:** cambia el punto del menú y, si tiene abierta la pantalla
+  «Agente», vuelve a pedir `agent.get`.
 ### Errores de esta sección
 
 Además de los de las secciones 5 y 11:

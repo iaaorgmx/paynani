@@ -32,7 +32,7 @@ import paths  # noqa: E402
 from paynani_lib.sms import config as sms_config  # noqa: E402
 from paynani_lib.sms import gateway as gw  # noqa: E402
 from paynani_lib.sms import roster_api  # noqa: E402
-from paynani_lib.sms import telegram_api, webchat_api, whatsapp_api  # noqa: E402
+from paynani_lib.sms import agent_api, telegram_api, webchat_api, whatsapp_api  # noqa: E402
 
 DEFAULT_PORT = 8770  # 8765 es del onboarding y de `sms pair --web`, que corren a la vez
 
@@ -85,6 +85,35 @@ def webchat_relay(state: Path) -> webchat_api.WebchatRelay:
     return webchat_api.WebchatRelay(state, owner=owner, agent_name=agent_name, log=gw.log)
 
 
+def agent_relay() -> agent_api.AgentRelay:
+    """
+    El agente para PaynaniApp (#692): el mismo modelo que `/agent` en PaynaniWeb, leído con
+    el Context de la web de esta instalación. Se arma la primera vez que se pide; si la web
+    no se puede cargar, `agent.get` responde `unavailable` y nada más se rompe.
+    """
+    import datetime as dt
+    import threading
+    holder: dict = {}
+    lock = threading.Lock()
+
+    def source():
+        with lock:
+            if "ctx" not in holder:
+                from paynani_lib.web import app as web_app, users
+                holder["ctx"] = web_app.Context(users.user_path())
+            return holder["ctx"].dashboard
+
+    def model() -> dict:
+        from paynani_lib.web import agent
+        return agent.build(source(), dt.datetime.now().astimezone())
+
+    def status() -> str | None:
+        from paynani_lib.web import agent
+        return agent.summary(source(), dt.datetime.now().astimezone()).get("status")
+
+    return agent_api.AgentRelay(model=model, status=status, log=gw.log)
+
+
 def api_tokens_path() -> Path | None:
     """web/api_tokens.json de PaynaniWeb (PRD #491), para la opción «el agente contesta» (FR-12)."""
     try:
@@ -130,7 +159,7 @@ def main(argv=None) -> int:
                          api_tokens_path=api_tokens_path(), whatsapp=whatsapp_relay(state, roster),
                          # TELEGRAM.md §6: telegram.env dice si está configurado.
                          telegram=telegram_api.TelegramRelay(state, log=gw.log),
-                         webchat=webchat_relay(state))
+                         webchat=webchat_relay(state), agent=agent_relay())
 
     async def run():
         server = await gw.serve(gateway, args.host, args.port)
