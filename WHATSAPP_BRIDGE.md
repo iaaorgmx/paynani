@@ -545,6 +545,9 @@ necesitan:
   «La nuestra» (`mine`) es la de la cuenta, la ponga el dueño desde la web o el agente desde
   la CLI. Primero va la nuestra y luego por `count`. Sin reacciones, o en un mensaje oculto,
   el campo no viene.
+- **Lo que no se puede citar ni reaccionar (#707).** Un envío sin el `key_id` de WhatsApp
+  (no llegó a salir) trae `"actions": false` en `whatsapp.thread`: `whatsapp.react` da
+  `not_found` y `whatsapp.send` con `reply_to` sale `dropped`. Los demás no traen el campo.
 - `event show wa:… --body` de una reacción imprime `--- reaction: ❤ on the agent's message
   (wo_…) ---` y el mensaje completo.
 

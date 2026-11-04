@@ -885,6 +885,8 @@ class WhatsAppService:
                 item["files"] = [{"name": s["file"]}]
             if isinstance(s.get("reply_to"), dict):
                 item["_reply"] = s["reply_to"]
+            if not s.get("key_id"):
+                item["_noid"] = True    # #707: sin key_id no se puede citar ni reaccionar
             out.setdefault(s.get("to") or "?", []).append(item)
         for msgs in out.values():
             msgs.sort(key=lambda m: m.get("at") or "", reverse=True)
@@ -977,6 +979,8 @@ class WhatsAppService:
             found = _reactions_view(reactions.get(m.get("id"))) if not row.get("hidden") else []
             if found:
                 row["reactions"] = found        # PRD #685 F3; sin reacciones no viene
+            if m.get("_noid") and not row.get("hidden"):
+                row["actions"] = False          # #707: sólo viene si es false
             rows.append(row)
         return {"number": party, "name": phones.get(party) if in_roster else None, "in_roster": in_roster,
                 "can_reply": in_roster and party in self.store.wrote_since_link(),

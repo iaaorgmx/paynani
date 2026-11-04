@@ -142,6 +142,19 @@ async def main(tmp: Path) -> None:
             check("sin reacciones, el campo no viene", False,
                   "reactions" in next(m for m in thread["messages"] if m["id"] == out_id))
             check("el key_id no sale en el hilo", False, "3EB0A001" in json.dumps(thread))
+            check("lo que se puede citar y reaccionar no trae actions (#707)", False,
+                  any("actions" in m for m in thread["messages"]))
+
+            # --- #707: un envío sin key_id (no salió) --------------------------------------
+            svc.store.record_sent({"id": "wo_" + "0" * 32, "to": NUM, "by": "web", "text": "Recibí la foto",
+                                   "at": "2026-11-03T18:42:00Z", "status": "failed"})
+            thread = (await c.ask("whatsapp.thread", by="web", number=NUM))["data"]
+            legacy = next(m for m in thread["messages"] if m["id"] == "wo_" + "0" * 32)
+            check("#707: sin key_id el hilo trae actions: false", False, legacy.get("actions"))
+            check("#707: el envío que salió sigue sin actions", False,
+                  "actions" in next(m for m in thread["messages"] if m["id"] == out_id))
+            r = await c.ask("whatsapp.react", by="web", ref="wo_" + "0" * 32, emoji="👍")
+            check("#707: y react de ese mensaje da not_found", "not_found", r.get("code"))
 
             await c.ask("whatsapp.react", by="web", ref=mine_in["id"], emoji="👍")
             check("la misma otra vez no vuelve al puente", len(reacts),
