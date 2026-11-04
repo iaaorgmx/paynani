@@ -110,6 +110,10 @@ Se hace una vez por teléfono, desde la página de onboarding de paynani.
    {"v": 1, "pair": "https://<túnel>/sms/pair", "ws": "wss://<túnel>/sms/ws", "code": "K7QW2MXP"}
    ```
 
+   PaynaniApp le da al dueño un prompt para pedirle el QR a su agente (#688); qué
+   contesta el agente está en AGENTS.md, «When your human asks for the QR to pair
+   PaynaniApp».
+
 2. La app escanea el QR (o se escriben la dirección y el código a mano) y manda:
 
    ```http
