@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, Webchat: las reacciones se ven en vivo (PRD #685 F3).** Una reacción del agente a un mensaje viejo aparece sin recargar: el WebSocket vigila `reactions.jsonl` y manda sólo los globos que cambiaron. Lo pidió Metis en #702.
+
 - **Telegram: responder citando un mensaje, el núcleo (PRD #685, F2).** Con esto PaynaniWeb ya muestra «Responder» en Telegram.
   - `telegram.send` acepta `reply_to` (un `tg:` o `tgo:` del mismo hilo) y sale con la cita nativa de Telegram. Si Telegram ya no tiene el original, sale sin cita (`reply: dropped`).
   - `telegram.thread` trae la cita en lo que salió y en lo que entró, también cuando alguien responde a un mensaje de antes de paynani.

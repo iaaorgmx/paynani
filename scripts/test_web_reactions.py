@@ -191,6 +191,26 @@ check("Webchat: la reacción del dueño bajo el globo del agente", True, 'class=
 js = (ROOT / "scripts" / "paynani_lib" / "assets" / "msgmenu.js").read_text(encoding="utf-8")
 check("msgmenu.js: la fila, el selector con buscador en «any», la misma la quita y las de abajo son botones", True,
       all(x in js for x in ("reactionRow", "selector-buscar", 'bare(mine) === bare(emoji) ? ""', ".reacciones .reac")))
+# ---- Webchat en vivo: una reacción del agente a un mensaje viejo, sin recargar --------------------
+from paynani_lib.web import webchat_ws  # noqa: E402
+
+
+class Rooted:
+    def __init__(self, r):
+        self._r = r
+
+    def root(self):
+        return self._r
+
+
+wr = Path(tempfile.mkdtemp()) / "webchat"
+wr.mkdir()
+sig0 = webchat_ws.signature(Rooted(wr))
+(wr / "reactions.jsonl").write_text('{"x": 1}\n', encoding="utf-8")
+check("signature() cambia cuando cambia reactions.jsonl (se vuelve a leer)", True, webchat_ws.signature(Rooted(wr)) != sig0)
+check("webchat.js pasa las reacciones del WebSocket a msgmenu.js, y msgmenu.js las dibuja", (True, True),
+      ('"msgmenu:reactions"' in (ROOT / "scripts/paynani_lib/assets/webchat.js").read_text(),
+       'addEventListener("msgmenu:reactions"' in js))
 check("el .env y Himalaya de la instalación no cambiaron", BEFORE, [sha(p) for p in REAL])
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
