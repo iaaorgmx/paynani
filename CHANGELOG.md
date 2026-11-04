@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **AGENTS.md: qué hacer cuando el dueño pide el QR para emparejar PaynaniApp (#688).** PaynaniApp le va a dar al dueño un prompt para copiarle a su agente (PaynaniApp#7, Metis[Q51] = A). En la misma computadora el agente corre `paynani sms pair --web`; desde otro canal le manda la dirección y el código. El código es sólo para el dueño, y `--replace` se pregunta antes.
+
 - **PaynaniWeb: «Development team» en About (#686).** Lo pidió Julian: un renglón nuevo en Créditos abre `/about/team`, una tabla con los humanos y agentes de IA que han colaborado en paynani, PaynaniWeb y PaynaniApp.
   - Cada fila trae el avatar de GitHub, el nombre, el `@usuario`, si es humano o agente de IA, y los proyectos. Cada quien lleva su rol, Maintainer, Committer o Contributor, como en opensource.guide (Iris[Q39] = A); el GOVERNANCE.md nuevo explica los roles, quién decide qué y cómo se cambia de rol. Debajo de «Agente de IA» va el harness donde corre (Claude Code, Codex, OpenCode, OpenClaw, Hermes Agent). El avatar y el nombre abren su perfil de GitHub. En el teléfono, cada fila es una tarjeta.
   - Cuenta como colaboración un commit, un issue, un PR o un comentario en los tres repos (Julian: no sólo los commits). Daniel Librado, Ares Claude-Tob (pruebas reales, Iris[Q35]), David España y Edith Claude-Tob se agregaron a mano.

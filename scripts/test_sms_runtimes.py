@@ -75,6 +75,9 @@ rules = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 check("AGENTS.md explica la etiqueta roster del SMS y de las llamadas", True,
       all(part in rules for part in ("[sms 03:09:45, roster]", "event show <id> --body", "sms send <number>",
                                       "[llamada perdida", "exit 3", "sms.gateway.offline")))
+check("#688: AGENTS.md dice qué hacer con el prompt de PaynaniApp para pedir el QR", True,
+      all(part in rules for part in ("Muéstrame el código QR para emparejar", "sms pair --web",
+                                      "never give one to a roster contact", "--replace", "10 minutes")))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
