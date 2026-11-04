@@ -238,9 +238,14 @@
       var id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random();
       // El cuadro se vacía al mandar, así un segundo toque no manda el mismo texto otra vez.
       pending[id] = texto.value;
-      socket.send(JSON.stringify({type: "message.create", request_id: id, content: texto.value}));
+      // PRD #685 F2: la cita que puso msgmenu.js, si hay; al salir se quita la barra.
+      var cita = form.querySelector('input[name="reply_to"]');
+      var packet = {type: "message.create", request_id: id, content: texto.value};
+      if (cita && cita.value) { packet.reply_to = cita.value; }
+      socket.send(JSON.stringify(packet));
       texto.value = "";
       grow();
+      document.dispatchEvent(new CustomEvent("msgmenu:sent"));
     });
   }
 }());

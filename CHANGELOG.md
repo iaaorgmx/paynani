@@ -6,7 +6,8 @@
   - En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje (o el clic derecho, o Enter con el renglón enfocado) abre un menú con **Copiar**. Copia el texto sin el nombre ni la hora y avisa «Copiado».
   - Tocar un enlace, una foto o un botón dentro del globo sigue haciendo lo de siempre.
   - No hay menú en los mensajes ocultos ni en los que se están enviando o fallaron.
-  - **Responder** (F2) y las reacciones (F3) vienen después, en el mismo menú.
+  - **Responder** (F2, la parte web): la barra «Respondiendo a…» arriba del cuadro, `reply_to` en el envío, la cita dentro del globo y tocarla lleva al original. Aparece sólo cuando el canal cita (`replies: true`, o el almacén de Webchat con `reply_to`); el núcleo lo agrega Metis (#685).
+  - Las reacciones (F3) vienen después, en el mismo menú.
 
 - **La pasarela le manda a PaynaniApp el estado del agente (#692).** Lo pidió Julian: en la app, el menú «AI Agent» con el agente y su estado, como en PaynaniWeb, y al tocarlo la pantalla «Agente» (PaynaniApp#11, Metis[Q56] = A). `agent.get` responde el modelo de `/agent` (`web/agent.py`), con las fechas en UTC y sin enlaces, y `agent.changed` avisa cuando el estado cambia (se revisa cada 30 segundos). Va sólo al teléfono emparejado del dueño, con el mismo `webchat.owner` de Webchat (SMS_GATEWAY.md §13).
 - **`paynani sms pair --replace --web` ya revoca el teléfono emparejado (#690).** Antes `--web` ignoraba `--replace`, y la página no generaba código porque seguía habiendo un teléfono. Ahora revoca primero y lo dice, igual que sin `--web`.

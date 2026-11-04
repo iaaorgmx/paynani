@@ -6,21 +6,30 @@
 // está seleccionando texto tampoco se abre. Escape, un toque fuera o elegir una opción lo cierran.
 // Funciona igual con los mensajes que llegan después (Webchat, «Mensajes anteriores»): todo va
 // por delegación en el documento. Los textos vienen en la lista del hilo (`data-msgmenu-*`).
+//
+// F2, «Responder» (FR-6 a FR-8): sólo si la lista trae `data-msgmenu-reply` (el canal cita) y la
+// página tiene el campo `reply_to`. Pone la barra «Respondiendo a…» arriba del cuadro, con una ✕,
+// y el ref en el campo. Tocar una cita dentro de un globo lleva al original y lo resalta; si no
+// está cargado, pide «Mensajes anteriores» hasta 5 veces.
 (function () {
   "use strict";
   var menu = null;       // el menú abierto: {box, row}
   var notice = null;     // el aviso «Copiado»
   var noticeTimer = 0;
 
+  var ICON_COPY = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/>' +
+    '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  var ICON_REPLY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 17 4 12l5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
+  var ICON_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+
   function words(row) {
-    var list = row.closest("ol") || document.body;
-    return {
-      label: list.getAttribute("data-msgmenu-label") || "",
-      copy: list.getAttribute("data-msgmenu-copy") || "Copy",
-      copied: list.getAttribute("data-msgmenu-copied") || "",
-      failed: list.getAttribute("data-msgmenu-failed") || ""
-    };
+    var list = (row && row.closest("ol")) || document.querySelector("ol[data-msgmenu-label]") || document.body;
+    function a(name) { return list.getAttribute("data-msgmenu-" + name) || ""; }
+    return { label: a("label"), copy: a("copy") || "Copy", copied: a("copied"), failed: a("failed"),
+             reply: a("reply"), replying: a("replying"), remove: a("remove"), hidden: a("hidden"), notloaded: a("notloaded") };
   }
+
+  function replyField() { return document.querySelector('form input[name="reply_to"]'); }
 
   // El texto del mensaje, sin el nombre, el estado ni la hora (FR-5).
   function textOf(row) {
@@ -107,8 +116,11 @@
     box.setAttribute("role", "menu");
     if (w.label) { box.setAttribute("aria-label", w.label); }
     var items = [];
+    if (w.reply && row.getAttribute("data-ref") && replyField()) {
+      items.push({ label: w.reply, icon: ICON_REPLY, run: function () { close(false); startReply(row); } });
+    }
     if (textOf(row)) {
-      items.push({ label: w.copy, icon: "copy", run: function () { copy(row); } });
+      items.push({ label: w.copy, icon: ICON_COPY, run: function () { copy(row); } });
     }
     if (!items.length) { return; }   // sin opciones no hay menú (una foto sin pie, en F1)
     var list = document.createElement("div");
@@ -117,8 +129,7 @@
       var b = document.createElement("button");
       b.type = "button";
       b.setAttribute("role", "menuitem");
-      b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/>' +
-        '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      b.innerHTML = it.icon;   // un SVG fijo de arriba, nunca texto del mensaje
       var span = document.createElement("span");
       span.textContent = it.label;
       b.appendChild(span);
@@ -134,6 +145,104 @@
     var first = box.querySelector("button");
     if (first) { first.focus({ preventScroll: true }); }
   }
+
+  // ---- F2: responder ------------------------------------------------------------------------
+  function clearReply() {
+    var field = replyField();
+    if (field) { field.value = ""; }
+    var bar = document.querySelector(".cita-barra");
+    if (bar) { bar.remove(); }
+  }
+
+  function showBar(row) {
+    var field = replyField();
+    if (!field) { return; }
+    var w = words(row);
+    var bar = document.querySelector(".cita-barra");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.className = "cita-barra";
+      bar.setAttribute("role", "group");
+      var form = field.form;
+      var anchor = form.querySelector(".wc-barra, .wc-fila, textarea");
+      if (anchor && anchor.parentNode === form) { form.insertBefore(bar, anchor); } else { form.insertBefore(bar, form.firstChild); }
+    }
+    var name = row.getAttribute("data-name") || "";
+    var title = (w.replying || "{name}").replace("{name}", name);
+    var excerpt = (textOf(row).split("\n")[0] || "").slice(0, 100) || w.hidden;
+    bar.innerHTML = ICON_REPLY + "<div><b></b><span></span></div>" +
+      '<button type="button" class="cita-quitar">' + ICON_X + "</button>";
+    bar.querySelector("b").textContent = title;
+    bar.querySelector("span").textContent = excerpt;
+    bar.setAttribute("aria-label", title);
+    var x = bar.querySelector(".cita-quitar");
+    x.setAttribute("aria-label", w.remove);
+    x.title = w.remove;
+    x.addEventListener("click", function () {
+      clearReply();
+      var text = field.form.querySelector("textarea");
+      if (text) { text.focus(); }
+    });
+  }
+
+  function startReply(row) {
+    var field = replyField();
+    if (!field) { return; }
+    field.value = row.getAttribute("data-ref") || "";
+    showBar(row);
+    var text = field.form.querySelector("textarea");
+    if (text) { text.focus({ preventScroll: false }); }
+  }
+
+  function findRow(ref) {
+    var rows = document.querySelectorAll("li[data-ref]");
+    for (var i = 0; i < rows.length; i++) { if (rows[i].getAttribute("data-ref") === ref) { return rows[i]; } }
+    return null;
+  }
+
+  function flash(row) {
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    row.classList.add("msj-resaltado");
+    window.setTimeout(function () { row.classList.remove("msj-resaltado"); }, 1600);
+  }
+
+  // Tocar una cita: al original; si no está cargado, «Mensajes anteriores» hasta 5 veces (FR-8).
+  function goTo(ref, tries) {
+    var row = findRow(ref);
+    if (row) { flash(row); return; }
+    var older = document.querySelector("p.mas a, #wc-antes:not([hidden]) button");
+    if (!older || tries >= 5) { say(words(null).notloaded); return; }
+    var before = document.querySelectorAll("li[data-ref]").length;
+    older.click();
+    var waited = 0;
+    var timer = window.setInterval(function () {
+      waited += 250;
+      if (document.querySelectorAll("li[data-ref]").length !== before || waited >= 6000) {
+        window.clearInterval(timer);
+        goTo(ref, tries + 1);
+      }
+    }, 250);
+  }
+
+  document.addEventListener("click", function (ev) {
+    var cita = ev.target.closest && ev.target.closest("a.cita[data-cita]");
+    if (!cita) { return; }
+    ev.preventDefault();
+    ev.stopPropagation();
+    goTo(cita.getAttribute("data-cita"), 0);
+  }, true);
+
+  // Webchat manda por WebSocket sin recargar: al salir el mensaje se quita la cita.
+  document.addEventListener("msgmenu:sent", clearReply);
+
+  // Después de un error, el formulario vuelve con el `reply_to` que traía: se vuelve a ver la barra.
+  (function restore() {
+    var field = replyField();
+    if (field && field.value) {
+      var row = findRow(field.value);
+      if (row) { showBar(row); } else { field.value = ""; }
+    }
+  }());
 
   function rowFrom(target) {
     var row = target && target.closest ? target.closest("li[data-menu]") : null;

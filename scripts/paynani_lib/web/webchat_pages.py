@@ -66,6 +66,16 @@ def _day_label(day: dt.date, today: dt.date) -> str:
     return e(f"{day.day} {months[day.month - 1]}" + (f" {day.year}" if day.year != today.year else ""))
 
 
+def replies(store) -> bool:
+    """PRD #685 F2: si el almacén de Webchat ya guarda `reply_to` (el núcleo de Metis). Vive en el
+    mismo proceso que la web, así que basta con ver si `append` lo acepta."""
+    import inspect
+    try:
+        return store is not None and "reply_to" in inspect.signature(store.append).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 def bubbles(messages: list[dict], now: dt.datetime, agent_name: str, last_day: dt.date | None = None) -> str:
     """Los renglones (`<li>`) de la conversación, con el separador de cada día nuevo."""
     rows = []
@@ -80,8 +90,10 @@ def bubbles(messages: list[dict], now: dt.datetime, agent_name: str, last_day: d
         text = f'<div class="texto">{e(m.get("text", ""))}</div>' if m.get("text") else ""
         stamp = f'<time datetime="{e(m.get("at", ""))}">{local.strftime("%H:%M")}</time>'
         # PRD #685: el menú al tocar el mensaje (los de aquí ya están guardados: siempre lleva).
-        rows.append(f'<li class="wc {"wc-yo" if mine else "wc-agente"}" id="{e(m.get("id", ""))}"{msgmenu.item(True)}>'
-                    f'<div class="globo">{who}{_files(m.get("files") or [])}{text}{stamp}</div></li>')
+        name = i18n.t("web.msgmenu.you") if mine else agent_name
+        rows.append(f'<li class="wc {"wc-yo" if mine else "wc-agente"}" id="{e(m.get("id", ""))}"'
+                    f'{msgmenu.item(True, str(m.get("id") or ""), name)}>'
+                    f'<div class="globo">{who}{msgmenu.quote(m.get("reply_to"))}{_files(m.get("files") or [])}{text}{stamp}</div></li>')
     return "".join(rows)
 
 
@@ -119,7 +131,8 @@ def _error(text: str) -> str:
     return f'<p class="error-caja" role="alert">{e(text)}</p>' if text else ""
 
 
-def composer(csrf: str, agent_name: str, text: str = "", error: str = "") -> str:
+def composer(csrf: str, agent_name: str, text: str = "", error: str = "", replies: bool = False,
+             reply_to: str = "") -> str:
     """
     Una sola barra, como Telegram (Julian, Q321): el clip pequeño dentro, a la izquierda, que
     abre «Foto» y «Archivo» (un `<details>`, sin script); el
@@ -129,7 +142,7 @@ def composer(csrf: str, agent_name: str, text: str = "", error: str = "") -> str
     """
     return f"""<form class="wc-escribir" method="post" action="/webchat/enviar" enctype="multipart/form-data">
     {_error(error)}
-    <input type="hidden" name="csrf" value="{e(csrf)}">
+    <input type="hidden" name="csrf" value="{e(csrf)}">{msgmenu.reply_field(replies, reply_to)}
     <div class="wc-adjuntos" id="wc-adjuntos" data-remove="{_th('remove', name='{name}')}"></div>
     <div class="wc-barra">
       <details class="wc-adjuntar">
@@ -150,7 +163,8 @@ def composer(csrf: str, agent_name: str, text: str = "", error: str = "") -> str
 
 
 def body(messages: list[dict], now: dt.datetime, summary: dict | None, csrf: str, *, typing: bool = False,
-         available: bool = True, text: str = "", error: str = "", more: bool = False) -> str:
+         available: bool = True, text: str = "", error: str = "", more: bool = False, replies: bool = False,
+         reply_to: str = "") -> str:
     name = (summary or {}).get("name") or "AI agent"
     head = f"""<div class="wc-cab">
     <span class="wc-avatar" aria-hidden="true">{icon("agent")}</span>
@@ -163,8 +177,8 @@ def body(messages: list[dict], now: dt.datetime, summary: dict | None, csrf: str
     last = messages[-1]["id"] if messages else ""
     return f"""<div class="wc-pag" data-after="{e(last)}">
   {head}
-  <ol class="wc-hilo" id="wc-hilo" aria-live="polite"{msgmenu.list_attrs()}>{older_row(messages[0]["id"], more) if messages else ""}{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
-  {composer(csrf, name, text, error)}
+  <ol class="wc-hilo" id="wc-hilo" aria-live="polite"{msgmenu.list_attrs(reply=replies)}>{older_row(messages[0]["id"], more) if messages else ""}{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
+  {composer(csrf, name, text, error, replies, reply_to)}
 </div>
 <script src="/assets/adjuntos.js" defer></script>
 <script src="/assets/webchat.js" defer></script>

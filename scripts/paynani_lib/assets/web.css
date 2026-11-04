@@ -417,6 +417,22 @@ body.web-shell {
 .web-shell .pasos li.mal::before { content: "✕ "; color: var(--bad-ink); }
 .web-shell .pasos .detalle { color: var(--quiet); font-size: .82rem; margin-left: 1.2rem; }
 
+/* PRD #685 F2: la cita dentro del globo, la barra «Respondiendo a…» y el original resaltado. */
+.web-shell .hilo .cita, .web-shell .wc-hilo .cita { display: block; border-left: 3px solid var(--accent); background: rgba(143, 45, 43, .07); border-radius: 6px; padding: 4px 8px; margin: 2px 0 6px; text-decoration: none; color: inherit; font-size: .85rem; max-width: 100%; }
+.web-shell .cita b { display: block; color: var(--accent); font-size: .8rem; }
+.web-shell .cita span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--quiet); }
+.web-shell .cita .cita-perdida { display: block; color: var(--quiet); font-style: italic; font-size: .75rem; }
+.web-shell a.cita:hover, .web-shell a.cita:focus-visible { background: rgba(143, 45, 43, .12); }
+.web-shell .cita-barra { display: flex; align-items: center; gap: 10px; border-left: 3px solid var(--accent); background: var(--card); border-radius: 8px; padding: 6px 10px; margin: 0 0 6px; font-size: .85rem; }
+.web-shell .cita-barra > svg { width: 18px; height: 18px; stroke: var(--accent); fill: none; stroke-width: 2; flex: none; }
+.web-shell .cita-barra div { flex: 1; min-width: 0; }
+.web-shell .cita-barra b { display: block; color: var(--accent); }
+.web-shell .cita-barra span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--quiet); }
+.web-shell .cita-barra .cita-quitar { border: 0; background: none; cursor: pointer; padding: 6px; min-width: 36px; min-height: 36px; color: var(--quiet); }
+.web-shell .cita-barra .cita-quitar svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+.web-shell li.msj-resaltado > .globo { box-shadow: 0 0 0 3px var(--accent); transition: box-shadow .3s; }
+.menu-msj .menu-lista button + button { border-top: 1px solid var(--line); }
+
 /* Email Accounts como webmail (T5): recibido o enviado en la lista. */
 .web-shell .dir { display: inline-block; width: 1.1em; text-align: center; font-weight: 700; }
 .web-shell .dir-in { color: var(--quiet); }
