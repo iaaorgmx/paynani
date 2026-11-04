@@ -47,7 +47,7 @@ from . import api as tg_api  # noqa: E402
 from . import config  # noqa: E402
 from . import contacts  # noqa: E402
 from . import media as tg_media  # noqa: E402
-from .outbound import Outbound, _Refused  # noqa: E402
+from .outbound import Outbound, _Refused, quote_excerpt  # noqa: E402
 from .store import BotStore, canonical_hash, new_ref, private_dir, read_json, write_json  # noqa: E402
 
 REQUEST_ID = re.compile(r"^q_[0-9a-f]{32}$")
@@ -285,7 +285,8 @@ class TelegramService(Outbound):
                "last_poll_at": self.last_poll_at,
                "counters": dict(self.counters, sent_today=self._sent_today(),
                                 send_limit_day=config.setting("TELEGRAM_SEND_PER_DAY", self.settings)),
-               "web_files": True}          # #662: telegram.send acepta `uploads` de PaynaniWeb
+               "web_files": True,          # #662: telegram.send acepta `uploads` de PaynaniWeb
+               "replies": True}            # PRD #685 F2: telegram.send acepta `reply_to`
         if self.reason:
             out["reason"] = self.reason
         return out
@@ -647,11 +648,13 @@ class TelegramService(Outbound):
         if media and media.get("rejected"):
             label = label[:-1] + f", rechazado: {_REJECT_LABEL[media['rejected']]}]" if label else label
         sent_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(message.get("date") or time.time())))
+        reply = self._reply_of(message, chat_id, thread)
         envelope = ev.telegram_event(
             account=self.account, ref=ref, digest=digest, sender_name=name, kind=kind,
             text=text if visible else "", media_label=label,
             sent_at=sent_at, roster_match=in_roster, local_time=time.strftime("%H:%M:%S"),
-            rules=rules_note, catch_all=catch, edits=original)
+            rules=rules_note, catch_all=catch, edits=original,
+            reply_excerpt=(reply or {}).get("excerpt") if visible else None)
         if media and media.get("rejected"):
             envelope["media_rejected"] = media["rejected"]
         inbox = {"type": envelope["event_type"], "chat": chat_id, "user": int(user.get("id", chat_id)),
@@ -659,7 +662,33 @@ class TelegramService(Outbound):
                  "filename": filename, "sent_at": sent_at, "received_at": now_utc(),
                  "in_roster": in_roster, "catch_all": caught, "media": media, "hash": digest,
                  "edits": original, "envelope": envelope, "journaled": False}
+        if reply is not None:
+            inbox["reply_to"] = reply
         return inbox, envelope
+
+    def _reply_of(self, message: dict, chat_id: int, thread: str) -> dict | None:
+        """
+        PRD #685 F2 (FR-9): si el mensaje responde a otro, `{ref, excerpt, from_bot}`. `ref` es
+        el `tg:` o `tgo:` del original si paynani lo tiene; si no (es de antes de la
+        instalación), null, y el extracto es el que mandó Telegram. Ningún id de Telegram.
+        """
+        rtm = message.get("reply_to_message")
+        if not isinstance(rtm, dict):
+            return None
+        try:
+            mid = int(rtm.get("message_id"))
+        except (TypeError, ValueError):
+            return None
+        from_bot = bool((rtm.get("from") or {}).get("is_bot"))
+        ref, data = None, None
+        if from_bot:
+            data = self.store.find_sent(thread, mid)
+            ref = data.get("ref") if data else None
+        else:
+            ref = self.store.find_message(chat_id, mid)
+            data = self.store.inbox(ref) if ref else None
+        excerpt = quote_excerpt(data) if data else quote_excerpt(rtm)
+        return {"ref": ref, "excerpt": excerpt, "from_bot": from_bot}
 
     def roster_candidate(self, thread) -> dict:
         """

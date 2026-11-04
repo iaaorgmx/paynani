@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **Telegram: responder citando un mensaje, el núcleo (PRD #685, F2).** Con esto PaynaniWeb ya muestra «Responder» en Telegram.
+  - `telegram.send` acepta `reply_to` (un `tg:` o `tgo:` del mismo hilo) y sale con la cita nativa de Telegram. Si Telegram ya no tiene el original, sale sin cita (`reply: dropped`).
+  - `telegram.thread` trae la cita en lo que salió y en lo que entró, también cuando alguien responde a un mensaje de antes de paynani.
+  - El aviso al agente dice «(respondiendo a «…»)», y `event show tg:… --body` imprime antes el texto citado.
+  - El agente cita con `paynani telegram send <contacto> --reply-to tg:…`, y `telegram thread` muestra el ref de cada mensaje (TELEGRAM.md §3 a §5).
 - **Webchat: responder citando un mensaje, el núcleo (PRD #685, F2).** Con esto PaynaniWeb ya muestra «Responder» en el Webchat.
   - `store.append(..., reply_to="w_…")` guarda la cita con el nombre y una línea del original; si el original ya no está, el mensaje sale igual, sin cita (`missing`).
   - El aviso al agente dice «(respondiendo a «…»)», y `event show wc:… --body` imprime antes el texto citado completo.
