@@ -73,13 +73,14 @@ para pruebas, sección 9) usando la biblioteca estándar. Sólo usa estos métod
 | `getMe` | Validar el token y conocer `bot_id` y `@usuario` (FR-9, FR-10) |
 | `getWebhookInfo` | Al arrancar: si hay webhook, `conflict` (FR-3) |
 | `deleteWebhook` | Sólo en `setup` o cambio de token, con confirmación (FR-9) |
-| `getUpdates` | Recibir. `timeout=30`, `allowed_updates=["message","edited_message","my_chat_member"]` |
+| `getUpdates` | Recibir. `timeout=30`, `allowed_updates=["message","edited_message","my_chat_member","message_reaction"]` |
 | `getFile` y la descarga | Multimedia (FR-18) |
 | `sendMessage`, `sendPhoto`, `sendDocument` | Mandar (FR-20) |
 | `sendChatAction` | «escribiendo…» (FR-21) |
 | `sendMessageDraft` | Streaming y avance (FR-22, FR-24), con `draft_id` distinto de 0 por respuesta |
 | `editMessageText` | Streaming cuando `sendMessageDraft` no se acepta (FR-22) |
 | `leaveChat` | Grupos, supergrupos y canales (FR-19) |
+| `setMessageReaction` | La reacción del bot (PRD #685 F3), una por mensaje |
 
 - **El token va en la ruta de la URL**, como pide la Bot API. Por eso ninguna URL se
   escribe en un log ni en un error: los errores se registran con el método y el código
@@ -132,6 +133,14 @@ para pruebas, sección 9) usando la biblioteca estándar. Sólo usa estos métod
   dice `Ana López (respondiendo a «Sí, a las 8»): Perfecto`, sólo si el mensaje se muestra.
   El inbox guarda `reply_to` (`ref`, `excerpt`, `from_bot`), y `event show tg:… --body`
   imprime antes el texto citado completo (`--- in reply to the agent (tgo:…) ---`).
+- **Una reacción** (PRD #685 FR-13, FR-16a): un `message_reaction` del contacto es otro
+  `telegram.received`, con `kind: "reaction"` y un `tg:` propio (no el del mensaje). El aviso
+  dice `Ana López reaccionó ❤️ a «Sí, a las 8»`, o `quitó su reacción ❤️ de «…»`; cambiarla
+  por otra da un solo aviso, con la nueva. Fuera del roster sin Catch-All sólo dice
+  «reacción de alguien fuera del roster». El inbox guarda `type: "telegram.reaction"` con el
+  mensaje (`target`), y `event show tg:… --body` imprime la reacción y el mensaje completo
+  (`--- reaction: ❤️ on the agent's message (tgo:…) ---`). Una reacción a un mensaje que
+  paynani no tiene sólo se confirma, y la del propio bot no avisa.
 
 ### Quién es quién (FR-11 a FR-13)
 
@@ -197,6 +206,7 @@ servicio asigna y guarda en `chats.json`. Nunca es un id de Telegram.
 | `telegram.threads` | Lista de hilos | web, pasarela, terminal |
 | `telegram.thread` | Mensajes de un hilo | web, pasarela, terminal |
 | `telegram.send` | Contesta en un hilo | todos |
+| `telegram.react` | La reacción del bot a un mensaje (PRD #685 F3) | todos |
 | `telegram.stream_open`, `telegram.stream_append`, `telegram.stream_close` | Respuesta por partes (FR-22) | terminal (`send --stream`) |
 | `telegram.draft` | Borrador de avance (FR-24) | terminal |
 | `telegram.image` | La foto de un mensaje recibido | web |
@@ -222,6 +232,11 @@ sin el campo no los acepta, y la web deja la barra sólo con texto.
 
 `replies: true`: `telegram.send` acepta `reply_to` y los hilos traen la cita (PRD #685 F2).
 Sin el campo, PaynaniWeb no ofrece «Responder».
+
+`reactions: ["👍", "👎", "❤️", …]`: las reacciones estándar que un bot puede poner, que es lo
+único que acepta `telegram.react` (PRD #685 F3). Van en la forma para mostrar, con U+FE0F
+donde hace falta («❤️»); el servicio acepta también la forma sin él. Sin el campo, PaynaniWeb
+no ofrece reaccionar.
 
 `state`: `starting`, `running`, `offline`, `conflict`, `token_invalid`,
 `journal_mismatch`, `stopped` o `service_down`. `conflict` trae
@@ -286,6 +301,11 @@ Catch-All de Telegram activo.
     documento, `📄 nombre`.
   - `missing: true` si el envío salió `dropped`.
   - Un mensaje que no es respuesta no trae `reply_to`. Nunca trae el `message_id`.
+- **Las reacciones (PRD #685 F3).** Un mensaje con reacciones trae
+  `"reactions": [{"emoji": "🔥", "count": 2, "mine": true}, {"emoji": "❤️", "count": 1, "mine": false}]`.
+  «La nuestra» (`mine`) es la del bot, la ponga el dueño desde la web o el agente desde la
+  CLI; la otra es la del contacto. Primero va la nuestra y luego por `count`. Sin
+  reacciones, el campo no viene.
 
 #### `telegram.send`
 
@@ -351,6 +371,22 @@ Catch-All de Telegram activo.
   repite cada 4 s y se apaga al mandar, al cerrar el agente el evento
   (`handled`, `replied` o `closed`) o a los 2 minutos.
 
+#### `telegram.react`
+
+```json
+{"type": "telegram.react", "id": "q_…", "by": "web", "ref": "tg:…", "emoji": "👍"}
+{"type": "telegram.react", "id": "q_…", "by": "agent", "ref": "tgo:…", "emoji": ""}
+{"type": "result", "ref": "q_…", "ok": true, "data": {"ref": "tg:…", "reactions": [{"emoji": "👍", "count": 1, "mine": true}]}}
+```
+
+- `ref` es el `tg:` o `tgo:` de un mensaje; `emoji` es uno de `reactions` del estado, o `""`
+  para quitar la del bot. Una por mensaje: otra la reemplaza (FR-11). Poner la misma que ya
+  está no vuelve a llamar a Telegram.
+- Errores: `not_found` (el ref no existe), `not_allowed` (el hilo está fuera del roster,
+  FR-17), `invalid` con `field: "emoji"` y `reason: "bad_emoji"` (un bot no puede usarlo) y
+  `rate_limited`.
+- No cuenta para el tope de envíos (FR-26) y no avisa al agente.
+
 #### Respuesta por partes: `telegram.stream_*`
 
 ```json
@@ -405,7 +441,9 @@ documento recibido (`kind: "document"`) de un mensaje que el hilo muestra hoy (F
 #### `telegram.watch`
 
 Como `whatsapp.watch`: después del `result`, la conexión recibe
-`{"type": "telegram.changed", "what": "threads"}` o `"status"`, sin datos.
+`{"type": "telegram.changed", "what": "threads"}` o `"status"`, sin datos. Cuando cambian las
+reacciones de un mensaje, `{"type": "telegram.changed", "what": "reaction", "ref": "tg:…"}`
+(PRD #685 F3), sin el emoji: la web vuelve a pedir ese hilo.
 
 #### `telegram.roster_candidate`
 
@@ -462,6 +500,7 @@ paynani telegram thread <contacto>
 paynani telegram send <contacto> "<texto>" [--file <ruta>] [--reply-to tg:…|tgo:…]
 paynani telegram send <contacto> --stream < texto
 paynani telegram draft <contacto> "<texto>"
+paynani telegram react <tg:…|tgo:…> <emoji> [--remove]
 paynani telegram token                   # cambio de token, lee de stdin (FR-10)
 paynani telegram disable                 # TELEGRAM_ENABLED=0 y detiene el servicio
 paynani telegram enable                  # lo vuelve a encender con el mismo token
@@ -488,6 +527,10 @@ paynani telegram enable                  # lo vuelve a encender con el mismo tok
   queda en el archivo. `enable` lo vuelve a poner en `1` y arranca el servicio. La
   pasarela (§6) y PaynaniWeb (§7) dejan de mostrar Telegram en cuanto lo ven. Ninguno de
   los dos imprime el token.
+
+- `react` pone la reacción del bot en un mensaje del hilo (PRD #685 F3); `--remove` la
+  quita. Sólo las de `reactions` en `telegram status`. `thread` muestra las reacciones al
+  final del renglón: `[🔥 bot, ❤️ contacto]`.
 
 Códigos de salida como `paynani whatsapp send`: 2 con el `code` en stderr para
 `not_allowed`, `not_started` y `rate_limited`; 1 si el servicio no corre.
@@ -582,6 +625,8 @@ api = FakeBotAPI(token="123:TEST", bot_id=123, username="PruebaBot")
 api.start()                               # api.base_url -> http://127.0.0.1:<puerto>
 api.private_message(user_id=1001, first_name="Ana", text="hola")
 api.edit_message(user_id=1001, message_id=1, text="hola de nuevo")
+api.reaction(user_id=1001, message_id=1, new="❤", old=None)   # message_reaction (PRD #685 F3)
+api.reactions                             # {(chat_id, message_id): la del bot}, de setMessageReaction
 api.group_added(chat_id=-500)             # el bot agregado a un grupo
 api.set_webhook("https://ejemplo.invalid/hook")
 api.fail_next("sendMessage", 429, retry_after=2)

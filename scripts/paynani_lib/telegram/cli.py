@@ -412,7 +412,40 @@ def run_thread(args) -> int:
         quote = m.get("reply_to") or {}
         cited = ("(se mandó sin cita) " if quote.get("missing")
                  else f"(respondiendo a «{quote.get('excerpt') or ''}») " if quote else "")
+        if m.get("reactions"):
+            extra += " " + _reactions_label(m["reactions"])
         print(f"{m.get('at')} {m.get('ref')} {arrow} {cited}{m.get('text') or '[' + str(m.get('kind')) + ']'}{extra}")
+    return 0
+
+
+def _reactions_label(reactions: list[dict]) -> str:
+    """`[👍 bot, ❤️ contacto]`: «la nuestra» (`mine`) es la del bot."""
+    out = []
+    for r in reactions:
+        if r.get("count", 1) > 1:
+            out.append(f"{r.get('emoji')} ×{r['count']}")
+        else:
+            out.append(f"{r.get('emoji')} {'bot' if r.get('mine') else 'contacto'}")
+    return "[" + ", ".join(out) + "]"
+
+
+def run_react(args) -> int:
+    """La reacción del bot (PRD #685 F3); `--remove` la quita. No avisa ni cuenta para el tope."""
+    if not (args.ref.startswith("tg:") or args.ref.startswith("tgo:")):
+        _err("ref es la referencia de un mensaje del hilo (tg:… o tgo:…, de telegram thread)")
+        return 2
+    if args.remove and args.emoji:
+        _err("--remove no lleva emoji")
+        return 2
+    if not args.remove and not args.emoji:
+        _err("falta el emoji (o --remove para quitar la reacción)")
+        return 2
+    emoji = "" if args.remove else args.emoji
+    data, rc = _ask(args, "telegram.react", ref=args.ref, emoji=emoji)
+    if rc:
+        return rc
+    label = _reactions_label(data.get("reactions") or [])
+    print(f"{data.get('ref')}\t{'removed' if not emoji else 'reacted ' + emoji}\t{label}")
     return 0
 
 

@@ -7,6 +7,11 @@
   - El puente ya no descarta las reacciones que llegan (`reactionMessage`), y cada mensaje de `whatsapp.thread` trae `reactions` (`[{emoji, count, mine}]`).
   - Cuando un contacto reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Ana López +1… reaccionó ❤️ a «…»». Fuera del roster sin Catch-All sólo dice «reacción de un número fuera del roster». Las nuestras no avisan.
   - El agente reacciona con `paynani whatsapp react wa:… 👍` (`--remove` la quita), y `whatsapp thread` y `event show wa:… --body` muestran las reacciones (WHATSAPP_BRIDGE.md §4, §5, §10 y §11).
+- **Telegram: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en Telegram.
+  - `telegram.react` pone, cambia o quita la reacción del bot (`setMessageReaction`), una por mensaje, y sólo con las reacciones estándar que puede usar un bot, que `telegram.status` trae en `reactions`.
+  - El servicio pide `message_reaction` en `allowed_updates` y guarda la reacción del contacto. Cada mensaje de `telegram.thread` trae `reactions` (`[{emoji, count, mine}]`).
+  - Cuando un contacto reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Ana López reaccionó ❤️ a «…»». Fuera del roster sin Catch-All sólo dice «reacción de alguien fuera del roster». Las del bot no avisan.
+  - El agente reacciona con `paynani telegram react tg:… 👍` (`--remove` la quita), y `telegram thread` y `event show tg:… --body` muestran las reacciones (TELEGRAM.md §2 a §5 y §9).
 - **Webchat: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en el Webchat.
   - `store.react(ref, emoji, by=)` pone, cambia o quita la reacción del dueño o del agente, una por mensaje y por lado, y cada mensaje del hilo trae `reactions` (`[{emoji, count, mine}]`). Acepta cualquier emoji, uno solo, y compara «❤» con «❤️» como la misma.
   - Cuando el dueño reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Julian Flores (PaynaniWeb) reaccionó 👍 a «…»». Las del agente no avisan.
