@@ -26,7 +26,9 @@ gateway no corte la conexión por inactividad (revisión de Metis en #648).
 """
 from __future__ import annotations
 
+import inspect
 import json
+import re
 import time
 
 from . import websocket as ws
@@ -36,6 +38,7 @@ REFRESH_S = 5.0                     # aunque nada cambie: typing y el borrador v
 PING_S = 30.0
 CONNECT_S = 10.0
 RATE_PER_MIN = 20
+REPLY_ID = re.compile(r"^w_[0-9a-f]{32}$")   # PRD #685 F2: el mensaje que se cita
 MAX_TEXT = 4000
 ERRORS = {"empty": "EMPTY", "too_long": "MESSAGE_TOO_LARGE", "too_big": "MESSAGE_TOO_LARGE", "bad_type": "INVALID_FIELD"}
 
@@ -74,6 +77,10 @@ def serve(conn: ws.Conn, store, *, csrf_ok, owner: dict, render, texts: dict, cl
     sesión; `render(messages, day)` → `(html, day)` dibuja los mensajes nuevos; `texts`
     trae los mensajes de error ya traducidos.
     """
+    try:   # PRD #685 F2: el almacén guarda `reply_to` (lo agrega el núcleo, #685)
+        replies = "reply_to" in inspect.signature(store.append).parameters
+    except (TypeError, ValueError):
+        replies = False
     try:
         got = conn.recv(CONNECT_S)
         hello = json.loads(got[1]) if got and got[0] == ws.TEXT else None
@@ -147,8 +154,12 @@ def serve(conn: ws.Conn, store, *, csrf_ok, owner: dict, render, texts: dict, cl
             if len(sent_times) >= RATE_PER_MIN:
                 _error(conn, "RATE_LIMITED", texts["rate"], request_id, retryable=True)
                 continue
+            # PRD #685 F2: la cita, si el almacén ya la guarda (un `w_…` de esta conversación).
+            reply_to = packet.get("reply_to")
+            extra = ({"reply_to": reply_to} if isinstance(reply_to, str) and REPLY_ID.match(reply_to)
+                     and replies else {})
             try:
-                message = store.append("owner", content.strip(), [], owner=owner)
+                message = store.append("owner", content.strip(), [], owner=owner, **extra)
             except Exception as exc:  # noqa: BLE001 -- el Rejected del almacén, o un fallo al guardar
                 code = getattr(exc, "code", None) if type(exc).__name__ == "Rejected" else None
                 _error(conn, ERRORS.get(code, "INTERNAL_ERROR"), texts.get(code or "failed", texts["failed"]),

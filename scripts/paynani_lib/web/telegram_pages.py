@@ -205,7 +205,7 @@ def _status(m: dict) -> str:
 
 
 def reply_box(thread: dict, csrf: str, running: bool, values: dict | None = None, error: str = "",
-              web_files: bool = False) -> str:
+              web_files: bool = False, replies: bool = False) -> str:
     """Responder al pie del hilo, sólo si el servicio dice `can_reply` (FR-25)."""
     head = f'<h3 id="responder">{_th("reply")}</h3>{_error(error)}'
     if not thread.get("in_roster"):
@@ -245,7 +245,7 @@ def reply_box(thread: dict, csrf: str, running: bool, values: dict | None = None
     return f"""<form method="post" action="/telegram/messages/enviar" class="wc-escribir barra-escribir tg-escribir{' barra-con-clip' if web_files else ''}" id="responder"{form_attrs}>
   <h3 class="solo-lector">{_th("reply")}</h3>{_error(error)}
   <input type="hidden" name="csrf" value="{e(csrf)}">
-  <input type="hidden" name="t" value="{e(thread["thread"])}">{attach}
+  <input type="hidden" name="t" value="{e(thread["thread"])}">{msgmenu.reply_field(replies, (values or {}).get("reply_to", ""))}{attach}
   <div class="wc-barra">{clip}
     <label for="tg-text" class="solo-lector">{_th("reply_text")}</label>
     <textarea id="tg-text" name="text" rows="1" maxlength="{MAX_TEXT}"{required} placeholder="{placeholder}">{e(text)}</textarea>
@@ -284,7 +284,7 @@ def sender(by) -> str:
     return "api" if by == "api" else ""
 
 
-def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> str:
+def thread_body(thread: dict, reply: str, add: str = "", notice: str = "", replies: bool = False) -> str:
     """Un hilo. `thread` es el `data` de `telegram.thread`: los mensajes llegan del más
     reciente al más viejo (como `whatsapp.thread`) y se dibujan en orden de hora."""
     tid = str(thread.get("thread") or "")
@@ -298,7 +298,8 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
     if thread.get("next_before"):
         out.append(f'<p class="mas"><a class="secundario" href="/telegram/messages/ver?t={quote(tid, safe="")}'
                    f'&amp;antes={quote(str(thread["next_before"]), safe="")}">{_th("older")}</a></p>')
-    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs()}>']
+    # PRD #685 F2: con `replies` (telegram.status), el menú suma «Responder».
+    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies)}>']
     messages = sorted(thread.get("messages") or [], key=lambda m: str(m.get("at") or ""))
     for m in messages:
         out_dir = m.get("dir") == "out"
@@ -335,9 +336,12 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "") -> st
         edited = f' <span class="quiet">({_th("edited")})</span>' if m.get("edited") else ""
         when = mail_pages.list_time(m.get("at") or "")
         # PRD #685: el menú al tocar el mensaje, sólo en los que ya llegaron o salieron.
-        bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("telegram", m))}>'
+        # Quién lo escribió, en texto (item() lo escapa), para la barra «Respondiendo a…».
+        name = i18n.t("web.tg." + {"agent": "by_agent", "owner": "by_owner", "api": "by_api"}.get(
+            who_sent, "sent_prefix")) if out_dir else who
+        bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("telegram", m), str(m.get("ref") or ""), name)}>'
                        f'<div class="globo"><div class="de">{label}{_status(m)}{edited}</div>'
-                       f'<div class="texto">{body}</div>{when}</div></li>')
+                       f'{msgmenu.quote(m.get("reply_to"))}<div class="texto">{body}</div>{when}</div></li>')
     bubbles.append("</ol>")
     # #680: hilo.js baja al último mensaje al abrir, como Webchat.
     return "\n".join(out + bubbles + [add, reply, '<script src="/assets/hilo.js" defer></script>', msgmenu.SCRIPT]) + "\n"

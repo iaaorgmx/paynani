@@ -214,7 +214,7 @@ def _status(m: dict) -> str:
 
 
 def reply_box(thread: dict, csrf: str, connected: bool, values: dict | None = None, error: str = "",
-              web_files: bool = False) -> str:
+              web_files: bool = False, replies: bool = False) -> str:
     """Responder al pie del hilo, sólo si el servicio dice `can_reply` (FR-20, FR-24)."""
     # Un envío rechazado se dice aquí aunque el cuadro no se dibuje (not_allowed,
     # not_started, not_connected).
@@ -255,7 +255,7 @@ def reply_box(thread: dict, csrf: str, connected: bool, values: dict | None = No
     return f"""<form method="post" action="/whatsapp/messages/enviar" class="wc-escribir barra-escribir wa-escribir{' barra-con-clip' if web_files else ''}" id="responder"{form_attrs}>
   <h3 class="solo-lector">{_th("reply")}</h3>{_error(error)}
   <input type="hidden" name="csrf" value="{e(csrf)}">
-  <input type="hidden" name="n" value="{e(thread["number"])}">{attach}
+  <input type="hidden" name="n" value="{e(thread["number"])}">{msgmenu.reply_field(replies, (values or {}).get("reply_to", ""))}{attach}
   <div class="wc-barra">{clip}
     <label for="wa-text" class="solo-lector">{_th("reply_text")}</label>
     <textarea id="wa-text" name="text" rows="1" maxlength="{MAX_TEXT}"{required} placeholder="{placeholder}">{e(text)}</textarea>
@@ -280,7 +280,7 @@ def _sent_files(mid: str, files: list) -> str:
     return "".join(out)
 
 
-def thread_body(thread: dict, reply: str, notice: str = "") -> str:
+def thread_body(thread: dict, reply: str, notice: str = "", replies: bool = False) -> str:
     """Un hilo (FR-24). `thread` es el `data` de `whatsapp.thread`: los mensajes llegan
     del más reciente al más viejo y se dibujan en orden de hora."""
     number = thread["number"]
@@ -294,7 +294,8 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
     if thread.get("next_before"):
         out.append(f'<p class="mas"><a class="secundario" href="/whatsapp/messages/ver?n={quote(number, safe="")}'
                    f'&amp;antes={quote(thread["next_before"], safe="")}">{_th("older")}</a></p>')
-    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs()}>']
+    # PRD #685 F2: con `replies` (estado de WhatsApp), el menú suma «Responder».
+    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies and in_roster)}>']
     for m in reversed(thread.get("messages") or []):
         out_dir = m.get("dir") == "out"
         css = {"agent": "sms-agent", "owner": "sms-human", "api": "sms-agent"}.get(m.get("by"), "sms-agent") \
@@ -331,9 +332,14 @@ def thread_body(thread: dict, reply: str, notice: str = "") -> str:
             body = e(m.get("text") or "")
         when = mail_pages.list_time(m.get("at") or "")
         # PRD #685: el menú al tocar el mensaje, sólo en los que ya llegaron o salieron.
-        bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("whatsapp", m))}>'
+        # Fuera del roster todo el hilo va oculto: sin menú (FR-4, FR-17).
+        menu = msgmenu.has_menu("whatsapp", dict(m, hidden=m.get("hidden") or not in_roster))
+        name = i18n.t("web.wa." + {"agent": "by_agent", "owner": "by_owner", "api": "by_api"}.get(
+            m.get("by"), "sent_prefix")) if out_dir else who
+        quote_html = msgmenu.quote(m.get("reply_to")) if in_roster else ""
+        bubbles.append(f'<li class="sms {css}"{msgmenu.item(menu, str(m.get("id") or ""), name)}>'
                        f'<div class="globo"><div class="de">{label}{_status(m)}</div>'
-                       f'<div class="texto">{body}</div>{when}</div></li>')
+                       f'{quote_html}<div class="texto">{body}</div>{when}</div></li>')
     bubbles.append("</ol>")
     # #680: hilo.js baja al último mensaje al abrir, como Webchat.
     return "\n".join(out + bubbles + [reply, '<script src="/assets/hilo.js" defer></script>', msgmenu.SCRIPT]) + "\n"

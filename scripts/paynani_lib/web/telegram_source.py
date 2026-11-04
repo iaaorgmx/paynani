@@ -176,6 +176,8 @@ class Demo(Source):
         self.checks: dict[str, dict] = {}
         self.apply_result = "applied"               # las pruebas lo cambian a "rollback"
         self.calls: list[tuple[str, dict]] = []
+        # PRD #685 F2: un núcleo que ya cita (`replies` en telegram.status); las pruebas lo encienden.
+        self.replies = False
         self.threads = []
         base = clock()
         for i, spec in enumerate(_DEMO_THREADS):
@@ -236,6 +238,8 @@ class Demo(Source):
                                     "edits_ignored": 0, "media_rejected": 1, "groups_left": 0}}
                 if self.state == "conflict":
                     out["reason"] = self.reason or "409"
+                if self.replies:
+                    out["replies"] = True
                 return out
             if kind == "telegram.threads":
                 rows = sorted((self._public_thread(t) for t in self.threads if t["messages"]),
@@ -274,8 +278,23 @@ class Demo(Source):
                 # `whatsapp.thread`; el servicio convierte la petición `by: web` en `owner`.
                 m = {"ref": "tgo:" + secrets.token_hex(6), "dir": "out", "by": "owner", "at": _iso(now),
                      "kind": "text", "text": text, "status": "sent"}
+                reply = "none"
+                if "reply_to" in fields:
+                    # PRD #685 F2 (contrato de FR-14): un mensaje de este mismo hilo, o `invalid`.
+                    if not self.replies:
+                        raise Failed("invalid", field="reply_to")
+                    original = next((o for o in t["messages"] if o["ref"] == fields["reply_to"]), None)
+                    if original is None:
+                        raise Failed("invalid", field="reply_to", reason="not_found")
+                    m["reply_to"] = {"ref": original["ref"], "missing": False,
+                                     "name": t["name"] if original["dir"] == "in" else "Agente",
+                                     "excerpt": " ".join(str(original.get("text") or "").split())[:100]}
+                    reply = "native"
                 t["messages"].append(m)
-                return {"ref": m["ref"], "status": "sent", "at": m["at"]}
+                out = {"ref": m["ref"], "status": "sent", "at": m["at"]}
+                if reply != "none":
+                    out["reply"] = reply
+                return out
             if kind == "telegram.roster_candidate":
                 t = self._find(str(fields.get("thread", "")))
                 if t["in_roster"]:

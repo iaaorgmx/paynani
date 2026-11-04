@@ -94,7 +94,10 @@ SERVER_NAME = "paynani-web"
 # La referencia opaca de un mensaje de Telegram recibido (`tg:…`, TELEGRAM.md §4), para
 # /telegram/media, y el id opaco de un hilo (`t_` + 32 hex). Nunca un id de Telegram.
 TG_REF = re.compile(r"^tg:[A-Za-z0-9_.:-]{1,120}$")
+# PRD #685 F2: lo que se cita al responder, un mensaje del hilo que entró (tg:) o que salió (tgo:).
+TG_ANY_REF = re.compile(r"^tgo?:[A-Za-z0-9_.:-]{1,120}$")
 TG_THREAD = re.compile(r"^t_[0-9a-f]{32}$")
+WC_ID = re.compile(r"^w_[0-9a-f]{32}$")   # un mensaje de Webchat (PRD #685 F2: lo que se cita)
 # Lo que mandó el dueño desde la web (#662): `tgo:` + 32 hex, y la foto por su índice.
 TG_OUT_REF = re.compile(r"^tgo:[0-9a-f]{32}$")
 TG_FILE_INDEX = re.compile(r"^[0-9]$")
@@ -1373,7 +1376,7 @@ def make_handler(ctx: Context):
         # El dueño platica con su agente, sólo con su sesión (Q307). El almacén es del núcleo
         # (webchat/store.py); la web nunca arma una ruta del disco: los adjuntos salen por
         # `file_path(ref)` con un ref `f_…` que se valida antes.
-        def _webchat_page(self, code: int = 200, *, text: str = "", error: str = ""):
+        def _webchat_page(self, code: int = 200, *, text: str = "", error: str = "", reply_to: str = ""):
             store = self.CTX.webchat
             summary = self.CTX.agent_summary()
             # Uno de más para saber si hay anteriores (Q336 = A).
@@ -1387,7 +1390,7 @@ def make_handler(ctx: Context):
             self._page(code, title=title, icon_name="webchat", active="webchat", wide=True,
                        body=webchat_pages.body(messages, self.CTX.now(), summary, self.session["csrf"],
                                                typing=typing, available=store is not None, text=text, error=error,
-                                               more=more))
+                                               more=more, replies=webchat_pages.replies(store), reply_to=reply_to))
 
         def _webchat_get(self):
             store = self.CTX.webchat
@@ -1505,8 +1508,11 @@ def make_handler(ctx: Context):
                 return
             files = [(f["name"][:200], f["data"]) for f in self.files[:webchat_pages.MAX_FILES]]
             owner = {"name": str(self.user.get("name") or ""), "email": str(self.user.get("email") or "")}
+            # PRD #685 F2: la cita, sólo si el almacén ya la guarda y tiene forma de mensaje (w_…).
+            reply_to = post.get("reply_to", "").strip()[:40]
+            extra = {"reply_to": reply_to} if webchat_pages.replies(store) and WC_ID.match(reply_to) else {}
             try:
-                store.append("owner", text.strip(), files, owner=owner)
+                store.append("owner", text.strip(), files, owner=owner, **extra)
             except Exception as exc:  # noqa: BLE001 -- el Rejected del almacén, o un fallo al guardar
                 code = webchat_source.rejected_code(exc)
                 key = {"too_long": "too_big"}.get(code, code) if code else "failed"
@@ -1820,11 +1826,12 @@ def make_handler(ctx: Context):
                 return
             status = source.status()
             running = status.get("state") == "running"
+            replies = status.get("replies") is True   # PRD #685 F2: el servicio cita (FR-14)
             reply = telegram_pages.reply_box(thread_data, self.session["csrf"], running, values, error,
-                                             web_files=status.get("web_files") is True)
+                                             web_files=status.get("web_files") is True, replies=replies)
             add = telegram_pages.add_box(thread_data, self.session["csrf"], add_error)
             notice = t("web.tg.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
-            self._tg_page(code, telegram_pages.thread_body(thread_data, reply, add, notice),
+            self._tg_page(code, telegram_pages.thread_body(thread_data, reply, add, notice, replies=replies),
                           title_key="web.tg.messages_title", back="/telegram/messages")
 
         def _telegram_post(self, post: dict):
@@ -1844,7 +1851,13 @@ def make_handler(ctx: Context):
             source = self.CTX.telegram()
             sid = self.session["sid"]
             if self.route == "/telegram/messages/enviar":
-                values = {"t": post.get("t", "").strip()[:40], "text": post.get("text", "").replace("\r\n", "\n")}
+                values = {"t": post.get("t", "").strip()[:40], "text": post.get("text", "").replace("\r\n", "\n"),
+                          "reply_to": post.get("reply_to", "").strip()[:130]}
+                # PRD #685 F2: la cita sólo si el servicio cita (`replies`) y tiene forma de mensaje
+                # de Telegram; el servicio revisa que sea de este hilo (FR-14). Si no, el envío es
+                # el de siempre: un núcleo viejo no recibe un campo que no conoce.
+                extra = ({"reply_to": values["reply_to"]} if TG_ANY_REF.match(values["reply_to"])
+                         and source.status().get("replies") is True else {})
                 if not TG_THREAD.match(values["t"]):
                     self._telegram_messages(values=values, error=telegram_pages.error_text("not_found"), code=404)
                     return
@@ -1873,9 +1886,10 @@ def make_handler(ctx: Context):
                     return
                 try:
                     if ups:
-                        source.request_slow("telegram.send", thread=values["t"], text=values["text"], uploads=ups)
+                        source.request_slow("telegram.send", thread=values["t"], text=values["text"], uploads=ups,
+                                            **extra)
                     else:
-                        source.request("telegram.send", thread=values["t"], text=values["text"])
+                        source.request("telegram.send", thread=values["t"], text=values["text"], **extra)
                 except telegram_source.Failed as exc:
                     code = {"rate_limited": 429, "unavailable": 503}.get(exc.code, 400)
                     # Con archivos, un corte por tiempo no dice si salieron: no se invita a
@@ -2272,10 +2286,11 @@ def make_handler(ctx: Context):
                 return
             wa_status = source.status()
             connected = wa_status.get("state") == "connected"
+            replies = wa_status.get("replies") is True   # PRD #685 F2: el servicio cita (FR-14)
             reply = whatsapp_pages.reply_box(thread_data, self.session["csrf"], connected, values, error,
-                                             web_files=wa_status.get("web_files") is True)
+                                             web_files=wa_status.get("web_files") is True, replies=replies)
             notice = t("web.wa.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
-            self._wa_page(code, whatsapp_pages.thread_body(thread_data, reply, notice),
+            self._wa_page(code, whatsapp_pages.thread_body(thread_data, reply, notice, replies=replies),
                           title_key="web.wa.messages_title", back="/whatsapp/messages")
 
         def _whatsapp_post(self, post: dict):
@@ -2293,7 +2308,13 @@ def make_handler(ctx: Context):
             source = self.CTX.whatsapp()
             sid = self.session["sid"]
             if self.route == "/whatsapp/messages/enviar":
-                values = {"n": post.get("n", "").strip()[:40], "text": post.get("text", "").replace("\r\n", "\n")}
+                values = {"n": post.get("n", "").strip()[:40], "text": post.get("text", "").replace("\r\n", "\n"),
+                          "reply_to": post.get("reply_to", "").strip()[:130]}
+                # PRD #685 F2: la cita sólo si el servicio cita (`replies`) y con forma de mensaje
+                # de WhatsApp (wa: o wo_).
+                rt = values["reply_to"]
+                extra = ({"reply_to": rt} if (WA_MESSAGE_ID.match(rt) or WA_SENT_ID.match(rt))
+                         and source.status().get("replies") is True else {})
                 if self.files is None:
                     self._whatsapp_messages(values=values, error=whatsapp_pages.error_text("malformed"), code=400)
                     return
@@ -2320,9 +2341,10 @@ def make_handler(ctx: Context):
                     return
                 try:
                     if ups:
-                        source.request_slow("whatsapp.send", number=values["n"], text=values["text"], uploads=ups)
+                        source.request_slow("whatsapp.send", number=values["n"], text=values["text"], uploads=ups,
+                                            **extra)
                     else:
-                        source.request("whatsapp.send", number=values["n"], text=values["text"])
+                        source.request("whatsapp.send", number=values["n"], text=values["text"], **extra)
                 except whatsapp_source.Failed as exc:
                     code = {"rate_limited": 429, "unavailable": 503, "not_connected": 409, "timeout": 504}.get(exc.code, 400)
                     # Con archivos, un corte por tiempo (del servicio o de la espera) no dice

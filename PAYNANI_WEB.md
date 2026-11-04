@@ -421,7 +421,16 @@ En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje abre un menú
 - **Los mensajes que llegan después** (Webchat, o los anteriores que se cargan al subir) también lo tienen: el script escucha en todo el documento.
 - **Sin JavaScript** no hay menú, y el texto se puede seleccionar como siempre.
 
-Las partes siguientes agregan **Responder** (F2) y las reacciones (F3) al mismo menú. En SMS sólo habrá «Copiar» (Iris[Q28] = A).
+**Responder** (F2, FR-6 a FR-9) aparece en el menú sólo cuando el canal cita: en WhatsApp y Telegram, cuando su estado trae `replies: true`; en Webchat, cuando su almacén guarda `reply_to`. Con un núcleo que todavía no cita, no aparece nada. El contrato está en #685.
+- **Al elegirlo**, arriba del cuadro de respuesta sale la barra «Respondiendo a <nombre>» con la primera línea del mensaje y una ✕ para quitarla, y el foco pasa al cuadro. El id del mensaje va en el campo oculto `reply_to` del formulario. En Webchat también va por el WebSocket, y la barra se quita al mandar.
+- **El servidor** le pasa `reply_to` al servicio sólo si el canal cita y el valor tiene forma de mensaje de ese canal (`tg:`/`tgo:`, `wa:`/`wo_`, `w_…`). Si el servicio no encuentra el original, el formulario vuelve con el error y con la cita puesta.
+- **Un mensaje que es respuesta** lleva la cita dentro del globo, con el nombre y una línea del original. Tocarla lleva al original y lo resalta un momento. Si no está cargado, pide «Mensajes anteriores» hasta 5 veces, y si no aparece, lo dice.
+  - Si el original es anterior a paynani, la cita no lleva a ningún lado.
+  - Si el original está oculto, dice «Mensaje oculto».
+  - Si el canal ya no encontró el original al mandar, dice «Se mandó sin cita».
+- **Fuera del roster** (WhatsApp) no hay «Responder» ni citas.
+
+Las reacciones (F3) van en el mismo menú. En SMS sólo hay «Copiar» (Iris[Q28] = A).
 
 ### WhatsApp
 

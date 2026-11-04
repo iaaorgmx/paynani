@@ -6,7 +6,8 @@
   - En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje (o el clic derecho, o Enter con el renglón enfocado) abre un menú con **Copiar**. Copia el texto sin el nombre ni la hora y avisa «Copiado».
   - Tocar un enlace, una foto o un botón dentro del globo sigue haciendo lo de siempre.
   - No hay menú en los mensajes ocultos ni en los que se están enviando o fallaron.
-  - **Responder** (F2) y las reacciones (F3) vienen después, en el mismo menú.
+  - **Responder** (F2, la parte web): la barra «Respondiendo a…» arriba del cuadro, `reply_to` en el envío, la cita dentro del globo y tocarla lleva al original. Aparece sólo cuando el canal cita (`replies: true`, o el almacén de Webchat con `reply_to`); el núcleo lo agrega Metis (#685).
+  - Las reacciones (F3) vienen después, en el mismo menú.
 
 - **AGENTS.md: qué hacer cuando el dueño pide el QR para emparejar PaynaniApp (#688).** PaynaniApp le va a dar al dueño un prompt para copiarle a su agente (PaynaniApp#7, Metis[Q51] = A). En la misma computadora el agente corre `paynani sms pair --web`; desde otro canal le manda la dirección y el código. El código es sólo para el dueño, y `--replace` se pregunta antes.
 
