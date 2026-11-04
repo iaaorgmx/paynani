@@ -20,9 +20,11 @@ on:
   workflow_dispatch:
 
 # A new commit on the same PR cancels the run of the old one instead of letting
-# it finish. Runs on main and on tags are never cancelled.
+# it finish. A push (main, a tag) gets a group of its own commit, so no run on
+# main is ever cancelled or replaced: GitHub keeps only one pending run per
+# group, and a group per ref would drop the middle one of three quick merges.
 concurrency:
-  group: tests-${{ github.event.pull_request.number || github.ref }}
+  group: tests-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

@@ -29,6 +29,11 @@ on:
       - scripts/fake_mail_server.py
       - scripts/version.sh
       - scripts/upgrade_plan.py
+      - harness/paths.py
+      - scripts/envpath.sh
+      - scripts/node_runtime.py
+      - scripts/node_release.json
+      - scripts/claude_hook.py
       - .github/workflows/bootstrap-e2e.yml
   push:
     branches: [main]
@@ -43,11 +48,16 @@ on:
       - scripts/fake_mail_server.py
       - scripts/version.sh
       - scripts/upgrade_plan.py
+      - harness/paths.py
+      - scripts/envpath.sh
+      - scripts/node_runtime.py
+      - scripts/node_release.json
+      - scripts/claude_hook.py
       - .github/workflows/bootstrap-e2e.yml
   workflow_dispatch:
 
 concurrency:
-  group: bootstrap-e2e-${{ github.event.pull_request.number || github.ref }}
+  group: bootstrap-e2e-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
