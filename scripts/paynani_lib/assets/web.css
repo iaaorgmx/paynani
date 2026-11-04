@@ -834,3 +834,22 @@ body.web-shell {
 .menu-msj .menu-lista button:hover, .menu-msj .menu-lista button:focus-visible { background: var(--bg); outline: none; }
 .menu-msj .menu-lista svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; flex: none; }
 .msj-aviso { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 61; background: var(--ink); color: var(--bg); border-radius: 999px; padding: .5rem 1rem; font-size: .9rem; box-shadow: 0 4px 16px rgba(0,0,0,.2); max-width: calc(100vw - 32px); }
+/* PRD #685 F3: la fila de reacciones del menú, el selector y las reacciones bajo el globo. */
+.menu-msj .menu-reac { display: flex; align-items: center; justify-content: space-between; gap: 2px; background: var(--card, #fff); border: 1px solid var(--line); border-radius: 999px; padding: 4px 6px; box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: calc(100vw - 16px); }
+.menu-msj .menu-reac button, .menu-msj .selector-rejilla button, .web-shell .reacciones .reac { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui, sans-serif; }
+.menu-msj .menu-reac button { border: 0; background: none; font-size: 1.45rem; line-height: 1; padding: 6px 4px; border-radius: 999px; cursor: pointer; min-width: 36px; min-height: 40px; }
+.menu-msj .menu-reac button:hover, .menu-msj .menu-reac button:focus-visible { background: var(--bg); transform: scale(1.12); outline: none; }
+.menu-msj .menu-reac .menu-mas svg { width: 20px; height: 20px; stroke: var(--quiet); fill: none; stroke-width: 2; }
+.menu-msj.menu-selector { background: var(--card, #fff); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.18); width: min(360px, calc(100vw - 16px)); gap: 6px; }
+.menu-selector .selector-cab { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: .9rem; }
+.menu-selector .selector-cab button { border: 0; background: none; cursor: pointer; padding: 4px; color: var(--quiet); min-width: 36px; min-height: 36px; }
+.menu-selector .selector-cab svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+.menu-selector .selector-nota { margin: 0; font-size: .78rem; color: var(--quiet); }
+.menu-selector .selector-buscar { font: inherit; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); width: 100%; }
+.menu-selector .selector-rejilla { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; max-height: 260px; overflow-y: auto; }
+.menu-selector .selector-rejilla button { border: 0; background: none; font-size: 1.4rem; padding: 6px 0; border-radius: 8px; cursor: pointer; min-height: 40px; }
+.menu-selector .selector-rejilla button:hover, .menu-selector .selector-rejilla button:focus-visible { background: var(--bg); outline: none; }
+.web-shell .reacciones { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.web-shell .reacciones .reac { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 1px 8px; font-size: .95rem; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; min-height: 28px; color: var(--ink); }
+.web-shell .reacciones .reac small { font-size: .75rem; color: var(--quiet); }
+.web-shell .reacciones .reac-mia { border-color: var(--accent); background: rgba(143, 45, 43, .1); }

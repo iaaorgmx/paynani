@@ -7,7 +7,11 @@
   - Tocar un enlace, una foto o un botón dentro del globo sigue haciendo lo de siempre.
   - No hay menú en los mensajes ocultos ni en los que se están enviando o fallaron.
   - **Responder** (F2, la parte web): la barra «Respondiendo a…» arriba del cuadro, `reply_to` en el envío, la cita dentro del globo y tocarla lleva al original. Aparece sólo cuando el canal cita (`replies: true`, o el almacén de Webchat con `reply_to`); el núcleo lo agrega Metis (#685).
-  - Las reacciones (F3) vienen después, en el mismo menú.
+  - **Reacciones** (F3, la parte web):
+    - la fila de 7 en el menú y el selector, que en Telegram sólo trae la lista del bot y en WhatsApp y Webchat trae una lista con buscador;
+    - las reacciones bajo el globo, con la nuestra resaltada; tocarla la quita.
+
+    Aparecen sólo cuando el canal reacciona (`reactions`, o el almacén de Webchat con `react`). El núcleo lo agrega Metis.
 
 - **La pasarela le manda a PaynaniApp el estado del agente (#692).** Lo pidió Julian: en la app, el menú «AI Agent» con el agente y su estado, como en PaynaniWeb, y al tocarlo la pantalla «Agente» (PaynaniApp#11, Metis[Q56] = A). `agent.get` responde el modelo de `/agent` (`web/agent.py`), con las fechas en UTC y sin enlaces, y `agent.changed` avisa cuando el estado cambia (se revisa cada 30 segundos). Va sólo al teléfono emparejado del dueño, con el mismo `webchat.owner` de Webchat (SMS_GATEWAY.md §13).
 - **`paynani sms pair --replace --web` ya revoca el teléfono emparejado (#690).** Antes `--web` ignoraba `--replace`, y la página no generaba código porque seguía habiendo un teléfono. Ahora revoca primero y lo dice, igual que sin `--web`.

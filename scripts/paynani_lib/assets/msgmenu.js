@@ -11,6 +11,11 @@
 // página tiene el campo `reply_to`. Pone la barra «Respondiendo a…» arriba del cuadro, con una ✕,
 // y el ref en el campo. Tocar una cita dentro de un globo lleva al original y lo resalta; si no
 // está cargado, pide «Mensajes anteriores» hasta 5 veces.
+//
+// F3, reacciones (FR-10 a FR-12): con `data-msgmenu-react` («any» o la lista que acepta un bot de
+// Telegram), el menú trae arriba la fila de 7 y una flecha al selector (con buscador en «any»).
+// Elegir una la manda por `data-msgmenu-react-url`; elegir la nuestra otra vez la quita. Las
+// reacciones bajo el globo son botones: tocar la nuestra la quita y tocar otra la pone.
 (function () {
   "use strict";
   var menu = null;       // el menú abierto: {box, row}
@@ -26,10 +31,195 @@
     var list = (row && row.closest("ol")) || document.querySelector("ol[data-msgmenu-label]") || document.body;
     function a(name) { return list.getAttribute("data-msgmenu-" + name) || ""; }
     return { label: a("label"), copy: a("copy") || "Copy", copied: a("copied"), failed: a("failed"),
-             reply: a("reply"), replying: a("replying"), remove: a("remove"), hidden: a("hidden"), notloaded: a("notloaded") };
+             reply: a("reply"), replying: a("replying"), remove: a("remove"), hidden: a("hidden"), notloaded: a("notloaded"),
+             more: a("more"), reactwith: a("reactwith"), search: a("search"), tgnote: a("tgnote"),
+             pickertitle: a("pickertitle"), close: a("close"), reactfailed: a("reactfailed") };
   }
 
   function replyField() { return document.querySelector('form input[name="reply_to"]'); }
+
+  // ---- F3: reacciones -----------------------------------------------------------------------
+  var ROW = ["👍", "👌", "❤️", "👀", "🔥", "😭", "👎"];
+  // Para WhatsApp y Webchat (cualquier emoji): una lista amplia, con palabras para el buscador.
+  var EMOJIS = [
+    ["👍", "bien ok pulgar sí like thumbs up yes"], ["👎", "mal no pulgar abajo dislike thumbs down"],
+    ["❤️", "corazón amor rojo heart love red"], ["🔥", "fuego genial fire lit"], ["👀", "ojos viendo eyes look"],
+    ["😂", "risa llorar de risa joy laugh lol"], ["🤣", "carcajada risa rolling laugh"], ["😭", "llorar triste sob cry"],
+    ["😊", "sonrisa feliz smile happy"], ["😁", "sonrisa dientes grin"], ["😍", "enamorado ojos corazón love eyes"],
+    ["🥰", "amor cariño corazones smiling hearts"], ["😘", "beso kiss"], ["😎", "lentes cool sunglasses"],
+    ["🤔", "pensando hmm thinking"], ["😮", "sorpresa wow open mouth"], ["😱", "miedo grito scream"],
+    ["😢", "triste lágrima sad tear"], ["😡", "enojo rabia angry mad"], ["🤬", "groserías enojo cursing"],
+    ["😴", "sueño dormir sleep"], ["🤯", "explota mente mind blown"], ["🥳", "fiesta celebrar party"],
+    ["🤩", "estrellas emoción star struck"], ["😇", "ángel santo angel"], ["🙃", "al revés upside down"],
+    ["😅", "nervios sudor sweat smile"], ["😬", "uy incómodo grimace"], ["🙄", "ojos en blanco eye roll"],
+    ["🤗", "abrazo hug"], ["🤝", "trato saludo handshake deal"], ["👏", "aplausos clap"], ["🙌", "celebrar manos raise hands"],
+    ["🙏", "gracias por favor rezar please thanks pray"], ["👌", "perfecto ok ok hand"], ["✌️", "paz victoria peace"],
+    ["🤞", "suerte dedos cruzados fingers crossed"], ["💪", "fuerza músculo strong"], ["👋", "hola adiós wave hi bye"],
+    ["✍️", "escribir writing"], ["🫡", "saludo respeto salute"], ["🤷", "no sé encogerse shrug"],
+    ["💯", "cien perfecto hundred"], ["✅", "listo hecho check done"], ["❌", "no error cross"], ["⚠️", "cuidado aviso warning"],
+    ["❓", "pregunta question"], ["❗", "importante exclamación exclamation"], ["⭐", "estrella star"], ["✨", "brillo sparkles"],
+    ["🎉", "fiesta celebración tada party"], ["🎂", "pastel cumpleaños cake birthday"], ["🎁", "regalo gift"],
+    ["🏆", "trofeo ganar trophy win"], ["🚀", "cohete rápido rocket launch"], ["💡", "idea foco light bulb"],
+    ["📌", "fijar importante pin"], ["📎", "clip adjunto attachment"], ["📅", "fecha calendario calendar"],
+    ["⏰", "alarma hora alarm clock"], ["💰", "dinero bolsa money"], ["💵", "billete dinero dollar"],
+    ["🛒", "carrito compra cart shopping"], ["📦", "paquete envío package"], ["🚚", "entrega camión delivery truck"],
+    ["🍽️", "comida plato food dinner"], ["🍕", "pizza"], ["🌮", "taco"], ["🍔", "hamburguesa burger"], ["☕", "café coffee"],
+    ["🍺", "cerveza beer"], ["🍷", "vino wine"], ["🎶", "música notas music"], ["📸", "foto cámara photo camera"],
+    ["📞", "teléfono llamar phone call"], ["💬", "mensaje chat speech"], ["📧", "correo email"],
+    ["🏠", "casa home"], ["🚗", "carro auto car"], ["✈️", "avión viaje plane travel"], ["🌞", "sol sun"],
+    ["🌧️", "lluvia rain"], ["❄️", "frío nieve cold snow"], ["🌹", "rosa flor rose flower"], ["🌸", "flor cerezo blossom"],
+    ["🐶", "perro dog"], ["🐱", "gato cat"], ["💔", "corazón roto broken heart"], ["💙", "corazón azul blue heart"],
+    ["💚", "corazón verde green heart"], ["💛", "corazón amarillo yellow heart"], ["🧡", "corazón naranja orange heart"],
+    ["💜", "corazón morado purple heart"], ["🖤", "corazón negro black heart"], ["🤍", "corazón blanco white heart"],
+    ["😐", "neutral serio neutral"], ["😕", "confundido confused"], ["🥺", "por favor ojitos pleading"], ["😤", "resoplar huff"],
+    ["🤢", "asco náusea nauseated"], ["🤡", "payaso clown"], ["💩", "popó caca poop"], ["👻", "fantasma ghost"],
+    ["🤖", "robot"], ["🙈", "no ver mono see no evil"]
+  ];
+
+  function allowedReactions(list) {
+    var raw = list && list.getAttribute("data-msgmenu-react");
+    if (!raw) { return null; }
+    try { var v = JSON.parse(raw); return v === "any" || Array.isArray(v) ? v : null; } catch (err) { return null; }
+  }
+
+  function bare(emoji) { return String(emoji || "").replace(/\uFE0F/g, ""); }
+
+  function mineOf(row) {
+    var chip = row.querySelector(".reacciones .reac-mia");
+    return chip ? chip.getAttribute("data-emoji") : "";
+  }
+
+  function renderChips(row, items) {
+    var globo = row.querySelector(".globo");
+    var old = globo.querySelector(".reacciones");
+    if (old) { old.remove(); }
+    if (!items || !items.length) { return; }
+    var box = document.createElement("div");
+    box.className = "reacciones";
+    items.forEach(function (r) {
+      if (!r || !r.emoji) { return; }
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "reac" + (r.mine ? " reac-mia" : "");
+      b.setAttribute("data-emoji", r.emoji);
+      b.setAttribute("aria-pressed", r.mine ? "true" : "false");
+      b.textContent = r.emoji;
+      if (r.count > 1) { var n = document.createElement("small"); n.textContent = String(r.count); b.appendChild(n); }
+      box.appendChild(b);
+    });
+    globo.appendChild(box);
+  }
+
+  function react(row, emoji) {
+    var list = row.closest("ol");
+    var w = words(row);
+    var url = list && list.getAttribute("data-msgmenu-react-url");
+    if (!url) { return; }
+    var mine = mineOf(row);
+    var send = mine && bare(mine) === bare(emoji) ? "" : emoji;   // la misma otra vez la quita (FR-11)
+    var body = new URLSearchParams();
+    body.set("csrf", list.getAttribute("data-msgmenu-csrf") || "");
+    body.set("ref", row.getAttribute("data-ref") || "");
+    body.set("emoji", send);
+    fetch(url, { method: "POST", credentials: "same-origin", body: body }).then(function (r) {
+      return r.json().catch(function () { return { ok: false }; });
+    }).then(function (data) {
+      if (data && data.ok) { renderChips(row, data.reactions || []); } else { say((data && data.error) || w.reactfailed); }
+    }, function () { say(w.reactfailed); });
+  }
+
+  function emojiButton(emoji, w, onPick) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("role", "menuitem");
+    b.textContent = emoji;
+    b.setAttribute("aria-label", (w.reactwith || "{emoji}").replace("{emoji}", emoji));
+    b.addEventListener("click", function (ev) { ev.stopPropagation(); onPick(emoji); });
+    return b;
+  }
+
+  function reactionRow(row, allowed, w) {
+    var list = allowed === "any" ? ROW : ROW.filter(function (x) {
+      return allowed.some(function (a) { return bare(a) === bare(x); });
+    });
+    if (allowed !== "any") {   // con menos de 7 en la lista del bot, se completa con las primeras de ella
+      allowed.forEach(function (a) { if (list.length < 7 && list.indexOf(a) < 0) { list.push(a); } });
+    }
+    var bar = document.createElement("div");
+    bar.className = "menu-reac";
+    list.forEach(function (x) { bar.appendChild(emojiButton(x, w, function (e) { close(false); react(row, e); })); });
+    var more = document.createElement("button");
+    more.type = "button";
+    more.className = "menu-mas";
+    more.setAttribute("aria-label", w.more);
+    more.title = w.more;
+    more.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+    more.addEventListener("click", function (ev) { ev.stopPropagation(); picker(row, allowed, w); });
+    bar.appendChild(more);
+    return bar;
+  }
+
+  function picker(row, allowed, w) {
+    if (!menu) { return; }
+    var box = menu.box;
+    box.innerHTML = "";
+    box.classList.add("menu-selector");
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-label", w.pickertitle);
+    var head = document.createElement("div");
+    head.className = "selector-cab";
+    var t = document.createElement("span");
+    t.textContent = w.pickertitle;
+    var x = document.createElement("button");
+    x.type = "button";
+    x.setAttribute("aria-label", w.close);
+    x.innerHTML = ICON_X;
+    x.addEventListener("click", function (ev) { ev.stopPropagation(); close(true); });
+    head.appendChild(t);
+    head.appendChild(x);
+    box.appendChild(head);
+    var grid = document.createElement("div");
+    grid.className = "selector-rejilla";
+    function fill(filter) {
+      grid.innerHTML = "";
+      var items = allowed === "any" ? EMOJIS : allowed.map(function (a) { return [a, ""]; });
+      items.forEach(function (it) {
+        if (filter && (it[1] + " " + it[0]).toLowerCase().indexOf(filter) < 0) { return; }
+        grid.appendChild(emojiButton(it[0], w, function (e) { close(false); react(row, e); }));
+      });
+    }
+    if (allowed === "any") {
+      var search = document.createElement("input");
+      search.type = "search";
+      search.className = "selector-buscar";
+      search.setAttribute("aria-label", w.search);
+      search.placeholder = w.search;
+      search.addEventListener("input", function () { fill(search.value.trim().toLowerCase()); });
+      search.addEventListener("click", function (ev) { ev.stopPropagation(); });
+      box.appendChild(search);
+    } else if (w.tgnote) {
+      var note = document.createElement("p");
+      note.className = "selector-nota";
+      note.textContent = w.tgnote;
+      box.appendChild(note);
+    }
+    box.appendChild(grid);
+    fill("");
+    place(box, row);
+    var first = box.querySelector("input, .selector-rejilla button");
+    if (first) { first.focus({ preventScroll: true }); }
+  }
+
+  // Tocar una reacción bajo el globo: la nuestra se quita; otra, se pone (FR-12).
+  document.addEventListener("click", function (ev) {
+    var chip = ev.target.closest && ev.target.closest(".reacciones .reac");
+    if (!chip) { return; }
+    var row = chip.closest("li[data-ref]");
+    if (!row || !allowedReactions(row.closest("ol"))) { return; }
+    ev.preventDefault();
+    ev.stopPropagation();
+    react(row, chip.getAttribute("aria-pressed") === "true" ? mineOf(row) : chip.getAttribute("data-emoji"));
+  }, true);
 
   // El texto del mensaje, sin el nombre, el estado ni la hora (FR-5).
   function textOf(row) {
@@ -122,7 +312,9 @@
     if (textOf(row)) {
       items.push({ label: w.copy, icon: ICON_COPY, run: function () { copy(row); } });
     }
-    if (!items.length) { return; }   // sin opciones no hay menú (una foto sin pie, en F1)
+    var allowed = allowedReactions(row.closest("ol"));
+    if (!items.length && !allowed) { return; }   // sin opciones no hay menú (una foto sin pie)
+    if (allowed) { box.appendChild(reactionRow(row, allowed, w)); }
     var list = document.createElement("div");
     list.className = "menu-lista";
     items.forEach(function (it) {
@@ -136,7 +328,7 @@
       b.addEventListener("click", function (ev) { ev.stopPropagation(); it.run(); });
       list.appendChild(b);
     });
-    box.appendChild(list);
+    if (items.length) { box.appendChild(list); }
     document.body.appendChild(box);
     place(box, row);
     row.classList.add("msj-activo");

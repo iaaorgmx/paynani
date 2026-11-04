@@ -280,7 +280,8 @@ def _sent_files(mid: str, files: list) -> str:
     return "".join(out)
 
 
-def thread_body(thread: dict, reply: str, notice: str = "", replies: bool = False) -> str:
+def thread_body(thread: dict, reply: str, notice: str = "", replies: bool = False, reactions=None,
+                csrf: str = "") -> str:
     """Un hilo (FR-24). `thread` es el `data` de `whatsapp.thread`: los mensajes llegan
     del más reciente al más viejo y se dibujan en orden de hora."""
     number = thread["number"]
@@ -295,7 +296,7 @@ def thread_body(thread: dict, reply: str, notice: str = "", replies: bool = Fals
         out.append(f'<p class="mas"><a class="secundario" href="/whatsapp/messages/ver?n={quote(number, safe="")}'
                    f'&amp;antes={quote(thread["next_before"], safe="")}">{_th("older")}</a></p>')
     # PRD #685 F2: con `replies` (estado de WhatsApp), el menú suma «Responder».
-    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies and in_roster)}>']
+    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies and in_roster, reactions=reactions if in_roster else None, react_url="/whatsapp/messages/reaccionar", csrf=csrf)}>']
     for m in reversed(thread.get("messages") or []):
         out_dir = m.get("dir") == "out"
         css = {"agent": "sms-agent", "owner": "sms-human", "api": "sms-agent"}.get(m.get("by"), "sms-agent") \
@@ -339,7 +340,8 @@ def thread_body(thread: dict, reply: str, notice: str = "", replies: bool = Fals
         quote_html = msgmenu.quote(m.get("reply_to")) if in_roster else ""
         bubbles.append(f'<li class="sms {css}"{msgmenu.item(menu, str(m.get("id") or ""), name)}>'
                        f'<div class="globo"><div class="de">{label}{_status(m)}</div>'
-                       f'{quote_html}<div class="texto">{body}</div>{when}</div></li>')
+                       f'{quote_html}<div class="texto">{body}</div>{when}'
+                       f'{msgmenu.reactions(m.get("reactions")) if in_roster else ""}</div></li>')
     bubbles.append("</ol>")
     # #680: hilo.js baja al último mensaje al abrir, como Webchat.
     return "\n".join(out + bubbles + [reply, '<script src="/assets/hilo.js" defer></script>', msgmenu.SCRIPT]) + "\n"

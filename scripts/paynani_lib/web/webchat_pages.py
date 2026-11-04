@@ -76,6 +76,11 @@ def replies(store) -> bool:
         return False
 
 
+def reacts(store) -> bool:
+    """PRD #685 F3: si el almacén de Webchat ya guarda reacciones (`react`, del núcleo de Metis)."""
+    return store is not None and callable(getattr(store, "react", None))
+
+
 def bubbles(messages: list[dict], now: dt.datetime, agent_name: str, last_day: dt.date | None = None) -> str:
     """Los renglones (`<li>`) de la conversación, con el separador de cada día nuevo."""
     rows = []
@@ -93,7 +98,8 @@ def bubbles(messages: list[dict], now: dt.datetime, agent_name: str, last_day: d
         name = i18n.t("web.msgmenu.you") if mine else agent_name
         rows.append(f'<li class="wc {"wc-yo" if mine else "wc-agente"}" id="{e(m.get("id", ""))}"'
                     f'{msgmenu.item(True, str(m.get("id") or ""), name)}>'
-                    f'<div class="globo">{who}{msgmenu.quote(m.get("reply_to"))}{_files(m.get("files") or [])}{text}{stamp}</div></li>')
+                    f'<div class="globo">{who}{msgmenu.quote(m.get("reply_to"))}{_files(m.get("files") or [])}{text}{stamp}'
+                    f'{msgmenu.reactions(m.get("reactions"))}</div></li>')
     return "".join(rows)
 
 
@@ -164,7 +170,7 @@ def composer(csrf: str, agent_name: str, text: str = "", error: str = "", replie
 
 def body(messages: list[dict], now: dt.datetime, summary: dict | None, csrf: str, *, typing: bool = False,
          available: bool = True, text: str = "", error: str = "", more: bool = False, replies: bool = False,
-         reply_to: str = "") -> str:
+         reply_to: str = "", reactions: bool = False) -> str:
     name = (summary or {}).get("name") or "AI agent"
     head = f"""<div class="wc-cab">
     <span class="wc-avatar" aria-hidden="true">{icon("agent")}</span>
@@ -177,7 +183,7 @@ def body(messages: list[dict], now: dt.datetime, summary: dict | None, csrf: str
     last = messages[-1]["id"] if messages else ""
     return f"""<div class="wc-pag" data-after="{e(last)}">
   {head}
-  <ol class="wc-hilo" id="wc-hilo" aria-live="polite"{msgmenu.list_attrs(reply=replies)}>{older_row(messages[0]["id"], more) if messages else ""}{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
+  <ol class="wc-hilo" id="wc-hilo" aria-live="polite"{msgmenu.list_attrs(reply=replies, reactions="any" if reactions else None, react_url="/webchat/reaccionar", csrf=csrf)}>{older_row(messages[0]["id"], more) if messages else ""}{empty}{convo}{typing_row(name, typing)}{draft_row(name)}</ol>
   {composer(csrf, name, text, error, replies, reply_to)}
 </div>
 <script src="/assets/adjuntos.js" defer></script>

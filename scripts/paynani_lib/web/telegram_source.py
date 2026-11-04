@@ -178,6 +178,8 @@ class Demo(Source):
         self.calls: list[tuple[str, dict]] = []
         # PRD #685 F2: un núcleo que ya cita (`replies` en telegram.status); las pruebas lo encienden.
         self.replies = False
+        # F3: la lista de reacciones que acepta el bot (`reactions` en telegram.status), o None.
+        self.reactions: list[str] | None = None
         self.threads = []
         base = clock()
         for i, spec in enumerate(_DEMO_THREADS):
@@ -240,6 +242,8 @@ class Demo(Source):
                     out["reason"] = self.reason or "409"
                 if self.replies:
                     out["replies"] = True
+                if self.reactions is not None:
+                    out["reactions"] = list(self.reactions)
                 return out
             if kind == "telegram.threads":
                 rows = sorted((self._public_thread(t) for t in self.threads if t["messages"]),
@@ -295,6 +299,19 @@ class Demo(Source):
                 if reply != "none":
                     out["reply"] = reply
                 return out
+            if kind == "telegram.react":
+                # PRD #685 F3 (contrato de FR-14): la del bot, una por mensaje; «» la quita.
+                if self.reactions is None:
+                    raise Failed("invalid", field="emoji")
+                emoji = str(fields.get("emoji", ""))
+                if emoji and emoji not in self.reactions:
+                    raise Failed("invalid", field="emoji", reason="bad_emoji")
+                m = next((m for t in self.threads for m in t["messages"] if m["ref"] == fields.get("ref")), None)
+                if m is None:
+                    raise Failed("not_found")
+                others = [r for r in m.get("reactions") or [] if not r.get("mine")]
+                m["reactions"] = ([{"emoji": emoji, "count": 1, "mine": True}] if emoji else []) + others
+                return {"ref": m["ref"], "reactions": m["reactions"]}
             if kind == "telegram.roster_candidate":
                 t = self._find(str(fields.get("thread", "")))
                 if t["in_roster"]:
