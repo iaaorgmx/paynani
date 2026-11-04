@@ -164,6 +164,21 @@ check("un original que el servicio no encuentra: error, y el formulario vuelve c
       (status, '<input type="hidden" name="reply_to" value="tg:noexiste">' in page))
 httpd.shutdown()
 
+# #707: en la barra «Respondiendo a…», el agente lleva su nombre, como en la cita que guarda el servicio.
+from paynani_lib.web import telegram_pages  # noqa: E402
+TGT = {"thread": "t_" + "c" * 32, "name": "Ana", "in_roster": True, "can_reply": True, "messages": [
+    {"dir": "out", "by": "agent", "at": "2026-11-03T14:00:00Z", "text": "hola", "ref": "tgo:1", "status": "sent"},
+    {"dir": "out", "by": "owner", "at": "2026-11-03T14:01:00Z", "text": "yo", "ref": "tgo:2", "status": "sent"}]}
+page = telegram_pages.thread_body(TGT, "", replies=True, agent_name="Iris Claude-Tob")
+check("#707: el renglón del agente dice su nombre (data-name), el del dueño sigue igual", (True, True),
+      ('data-ref="tgo:1" data-menu tabindex="0" aria-haspopup="menu" data-name="Iris Claude-Tob"' in page,
+       'data-ref="tgo:2" data-menu tabindex="0" aria-haspopup="menu" data-name="Tú"' in page or 'data-ref="tgo:2"' in page))
+check("#707: sin nombre del agente, «Agente» como antes", True,
+      'data-name="Agente"' in telegram_pages.thread_body(TGT, "", replies=True))
+check("#707: missing ya no dice que el original no estaba", (True, False),
+      ("no se pudo citar el original" in msgmenu.quote({"ref": "tg:3", "name": "A", "excerpt": "x", "missing": True}),
+       "ya no estaba" in msgmenu.quote({"ref": "tg:3", "name": "A", "excerpt": "x", "missing": True})))
+
 # ---- WhatsApp: fuera del roster no se cita -----------------------------------------------------
 WA = {"number": "+525511112222", "name": "Beto", "in_roster": True, "can_reply": True, "messages": [
     {"dir": "out", "by": "owner", "at": "2026-11-03T14:01:00Z", "text": "ok", "id": "wo_" + "1" * 32, "status": "read",

@@ -1924,7 +1924,8 @@ def make_handler(ctx: Context):
             notice = t("web.tg.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
             self._tg_page(code, telegram_pages.thread_body(thread_data, reply, add, notice, replies=replies,
                                                            reactions=status.get("reactions"),
-                                                           csrf=self.session["csrf"]),
+                                                           csrf=self.session["csrf"],
+                                                           agent_name=(self.CTX.agent_summary() or {}).get("name") or ""),
                           title_key="web.tg.messages_title", back="/telegram/messages")
 
         def _telegram_post(self, post: dict):
@@ -2385,7 +2386,8 @@ def make_handler(ctx: Context):
             notice = t("web.wa.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
             self._wa_page(code, whatsapp_pages.thread_body(thread_data, reply, notice, replies=replies,
                                                            reactions=wa_status.get("reactions"),
-                                                           csrf=self.session["csrf"]),
+                                                           csrf=self.session["csrf"],
+                                                           agent_name=(self.CTX.agent_summary() or {}).get("name") or ""),
                           title_key="web.wa.messages_title", back="/whatsapp/messages")
 
         def _whatsapp_post(self, post: dict):

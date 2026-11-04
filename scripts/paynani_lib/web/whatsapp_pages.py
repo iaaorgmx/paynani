@@ -281,7 +281,7 @@ def _sent_files(mid: str, files: list) -> str:
 
 
 def thread_body(thread: dict, reply: str, notice: str = "", replies: bool = False, reactions=None,
-                csrf: str = "") -> str:
+                csrf: str = "", agent_name: str = "") -> str:
     """Un hilo (FR-24). `thread` es el `data` de `whatsapp.thread`: los mensajes llegan
     del más reciente al más viejo y se dibujan en orden de hora."""
     number = thread["number"]
@@ -335,7 +335,8 @@ def thread_body(thread: dict, reply: str, notice: str = "", replies: bool = Fals
         # PRD #685: el menú al tocar el mensaje, sólo en los que ya llegaron o salieron.
         # Fuera del roster todo el hilo va oculto: sin menú (FR-4, FR-17).
         menu = msgmenu.has_menu("whatsapp", dict(m, hidden=m.get("hidden") or not in_roster))
-        name = i18n.t("web.wa." + {"agent": "by_agent", "owner": "by_owner", "api": "by_api"}.get(
+        # #707: el del agente es su nombre (como en la cita que guarda el servicio), no «Agente».
+        name = agent_name if out_dir and m.get("by") == "agent" and agent_name else i18n.t("web.wa." + {"agent": "by_agent", "owner": "by_owner", "api": "by_api"}.get(
             m.get("by"), "sent_prefix")) if out_dir else who
         quote_html = msgmenu.quote(m.get("reply_to")) if in_roster else ""
         bubbles.append(f'<li class="sms {css}"{msgmenu.item(menu, str(m.get("id") or ""), name)}>'
