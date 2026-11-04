@@ -651,7 +651,8 @@ def whatsapp_kind_label(kind, *, seconds=None, voice_note=False, filename=None, 
 
 
 def whatsapp_event(*, account, message_hash, e164, lid, sender_name, kind, text, media_label,
-                   sent_at, roster_match, local_time, observed_at=None, rules=None, catch_all=None):
+                   sent_at, roster_match, local_time, observed_at=None, rules=None, catch_all=None,
+                   reply_excerpt=None):
     """
     Un mensaje directo de WhatsApp (FR-11, FR-14), con el mismo sobre que un SMS. El
     texto y el archivo no van aquí: viven en state/whatsapp/inbox/ y media/, y salen con
@@ -660,6 +661,8 @@ def whatsapp_event(*, account, message_hash, e164, lid, sender_name, kind, text,
     eid = f"{account}:{message_hash}"
     who_number = e164 or "número sin resolver"
     who = " ".join(p for p in (sender_name, who_number) if p)
+    if reply_excerpt:   # PRD #685 FR-16: sólo un mensaje que se muestra trae el extracto
+        who += f" (respondiendo a «{safe_excerpt(reply_excerpt, 40)}»)"
     excerpt = " ".join(p for p in (media_label, safe_excerpt(text or "")) if p)
     if roster_match:
         note = f", {_rules_tag(rules)}" if rules else ""

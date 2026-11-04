@@ -12,7 +12,7 @@ import {
   PROTOCOL, ID_RE, E164_RE, MAX_TEXT, MAX_FILE_BYTES, CODE_TTL_MS,
   parseLine, refOf, isDirectChat, isLidJid, isPnJid, normalizeJid, pnJidToE164,
   e164ToJid, extForMime, classify, unwrap, makeLogger, receiptStatus, callOutcome,
-  sendContent, quietConsole, resolveJid, credsLinked,
+  sendContent, quietConsole, resolveJid, credsLinked, quoteOf, quoteContext,
 } from './lib.js';
 
 process.umask(0o077);
@@ -254,11 +254,15 @@ async function onUpsert(s, { messages, type }) {
       media = await saveMedia(s, msg, m);
     }
     const ts = Number(msg.messageTimestamp || 0);
+    const q = quoteOf(msg.message);
+    const mine = [normalizeJid(s.user?.id), normalizeJid(s.user?.lid)].filter(Boolean);
+    const quote = q ? { key_id: q.key_id, from_me: Boolean(q.participant && mine.includes(q.participant)),
+      text: q.text, kind: q.kind, filename: q.filename } : null;
     out({
       type: 'message', key_id: key.id, chat: from.jid, from,
       push_name: msg.pushName || null,
       sent_at: ts ? new Date(ts * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z') : nowIso(),
-      kind: info.kind, text: info.text, media,
+      kind: info.kind, text: info.text, media, quote,
     });
   }
 }
@@ -303,7 +307,10 @@ async function send(ref, msg) {
     if (st.size > MAX_FILE_BYTES) return fail(ref, 'too_large', 'archivo de más de 64 MB');
   }
   try {
-    const sent = await sock.sendMessage(e164ToJid(msg.to), sendContent(text, msg.file));
+    const content = sendContent(text, msg.file);
+    const ctx = quoteContext(msg.quote, e164ToJid(msg.to), normalizeJid(sock.user?.id));
+    if (ctx) content.contextInfo = ctx; // PRD #685 F2: la respuesta cita
+    const sent = await sock.sendMessage(e164ToJid(msg.to), content);
     result(ref, { key_id: sent?.key?.id || null, chat: normalizeJid(sent?.key?.remoteJid || e164ToJid(msg.to)), sent_at: nowIso() });
   } catch (e) {
     fail(ref, 'send_failed', String(e?.output?.statusCode || e?.name || 'error'));

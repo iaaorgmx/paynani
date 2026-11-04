@@ -135,6 +135,39 @@ export function classify(message) {
   return { kind: 'other', text: null, media: null };
 }
 
+// PRD #685 F2: la cita de un mensaje que entra (contextInfo.stanzaId), o null. `participant`
+// es quién escribió el original; el que llama decide si es nuestro. Sin descargar nada.
+export function quoteOf(message) {
+  const m = unwrap(message);
+  if (!m || typeof m !== 'object') return null;
+  for (const key of Object.keys(m)) {
+    const ci = m[key] && typeof m[key] === 'object' ? m[key].contextInfo : null;
+    if (!ci || !ci.stanzaId) continue;
+    const q = ci.quotedMessage ? classify(ci.quotedMessage) : null;
+    return {
+      key_id: String(ci.stanzaId),
+      participant: normalizeJid(ci.participant || null),
+      text: typeof q?.text === 'string' ? q.text.slice(0, 1000) : null,
+      kind: q?.kind || null,
+      filename: q?.media?.filename || null,
+    };
+  }
+  return null;
+}
+
+// PRD #685 F2: el contextInfo de una respuesta. `quote` es {key_id, from_me, text}; el original
+// es de `toJid` (el contacto) o nuestro (`ownJid`). WhatsApp dibuja la cita con quotedMessage.
+export function quoteContext(quote, toJid, ownJid) {
+  if (!quote || typeof quote.key_id !== 'string' || !quote.key_id) return null;
+  const participant = quote.from_me ? ownJid : toJid;
+  if (!participant) return null;
+  return {
+    stanzaId: quote.key_id,
+    participant,
+    quotedMessage: { conversation: typeof quote.text === 'string' ? quote.text.slice(0, 1000) : '' },
+  };
+}
+
 // Lo que Baileys necesita de un logger (pino). Sólo pasan los errores, y sólo su
 // texto: nunca el objeto, que puede traer un mensaje, un JID o una llave (§8).
 export function makeLogger(write) {
