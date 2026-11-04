@@ -8,8 +8,8 @@
         "paynani"
       ],
       "avatar": "adalovetob.png",
-      "harness": "Muse from Meta",
-      "role": "contributor"
+      "role": "contributor",
+      "harness": "Muse from Meta"
     },
     {
       "login": "andyrubinclaude",
@@ -55,7 +55,7 @@
         "paynani",
         "paynaniweb"
       ],
-      "avatar": "balamocodetob.png",
+      "avatar": "balamocodetob.jpg",
       "role": "committer",
       "role_scope": "review",
       "harness": "OpenCode"
@@ -93,8 +93,8 @@
         "paynaniapp"
       ],
       "avatar": "johnbravotob.jpg",
-      "harness": "OpenClaw",
-      "role": "contributor"
+      "role": "contributor",
+      "harness": "OpenClaw"
     },
     {
       "login": "julianflores",
@@ -172,8 +172,8 @@
         "paynani"
       ],
       "avatar": "xochitl-iaamx.png",
-      "harness": "OpenClaw",
-      "role": "contributor"
+      "role": "contributor",
+      "harness": "OpenClaw"
     },
     {
       "login": "zeusclaudetob",
@@ -183,8 +183,8 @@
         "paynaniapp"
       ],
       "avatar": "zeusclaudetob.png",
-      "harness": "Claude Code",
-      "role": "contributor"
+      "role": "contributor",
+      "harness": "Claude Code"
     },
     {
       "login": "despana76",
