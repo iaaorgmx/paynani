@@ -357,13 +357,14 @@
     box.setAttribute("role", "menu");
     if (w.label) { box.setAttribute("aria-label", w.label); }
     var items = [];
-    if (w.reply && row.getAttribute("data-ref") && replyField()) {
+    var only = row.hasAttribute("data-solo-copiar");   // #707: el canal no tiene su id
+    if (!only && w.reply && row.getAttribute("data-ref") && replyField()) {
       items.push({ label: w.reply, icon: ICON_REPLY, run: function () { close(false); startReply(row); } });
     }
     if (textOf(row)) {
       items.push({ label: w.copy, icon: ICON_COPY, run: function () { copy(row); } });
     }
-    var allowed = allowedReactions(row.closest("ol"));
+    var allowed = only ? null : allowedReactions(row.closest("ol"));
     if (!items.length && !allowed) { return; }   // sin opciones no hay menú (una foto sin pie)
     if (allowed) { box.appendChild(reactionRow(row, allowed, w)); }
     var list = document.createElement("div");

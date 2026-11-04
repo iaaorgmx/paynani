@@ -1601,7 +1601,10 @@ def make_handler(ctx: Context):
                         return
                     data = source.request("telegram.react" if telegram else "whatsapp.react", ref=ref, emoji=emoji)
             except (telegram_source.Failed, whatsapp_source.Failed) as exc:
-                reply(429 if exc.code == "rate_limited" else 400, {"ok": False, "error": failed, "code": exc.code})
+                # #707: un mensaje sin id en el canal (de antes de #700, o que no llegó a salir) no
+                # se puede reaccionar; el aviso lo dice en lugar de invitar a intentar otra vez.
+                text = i18n.t("web.msgmenu.react_old") if exc.code == "not_found" else failed
+                reply(429 if exc.code == "rate_limited" else 400, {"ok": False, "error": text, "code": exc.code})
                 return
             except Exception as exc:  # noqa: BLE001 -- el Rejected del almacén de Webchat
                 reply(400, {"ok": False, "error": failed, "code": webchat_source.rejected_code(exc) or "failed"})
@@ -1921,7 +1924,8 @@ def make_handler(ctx: Context):
             notice = t("web.tg.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
             self._tg_page(code, telegram_pages.thread_body(thread_data, reply, add, notice, replies=replies,
                                                            reactions=status.get("reactions"),
-                                                           csrf=self.session["csrf"]),
+                                                           csrf=self.session["csrf"],
+                                                           agent_name=(self.CTX.agent_summary() or {}).get("name") or ""),
                           title_key="web.tg.messages_title", back="/telegram/messages")
 
         def _telegram_post(self, post: dict):
@@ -2382,7 +2386,8 @@ def make_handler(ctx: Context):
             notice = t("web.wa.sent_ok") if self.query.get("ok", [""])[0] == "sent" and values is None else ""
             self._wa_page(code, whatsapp_pages.thread_body(thread_data, reply, notice, replies=replies,
                                                            reactions=wa_status.get("reactions"),
-                                                           csrf=self.session["csrf"]),
+                                                           csrf=self.session["csrf"],
+                                                           agent_name=(self.CTX.agent_summary() or {}).get("name") or ""),
                           title_key="web.wa.messages_title", back="/whatsapp/messages")
 
         def _whatsapp_post(self, post: dict):
