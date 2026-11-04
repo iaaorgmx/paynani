@@ -306,6 +306,10 @@ Catch-All de Telegram activo.
   «La nuestra» (`mine`) es la del bot, la ponga el dueño desde la web o el agente desde la
   CLI; la otra es la del contacto. Primero va la nuestra y luego por `count`. Sin
   reacciones, el campo no viene.
+- **Lo que no se puede citar ni reaccionar (#707).** Un mensaje nuestro sin el `message_id`
+  de Telegram trae `"actions": false`: lo que salió antes de #700, que no lo guardaba, o lo
+  que no llegó a salir. `telegram.react` da `not_found` y `telegram.send` con `reply_to` sale
+  `dropped`. Los demás mensajes no traen el campo.
 
 #### `telegram.send`
 

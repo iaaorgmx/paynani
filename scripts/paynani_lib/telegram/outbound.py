@@ -692,6 +692,10 @@ class Outbound:
                     item["files"] = [{"name": s["file"]}]
                 if isinstance(s.get("reply_to"), dict):
                     item["reply_to"] = s["reply_to"]
+                if not _int_or_none(s.get("message_id")):
+                    # #707: lo que salió sin el message_id de Telegram (antes de #700, o que
+                    # no llegó a salir) no se puede citar ni reaccionar; sólo viene si es false.
+                    item["actions"] = False
                 out[t]["messages"].append(item)
         agent_name = self._agent_name()
         reactions = self.store.reactions()

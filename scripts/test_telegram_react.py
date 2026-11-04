@@ -156,6 +156,21 @@ async def main_tests():
               str(got))
         check("sin reacciones, el campo no viene", "reactions" not in next(m for m in ana["messages"] if m["ref"] == out_ref))
         check("el message_id no sale en el hilo", "message_id" not in json.dumps(ana))
+        check("lo que sí se puede citar y reaccionar no trae actions (#707)",
+              all("actions" not in m for m in ana["messages"]), str(ana["messages"]))
+
+        # --- #707: un envío de antes de #700, sin message_id ----------------------------
+        old = dict(next(r for r in s.store.sent() if r["ref"] == out_ref), ref="tgo:" + "0" * 32,
+                   at="2026-11-03T18:42:00Z", text="Recibí la foto")
+        old.pop("message_id", None)
+        s.store.record_sent(old)
+        ana = await thread_of(s, "Ana López")
+        legacy = next(m for m in ana["messages"] if m["ref"] == old["ref"])
+        check("#707: sin message_id el hilo trae actions: false", legacy.get("actions") is False, str(legacy))
+        check("#707: el envío nuevo sigue sin actions", "actions" not in next(
+            m for m in ana["messages"] if m["ref"] == out_ref))
+        r = await call(s, "telegram.react", by="web", ref=old["ref"], emoji="👍")
+        check("#707: y react de ese mensaje da not_found", r.get("code") == "not_found", str(r))
 
         r = await call(s, "telegram.react", by="web", ref=ana_in["ref"], emoji="👍")
         check("la misma otra vez no vuelve a llamar a Telegram", len(methods(api, "setMessageReaction")) == 1)
