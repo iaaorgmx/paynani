@@ -342,7 +342,7 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "", repli
         # #707: el del agente es su nombre (como en la cita que guarda el servicio), no «Agente».
         name = agent_name if out_dir and m.get("by") == "agent" and agent_name else i18n.t("web.tg." + {"agent": "by_agent", "owner": "by_owner", "api": "by_api"}.get(
             who_sent, "sent_prefix")) if out_dir else who
-        bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("telegram", m), str(m.get("ref") or ""), name)}>'
+        bubbles.append(f'<li class="sms {css}"{msgmenu.item(msgmenu.has_menu("telegram", m), str(m.get("ref") or ""), name, m.get("actions") is not False)}>'
                        f'<div class="globo"><div class="de">{label}{_status(m)}{edited}</div>'
                        f'{msgmenu.quote(m.get("reply_to"))}<div class="texto">{body}</div>{when}'
                        f'{msgmenu.reactions(m.get("reactions"))}</div></li>')

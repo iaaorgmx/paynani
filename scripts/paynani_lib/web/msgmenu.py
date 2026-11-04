@@ -24,13 +24,15 @@ from .shell import e
 SCRIPT = '<script src="/assets/msgmenu.js" defer></script>'
 
 
-def item(enabled: bool, ref: str = "", name: str = "") -> str:
+def item(enabled: bool, ref: str = "", name: str = "", actions: bool = True) -> str:
     """Los atributos de un `<li>` con menú: enfocable y con el aviso de que abre un menú. `ref`
     es el id del mensaje en su canal (para «Responder» y para saltar a él desde una cita) y
     `name`, quién lo escribió, para la barra de cita."""
     out = f' data-ref="{e(ref)}"' if ref else ""
     if enabled:
         out += ' data-menu tabindex="0" aria-haspopup="menu"' + (f' data-name="{e(name)}"' if name else "")
+        if not actions:   # #707: sin id en el canal no se cita ni se reacciona; sólo «Copiar»
+            out += " data-solo-copiar"
     return out
 
 

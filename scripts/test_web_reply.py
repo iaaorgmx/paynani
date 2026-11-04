@@ -173,6 +173,11 @@ page = telegram_pages.thread_body(TGT, "", replies=True, agent_name="Iris Claude
 check("#707: el renglón del agente dice su nombre (data-name), el del dueño sigue igual", (True, True),
       ('data-ref="tgo:1" data-menu tabindex="0" aria-haspopup="menu" data-name="Iris Claude-Tob"' in page,
        'data-ref="tgo:2" data-menu tabindex="0" aria-haspopup="menu" data-name="Tú"' in page or 'data-ref="tgo:2"' in page))
+TGT["messages"].append({"dir": "out", "by": "agent", "at": "2026-11-03T14:02:00Z", "text": "viejo", "ref": "tgo:3",
+                        "status": "sent", "actions": False})
+page = telegram_pages.thread_body(TGT, "", replies=True, agent_name="Iris Claude-Tob")
+check("#707: un mensaje con actions false lleva data-solo-copiar; los demás no", (True, 1),
+      (bool(re.search(r'data-ref="tgo:3" data-menu [^>]*data-solo-copiar', page)), page.count("data-solo-copiar")))
 check("#707: sin nombre del agente, «Agente» como antes", True,
       'data-name="Agente"' in telegram_pages.thread_body(TGT, "", replies=True))
 check("#707: missing ya no dice que el original no estaba", (True, False),

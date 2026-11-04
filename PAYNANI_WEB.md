@@ -429,6 +429,7 @@ En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje abre un menú
   - Si el original está oculto, dice «Mensaje oculto».
   - Si el canal ya no encontró el original al mandar, dice «Se mandó sin cita».
 - **Fuera del roster** (WhatsApp) no hay «Responder» ni citas.
+- **Un mensaje nuestro sin id en el canal** (en Telegram, los de antes de #700; en los dos, lo que no llegó a salir) trae `actions: false` en el hilo (#707, #709). Su menú sólo trae «Copiar», sin «Responder» ni reacciones. Si aun así una reacción llega a fallar con `not_found`, el aviso dice que el mensaje es anterior a las reacciones.
 
 **Las reacciones** (F3, FR-10 a FR-12) aparecen sólo cuando el canal reacciona: `reactions` en el estado de Telegram (la lista que acepta un bot) o de WhatsApp (`"any"`), o un almacén de Webchat con `react`.
 - **En el menú**, arriba de las opciones, va la fila 👍 👌 ❤️ 👀 🔥 😭 👎 y una flecha al selector.

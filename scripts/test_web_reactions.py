@@ -206,6 +206,8 @@ html = webchat_pages.bubbles([{"id": "w_" + "1" * 32, "by": "agent", "at": "2026
 check("Webchat: la reacción del dueño bajo el globo del agente", True, 'class="reac reac-mia" data-emoji="👍"' in html)
 
 js = (ROOT / "scripts" / "paynani_lib" / "assets" / "msgmenu.js").read_text(encoding="utf-8")
+check("#707: con data-solo-copiar el menú no trae Responder ni reacciones", True,
+      all(x in js for x in ('row.hasAttribute("data-solo-copiar")', "!only && w.reply", "only ? null : allowedReactions")))
 check("msgmenu.js consulta cada 15 s sólo con la pestaña a la vista, y redibuja sólo lo que cambió", True,
       all(x in js for x in ("data-msgmenu-poll", "POLL_MS = 15000", 'visibilityState !== "visible"', "want !== shown(row)",
                             "seq !== reactSeq")))

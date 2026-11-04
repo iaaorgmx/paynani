@@ -339,7 +339,7 @@ def thread_body(thread: dict, reply: str, notice: str = "", replies: bool = Fals
         name = agent_name if out_dir and m.get("by") == "agent" and agent_name else i18n.t("web.wa." + {"agent": "by_agent", "owner": "by_owner", "api": "by_api"}.get(
             m.get("by"), "sent_prefix")) if out_dir else who
         quote_html = msgmenu.quote(m.get("reply_to")) if in_roster else ""
-        bubbles.append(f'<li class="sms {css}"{msgmenu.item(menu, str(m.get("id") or ""), name)}>'
+        bubbles.append(f'<li class="sms {css}"{msgmenu.item(menu, str(m.get("id") or ""), name, m.get("actions") is not False)}>'
                        f'<div class="globo"><div class="de">{label}{_status(m)}</div>'
                        f'{quote_html}<div class="texto">{body}</div>{when}'
                        f'{msgmenu.reactions(m.get("reactions")) if in_roster else ""}</div></li>')
