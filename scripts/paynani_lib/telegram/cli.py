@@ -336,9 +336,16 @@ def _ask(args, type_: str, timeout: float = 120, **fields):
 
 
 def run_send(args) -> int:
+    reply_to = getattr(args, "reply_to", None)
+    if reply_to is not None and not (reply_to.startswith("tg:") or reply_to.startswith("tgo:")):
+        _err("--reply-to es la referencia de un mensaje del hilo (tg:… o tgo:…, de telegram thread)")
+        return 2
     if args.stream:
         if args.text or args.file:
             _err("--stream lee el texto de stdin: sin texto ni --file")
+            return 2
+        if reply_to is not None:
+            _err("--reply-to no va con --stream: Telegram sólo cita un mensaje completo")
             return 2
         return _run_stream(args)
     text = " ".join(args.text or [])
@@ -347,10 +354,14 @@ def run_send(args) -> int:
     fields = {"contact": args.contact, "text": text}
     if args.file:
         fields["file"] = str(Path(args.file).expanduser().absolute())
+    if reply_to is not None:
+        fields["reply_to"] = reply_to
     data, rc = _ask(args, "telegram.send", **fields)
     if rc:
         return rc
-    print(f"{data.get('ref')}\t{data.get('status')}")
+    reply = data.get("reply")
+    note = {"native": f"\treply_to {reply_to}", "dropped": "\treply dropped: Telegram no longer has the original"}
+    print(f"{data.get('ref')}\t{data.get('status')}{note.get(reply, '')}")
     return 0
 
 
@@ -398,7 +409,10 @@ def run_thread(args) -> int:
     for m in reversed(data.get("messages") or []):
         arrow = "←" if m.get("dir") == "in" else "→"
         extra = f" [{m['status']}]" if m.get("status") else (" (editado)" if m.get("edited") else "")
-        print(f"{m.get('at')} {arrow} {m.get('text') or '[' + str(m.get('kind')) + ']'}{extra}")
+        quote = m.get("reply_to") or {}
+        cited = ("(se mandó sin cita) " if quote.get("missing")
+                 else f"(respondiendo a «{quote.get('excerpt') or ''}») " if quote else "")
+        print(f"{m.get('at')} {m.get('ref')} {arrow} {cited}{m.get('text') or '[' + str(m.get('kind')) + ']'}{extra}")
     return 0
 
 

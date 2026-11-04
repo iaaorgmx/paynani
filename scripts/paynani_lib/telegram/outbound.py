@@ -303,7 +303,11 @@ class Outbound:
             raise _refused("invalid", "texto vacío", field="text", reason="empty")
         if len(text) > MAX_TOTAL:
             raise _refused("invalid", f"más de {MAX_TOTAL} caracteres", field="text", reason="too_long")
+        reply_to = msg.get("reply_to")
+        if reply_to is not None and not isinstance(reply_to, str):
+            raise _refused("invalid", "reply_to", field="reply_to")
         thread, chat, _ = self._target(msg)
+        quote = self._reply_target(thread, reply_to) if reply_to is not None else None
         if ups is not None:
             try:
                 files = tg_uploads.take(self.root, ups)
@@ -319,12 +323,34 @@ class Outbound:
             raise _refused("bad_upload", "otro envío ya los está mandando", field="uploads")
         self._uploads_busy.update(busy)       # antes del primer await: un up_ no sale dos veces
         try:
-            return await self._send(by, text, thread, chat, files, ups is not None)
+            return await self._send(by, text, thread, chat, files, ups is not None, quote)
         finally:
             self._uploads_busy.difference_update(busy)
 
+    def _reply_target(self, thread: str, ref: str) -> dict:
+        """
+        PRD #685 F2 (contrato de FR-14): el mensaje que se cita, de este mismo hilo, que entró
+        (`tg:`) o que salió (`tgo:`). `{"ref", "excerpt", "message_id"}`; `message_id` es el de
+        Telegram y nunca sale del servicio (FR-17). Si no, `invalid` con `field: reply_to`.
+        """
+        data = None
+        if ref.startswith("tg:"):
+            try:
+                data = self.store.inbox(ref)
+            except ValueError:
+                data = None
+            if data and data.get("type") != "telegram.received":
+                data = None
+        elif ref.startswith("tgo:"):
+            data = next((s for s in self.store.sent() if s.get("ref") == ref), None)
+        if not data:
+            raise _refused("invalid", "ese mensaje no existe", field="reply_to", reason="not_found")
+        if data.get("thread") != thread:
+            raise _refused("invalid", "ese mensaje es de otro hilo", field="reply_to", reason="other_thread")
+        return {"ref": ref, "excerpt": quote_excerpt(data), "message_id": _int_or_none(data.get("message_id"))}
+
     async def _send(self, by: str, text: str, thread: str, chat: int, files: list[dict],
-                    from_web: bool) -> dict:
+                    from_web: bool, quote: dict | None = None) -> dict:
         caption = text if files and len(text) <= MAX_CAPTION else ""
         chunks = split_text(text) if text and not caption else []
         reserved = len(chunks) + len(files)
@@ -337,19 +363,36 @@ class Outbound:
                   "file": files[0]["name"] if files else None, "status": "sending"}
         if from_web:
             record["files"] = [self._keep_photo(ref, i, f) for i, f in enumerate(files)]
+        if quote is not None:
+            record["reply_to"] = {"ref": quote["ref"], "excerpt": quote["excerpt"], "missing": False}
         self.store.record_sent(record)
+        # PRD #685 F2: sólo la primera parte cita. Sin el message_id del original (un envío
+        # viejo), sale sin cita: `dropped`.
+        reply_params = None
+        if quote is not None and quote.get("message_id"):
+            reply_params = {"message_id": quote["message_id"], "allow_sending_without_reply": True}
+        first = None
         try:
             for i, f in enumerate(files):
-                await self._send_file(chat, f, caption if i == 0 else "")
+                got = await self._send_file(chat, f, caption if i == 0 else "",
+                                            reply_params if i == 0 else None)
+                first = got if first is None else first
                 delivered += 1
             draft = self._drafts.pop(thread, None)
             for i, chunk in enumerate(chunks):
                 await self._pace(chat)
-                if i == 0 and draft and draft.get("mode") == "edit":
-                    await self._api("editMessageText", {"chat_id": chat, "message_id": draft["message_id"],
-                                                        "text": chunk})
+                quoting = reply_params if i == 0 and not files else None
+                if i == 0 and draft and draft.get("mode") == "edit" and quoting is None:
+                    got = await self._api("editMessageText", {"chat_id": chat, "message_id": draft["message_id"],
+                                                              "text": chunk})
                 else:
-                    await self._api("sendMessage", {"chat_id": chat, "text": chunk})
+                    if i == 0 and draft and draft.get("mode") == "edit":
+                        # Una edición no puede citar: el borrador se borra y la respuesta sale nueva.
+                        with contextlib.suppress(Exception):
+                            await self._api("deleteMessage", {"chat_id": chat, "message_id": draft["message_id"]})
+                    got = await self._api("sendMessage", {"chat_id": chat, "text": chunk,
+                                                          "reply_parameters": quoting})
+                first = got if first is None else first
                 delivered += 1
         except Exception as exc:
             await self._release(reserved - delivered, day)
@@ -365,10 +408,23 @@ class Outbound:
         for f in files:
             if f.get("upload"):
                 tg_uploads.drop(self.root, f["upload"])    # un solo uso: sólo cuando salió
-        self.store.record_sent({"ref": ref, "status": "sent"})
-        self.log(f"telegram.send {ref} a {thread}")
+        done = {"ref": ref, "status": "sent"}
+        mid = _int_or_none((first or {}).get("message_id")) if isinstance(first, dict) else None
+        if mid is not None:
+            done["message_id"] = mid          # privado: para citar este mensaje después (F2)
+        reply = None
+        if quote is not None:
+            quoted = isinstance(first, dict) and isinstance(first.get("reply_to_message"), dict)
+            reply = "native" if quoted else "dropped"
+            if not quoted:
+                done["reply_to"] = dict(record["reply_to"], missing=True)
+        self.store.record_sent(done)
+        self.log(f"telegram.send {ref} a {thread}" + (f" ({reply})" if reply else ""))
         self._notify("threads")
-        return {"ref": ref, "status": "sent", "at": record["at"]}
+        out = {"ref": ref, "status": "sent", "at": record["at"]}
+        if reply:
+            out["reply"] = reply
+        return out
 
     def _keep_photo(self, ref: str, i: int, f: dict) -> dict:
         """Lo que queda en outbox.jsonl de un archivo de la web; una foto, con su copia en media/."""
@@ -381,7 +437,7 @@ class Outbound:
                 item["media"] = {"path": str(path), "mime": f["mime"], "bytes": f["size"]}
         return item
 
-    async def _send_file(self, chat: int, f: dict, caption: str) -> None:
+    async def _send_file(self, chat: int, f: dict, caption: str, reply_params: dict | None = None):
         if f.get("path") is not None:
             data = f["path"].read_bytes()
             mime = mimetypes.guess_type(f["name"])[0] or "application/octet-stream"
@@ -390,8 +446,10 @@ class Outbound:
         method, field = ("sendPhoto", "photo") if mime in PHOTO_MIMES and len(data) <= MAX_PHOTO \
             else ("sendDocument", "document")
         await self._pace(chat)
-        params = {"chat_id": chat, "caption": caption or None}
-        await self._api(method, params, upload=(field, f["name"], data, mime))
+        params = {"chat_id": chat, "caption": caption or None,
+                  # multipart: un objeto va como texto JSON (Bot API).
+                  "reply_parameters": json.dumps(reply_params) if reply_params else None}
+        return await self._api(method, params, upload=(field, f["name"], data, mime))
 
     # --- telegram.draft (FR-24) ----------------------------------------------------------
     def _draft_id(self, thread: str) -> int:
@@ -573,6 +631,8 @@ class Outbound:
                 item["media"] = {"mime": media.get("mime"), "bytes": media.get("bytes")}
             if m.get("filename"):
                 item["filename"] = m["filename"]      # #676: el nombre de un documento
+            if isinstance(m.get("reply_to"), dict):
+                item["reply_to"] = m["reply_to"]      # PRD #685 F2; el nombre va abajo
             out[t]["messages"].append(item)
         for s in self.store.sent():
             t = s.get("thread")
@@ -583,12 +643,28 @@ class Outbound:
                     item["files"] = [_public_file(f) for f in s["files"]]
                 elif s.get("file"):
                     item["files"] = [{"name": s["file"]}]
+                if isinstance(s.get("reply_to"), dict):
+                    item["reply_to"] = s["reply_to"]
                 out[t]["messages"].append(item)
+        agent_name = self._agent_name()
         for v in out.values():
+            for m in v["messages"]:
+                if "reply_to" in m:
+                    m["reply_to"] = _public_quote(m["reply_to"], v["name"], agent_name)
             v["messages"].sort(key=lambda m: m.get("at") or "", reverse=True)
             v["visible"] = [m for m in v["messages"]
                             if v["entry"] is not None or (m["dir"] == "in" and m["_catch"] and catch_active)]
         return out
+
+    def _agent_name(self) -> str:
+        """El nombre del agente en una cita a lo que mandamos: AGENT_EMAIL_FROM_NAME, o el
+        @usuario del bot."""
+        with contextlib.suppress(Exception):
+            from paynani_lib import envfile  # noqa: PLC0415
+            name = str(envfile.read_env().get("AGENT_EMAIL_FROM_NAME") or "")
+            if name:
+                return name
+        return f"@{self.bot_username}" if getattr(self, "bot_username", None) else ""
 
     def _catch_active(self) -> bool:
         note = self._catch_all()
@@ -740,6 +816,37 @@ class Outbound:
                 w.write(line)
             except (ConnectionError, RuntimeError):
                 self.watchers.discard(w)
+
+
+def _public_quote(q: dict, contact_name: str, agent_name: str) -> dict:
+    """La cita de un mensaje para `telegram.thread` (contrato de FR-14): `{ref, name, excerpt,
+    missing}`. `ref` es null si el original es de antes de paynani; el nombre se pone aquí."""
+    ref = q.get("ref") if isinstance(q.get("ref"), str) else None
+    ours = (ref or "").startswith("tgo:") or (ref is None and q.get("from_bot"))
+    return {"ref": ref, "name": agent_name if ours else contact_name,
+            "excerpt": str(q.get("excerpt") or "")[:100], "missing": bool(q.get("missing"))}
+
+
+def _int_or_none(value) -> int | None:
+    try:
+        return int(value) if value is not None and not isinstance(value, bool) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def quote_excerpt(data: dict) -> str:
+    """El extracto de una cita (contrato de FR-14): una línea, hasta 100. Sin texto, una foto es
+    «📷» y un documento «📄 nombre»."""
+    text = " ".join(str(data.get("text") or data.get("caption") or "").split())
+    if text:
+        return text[:100]
+    kind = data.get("kind")
+    if kind in ("photo", "image") or data.get("photo"):
+        return "📷"
+    name = data.get("filename") or data.get("file") or (data.get("document") or {}).get("file_name") or ""
+    if kind in ("document", "file") or name or data.get("document"):
+        return f"📄 {name}".strip()[:100]
+    return ""
 
 
 class _Refused(Exception):
