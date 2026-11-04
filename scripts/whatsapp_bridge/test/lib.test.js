@@ -175,3 +175,26 @@ test('quoteContext: el contextInfo de una respuesta (PRD #685 F2)', async () => 
   assert.equal(quoteContext({ key_id: '' }, to, me), null);
   assert.equal(quoteContext({ key_id: 'K3', from_me: true }, to, null), null);
 });
+
+test('reactionOf: una reacción que entra (PRD #685 F3)', async () => {
+  const { reactionOf, classify } = await import('../lib.js');
+  const r = { reactionMessage: { key: { remoteJid: '1@s.whatsapp.net', fromMe: true, id: 'K9' }, text: '❤️' } };
+  assert.deepEqual(reactionOf(r), { key_id: 'K9', emoji: '❤️' });
+  assert.deepEqual(reactionOf({ reactionMessage: { key: { id: 'K9' }, text: '' } }), { key_id: 'K9', emoji: '' });
+  assert.equal(reactionOf({ ephemeralMessage: { message: r } }).key_id, 'K9');
+  assert.equal(reactionOf({ conversation: 'hola' }), null);
+  assert.equal(reactionOf({ reactionMessage: { text: '👍' } }), null);
+  assert.equal(classify(r), null); // sigue sin ser un mensaje
+});
+
+test('reactContent: poner y quitar la reacción de la cuenta (PRD #685 F3)', async () => {
+  const { reactContent } = await import('../lib.js');
+  const target = { key_id: 'K1', from_me: false, chat: '15550001111@s.whatsapp.net' };
+  assert.deepEqual(reactContent(target, '👍'),
+    { react: { text: '👍', key: { remoteJid: '15550001111@s.whatsapp.net', fromMe: false, id: 'K1' } } });
+  assert.equal(reactContent({ ...target, from_me: true }, '').react.key.fromMe, true);
+  assert.equal(reactContent({ ...target, from_me: true }, '').react.text, '');
+  assert.equal(reactContent({ key_id: '', chat: 'x' }, '👍'), null);
+  assert.equal(reactContent({ key_id: 'K1' }, '👍'), null);
+  assert.equal(reactContent(null, '👍'), null);
+});

@@ -4,6 +4,11 @@
 
 - **PaynaniWeb, Webchat: las reacciones se ven en vivo (PRD #685 F3).** Una reacción del agente a un mensaje viejo aparece sin recargar: el WebSocket vigila `reactions.jsonl` y manda sólo los globos que cambiaron. Lo pidió Metis en #702.
 
+- **WhatsApp: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en WhatsApp.
+  - `whatsapp.react` pone, cambia o quita la reacción del número vinculado, una por mensaje y con cualquier emoji (uno solo). El puente la manda con `react`, y no cuenta para el tope de envíos.
+  - El puente ya no descarta las reacciones que llegan (`reactionMessage`), y cada mensaje de `whatsapp.thread` trae `reactions` (`[{emoji, count, mine}]`).
+  - Cuando un contacto reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Ana López +1… reaccionó ❤️ a «…»». Fuera del roster sin Catch-All sólo dice «reacción de un número fuera del roster». Las nuestras no avisan.
+  - El agente reacciona con `paynani whatsapp react wa:… 👍` (`--remove` la quita), y `whatsapp thread` y `event show wa:… --body` muestran las reacciones (WHATSAPP_BRIDGE.md §4, §5, §10 y §11).
 - **Telegram: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en Telegram.
   - `telegram.react` pone, cambia o quita la reacción del bot (`setMessageReaction`), una por mensaje, y sólo con las reacciones estándar que puede usar un bot, que `telegram.status` trae en `reactions`.
   - El servicio pide `message_reaction` en `allowed_updates` y guarda la reacción del contacto. Cada mensaje de `telegram.thread` trae `reactions` (`[{emoji, count, mine}]`).
