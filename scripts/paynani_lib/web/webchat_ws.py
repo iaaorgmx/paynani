@@ -26,7 +26,6 @@ gateway no corte la conexión por inactividad (revisión de Metis en #648).
 """
 from __future__ import annotations
 
-import inspect
 import json
 import re
 import time
@@ -77,10 +76,9 @@ def serve(conn: ws.Conn, store, *, csrf_ok, owner: dict, render, texts: dict, cl
     sesión; `render(messages, day)` → `(html, day)` dibuja los mensajes nuevos; `texts`
     trae los mensajes de error ya traducidos.
     """
-    try:   # PRD #685 F2: el almacén guarda `reply_to` (lo agrega el núcleo, #685)
-        replies = "reply_to" in inspect.signature(store.append).parameters
-    except (TypeError, ValueError):
-        replies = False
+    # PRD #685 F2: el almacén guarda `reply_to` (lo agrega el núcleo); un solo lugar lo decide.
+    from .webchat_pages import replies as store_replies
+    replies = store_replies(store)
     try:
         got = conn.recv(CONNECT_S)
         hello = json.loads(got[1]) if got and got[0] == ws.TEXT else None
