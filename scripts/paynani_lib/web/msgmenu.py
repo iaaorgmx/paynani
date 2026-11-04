@@ -38,7 +38,7 @@ def item(enabled: bool, ref: str = "", name: str = "") -> str:
 ROW = ("👍", "👌", "❤️", "👀", "🔥", "😭", "👎")
 
 
-def list_attrs(reply: bool = False, reactions=None, react_url: str = "", csrf: str = "") -> str:
+def list_attrs(reply: bool = False, reactions=None, react_url: str = "", csrf: str = "", poll_url: str = "") -> str:
     """Los textos del menú, en la `<ol>` del hilo, para msgmenu.js (en el idioma de la página).
     Con `reply`, también los de «Responder» (F2); con `reactions` («any» o una lista) y
     `react_url`, los de las reacciones (F3). Sólo lo que el canal permite."""
@@ -54,6 +54,8 @@ def list_attrs(reply: bool = False, reactions=None, react_url: str = "", csrf: s
         out += "".join(f' data-msgmenu-{name}="{e(i18n.t("web.msgmenu." + key))}"' for name, key in texts.items())
         out += (f' data-msgmenu-react="{e(json.dumps(allowed, ensure_ascii=False))}"'
                 f' data-msgmenu-react-url="{e(react_url)}" data-msgmenu-csrf="{e(csrf)}"')
+        if poll_url:   # Telegram y WhatsApp: las reacciones que llegan se ven sin recargar
+            out += f' data-msgmenu-poll="{e(poll_url)}"'
     return out
 
 

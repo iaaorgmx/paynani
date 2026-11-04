@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, Telegram y WhatsApp: las reacciones del contacto se ven sin recargar (PRD #685 F3).** Con la pestaña a la vista, la página pide cada 15 s las reacciones de los mensajes cargados y redibuja sólo los que cambiaron. Lo acordamos con Metis en #704.
+
 - **Telegram: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en Telegram.
   - `telegram.react` pone, cambia o quita la reacción del bot (`setMessageReaction`), una por mensaje, y sólo con las reacciones estándar que puede usar un bot, que `telegram.status` trae en `reactions`.
   - El servicio pide `message_reaction` en `allowed_updates` y guarda la reacción del contacto. Cada mensaje de `telegram.thread` trae `reactions` (`[{emoji, count, mine}]`).

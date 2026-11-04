@@ -896,6 +896,9 @@ def make_handler(ctx: Context):
             if self.route == "/messages/estados":
                 self._sms_statuses()
                 return
+            if self.route in ("/telegram/messages/reacciones", "/whatsapp/messages/reacciones"):
+                self._reactions_get()
+                return
             if self.route in ("/whatsapp", "/whatsapp/link/current", "/whatsapp/messages", "/whatsapp/messages/ver",
                               "/whatsapp/media", "/whatsapp/file"):
                 self._whatsapp_get()
@@ -1522,6 +1525,47 @@ def make_handler(ctx: Context):
                 self._webchat_page(400 if code else 500, text=text, error=i18n.t("web.wc.err." + key))
                 return
             self._redirect("/webchat")
+
+        def _reactions_get(self):
+            """
+            GET /telegram/messages/reacciones?t=<hilo> y /whatsapp/messages/reacciones?n=<número>
+            (PRD #685 F3): las reacciones de los mensajes más recientes del hilo, `{items: {ref:
+            [...]}}`, para que msgmenu.js redibuje los globos que cambiaron sin recargar. Sólo
+            lee; con un canal que no reacciona, 404.
+            """
+            def reply(code: int, obj: dict):
+                self._send(code, "application/json; charset=UTF-8", json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+
+            telegram = self.route.startswith("/telegram/")
+            try:
+                if telegram:
+                    tid = self.query.get("t", [""])[0]
+                    if not self.CTX.telegram_configured() or not TG_THREAD.match(tid):
+                        reply(404, {"ok": False})
+                        return
+                    source = self.CTX.telegram()
+                    if msgmenu.reactions_allowed(source.status().get("reactions")) is None:
+                        reply(404, {"ok": False})
+                        return
+                    data = source.request("telegram.thread", thread=tid, limit=telegram_pages.THREAD_PAGE)
+                    key = "ref"
+                else:
+                    number = self.query.get("n", [""])[0][:40]
+                    if not self.CTX.whatsapp_configured() or not number:
+                        reply(404, {"ok": False})
+                        return
+                    source = self.CTX.whatsapp()
+                    if msgmenu.reactions_allowed(source.status().get("reactions")) is None:
+                        reply(404, {"ok": False})
+                        return
+                    data = source.request("whatsapp.thread", number=number, limit=whatsapp_pages.THREAD_PAGE)
+                    key = "id"
+            except (telegram_source.Failed, whatsapp_source.Failed):
+                reply(404, {"ok": False})
+                return
+            items = {str(m.get(key)): m.get("reactions") or [] for m in data.get("messages") or []
+                     if m.get(key) and not m.get("hidden")}
+            reply(200, {"ok": True, "items": items})
 
         def _react_post(self, post: dict):
             """

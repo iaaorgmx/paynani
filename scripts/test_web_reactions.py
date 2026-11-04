@@ -159,6 +159,19 @@ for bad_ref, bad_emoji in (("x:1", "👍"), (ref, "ok"), (ref, "<img>"), ("tg:..
     check(f"ref {bad_ref[:8]!r} / emoji {bad_emoji!r} sin forma: no llega al servicio", (True, n), (status in (400, 404), len(reacts())))
 status, _, _ = req("POST", URL, cookie=cookie, form={"csrf": "otro", "ref": ref, "emoji": "👍"})
 check("sin el CSRF bueno: 403 y nada al servicio", (403, n), (status, len(reacts())))
+# ---- En vivo en Telegram: /telegram/messages/reacciones (sin WebSocket, msgmenu.js consulta) -----
+check("el hilo lleva la ruta de consulta de reacciones", True,
+      f'data-msgmenu-poll="/telegram/messages/reacciones?t={tid}"' in req("GET", f"/telegram/messages/ver?t={tid}", cookie=cookie)[2])
+target = next(m for m in thread["messages"] if m["ref"] == ref)
+target["reactions"] = [{"emoji": "🔥", "count": 1, "mine": False}]   # la del contacto, como la deja el núcleo
+status, hdrs, body = req("GET", f"/telegram/messages/reacciones?t={tid}", cookie=cookie)
+data = json.loads(body)
+check("consulta: 200 JSON con las reacciones por ref, la del contacto incluida", (200, True, [{"emoji": "🔥", "count": 1, "mine": False}]),
+      (status, hdrs.get("content-type", "").startswith("application/json"), data["items"].get(ref)))
+check("consulta: un hilo sin forma da 404", 404, req("GET", "/telegram/messages/reacciones?t=x", cookie=cookie)[0])
+check("consulta: sin sesión no da reacciones", True, req("GET", f"/telegram/messages/reacciones?t={tid}")[0] in (302, 303, 401, 403))
+demo.reactions = None
+check("consulta: con un canal que no reacciona, 404", 404, req("GET", f"/telegram/messages/reacciones?t={tid}", cookie=cookie)[0])
 httpd.shutdown()
 
 # ---- WhatsApp y Webchat --------------------------------------------------------------------------
@@ -168,6 +181,7 @@ WA = {"number": "+525511112222", "name": "Beto", "in_roster": True, "can_reply":
 page = whatsapp_pages.thread_body(WA, "", reactions="any", csrf="c")
 check("WhatsApp con reactions any: la fila sin lista fija y la reacción de Beto", (True, True),
       ('data-msgmenu-react="&quot;any&quot;"' in page, 'data-emoji="❤️" aria-pressed="false"' in page))
+check("WhatsApp: la ruta de consulta lleva el número", True, 'data-msgmenu-poll="/whatsapp/messages/reacciones?n=%2B525511112222"' in page)
 page = whatsapp_pages.thread_body(dict(WA, in_roster=False), "", reactions="any", csrf="c")
 check("WhatsApp fuera del roster: ni fila ni reacciones (FR-17)", (False, False),
       ("data-msgmenu-react=" in page, "reacciones" in page))
@@ -189,6 +203,8 @@ html = webchat_pages.bubbles([{"id": "w_" + "1" * 32, "by": "agent", "at": "2026
 check("Webchat: la reacción del dueño bajo el globo del agente", True, 'class="reac reac-mia" data-emoji="👍"' in html)
 
 js = (ROOT / "scripts" / "paynani_lib" / "assets" / "msgmenu.js").read_text(encoding="utf-8")
+check("msgmenu.js consulta cada 15 s sólo con la pestaña a la vista, y redibuja sólo lo que cambió", True,
+      all(x in js for x in ("data-msgmenu-poll", "POLL_MS = 15000", 'visibilityState !== "visible"', "want !== shown(row)")))
 check("msgmenu.js: la fila, el selector con buscador en «any», la misma la quita y las de abajo son botones", True,
       all(x in js for x in ("reactionRow", "selector-buscar", 'bare(mine) === bare(emoji) ? ""', ".reacciones .reac")))
 check("el .env y Himalaya de la instalación no cambiaron", BEFORE, [sha(p) for p in REAL])
