@@ -272,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
     tg_send.add_argument("text", nargs="*", help="The message; without it (and without --file), read from stdin.")
     tg_send.add_argument("--file", help="A file from state/telegram/outbox/ or TELEGRAM_ATTACH_DIRS.")
     tg_send.add_argument("--stream", action="store_true", help="Read stdin as it arrives and show it while it is written.")
+    tg_send.add_argument("--reply-to", metavar="REF",
+                         help="Quote a message of the thread (its tg:… or tgo:… ref, from telegram thread).")
     tg_draft = tg_sub.add_parser("draft", help="Show a progress draft that the next send replaces (FR-24).")
     tg_draft.add_argument("contact")
     tg_draft.add_argument("text", nargs="+")

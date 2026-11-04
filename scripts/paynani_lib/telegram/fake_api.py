@@ -41,6 +41,7 @@ class FakeBotAPI:
         self._updates = []               # [{"update_id": n, ...}]
         self._next_update = 1000
         self._next_message = {}          # chat_id -> siguiente message_id
+        self.deleted = set()             # message_id que Telegram «borró»: una cita a ellos no sale (PRD #685 F2)
         self._files = {}                 # file_id -> (file_path, bytes)
         self._fail = {}                  # método -> [(status, retry_after), ...]
         self._polling = 0
@@ -115,7 +116,8 @@ class FakeBotAPI:
         return u
 
     def private_message(self, user_id, text=None, first_name="Prueba", username=None, *,
-                        photo=None, document=None, message_id=None, declared_size=None, caption=None):
+                        photo=None, document=None, message_id=None, declared_size=None, caption=None,
+                        reply_to=None):
         """
         Un mensaje privado. `photo`: bytes; `document`: (bytes, nombre, mime). El archivo
         queda listo para getFile. `declared_size` es el tamaño que dice el mensaje y
@@ -126,6 +128,13 @@ class FakeBotAPI:
                "chat": {"id": user_id, "type": "private", "first_name": first_name}}
         if text is not None:
             msg["text"] = text
+        if reply_to is not None:
+            # PRD #685 F2: `reply_to` es (message_id, del_bot, texto) del mensaje citado.
+            mid, from_bot, quoted = reply_to
+            sender = ({"id": self.bot_id, "is_bot": True, "first_name": self.username} if from_bot
+                      else self._user(user_id, first_name, username))
+            msg["reply_to_message"] = {"message_id": int(mid), "date": int(time.time()), "from": sender,
+                                       "chat": msg["chat"], "text": quoted}
         if caption is not None:
             msg["caption"] = caption
         if photo is not None:
@@ -256,6 +265,15 @@ class FakeBotAPI:
                "chat": {"id": chat_id, "type": "private"},
                "from": {"id": self.bot_id, "is_bot": True, "first_name": self.username}}
         msg.update(extra)
+        rp = p.get("reply_parameters")
+        if isinstance(rp, str):
+            rp = json.loads(rp)                    # multipart: llega como texto JSON
+        if isinstance(rp, dict) and rp.get("message_id") is not None:
+            mid = int(rp["message_id"])
+            if mid not in self.deleted:
+                msg["reply_to_message"] = {"message_id": mid, "chat": msg["chat"]}
+            elif not rp.get("allow_sending_without_reply"):
+                return 400, _err(400, "Bad Request: message to be replied not found")
         return _ok(msg)
 
     def _m_sendMessage(self, p):
@@ -288,6 +306,11 @@ class FakeBotAPI:
         self._record("editMessageText", p)
         return _ok({"message_id": int(p.get("message_id") or 0), "text": p.get("text"),
                     "chat": {"id": int(p.get("chat_id")), "type": "private"}})
+
+    def _m_deleteMessage(self, p):
+        self._record("deleteMessage", p)
+        self.deleted.add(int(p.get("message_id") or 0))
+        return _ok(True)
 
     def _m_leaveChat(self, p):
         self._record("leaveChat", p)

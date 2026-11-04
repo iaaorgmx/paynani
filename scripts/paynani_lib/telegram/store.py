@@ -262,6 +262,13 @@ class BotStore:
                 return ref
         return None
 
+    def find_sent(self, thread: str, message_id: int) -> dict | None:
+        """Lo que mandamos a un hilo, por el message_id que le dio Telegram (PRD #685 F2)."""
+        for rec in self.sent():
+            if rec.get("thread") == thread and rec.get("message_id") == int(message_id):
+                return rec
+        return None
+
 
 def store_for_account(telegram_root: Path, account: str) -> "BotStore | None":
     """

@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- **Telegram: responder citando un mensaje, el núcleo (PRD #685, F2).** Con esto PaynaniWeb ya muestra «Responder» en Telegram.
+  - `telegram.send` acepta `reply_to` (un `tg:` o `tgo:` del mismo hilo) y sale con la cita nativa de Telegram. Si Telegram ya no tiene el original, sale sin cita (`reply: dropped`).
+  - `telegram.thread` trae la cita en lo que salió y en lo que entró, también cuando alguien responde a un mensaje de antes de paynani.
+  - El aviso al agente dice «(respondiendo a «…»)», y `event show tg:… --body` imprime antes el texto citado.
+  - El agente cita con `paynani telegram send <contacto> --reply-to tg:…`, y `telegram thread` muestra el ref de cada mensaje (TELEGRAM.md §3 a §5).
 - **PaynaniWeb: el menú al tocar un mensaje, primera parte: Copiar (PRD #685, F1).** Lo pidió Julian, como el de Telegram Web.
   - En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje (o el clic derecho, o Enter con el renglón enfocado) abre un menú con **Copiar**. Copia el texto sin el nombre ni la hora y avisa «Copiado».
   - Tocar un enlace, una foto o un botón dentro del globo sigue haciendo lo de siempre.
