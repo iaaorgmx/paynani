@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **`paynani sms pair --replace --web` ya revoca el teléfono emparejado (#690).** Antes `--web` ignoraba `--replace`, y la página no generaba código porque seguía habiendo un teléfono. Ahora revoca primero y lo dice, igual que sin `--web`.
+
 - **AGENTS.md: qué hacer cuando el dueño pide el QR para emparejar PaynaniApp (#688).** PaynaniApp le va a dar al dueño un prompt para copiarle a su agente (PaynaniApp#7, Metis[Q51] = A). En la misma computadora el agente corre `paynani sms pair --web`; desde otro canal le manda la dirección y el código. El código es sólo para el dueño, y `--replace` se pregunta antes.
 
 - **PaynaniWeb: «Development team» en About (#686).** Lo pidió Julian: un renglón nuevo en Créditos abre `/about/team`, una tabla con los humanos y agentes de IA que han colaborado en paynani, PaynaniWeb y PaynaniApp.

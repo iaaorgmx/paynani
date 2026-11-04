@@ -158,5 +158,25 @@ try:
 finally:
     httpd.shutdown()
 
+# --- #690: `sms pair --replace --web` revoca antes de abrir la página -----------------------------
+import os as _os, socket as _socket, subprocess as _sp, time as _time
+with tempfile.TemporaryDirectory() as _d:
+    _st = store_mod.Store(Path(_d))
+    _st.save_device({"device_id": "d_viejo", "token_sha256": "x" * 64})
+    with _socket.socket() as _s:
+        _s.bind(("127.0.0.1", 0)); _port = _s.getsockname()[1]
+    _env = dict(_os.environ, PAYNANI_STATE=_d, BROWSER="true", PAYNANI_SMS_PUBLIC_URL="https://t.example")
+    _p = _sp.Popen([sys.executable, str(ROOT / "scripts" / "paynani"), "sms", "pair", "--replace", "--web",
+                    "--port", str(_port)], env=_env, stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True)
+    try:
+        _deadline = _time.time() + 15
+        while _time.time() < _deadline and _st.device() is not None and _p.poll() is None:
+            _time.sleep(0.2)
+        check("#690: --replace --web revoca el teléfono emparejado", None, _st.device())
+    finally:
+        _p.terminate()
+        _out = _p.communicate(timeout=10)[0]
+    check("#690: y lo dice, como sin --web", True, "d_viejo revocado" in _out)
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
