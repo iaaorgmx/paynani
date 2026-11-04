@@ -110,7 +110,11 @@
     globo.appendChild(box);
   }
 
+  // Sube con cada reacción nuestra: una consulta (poll) que salió antes no la pisa (Metis en #706).
+  var reactSeq = 0;
+
   function react(row, emoji) {
+    reactSeq += 1;
     var list = row.closest("ol");
     var w = words(row);
     var url = list && list.getAttribute("data-msgmenu-react-url");
@@ -230,10 +234,12 @@
     }
     function tick() {
       if (document.visibilityState && document.visibilityState !== "visible") { return; }
+      var seq = reactSeq;
       fetch(url, { credentials: "same-origin", cache: "no-store" }).then(function (r) {
         return r.ok ? r.json() : null;
       }).then(function (data) {
-        if (!data || !data.items) { return; }
+        // Si pusimos o quitamos una reacción mientras iba, lo que trae ya es viejo: se descarta.
+        if (!data || !data.items || seq !== reactSeq) { return; }
         Object.keys(data.items).forEach(function (ref) {
           var row = findRow(ref);
           if (!row) { return; }
