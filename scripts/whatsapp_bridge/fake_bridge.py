@@ -7,6 +7,8 @@ Habla el mismo protocolo que index.js, por stdin y stdout, sin red ni Baileys. L
 
     fake.link_done      termina la vinculación en curso (escribe auth/creds.json)
     fake.message        un mensaje que llega: from_e164, text, kind, key_id, lid, push_name, quote
+    fake.reaction       una reacción que llega: from_e164, target_key_id, emoji ("" la quita), key_id
+    fake.reacts         lo que salió por `react` (PRD #685 F3)
     fake.call           una llamada: from_e164, status (missed|answered)
     fake.disconnect     se cae la conexión (status disconnected)
     fake.reconnect      vuelve (status connected)
@@ -70,6 +72,7 @@ class Fake:
         self.silent_link = False
         self.quiet_logout = False
         self.sends: list[dict] = []          # #670: lo que salió, para fake.sends
+        self.reacts: list[dict] = []         # PRD #685 F3: lo que salió por react, para fake.reacts
         self.fail_after: int | None = None   # #670: cuántos `send` más salen antes de fallar
 
     # --- estado ---
@@ -205,6 +208,38 @@ class Fake:
                                     "size": Path(f["path"]).stat().st_size} if f else None})
         result(ref, {"key_id": key, "chat": chat, "sent_at": iso()})
         out({"type": "receipt", "key_id": key, "chat": chat, "status": "server", "at": iso()})
+
+    def do_react(self, ref, msg) -> None:
+        """PRD #685 F3: como index.js; no cuenta para nada más."""
+        if self.state["state"] != "connected":
+            return fail(ref, "not_connected")
+        to = msg.get("to") or ""
+        if not E164_RE.match(to):
+            return fail(ref, "missing_field", field="to")
+        if to not in self.allowed:
+            return fail(ref, "not_allowed", "el número no está en allowed")
+        target = msg.get("target") if isinstance(msg.get("target"), dict) else {}
+        if not target.get("key_id") or not isinstance(msg.get("emoji"), str):
+            return fail(ref, "missing_field", field="target")
+        if self.fail_after is not None:
+            if self.fail_after <= 0:
+                return fail(ref, "send_failed", "fake.fail_after")
+            self.fail_after -= 1
+        self.reacts.append({"to": to, "target": target, "emoji": msg["emoji"]})
+        result(ref, {"at": iso()})
+
+    def do_fake_reaction(self, ref, msg) -> None:
+        e164 = msg.get("from_e164")
+        lid = msg.get("lid")
+        jid = (e164[1:] + "@s.whatsapp.net") if e164 else lid
+        out({"type": "reaction", "key_id": msg.get("key_id") or "3EB0" + secrets.token_hex(8).upper(),
+             "chat": jid, "from": {"e164": e164, "jid": jid, "lid": lid}, "push_name": msg.get("push_name"),
+             "sent_at": msg.get("sent_at") or iso(), "target": {"key_id": msg.get("target_key_id")},
+             "emoji": msg.get("emoji") or ""})
+        result(ref)
+
+    def do_fake_reacts(self, ref, msg) -> None:
+        result(ref, {"reacts": self.reacts})
 
     def do_read(self, ref, msg) -> None:
         result(ref)

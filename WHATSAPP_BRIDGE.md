@@ -222,6 +222,28 @@ responde `result` igual: no es un error.
   que no se pierda si el Catch-All de WhatsApp está activo; el servicio borra el archivo de
   `media/` en cuanto decide que no se puede mostrar.
 
+### `reaction`: una reacción (PRD #685 F3)
+
+```json
+{"type": "reaction", "key_id": "3EB0R1…", "chat": "1XXXXXXXXXX@s.whatsapp.net",
+ "from": {"e164": "+1XXXXXXXXXX", "jid": "…", "lid": null}, "push_name": "Ana",
+ "sent_at": "2026-11-04T10:12:40Z", "target": {"key_id": "3EB0D9…"}, "emoji": "❤️"}
+```
+
+- `key_id` es el de la reacción, que en WhatsApp es un mensaje aparte; `target.key_id` es el
+  del mensaje al que reaccionó, nuestro o del contacto. `emoji` vacío es que la quitó.
+- El puente la saca de `reactionMessage`, que hasta F3 descartaba (`reactionOf()` en
+  `lib.js`), y nunca la manda como `message`.
+- El servicio busca el mensaje por `target.key_id` en lo recibido y en lo enviado. Si no lo
+  tiene, la descarta. Si lo tiene, guarda la reacción del contacto y escribe un evento
+  `whatsapp.received` con `kind: "reaction"` (FR-16a).
+  - Su `event_id` sale del `key_id` de la reacción, así que una reacción que WhatsApp
+    entrega dos veces avisa una sola vez (FR-11a).
+  - El aviso dice `Ana López +1… reaccionó ❤️ a «Sí, a las 8»` o `quitó su reacción ❤️ de
+    «…»`. Fuera del roster sin Catch-All sólo dice «reacción de un número fuera del roster».
+  - Una reacción no cuenta como escribir desde la vinculación (FR-20) y no aparece como
+    mensaje en el hilo.
+
 ### `call`: una llamada de WhatsApp
 
 ```json
@@ -289,6 +311,20 @@ Respuesta:
 
 `status` es `server` (llegó a WhatsApp), `delivered` o `read` (sólo si el otro tiene
 los acuses de lectura prendidos). El servicio lo guarda en el hilo (FR-23).
+
+### `react`: la reacción de la cuenta (PRD #685 F3)
+
+```json
+{"type": "react", "id": "c_…", "to": "+1XXXXXXXXXX",
+ "target": {"key_id": "3EB0C4…", "from_me": false, "chat": "1XXXXXXXXXX@s.whatsapp.net"}, "emoji": "👍"}
+{"type": "result", "ref": "c_…", "ok": true, "data": {"at": "2026-11-04T10:13:05Z"}}
+```
+
+- `target` es el mensaje: su `key_id`, si es nuestro (`from_me`) y el chat donde está (si
+  falta, el del número). `emoji` vacío quita la nuestra. El puente manda
+  `sendMessage(jid, {react: {text, key}})` (`reactContent()` en `lib.js`).
+- Como `send`, pide `connected` y que `to` esté en `allowed`. No cuenta para el tope de
+  envíos (FR-21), que lleva el servicio.
 
 ### `read`: marcar como leído
 
@@ -396,7 +432,8 @@ un `protocol` distinto sólo aparece con una instalación a medias.
 Las pruebas usan un puente falso en Python (WA-1) que sigue este mismo contrato: lee
 las órdenes por stdin, contesta por stdout y, con órdenes de prueba que el puente real
 no tiene (`fake.*`), simula un mensaje que llega, una llamada, una desconexión o un
-`logged_out`. Ninguna prueba se conecta a WhatsApp. El puente real sólo se prueba en
+`logged_out`. Para F3, `fake.reaction` simula una reacción que llega (`from_e164`,
+`target_key_id`, `emoji`) y `fake.reacts` devuelve lo que salió por `react`. Ninguna prueba se conecta a WhatsApp. El puente real sólo se prueba en
 las pruebas reales de WA-8 (#560).
 
 ## 11. Interfaz local del servicio (WA-2)
@@ -455,13 +492,14 @@ necesitan:
 
 | `type` | Qué hace | Diferencia con §12 |
 |---|---|---|
-| `whatsapp.status` | Estado | Trae `web_files: true` (#670): `whatsapp.send` acepta `uploads` de PaynaniWeb. Sin el campo, la web deja la barra sólo con texto. Trae `replies: true` (PRD #685 F2): `whatsapp.send` acepta `reply_to` |
+| `whatsapp.status` | Estado | Trae `web_files: true` (#670): `whatsapp.send` acepta `uploads` de PaynaniWeb. Sin el campo, la web deja la barra sólo con texto. Trae `replies: true` (PRD #685 F2): `whatsapp.send` acepta `reply_to`. Trae `reactions: "any"` (PRD #685 F3): `whatsapp.react` acepta cualquier emoji |
 | `whatsapp.link` | Empieza a vincular | Acepta `mode: "qr"` además de `"code"`, y el `result` trae `link_id` (ver abajo) |
 | `whatsapp.link_current` | El QR o código vigente de una vinculación | Nuevo. Pide `link_id` |
 | `whatsapp.link_cancel` | Cancela | Igual |
 | `whatsapp.unlink` | Desvincula | Igual |
 | `whatsapp.threads` | Hilos | Igual |
-| `whatsapp.thread` | Un hilo | Un mensaje que responde a otro trae `reply_to` (ver abajo) |
+| `whatsapp.thread` | Un hilo | Un mensaje que responde a otro trae `reply_to`, y uno con reacciones trae `reactions` (ver abajo) |
+| `whatsapp.react` | La reacción de la cuenta a un mensaje | Nuevo (PRD #685 F3). Ver abajo |
 | `whatsapp.send` | Contesta en un hilo | Acepta `file` (ruta), que el servicio valida siempre contra FR-22, sin importar `by`. La pasarela y la web nunca mandan `file`. La web manda en cambio `uploads` (#670, ver abajo) |
 | `whatsapp.watch` | Avisos sin pedirlos | Nuevo. Ver abajo |
 | `whatsapp.image` | La foto de un mensaje recibido, o de una que mandó el dueño desde la web, para PaynaniWeb | Nuevo (#573, #670). Ver abajo. La pasarela no lo anuncia ni lo reenvía |
@@ -487,6 +525,28 @@ necesitan:
   - El `key_id` nunca sale.
 - **El aviso al agente** (FR-16) dice `Ana López +1… (respondiendo a «¿Tienen mesa?»): …`,
   sólo si el mensaje se muestra, y `event show wa:… --body` imprime antes el texto citado.
+
+### Reaccionar: `whatsapp.react` (PRD #685 F3)
+
+```json
+{"type": "whatsapp.react", "id": "q_…", "by": "web", "ref": "wa:…", "emoji": "👍"}
+{"type": "result", "ref": "q_…", "ok": true, "data": {"ref": "wa:…", "reactions": [{"emoji": "👍", "count": 1, "mine": true}]}}
+```
+
+- `ref` es el `wa:` o `wo_` de un mensaje; `emoji` es uno solo, cualquiera, o `""` para quitar
+  la de la cuenta. Una por mensaje: otra la reemplaza (FR-11). Poner la misma que ya está no
+  vuelve a llamar al puente. Se compara sin U+FE0F: «❤» y «❤️» son la misma.
+- Errores: `not_found` (no existe, o no tiene `key_id` de WhatsApp), `not_allowed` (el número
+  no está en el roster, FR-17), `invalid` con `field: "emoji"` y `reason: "bad_emoji"` (no es
+  un solo emoji), y los del puente (`not_connected`, …).
+- No cuenta para el tope de envíos (FR-21) y no avisa al agente.
+- **En `whatsapp.thread`**, un mensaje con reacciones trae
+  `"reactions": [{"emoji": "🔥", "count": 2, "mine": true}, {"emoji": "❤", "count": 1, "mine": false}]`.
+  «La nuestra» (`mine`) es la de la cuenta, la ponga el dueño desde la web o el agente desde
+  la CLI. Primero va la nuestra y luego por `count`. Sin reacciones, o en un mensaje oculto,
+  el campo no viene.
+- `event show wa:… --body` de una reacción imprime `--- reaction: ❤ on the agent's message
+  (wo_…) ---` y el mensaje completo.
 
 ### Archivos desde PaynaniWeb: `uploads` (#670)
 
@@ -648,7 +708,9 @@ recibe los avisos:
 ```
 
 Desde ahí, esa conexión recibe `{"type": "whatsapp.changed", "what": "threads"}` y
-`{"type": "whatsapp.changed", "what": "status"}`, igual que el aviso de §12: sin
+`{"type": "whatsapp.changed", "what": "status"}`, y cuando cambian las reacciones de un
+mensaje, `{"type": "whatsapp.changed", "what": "reaction", "ref": "wa:…"}` (PRD #685 F3),
+igual que el aviso de §12: sin
 datos del mensaje ni del número, y nunca un QR ni un código. La pasarela lo usa para
 reenviar el aviso a PaynaniApp, y la web para refrescar la página.
 
@@ -662,6 +724,8 @@ lo da el cliente que revisa sus propias barreras.
 ### `paynani whatsapp`
 
 La terminal y el agente usan esta misma interfaz. `paynani whatsapp send <número> --reply-to wa:…`
-cita un mensaje, y `paynani whatsapp thread` muestra el id de cada uno. `paynani whatsapp send` sale con
+cita un mensaje, y `paynani whatsapp thread` muestra el id de cada uno y sus reacciones
+(`[👍 nuestra, ❤️ contacto]`). `paynani whatsapp react wa:… 👍` pone la reacción de la cuenta
+y `--remove` la quita (PRD #685 F3). `paynani whatsapp send` sale con
 código 2 y el `code` en stderr para `not_allowed`, `not_started` y `rate_limited`,
 como `paynani sms send`, y con 1 si el servicio no corre.
