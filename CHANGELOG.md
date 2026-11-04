@@ -7,6 +7,10 @@
   - El servicio pide `message_reaction` en `allowed_updates` y guarda la reacción del contacto. Cada mensaje de `telegram.thread` trae `reactions` (`[{emoji, count, mine}]`).
   - Cuando un contacto reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Ana López reaccionó ❤️ a «…»». Fuera del roster sin Catch-All sólo dice «reacción de alguien fuera del roster». Las del bot no avisan.
   - El agente reacciona con `paynani telegram react tg:… 👍` (`--remove` la quita), y `telegram thread` y `event show tg:… --body` muestran las reacciones (TELEGRAM.md §2 a §5 y §9).
+- **Webchat: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en el Webchat.
+  - `store.react(ref, emoji, by=)` pone, cambia o quita la reacción del dueño o del agente, una por mensaje y por lado, y cada mensaje del hilo trae `reactions` (`[{emoji, count, mine}]`). Acepta cualquier emoji, uno solo, y compara «❤» con «❤️» como la misma.
+  - Cuando el dueño reacciona o quita su reacción, el agente recibe un aviso (`kind: "reaction"`): «Julian Flores (PaynaniWeb) reaccionó 👍 a «…»». Las del agente no avisan.
+  - El agente reacciona con `paynani webchat react w_… 👍` (`--remove` la quita), y `webchat thread` y `event show wc:… --body` muestran las reacciones (WEBCHAT.md §3 a §6).
 - **WhatsApp: responder citando un mensaje, el núcleo (PRD #685, F2).** Con esto PaynaniWeb ya muestra «Responder» en WhatsApp.
   - `whatsapp.send` acepta `reply_to` (un `wa:` o `wo_` de la misma conversación), y el puente lo manda con el `contextInfo` de WhatsApp.
   - El puente lee la cita de lo que entra (`quote`), y `whatsapp.thread` la trae en lo que salió y en lo que entró, también cuando alguien cita algo de antes de paynani.

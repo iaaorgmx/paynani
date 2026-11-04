@@ -1,5 +1,5 @@
 """
-`paynani webchat send | typing | thread` (#648 W-2, WEBCHAT.md §6).
+`paynani webchat send | typing | thread | react` (#648 W-2, WEBCHAT.md §6).
 
 El agente contesta al dueño en el Webchat de PaynaniWeb. No hay servicio: todo pasa por
 `webchat/store.py`, igual que la web.
@@ -158,5 +158,37 @@ def run_thread(args) -> int:
         if quote:
             parts.insert(0, f"(respondiendo a «{quote.get('excerpt') or ''}»)" if not quote.get("missing")
                          else "(se mandó sin cita)")
+        if m.get("reactions"):
+            parts.append(_reactions_label(m["reactions"]))
         print(f"{m.get('at')} {m.get('id')} {arrow} {' '.join(p for p in parts if p)}")
+    return 0
+
+
+def _reactions_label(reactions: list[dict]) -> str:
+    """`[👍 dueño, ❤️ agente]`: en la CLI «la nuestra» (`mine`) es la del dueño."""
+    out = []
+    for r in reactions:
+        if r.get("count", 1) > 1:
+            out.append(f"{r.get('emoji')} ×{r['count']}")
+        else:
+            out.append(f"{r.get('emoji')} {'dueño' if r.get('mine') else 'agente'}")
+    return "[" + ", ".join(out) + "]"
+
+
+def run_react(args) -> int:
+    """La reacción del agente; no avisa a nadie (FR-16a). `--remove` (o sin emoji) la quita."""
+    emoji = "" if args.remove else (args.emoji or "")
+    if args.remove and args.emoji:
+        _err("--remove no lleva emoji")
+        return 2
+    if not args.remove and not emoji:
+        _err("falta el emoji (o --remove para quitar la reacción)")
+        return 2
+    try:
+        result = store.react(args.ref, emoji, by="agent")
+    except store.Rejected as exc:
+        _err(f"rechazado: {exc.code}" + (f" ({exc.detail})" if getattr(exc, "detail", "") else ""))
+        return 2
+    label = _reactions_label(result["reactions"]) if result["reactions"] else "[]"
+    print(f"{result['ref']}\t{'removed' if not emoji else 'reacted ' + emoji}\t{label}")
     return 0
