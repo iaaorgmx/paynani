@@ -301,7 +301,7 @@ def thread_body(thread: dict, reply: str, add: str = "", notice: str = "", repli
                    f'&amp;antes={quote(str(thread["next_before"]), safe="")}">{_th("older")}</a></p>')
     # PRD #685 F2: con `replies` (telegram.status), el menú suma «Responder».
     # F3: con `reactions` (telegram.status), la fila y el selector, sólo con la lista del bot.
-    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies, reactions=reactions, react_url="/telegram/messages/reaccionar", csrf=csrf)}>']
+    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies, reactions=reactions, react_url="/telegram/messages/reaccionar", csrf=csrf, poll_url="/telegram/messages/reacciones?t=" + quote(tid, safe=""))}>']
     messages = sorted(thread.get("messages") or [], key=lambda m: str(m.get("at") or ""))
     for m in messages:
         out_dir = m.get("dir") == "out"

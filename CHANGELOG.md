@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb, Telegram y WhatsApp: las reacciones del contacto se ven sin recargar (PRD #685 F3).** Con la pestaña a la vista, la página pide cada 15 s las reacciones de los mensajes cargados y redibuja sólo los que cambiaron. Lo acordamos con Metis en #704.
+
 - **PaynaniWeb, Webchat: las reacciones se ven en vivo (PRD #685 F3).** Una reacción del agente a un mensaje viejo aparece sin recargar: el WebSocket vigila `reactions.jsonl` y manda sólo los globos que cambiaron. Lo pidió Metis en #702.
 
 - **WhatsApp: reaccionar a un mensaje, el núcleo (PRD #685, F3).** Con esto PaynaniWeb ya muestra las reacciones en WhatsApp.

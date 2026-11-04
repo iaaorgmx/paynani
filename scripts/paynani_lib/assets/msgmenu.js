@@ -110,7 +110,11 @@
     globo.appendChild(box);
   }
 
+  // Sube con cada reacción nuestra: una consulta (poll) que salió antes no la pisa (Metis en #706).
+  var reactSeq = 0;
+
   function react(row, emoji) {
+    reactSeq += 1;
     var list = row.closest("ol");
     var w = words(row);
     var url = list && list.getAttribute("data-msgmenu-react-url");
@@ -218,6 +222,44 @@
       if (row) { renderChips(row, items[id]); }
     });
   });
+
+  // Telegram y WhatsApp no tienen WebSocket: con la pestaña a la vista, cada 15 s se piden las
+  // reacciones de los mensajes cargados (`data-msgmenu-poll`) y se redibujan sólo los que cambiaron.
+  (function poll() {
+    var list = document.querySelector("ol[data-msgmenu-poll]");
+    if (!list || !window.fetch) { return; }
+    var url = list.getAttribute("data-msgmenu-poll");
+    var POLL_MS = 15000;
+    function shown(row) {
+      var out = [];
+      Array.prototype.forEach.call(row.querySelectorAll(".reacciones .reac"), function (b) {
+        var n = b.querySelector("small");
+        out.push([bare(b.getAttribute("data-emoji")), n ? Number(n.textContent) : 1, b.getAttribute("aria-pressed") === "true"]);
+      });
+      return JSON.stringify(out);
+    }
+    function wanted(items) {
+      return JSON.stringify((items || []).map(function (r) { return [bare(r.emoji), r.count || 1, !!r.mine]; }));
+    }
+    function tick() {
+      if (document.visibilityState && document.visibilityState !== "visible") { return; }
+      var seq = reactSeq;
+      fetch(url, { credentials: "same-origin", cache: "no-store" }).then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (data) {
+        // Si pusimos o quitamos una reacción mientras iba, lo que trae ya es viejo: se descarta.
+        if (!data || !data.items || seq !== reactSeq) { return; }
+        Object.keys(data.items).forEach(function (ref) {
+          var row = findRow(ref);
+          if (!row) { return; }
+          var want = wanted(data.items[ref]);
+          if (want !== shown(row)) { renderChips(row, data.items[ref]); }
+        });
+      }, function () {});
+    }
+    window.setInterval(tick, POLL_MS);
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") { tick(); } });
+  }());
 
   // Tocar una reacción bajo el globo: la nuestra se quita; otra, se pone (FR-12).
   document.addEventListener("click", function (ev) {

@@ -438,6 +438,7 @@ En WhatsApp, Telegram, SMS y Webchat, tocar el globo de un mensaje abre un menú
 - **El servidor** sólo la pasa al servicio si el canal reacciona, si el `ref` tiene forma de mensaje de ese canal y si el emoji es un emoji: hasta 16 caracteres, sin letras ni marcas de HTML. Qué emojis acepta lo decide el servicio.
 - **Bajo el globo** van las reacciones del mensaje, con cuántas si son más de una. La nuestra va resaltada (`aria-pressed`): tocarla la quita, y tocar otra la pone.
 - **Fuera del roster** (WhatsApp) no hay reacciones.
+- **En Telegram y WhatsApp, sin recargar:** esas páginas no tienen WebSocket. Con la pestaña a la vista, msgmenu.js pide cada 15 s `/telegram/messages/reacciones?t=<hilo>` o `/whatsapp/messages/reacciones?n=<número>`, que devuelven `{items: {ref: [...]}}` de los mensajes recientes, y redibuja sólo los globos cuyas reacciones cambiaron. Así se ve en un momento cuando el contacto reacciona desde su teléfono. Las rutas sólo leen, piden sesión y responden 404 si el canal no reacciona.
 - **En Webchat, en vivo:** el WebSocket también vigila `reactions.jsonl`. Cuando cambian las reacciones de uno de los últimos 50 mensajes (por ejemplo, el agente reacciona con `paynani webchat react`), manda `{"type": "reactions", "items": {id: [...]}}` sólo con esos, y la página vuelve a dibujar esos globos sin recargar.
 
 En SMS sólo hay «Copiar» (Iris[Q28] = A).

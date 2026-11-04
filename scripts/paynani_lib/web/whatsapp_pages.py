@@ -296,7 +296,7 @@ def thread_body(thread: dict, reply: str, notice: str = "", replies: bool = Fals
         out.append(f'<p class="mas"><a class="secundario" href="/whatsapp/messages/ver?n={quote(number, safe="")}'
                    f'&amp;antes={quote(thread["next_before"], safe="")}">{_th("older")}</a></p>')
     # PRD #685 F2: con `replies` (estado de WhatsApp), el menú suma «Responder».
-    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies and in_roster, reactions=reactions if in_roster else None, react_url="/whatsapp/messages/reaccionar", csrf=csrf)}>']
+    bubbles = [f'<ol class="hilo"{msgmenu.list_attrs(reply=replies and in_roster, reactions=reactions if in_roster else None, react_url="/whatsapp/messages/reaccionar", csrf=csrf, poll_url="/whatsapp/messages/reacciones?n=" + quote(number, safe=""))}>']
     for m in reversed(thread.get("messages") or []):
         out_dir = m.get("dir") == "out"
         css = {"agent": "sms-agent", "owner": "sms-human", "api": "sms-agent"}.get(m.get("by"), "sms-agent") \
