@@ -150,6 +150,9 @@ _, _, page = req("GET", f"/telegram/messages/ver?t={tid}&lang=es-MX", cookie=coo
 check("la página dibuja la reacción bajo el globo, resaltada", True, 'class="reac reac-mia" data-emoji="👍"' in page)
 status, _, body = req("POST", URL, cookie=cookie, form={"csrf": csrf, "ref": ref, "emoji": ""})
 check("«» quita la nuestra (FR-11)", (200, []), (status, json.loads(body).get("reactions")))
+status, _, body = req("POST", URL, cookie=cookie, form={"csrf": csrf, "ref": "tgo:noexiste", "emoji": "👍"})
+check("#707: un mensaje sin id en el canal (not_found): el aviso dice que es anterior, no «inténtalo otra vez»",
+      (400, "not_found", True), (status, json.loads(body).get("code"), "anterior a las reacciones" in json.loads(body).get("error", "")))
 status, _, body = req("POST", URL, cookie=cookie, form={"csrf": csrf, "ref": ref, "emoji": "🤡"})
 check("una que el bot no acepta: 400 con el aviso, y el código del servicio", (400, "invalid", True),
       (status, json.loads(body).get("code"), "No se pudo poner la reacción" in json.loads(body).get("error", "")))
