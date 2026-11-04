@@ -55,7 +55,7 @@ Un mensaje que responde a otro trae `reply_to`, con una copia de la cita hecha a
 ```
 
 - `append(..., reply_to="w_…")` la arma. `name` es el del agente (`AGENT_EMAIL_FROM_NAME`)
-  si el original es suyo, o el del dueño (su sesión, o el `sender.name` del evento).
+  si el original es suyo, o el del dueño (su sesión, o el `owner_name` que guarda cada mensaje suyo).
 - `excerpt` va en una línea, hasta 100 caracteres. Una foto sin texto es `📷` y un
   documento, `📄 nombre`.
 - Si el `w_…` ya no está en la conversación, el mensaje se guarda igual, sin cita:

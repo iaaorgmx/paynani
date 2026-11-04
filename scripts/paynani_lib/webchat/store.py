@@ -273,6 +273,8 @@ def append(by: str, text: str, files: list[tuple[str, bytes]] | None = None, *,
     envelope = None
     if by == "owner":
         message["event_id"] = "wc:" + hexpart
+        if owner.get("name"):
+            message["owner_name"] = str(owner["name"])[:200]   # para citarlo después (#699, Iris)
         envelope = ev.webchat_event(
             message_id=msg_id, owner_name=owner.get("name", ""), owner_email=owner.get("email", ""),
             text=text, files=entries, sent_at=message["at"], local_time=time.strftime("%H:%M:%S"),
@@ -303,24 +305,12 @@ def excerpt_of(message: dict) -> str:
     return "📷" if first.get("kind") == "image" else f"📄 {first.get('name') or ''}".strip()[:100]
 
 
-def _owner_name(original: dict, owner: dict | None, state_dir: Path | None) -> str:
+def _owner_name(original: dict, owner: dict | None) -> str:
     """El nombre del dueño para la cita: el de su sesión si es él quien responde, o el que
-    quedó en el evento `webchat.received` de ese mensaje (cuando responde el agente)."""
+    quedó en su mensaje al escribirlo (`owner_name`, cuando responde el agente)."""
     if owner and owner.get("name"):
         return str(owner["name"])
-    event_id = original.get("event_id")
-    if not event_id:
-        return ""
-    with contextlib.suppress(OSError):
-        with open(root(state_dir).parent / "events.jsonl", encoding="utf-8") as fh:
-            for line in fh:
-                if event_id not in line:
-                    continue
-                with contextlib.suppress(ValueError):
-                    obj = json.loads(line)
-                    if obj.get("event_id") == event_id:
-                        return str((obj.get("sender") or {}).get("name") or "")
-    return ""
+    return str(original.get("owner_name") or "")
 
 
 def _agent_name() -> str:
@@ -332,7 +322,7 @@ def _agent_name() -> str:
 
 
 def _quote(original: dict, owner: dict | None, state_dir: Path | None = None) -> dict:
-    name = _agent_name() if original.get("by") == "agent" else _owner_name(original, owner, state_dir)
+    name = _agent_name() if original.get("by") == "agent" else _owner_name(original, owner)
     return {"ref": original["id"], "name": name, "excerpt": excerpt_of(original), "missing": False}
 
 
