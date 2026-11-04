@@ -7,6 +7,7 @@ El estado privado de cada bot (PRD #609 FR-3a, FR-4, FR-5; TELEGRAM.md §1).
         inbox/<ref>.json el mensaje recibido (texto, tipo, hilo) con su hash
         chats.json       hilo opaco t_… <-> chat privado; y el último mensaje por chat
         links.json       @usuario -> id fijado (FR-13), y a qué otros ids ya se avisó
+        reactions.json   {ref: {"ours", "theirs"}} la reacción del bot y la del contacto (PRD #685 F3)
 
 Todo es 0600 en carpetas 0700, se escribe completo o no se escribe (archivo temporal,
 fsync, os.replace) y el diario se agrega con fsync. Los ids de Telegram sólo viven aquí.
@@ -268,6 +269,35 @@ class BotStore:
             if rec.get("thread") == thread and rec.get("message_id") == int(message_id):
                 return rec
         return None
+
+
+    # --- reacciones (PRD #685 F3) ---
+    def reactions(self) -> dict[str, dict]:
+        """`{ref: {"ours": emoji, "theirs": emoji}}`, en la forma de la Bot API."""
+        data = read_json(self.root / "reactions.json", {}) or {}
+        return {k: v for k, v in data.items() if isinstance(v, dict)} if isinstance(data, dict) else {}
+
+    def set_reaction(self, ref: str, side: str, emoji: str) -> dict:
+        """Guarda la reacción de un lado (`ours` o `theirs`); "" la quita. Devuelve las del mensaje."""
+        if side not in ("ours", "theirs"):
+            raise ValueError("side es ours o theirs")
+        data = self.reactions()
+        current = dict(data.get(ref) or {})
+        if emoji:
+            current[side] = emoji
+        else:
+            current.pop(side, None)
+        if current:
+            data[ref] = current
+        else:
+            data.pop(ref, None)
+        write_json(self.root / "reactions.json", data)
+        return current
+
+    def chat_thread(self, chat_id: int) -> str | None:
+        """El hilo de un chat privado, sin crearlo."""
+        entry = self._chats().get("by_chat", {}).get(str(int(chat_id)))
+        return entry.get("thread") if entry else None
 
 
 def store_for_account(telegram_root: Path, account: str) -> "BotStore | None":
