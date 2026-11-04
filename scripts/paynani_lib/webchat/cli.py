@@ -65,23 +65,31 @@ def mark_replied(message: dict, *, state_dir: Path | None = None) -> list[str]:
     return done
 
 
-def _send(text: str, files: list[tuple[str, bytes]]) -> int:
+def _send(text: str, files: list[tuple[str, bytes]], reply_to: str | None = None) -> int:
     try:
-        message = store.append("agent", text, files)
+        message = store.append("agent", text, files, reply_to=reply_to)
     except store.Rejected as exc:
         _err(f"rechazado: {exc.code}" + (f" ({exc.detail})" if getattr(exc, "detail", "") else ""))
         return 2
     mark_replied(message)
-    print(f"{message['id']}\tsent")
+    quote = message.get("reply_to")
+    if quote and quote.get("missing"):
+        print(f"{message['id']}\tsent\treply dropped: {reply_to} is not in the conversation")
+    else:
+        print(f"{message['id']}\tsent" + (f"\treply_to {quote['ref']}" if quote else ""))
     return 0
 
 
 def run_send(args) -> int:
+    reply_to = getattr(args, "reply_to", None)
+    if reply_to is not None and not store._MSG_ID.match(reply_to):  # noqa: SLF001
+        _err("--reply-to es el id de un mensaje de la conversación (w_…, de webchat thread)")
+        return 2
     if args.stream:
         if args.text or args.file:
             _err("--stream lee el texto de stdin: sin texto ni --file")
             return 2
-        return _run_stream()
+        return _run_stream(reply_to)
     text = " ".join(args.text or [])
     if not text and not args.file and not sys.stdin.isatty():
         text = sys.stdin.read()
@@ -91,10 +99,10 @@ def run_send(args) -> int:
         if item is None:
             return 2
         files.append(item)
-    return _send(text, files)
+    return _send(text, files, reply_to)
 
 
-def _run_stream() -> int:
+def _run_stream(reply_to: str | None = None) -> int:
     """Lee stdin mientras llega y lo deja como borrador; al final, el mensaje."""
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
     text, shown, last = "", "", 0.0
@@ -119,7 +127,7 @@ def _run_stream() -> int:
         store.draft_clear()
         _err("--stream terminó sin texto")
         return 2
-    rc = _send(text, [])
+    rc = _send(text, [], reply_to)
     if rc:
         store.draft_clear()
     return rc
@@ -146,5 +154,9 @@ def run_thread(args) -> int:
         parts = [m.get("text") or ""]
         parts += [f"[{'foto' if f.get('kind') == 'image' else 'documento'}: {f.get('name')}]"
                   for f in m.get("files", [])]
-        print(f"{m.get('at')} {arrow} {' '.join(p for p in parts if p)}")
+        quote = m.get("reply_to")
+        if quote:
+            parts.insert(0, f"(respondiendo a «{quote.get('excerpt') or ''}»)" if not quote.get("missing")
+                         else "(se mandó sin cita)")
+        print(f"{m.get('at')} {m.get('id')} {arrow} {' '.join(p for p in parts if p)}")
     return 0
