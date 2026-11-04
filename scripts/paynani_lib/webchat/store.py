@@ -205,7 +205,7 @@ def write_private(path: Path, data: bytes) -> None:
 
 def append(by: str, text: str, files: list[tuple[str, bytes]] | None = None, *,
            owner: dict | None = None, rules: dict | None = None, origin: str = "web",
-           state_dir: Path | None = None) -> dict:
+           reply_to: str | None = None, state_dir: Path | None = None) -> dict:
     """
     Guarda un mensaje y lo devuelve. `files` es `[(nombre, bytes)]`.
 
@@ -213,6 +213,11 @@ def append(by: str, text: str, files: list[tuple[str, bytes]] | None = None, *,
     con su `observed`. `by="agent"` no escribe evento. `rules` es la nota de reglas del
     dueño (`rules.notice`), si tiene. `origin` es `web` o `app` (desde PaynaniApp, por la
     pasarela): sólo cambia el aviso al agente. Un error es `Rejected(code)`.
+
+    `reply_to` (PRD #685 F2) es el `w_…` del mensaje que se cita. El mensaje guarda una copia
+    de la cita (`ref`, `name`, `excerpt`), así que se ve igual aunque cambien los nombres. Si
+    el original ya no está, el mensaje se guarda igual, sin cita y con `missing: true` (FR-7).
+    Un `reply_to` sin forma de `w_…` es `Rejected("bad_reply")`.
     """
     if by not in ("owner", "agent"):
         raise ValueError(f"by debe ser owner o agent, no {by!r}")
@@ -231,8 +236,15 @@ def append(by: str, text: str, files: list[tuple[str, bytes]] | None = None, *,
         total += len(data)
     if total > MAX_MESSAGE:
         raise Rejected("too_big", "mensaje")
+    if reply_to is not None and not _MSG_ID.match(str(reply_to)):
+        raise Rejected("bad_reply", str(reply_to)[:40])
 
     r = _dirs(state_dir)
+    quote = None
+    if reply_to is not None:
+        original = next((m for m in _all(state_dir) if m.get("id") == reply_to), None)
+        quote = (_quote(original, owner, state_dir) if original is not None
+                 else {"ref": None, "name": "", "excerpt": "", "missing": True})
     hexpart = secrets.token_hex(16)
     msg_id = "w_" + hexpart
     stored: list[Path] = []
@@ -256,13 +268,16 @@ def append(by: str, text: str, files: list[tuple[str, bytes]] | None = None, *,
 
     message = {"id": msg_id, "dir": "in" if by == "owner" else "out", "by": by, "at": _now_z(),
                "text": text, "files": entries}
+    if quote is not None:
+        message["reply_to"] = quote
     envelope = None
     if by == "owner":
         message["event_id"] = "wc:" + hexpart
         envelope = ev.webchat_event(
             message_id=msg_id, owner_name=owner.get("name", ""), owner_email=owner.get("email", ""),
             text=text, files=entries, sent_at=message["at"], local_time=time.strftime("%H:%M:%S"),
-            observed_at=message["at"], rules=rules, origin=origin)
+            observed_at=message["at"], rules=rules, origin=origin,
+            reply_excerpt=(quote or {}).get("excerpt") or None)
     with _locked(r):
         _append_line(r / "messages.jsonl", message)
         if by == "agent":
@@ -273,6 +288,59 @@ def append(by: str, text: str, files: list[tuple[str, bytes]] | None = None, *,
         ev.append(state / "events.jsonl", envelope)
         ledger.observed(ledger.path_for(state / "events.jsonl"), envelope)
     return message
+
+
+def excerpt_of(message: dict) -> str:
+    """El extracto de una cita (contrato de FR-14): una línea, hasta 100 caracteres. Una foto
+    sin texto es «📷» y un documento, «📄 nombre»."""
+    text = " ".join(str(message.get("text") or "").split())
+    if text:
+        return text[:100]
+    files = message.get("files") or []
+    if not files:
+        return ""
+    first = files[0]
+    return "📷" if first.get("kind") == "image" else f"📄 {first.get('name') or ''}".strip()[:100]
+
+
+def _owner_name(original: dict, owner: dict | None, state_dir: Path | None) -> str:
+    """El nombre del dueño para la cita: el de su sesión si es él quien responde, o el que
+    quedó en el evento `webchat.received` de ese mensaje (cuando responde el agente)."""
+    if owner and owner.get("name"):
+        return str(owner["name"])
+    event_id = original.get("event_id")
+    if not event_id:
+        return ""
+    with contextlib.suppress(OSError):
+        with open(root(state_dir).parent / "events.jsonl", encoding="utf-8") as fh:
+            for line in fh:
+                if event_id not in line:
+                    continue
+                with contextlib.suppress(ValueError):
+                    obj = json.loads(line)
+                    if obj.get("event_id") == event_id:
+                        return str((obj.get("sender") or {}).get("name") or "")
+    return ""
+
+
+def _agent_name() -> str:
+    """AGENT_EMAIL_FROM_NAME, el nombre con el que firma el agente; o cadena vacía."""
+    with contextlib.suppress(Exception):
+        from .. import envfile  # noqa: PLC0415
+        return str(envfile.read_env().get("AGENT_EMAIL_FROM_NAME") or "")
+    return ""
+
+
+def _quote(original: dict, owner: dict | None, state_dir: Path | None = None) -> dict:
+    name = _agent_name() if original.get("by") == "agent" else _owner_name(original, owner, state_dir)
+    return {"ref": original["id"], "name": name, "excerpt": excerpt_of(original), "missing": False}
+
+
+def message(msg_id: str, *, state_dir: Path | None = None) -> dict | None:
+    """Un mensaje por su `w_…`, o None."""
+    if not _MSG_ID.match(str(msg_id or "")):
+        return None
+    return next((_public(m) for m in _all(state_dir) if m.get("id") == msg_id), None)
 
 
 def _append_line(path: Path, obj: dict) -> None:

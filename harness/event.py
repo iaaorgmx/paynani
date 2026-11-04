@@ -852,14 +852,15 @@ _WC_KIND_LABEL = {"image": "foto", "document": "documento"}
 
 
 def webchat_event(*, message_id, owner_name, owner_email, text, files, sent_at, local_time,
-                  observed_at=None, rules=None, origin="web"):
+                  observed_at=None, rules=None, origin="web", reply_excerpt=None):
     """
     Un mensaje que el dueño escribió en el Webchat de PaynaniWeb (WEBCHAT.md §5).
     `event_id` es `wc:` + los mismos 32 hex del mensaje (`w_…`). Lo escribe el dueño con
     su sesión, así que el aviso termina en `, roster]`: cada runtime lo trata como
     trabajo con las reglas que ya tiene. El texto completo y los adjuntos salen con
     `paynani event show --body`. `origin` es `web` (PaynaniWeb) o `app` (PaynaniApp, por
-    la pasarela, SMS_GATEWAY.md §13): sólo cambia lo que dice el aviso.
+    la pasarela, SMS_GATEWAY.md §13): sólo cambia lo que dice el aviso. `reply_excerpt` es
+    el extracto del mensaje que cita, si es una respuesta (PRD #685 FR-16).
     """
     hexpart = message_id.split("_", 1)[1]
     ref = "wc:" + hexpart
@@ -881,7 +882,8 @@ def webchat_event(*, message_id, owner_name, owner_email, text, files, sent_at, 
         kind = kinds.pop()
     note = f", {_rules_tag(rules)}" if rules else ""
     where = "PaynaniApp" if origin == "app" else "PaynaniWeb"
-    line = f"[webchat {local_time}{note}, roster] {who} ({where}): {excerpt}"
+    quoted = f" (respondiendo a «{safe_excerpt(reply_excerpt, 40)}»)" if reply_excerpt else ""
+    line = f"[webchat {local_time}{note}, roster] {who} ({where}){quoted}: {excerpt}"
     record = {
         "schema_version": SCHEMA_VERSION,
         "event_type": WEBCHAT_RECEIVED,
