@@ -9,9 +9,10 @@ La contraseña se pide dos veces sin eco, o se lee de stdin con
 from __future__ import annotations
 
 import getpass
+import os
 import sys
 
-from . import users
+from . import owner_clients, users
 
 
 def _read_password(args, prompt: str = "Password") -> str | None:
@@ -78,4 +79,44 @@ def run_user_show(args) -> int:
     shown = users.public(data)
     print(f"{shown.get('name', '')} <{shown.get('email', '')}>")
     print(f"created {shown.get('created_at', '?')}, password changed {shown.get('password_changed_at', '?')}")
+    return 0
+
+
+def run_pair(args) -> int:
+    """`paynani web pair` (PaynaniWebMT#2 FR-A1): la dirección y un código para un cliente web."""
+    if not users.exists(users.user_path()):
+        print("PaynaniWeb has no user yet; create it with `scripts/paynani web user add` first. "
+              "A web client is announced to the owner by mail.", file=sys.stderr)
+        return 1
+    base = (getattr(args, "url", None) or os.environ.get("PAYNANI_SMS_PUBLIC_URL", "")).strip().rstrip("/")
+    if not base:
+        print("No public address: pass --url https://<tunnel> or set PAYNANI_SMS_PUBLIC_URL in sms.env.",
+              file=sys.stderr)
+        return 2
+    code = owner_clients.new_code()
+    print(f"Gateway address: {base}")
+    print(f"Pairing code:    {code}  (one use, expires in {owner_clients.CODE_TTL_S // 60} minutes)")
+    print("Type both in PaynaniWebMT, «Connect paynani». Give the code only to the owner of this install.")
+    print("A new code replaces this one. If it expires, run this command again.")
+    return 0
+
+
+def run_clients(args) -> int:
+    """`paynani web clients` y `paynani web clients revoke <id>`."""
+    if getattr(args, "web_clients_command", None) == "revoke":
+        record = owner_clients.revoke(args.client_id)
+        if record is None:
+            print(f"No active web client {args.client_id}.", file=sys.stderr)
+            return 1
+        print(f"Web client {record['client_id']} ({record['name']}) revoked: its token no longer opens /api/owner.")
+        return 0
+    clients = owner_clients.list_clients()
+    if not clients:
+        print("No web clients have been connected.")
+        return 0
+    for record in clients:
+        state = "revoked " + record["revoked_at"] if record.get("revoked_at") else "active"
+        app = " ".join(part for part in (record.get("app_name"), record.get("app_version")) if part)
+        print(f"{record['client_id']}  {record['name']}  [{app or '-'}]  {state}  "
+              f"paired {record.get('paired_at')}  last used {record.get('last_used_at') or 'never'}")
     return 0

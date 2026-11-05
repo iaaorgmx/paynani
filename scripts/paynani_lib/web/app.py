@@ -36,7 +36,8 @@ from .. import web_uploads
 from ..telegram import uploads as tg_uploads
 from ..brand import brand_svg
 from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (about_pages, channel_media, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from ..whatsapp import media as wa_media
+from . import (apps_pages, about_pages, channel_media, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -743,6 +744,56 @@ def make_handler(ctx: Context):
             self._send(200, "application/json; charset=UTF-8", json.dumps(body, ensure_ascii=False).encode("utf-8"),
                        [("X-Request-Id", request_id), ("Cache-Control", "no-store")])
 
+        def _owner_pair(self, raw: bytes):
+            """`POST /api/owner/pair` (PaynaniWebMT#2 FR-A2): gasta el código y crea un cliente web."""
+            request_id = secrets.token_hex(8)
+            address = auth.client_ip(self.headers, self.client_address[0])
+            if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+                self._api_reply(415, request_id, code="invalid_content_type", message="Use JSON.")
+                return
+            try:
+                data = json.loads(raw)
+                if not isinstance(data, dict) or not isinstance(data.get("code"), str):
+                    raise ValueError("missing code")
+                # El contrato del PRD (FR-A2) es "app": {"name", "version"}; también se aceptan
+                # app_name y app_version de primer nivel.
+                app_info = data.get("app") if isinstance(data.get("app"), dict) else {}
+                app_name = app_info.get("name") or data.get("app_name") or ""
+                app_version = app_info.get("version") or data.get("app_version") or ""
+            except (UnicodeError, ValueError):
+                self._api_reply(400, request_id, code="invalid_body", message="Send {\"code\": ...}.")
+                return
+            try:
+                outcome, created = owner_clients.pair(
+                    data["code"], str(data.get("name") or ""), app_name=str(app_name),
+                    app_version=str(app_version), ip=address,
+                    path=owner_clients.clients_path(self.CTX.user_path()))
+            except (OSError, ValueError):
+                self._api_audit("internal_error", request_id, "", address)
+                self._api_reply(500, request_id, code="internal_error", message="Client store unavailable.")
+                return
+            if outcome == "blocked":
+                self._api_audit("owner_pair_blocked", request_id, "", address)
+                self._api_reply(429, request_id, code="too_many_attempts",
+                                message="Too many wrong codes. Ask the owner for a new one.")
+                return
+            if outcome != "ok":
+                self._api_audit("owner_pair_failed", request_id, "", address)
+                self._api_reply(410, request_id, code="code_expired",
+                                message="The code expired, was already used, or is wrong.")
+                return
+            token, record = created
+            self._api_audit("owner_paired", request_id, record["prefix"], address)
+            self.CTX.notifier.owner(
+                self.CTX.user(), "Paynani: nueva app conectada",
+                f"Se conectó «{record['name']}» ({record['app_name'] or 'app'} {record['app_version']}) "
+                f"a tu paynani desde {address}, con un código de emparejamiento. Ahora puede administrar "
+                f"esta instalación. Si no fuiste tú, revócala en PaynaniWeb, «Apps conectadas», o con "
+                f"`scripts/paynani web clients revoke {record['client_id']}`.")
+            body = {"result": "success", "client_id": record["client_id"], "token": token, "request_id": request_id}
+            self._send(201, "application/json; charset=UTF-8", json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                       [("X-Request-Id", request_id), ("Cache-Control", "no-store")])
+
         def _api_error(self, exc, request_id: str):
             result = {"result": "error", "code": exc.code, "message": exc.message, **exc.extra,
                       "request_id": request_id}
@@ -934,6 +985,9 @@ def make_handler(ctx: Context):
             if self.route in ("/api-tokens", "/api-tokens/new", "/api-tokens/detail"):
                 self._tokens_get()
                 return
+            if self.route == "/apps":
+                self._apps_page(200)
+                return
             self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
 
         def _tokens_get(self):
@@ -1019,6 +1073,40 @@ def make_handler(ctx: Context):
                 self._page(400, title=t("web.tokens.title"), body=body, active="api_tokens", back="/api-tokens")
                 return
             self._redirect("/api-tokens/detail?id=" + digest + "&ok=1")
+
+        def _apps_page(self, code: int, *, error: str = "", notice: str = ""):
+            """«Apps conectadas» (PaynaniWebMT#2 FR-A3)."""
+            try:
+                records = owner_clients.list_clients(path=owner_clients.clients_path(self.CTX.user_path()))
+            except (OSError, ValueError):
+                records, error = [], error or i18n.th("web.tokens.invalid")
+            self._page(code, title=i18n.t("web.apps.title"),
+                       body=apps_pages.list_body(records, self.session["csrf"], error=error, notice=notice), active="apps")
+
+        def _apps_post(self, post: dict):
+            error = self._check_current(post.get("password", "")[:users.MAX_PASSWORD])
+            if error:
+                self._apps_page(400, error=error)
+                return
+            path = owner_clients.clients_path(self.CTX.user_path())
+            if self.route == "/apps/code":
+                base = os.environ.get("PAYNANI_SMS_PUBLIC_URL", "").strip().rstrip("/")
+                if not base:
+                    self._apps_page(400, error=i18n.t("web.apps.no_url"))
+                    return
+                code = owner_clients.new_code(path=path)
+                self._page(200, title=i18n.t("web.apps.title"), body=apps_pages.code_body(base, code),
+                           active="apps")
+                return
+            record = owner_clients.revoke(post.get("id", "")[:20], path=path)
+            if record is None:
+                self._apps_page(404, error=i18n.t("web.apps.missing"))
+                return
+            self._api_audit("owner_revoked", secrets.token_hex(8), record.get("prefix", ""), self.ip)
+            self.CTX.notifier.owner(
+                self.user, "Paynani: app revocada",
+                f"Se revocó «{record['name']}» ({record['client_id']}) desde PaynaniWeb. Su token ya no abre la API del dueño.")
+            self._apps_page(200, notice=i18n.t("web.apps.revoked_ok"))
 
         def _email(self):
             """FR-13 y FR-14: /email/<cuenta> es la lista de recibidos y enviados; /email/<cuenta>/ver?e=<evento>
@@ -2797,7 +2885,7 @@ def make_handler(ctx: Context):
                                                                              "/whatsapp/messages/enviar")
                      else MAX_BODY_BYTES)
             if length < 0 or length > limit:
-                if urlparse(self.path).path == "/api/agent":
+                if urlparse(self.path).path in ("/api/agent", "/api/owner", "/api/owner/pair"):
                     self._api_reply(413, secrets.token_hex(8), code="body_too_large",
                                     message="Request body is too large.")
                 else:
@@ -2807,6 +2895,9 @@ def make_handler(ctx: Context):
             self._begin()
             if self.route == "/api/agent":
                 self._api_post(raw)
+                return
+            if self.route == "/api/owner/pair":
+                self._owner_pair(raw)
                 return
             if self.user is None:
                 self._html(200, setup_page(self.lang))
@@ -2850,6 +2941,9 @@ def make_handler(ctx: Context):
                 return
             if self.route in ("/api-tokens/new", "/api-tokens/revoke", "/api-tokens/agent-replies"):
                 self._tokens_post(post)
+                return
+            if self.route in ("/apps/code", "/apps/revoke"):
+                self._apps_post(post)
                 return
             if self.route == "/messages/enviar":
                 self._sms_send(post)
