@@ -38,7 +38,7 @@ from ..telegram import uploads as tg_uploads
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
 from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (about_pages, channel_react, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -1536,35 +1536,20 @@ def make_handler(ctx: Context):
             def reply(code: int, obj: dict):
                 self._send(code, "application/json; charset=UTF-8", json.dumps(obj, ensure_ascii=False).encode("utf-8"))
 
+            # Las reglas viven en web/channel_react.py, que comparte con la API del dueño
+            # (PaynaniWebMT PRD #2, FR-A6).
             telegram = self.route.startswith("/telegram/")
+            if telegram:
+                source = self.CTX.telegram() if self.CTX.telegram_configured() else None
+                target = self.query.get("t", [""])[0]
+            else:
+                source = self.CTX.whatsapp() if self.CTX.whatsapp_configured() else None
+                target = self.query.get("n", [""])[0][:40]
             try:
-                if telegram:
-                    tid = self.query.get("t", [""])[0]
-                    if not self.CTX.telegram_configured() or not TG_THREAD.match(tid):
-                        reply(404, {"ok": False})
-                        return
-                    source = self.CTX.telegram()
-                    if msgmenu.reactions_allowed(source.status().get("reactions")) is None:
-                        reply(404, {"ok": False})
-                        return
-                    data = source.request("telegram.thread", thread=tid, limit=telegram_pages.THREAD_PAGE)
-                    key = "ref"
-                else:
-                    number = self.query.get("n", [""])[0][:40]
-                    if not self.CTX.whatsapp_configured() or not number:
-                        reply(404, {"ok": False})
-                        return
-                    source = self.CTX.whatsapp()
-                    if msgmenu.reactions_allowed(source.status().get("reactions")) is None:
-                        reply(404, {"ok": False})
-                        return
-                    data = source.request("whatsapp.thread", number=number, limit=whatsapp_pages.THREAD_PAGE)
-                    key = "id"
-            except (telegram_source.Failed, whatsapp_source.Failed):
+                items = channel_react.thread_reactions("telegram" if telegram else "whatsapp", source, target)
+            except channel_react.ReactError:
                 reply(404, {"ok": False})
                 return
-            items = {str(m.get(key)): m.get("reactions") or [] for m in data.get("messages") or []
-                     if m.get(key) and not m.get("hidden")}
             reply(200, {"ok": True, "items": items})
 
         def _react_post(self, post: dict):
@@ -1579,37 +1564,30 @@ def make_handler(ctx: Context):
             ref = post.get("ref", "").strip()[:130]
             emoji = post.get("emoji", "").strip()[:16]
             failed = i18n.t("web.msgmenu.react_failed")
-            if not msgmenu.valid_emoji(emoji):
-                reply(400, {"ok": False, "error": failed})
-                return
+            # Las reglas viven en web/channel_react.py, que comparte con la API del dueño
+            # (PaynaniWebMT PRD #2, FR-A6).
+            if self.route == "/webchat/reaccionar":
+                channel, source = "webchat", self.CTX.webchat
+            elif self.route.startswith("/telegram/"):
+                channel, source = "telegram", self.CTX.telegram() if self.CTX.telegram_configured() else None
+            else:
+                channel, source = "whatsapp", self.CTX.whatsapp()
             try:
-                if self.route == "/webchat/reaccionar":
-                    store = self.CTX.webchat
-                    if not webchat_pages.reacts(store) or not WC_ID.match(ref):
-                        reply(404, {"ok": False, "error": failed})
-                        return
-                    data = store.react(ref, emoji, by="owner") or {}
+                reactions = channel_react.react(channel, source, ref, emoji)
+            except channel_react.ReactError as exc:
+                if exc.kind == "invalid":
+                    reply(400, {"ok": False, "error": failed})
+                elif exc.kind == "not_allowed":
+                    reply(404, {"ok": False, "error": failed})
+                elif exc.kind == "service":
+                    # #707: un mensaje sin id en el canal (de antes de #700, o que no llegó a salir)
+                    # no se puede reaccionar; el aviso lo dice en lugar de invitar a intentar otra vez.
+                    text = i18n.t("web.msgmenu.react_old") if exc.code == "not_found" else failed
+                    reply(429 if exc.code == "rate_limited" else 400, {"ok": False, "error": text, "code": exc.code})
                 else:
-                    telegram = self.route.startswith("/telegram/")
-                    if telegram and not self.CTX.telegram_configured():
-                        reply(404, {"ok": False, "error": failed})
-                        return
-                    source = self.CTX.telegram() if telegram else self.CTX.whatsapp()
-                    good = TG_ANY_REF.match(ref) if telegram else (WA_MESSAGE_ID.match(ref) or WA_SENT_ID.match(ref))
-                    if not good or msgmenu.reactions_allowed(source.status().get("reactions")) is None:
-                        reply(404, {"ok": False, "error": failed})
-                        return
-                    data = source.request("telegram.react" if telegram else "whatsapp.react", ref=ref, emoji=emoji)
-            except (telegram_source.Failed, whatsapp_source.Failed) as exc:
-                # #707: un mensaje sin id en el canal (de antes de #700, o que no llegó a salir) no
-                # se puede reaccionar; el aviso lo dice en lugar de invitar a intentar otra vez.
-                text = i18n.t("web.msgmenu.react_old") if exc.code == "not_found" else failed
-                reply(429 if exc.code == "rate_limited" else 400, {"ok": False, "error": text, "code": exc.code})
+                    reply(400, {"ok": False, "error": failed, "code": exc.code})
                 return
-            except Exception as exc:  # noqa: BLE001 -- el Rejected del almacén de Webchat
-                reply(400, {"ok": False, "error": failed, "code": webchat_source.rejected_code(exc) or "failed"})
-                return
-            reply(200, {"ok": True, "reactions": [r for r in data.get("reactions") or [] if isinstance(r, dict)]})
+            reply(200, {"ok": True, "reactions": reactions})
 
         # ---- Nuevo correo (#590 cambio 2) ----------------------------------------
         def _compose(self, match: dict, *, values: dict | None = None, error: str = "", code: int = 200):

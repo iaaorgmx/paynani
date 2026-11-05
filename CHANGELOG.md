@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **Reacciones del dueño en un solo lugar** (paynani#722, PaynaniWebMT PRD #2 FR-A6). Las reglas para poner o quitar una reacción en WhatsApp, Telegram y Webchat, y para leer las de un hilo, salen de las páginas de PaynaniWeb a `web/channel_react.py`, para que la API del dueño use las mismas. PaynaniWeb se ve y se comporta igual.
+
 ## 0.22.0 (2026-11-04)
 
 ### Si actualizas desde 0.21.0
