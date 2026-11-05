@@ -13,7 +13,7 @@ git describe --tags          # tiene que decir v0.23.0
 python3 scripts/upgrade_plan.py --from v0.22.0     # y haz lo que imprima
 ```
 
-El plan sólo reinicia PaynaniWeb (`paynani-web*.service`). El listener, el despachador, la pasarela SMS, WhatsApp y Telegram siguen corriendo. No hay servicios nuevos, pasos de instalación ni dependencias nuevas del puente de WhatsApp (`package.json` no cambió). `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien.
+El plan reinicia el listener (con las cuentas adicionales), el despachador, la pasarela SMS y PaynaniWeb. Salvo PaynaniWeb, se reinician sólo porque cambió `VERSION`; su código no cambió. WhatsApp y Telegram no se reinician. No hay servicios nuevos, pasos de instalación ni dependencias nuevas del puente de WhatsApp (`package.json` no cambió). `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien.
 
 Esta versión trae la API del dueño que usa PaynaniWebMT (PRD iaaorgmx/PaynaniWebMT#2). Quien no use PaynaniWebMT no tiene que hacer nada más: PaynaniWeb se ve y se comporta igual. **Para probarlo:** en PaynaniWeb, abre «Apps conectadas», saca un código y emparéjalo desde PaynaniWebMT.
 
