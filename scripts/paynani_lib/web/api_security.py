@@ -17,7 +17,8 @@ PRUNE_INTERVAL_S = 86400
 KINDS = frozenset({"call", "invalid_token", "token_revoked", "token_expired",
                    "too_many_attempts", "rate_limited", "quota_exceeded", "opted_out",
                    "forbidden", "internal_error", "daily_quota_alert", "opt_out", "opt_in",
-                   "owner_paired", "owner_pair_failed", "owner_pair_blocked", "owner_revoked"})
+                   "owner_paired", "owner_pair_failed", "owner_pair_blocked", "owner_revoked",
+                   "owner_sensitive"})
 PREFIX = re.compile(r"p[nw]_[A-Za-z0-9_-]{8}\Z")
 REQUEST_ID = re.compile(r"[a-f0-9]{16}\Z")
 

@@ -181,6 +181,7 @@ encabezado `X-Request-Id`. Si un agente te reporta un problema, pídele el
 | `token_revoked` | 401 | Revocaste el token |
 | `token_expired` | 401 | El token venció |
 | `too_many_attempts` | 429 | Demasiados fallos de autenticación desde esa dirección |
+| `body_too_large` | 413 | El cuerpo pasa de 64 KB |
 | `code_expired` | 410 | Sólo en `POST /api/owner/pair` (apps del dueño, #719): el código de emparejamiento venció, ya se usó o no es el vigente. Diez equivocados dan `too_many_attempts` hasta generar otro |
 | `rate_limited` | 429 | Más de 60 llamadas por minuto |
 | `quota_exceeded` | 429 | Pasó el tope de SMS del token |
