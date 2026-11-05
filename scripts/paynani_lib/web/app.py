@@ -756,13 +756,18 @@ def make_handler(ctx: Context):
                 data = json.loads(raw)
                 if not isinstance(data, dict) or not isinstance(data.get("code"), str):
                     raise ValueError("missing code")
+                # El contrato del PRD (FR-A2) es "app": {"name", "version"}; también se aceptan
+                # app_name y app_version de primer nivel.
+                app_info = data.get("app") if isinstance(data.get("app"), dict) else {}
+                app_name = app_info.get("name") or data.get("app_name") or ""
+                app_version = app_info.get("version") or data.get("app_version") or ""
             except (UnicodeError, ValueError):
                 self._api_reply(400, request_id, code="invalid_body", message="Send {\"code\": ...}.")
                 return
             try:
                 outcome, created = owner_clients.pair(
-                    data["code"], str(data.get("name") or ""), app_name=str(data.get("app_name") or ""),
-                    app_version=str(data.get("app_version") or ""), ip=address,
+                    data["code"], str(data.get("name") or ""), app_name=str(app_name),
+                    app_version=str(app_version), ip=address,
                     path=owner_clients.clients_path(self.CTX.user_path()))
             except (OSError, ValueError):
                 self._api_audit("internal_error", request_id, "", address)

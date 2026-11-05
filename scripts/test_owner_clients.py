@@ -125,7 +125,7 @@ def req(method, path, *, form=None, json_body=None, raw=None, ctype=None, cookie
 
 code = owner_clients.new_code(path=store)
 status, hdrs, body = req("POST", "/api/owner/pair",
-                         json_body={"code": code, "name": "MT de prueba", "app_name": "PaynaniWebMT", "app_version": "0.1.0"})
+                         json_body={"code": code, "name": "MT de prueba", "app": {"name": "PaynaniWebMT", "version": "0.1.0"}})
 data = json.loads(body)
 check("POST /api/owner/pair: 201 con token y client_id", (201, True, True),
       (status, data.get("token", "").startswith("pw_"), data.get("client_id", "").startswith("w_")))
@@ -133,9 +133,16 @@ check("request_id en cuerpo y encabezado", data.get("request_id"), hdrs.get("x-r
 check("el dueño recibe un correo", True, any("nueva app conectada" in str(a) for a in sent))
 check("el correo dice la app y su versión", True, any("PaynaniWebMT 0.1.0" in str(a) for a in sent))
 saved = next(r for r in json.loads(store.read_text()) if r["client_id"] == data["client_id"])
-check("app_name y app_version de primer nivel llegan al registro", ("MT de prueba", "PaynaniWebMT", "0.1.0"),
+check("app anidada (contrato del PRD, FR-A2) llega al registro", ("MT de prueba", "PaynaniWebMT", "0.1.0"),
       (saved["name"], saved["app_name"], saved["app_version"]))
 check("el correo no lleva el token", False, any(data["token"] in str(a) for a in sent))
+flat = owner_clients.new_code(path=store)
+status, _, body = req("POST", "/api/owner/pair",
+                      json_body={"code": flat, "name": "Plano", "app_name": "OtraApp", "app_version": "2.0"})
+saved = next(r for r in json.loads(store.read_text()) if r["client_id"] == json.loads(body).get("client_id"))
+check("app_name y app_version de primer nivel también", (201, "OtraApp", "2.0"),
+      (status, saved["app_name"], saved["app_version"]))
+code = flat
 status, _, body = req("POST", "/api/owner/pair", json_body={"code": code, "name": "otra vez"})
 check("el mismo código otra vez: 410 code_expired", (410, "code_expired"), (status, json.loads(body).get("code")))
 check("sin JSON: 415", 415, req("POST", "/api/owner/pair", raw="code=x", ctype="application/x-www-form-urlencoded")[0])

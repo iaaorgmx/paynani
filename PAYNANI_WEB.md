@@ -568,8 +568,9 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   correo, ni el `.env`. El formulario de agregar cuenta no devuelve la contraseña
   del correo cuando hay un error.
 - **Los documentos recibidos** por WhatsApp y Telegram (#676) se bajan siempre como archivo: `attachment` con el nombre limpio (sin `/`, `\\`, comillas ni saltos de línea, y con `filename*` en UTF-8), `application/octet-stream`, `nosniff`, `no-store` y `CSP sandbox`. Así un `.html` o un `.svg` que alguien mande no corre en el origen de PaynaniWeb. El servicio los da en cada pedido sólo si el mensaje se ve en el hilo, y nunca más de 20 MB.
-- **Emparejar una app** (`POST /api/owner/pair`, JSON con `code`, `name`,
-  `app_name` y `app_version`) responde `201` con `client_id` y un token `pw_…`.
+- **Emparejar una app** (`POST /api/owner/pair`, JSON
+  `{"code", "name", "app": {"name", "version"}}`, como en el PRD; también acepta
+  `app_name` y `app_version` de primer nivel) responde `201` con `client_id` y un token `pw_…`.
   Un código vencido, usado o equivocado da `410 code_expired`; diez equivocados en
   10 minutos bloquean el emparejamiento (`429 too_many_attempts`) hasta generar un
   código nuevo. Cada intento queda en `api_security.jsonl` (`owner_paired`,
