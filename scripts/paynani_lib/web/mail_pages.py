@@ -12,7 +12,7 @@ from urllib.parse import quote as urlquote
 
 from .. import i18n
 from . import quote, shell, when
-from .shell import e
+from .shell import e, ROW_CHEVRON
 
 
 def _state(state: str) -> str:
@@ -98,7 +98,7 @@ def list_body(account_id: str, rows: list[dict], total: int, offset: int, next_o
   <span class="asunto">{e(subject)}</span>
   <span class="cuando">{list_time(r['at'])}</span>
   <span class="estado-celda">{_mark(r)}</span>
-  <span class="flecha" aria-hidden="true">›</span>
+  {ROW_CHEVRON}
 </a></li>""")
     out.append("</ul>")
     if next_offset is not None:

@@ -21,7 +21,7 @@ from urllib.parse import quote
 from .. import i18n
 from ..sms import qr
 from . import downloads, mail_pages, msgmenu
-from .shell import e, icon
+from .shell import e, icon, ROW_CHEVRON
 from .whatsapp_source import MAX_TEXT
 
 LINKED_STATES = ("connected", "connecting", "disconnected")
@@ -195,7 +195,7 @@ def list_body(threads: list[dict], next_before: str | None) -> str:
   <span class="asunto">{_preview(row)}</span>
   <span class="cuando">{mail_pages.list_time(row.get("last_at") or "")}</span>
   <span class="estado-celda"></span>
-  <span class="flecha" aria-hidden="true">›</span>
+  {ROW_CHEVRON}
 </a></li>""")
     out.append("</ul>")
     if next_before:

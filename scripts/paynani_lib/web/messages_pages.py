@@ -19,7 +19,7 @@ from urllib.parse import quote
 
 from .. import i18n
 from . import mail_pages, msgmenu
-from .shell import e
+from .shell import e, ROW_CHEVRON
 
 PAGE = 50                # conversaciones por página de la lista
 THREAD_PAGE = 20         # mensajes por página de un hilo (#680)
@@ -141,7 +141,7 @@ def list_body(convs: list[dict], names: dict, offset: int, next_offset: int | No
   <span class="asunto">{e(_preview(c['last']))}</span>
   <span class="cuando">{mail_pages.list_time(c['last']['local'])}</span>
   <span class="estado-celda"><span class="estado">{th('web.sms.n_items', n=c['count'])}</span>{missed}</span>
-  <span class="flecha" aria-hidden="true">›</span>
+  {ROW_CHEVRON}
 </a></li>""")
     out.append("</ul>")
     if next_offset is not None:

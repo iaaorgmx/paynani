@@ -107,6 +107,12 @@ def icon(name: str, extra: str = "") -> str:
             f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{ICONS[name]}</svg>')
 
 
+# El chevron de cada fila de una lista (#717): como el de Clients de ServiceButtonCustomerManager
+# (fa-chevron-right a 14pt): más grande y de trazo grueso que el «›» que había. Lo pinta web.css.
+ROW_CHEVRON = ('<span class="flecha" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+               'stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span>')
+
+
 def initials(name: str) -> str:
     """Las iniciales del avatar: sólo letras y números de cada palabra."""
     parts = ["".join(c for c in p if c.isalnum()) for p in (name or "").split()]

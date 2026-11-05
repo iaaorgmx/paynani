@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el chevron de las listas (#717).** En Email, Text Messages, Telegram y WhatsApp, el «›» de cada fila es ahora un chevron dibujado, más grande, oscuro y de trazo grueso, como el de Clients de ServiceButtonCustomerManager, y también se ve en el teléfono. API Tokens también lo tiene, a la derecha de cada fila, y abre el detalle del token. Lo pidió Julian.
+
 - **PaynaniWeb: el menú lateral sin títulos de grupo (#715).** Se quitan «Management» y «Tools». Todas las opciones quedan debajo de la sección «AI Agent», y al final van About y, justo debajo, Sign out. Lo pidió Julian.
 
 ## 0.22.0 (2026-11-04)

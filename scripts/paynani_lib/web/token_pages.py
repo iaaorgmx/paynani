@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .. import i18n
 from . import api_tokens
+from .shell import ROW_CHEVRON
 
 # Un permiso del Catch-All por canal (PRD #576 FR-13, FR-13b); se marcan a mano. El
 # viejo catchall.write ya no se ofrece: la API lo lee como catchall.sms.write.
@@ -80,13 +81,15 @@ def list_body(records: list[dict], query: str, selected: str) -> str:
         f'<tr><td><a href="/api-tokens/detail?id={e(r["sha256"])}">{e(r.get("name", ""))}</a><br><code>{e(r.get("prefix", ""))}…</code></td>'
         f'<td>{e(", ".join(r.get("permissions", [])))}</td><td>{e(r.get("created_at", ""))}</td>'
         f'<td>{e(r.get("expires_at") or t("web.tokens.never"))}</td>'
-        f'<td>{e(r.get("last_used_at") or "—")}</td><td>{t("web.tokens.status." + status(r))}</td></tr>'
+        f'<td>{e(r.get("last_used_at") or "—")}</td><td>{t("web.tokens.status." + status(r))}</td>'
+        # El chevron de las listas (#717): también abre el detalle.
+        f'<td class="token-ir"><a href="/api-tokens/detail?id={e(r["sha256"])}" aria-label="{e(r.get("name", ""))}">{ROW_CHEVRON}</a></td></tr>'
         for r in shown)
     options = "".join(f'<option value="{e(value)}"{" selected" if selected == value else ""}>{e(label)}</option>'
                       for value, label in (("", t("web.tokens.all")), ("active", t("web.tokens.status.active")),
                                            ("expired", t("web.tokens.status.expired")),
                                            ("revoked", t("web.tokens.status.revoked"))))
-    empty_row = f'<tr><td colspan="6">{t("web.tokens.empty")}</td></tr>'
+    empty_row = f'<tr><td colspan="7">{t("web.tokens.empty")}</td></tr>'
     return (f'<div class="acciones"><a class="primario" href="/api-tokens/new">{t("web.tokens.create")}</a></div>'
             f'<form method="get" action="/api-tokens" class="token-filter">'
             f'<label>{t("web.tokens.search")} <input name="q" value="{e(query)}"></label>'
@@ -95,7 +98,7 @@ def list_body(records: list[dict], query: str, selected: str) -> str:
             f'<div class="token-table-wrap"><table class="token-table"><thead><tr>'
             f'<th>{t("web.tokens.name")}</th><th>{t("web.tokens.permissions")}</th>'
             f'<th>{t("web.tokens.created")}</th><th>{t("web.tokens.expires")}</th>'
-            f'<th>{t("web.tokens.last_used")}</th><th>{t("web.tokens.status")}</th>'
+            f'<th>{t("web.tokens.last_used")}</th><th>{t("web.tokens.status")}</th><th aria-hidden="true"></th>'
             f'</tr></thead><tbody>{rows or empty_row}</tbody></table></div>')
 
 
