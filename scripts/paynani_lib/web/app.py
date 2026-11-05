@@ -35,7 +35,7 @@ from .. import guard, i18n
 from ..brand import brand_svg
 from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from ..whatsapp import media as wa_media
-from . import (apps_pages, owner_api, channel_link, channel_media, channel_react, channel_send, about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (apps_pages, owner_api, channel_link, channel_media, channel_react, channel_send, about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, owner_notice, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -782,12 +782,8 @@ def make_handler(ctx: Context):
                 return
             token, record = created
             self._api_audit("owner_paired", request_id, record["prefix"], address)
-            self.CTX.notifier.owner(
-                self.CTX.user(), "Paynani: nueva app conectada",
-                f"Se conectó «{record['name']}» ({record['app_name'] or 'app'} {record['app_version']}) "
-                f"a tu paynani desde {address}, con un código de emparejamiento. Ahora puede administrar "
-                f"esta instalación. Si no fuiste tú, revócala en PaynaniWeb, «Apps conectadas», o con "
-                f"`scripts/paynani web clients revoke {record['client_id']}`.")
+            notice = owner_notice.app_connected(record, address)
+            self.CTX.notifier.owner(self.CTX.user(), "Paynani: nueva app conectada", notice.text(), notice.html())
             body = {"result": "success", "client_id": record["client_id"], "token": token, "request_id": request_id}
             self._send(201, "application/json; charset=UTF-8", json.dumps(body, ensure_ascii=False).encode("utf-8"),
                        [("X-Request-Id", request_id), ("Cache-Control", "no-store")])
@@ -1184,9 +1180,8 @@ def make_handler(ctx: Context):
                 self._apps_page(404, error=i18n.t("web.apps.missing"))
                 return
             self._api_audit("owner_revoked", secrets.token_hex(8), record.get("prefix", ""), self.ip)
-            self.CTX.notifier.owner(
-                self.user, "Paynani: app revocada",
-                f"Se revocó «{record['name']}» ({record['client_id']}) desde PaynaniWeb. Su token ya no abre la API del dueño.")
+            notice = owner_notice.app_revoked(record, self.ip)
+            self.CTX.notifier.owner(self.user, "Paynani: app revocada", notice.text(), notice.html())
             self._apps_page(200, notice=i18n.t("web.apps.revoked_ok"))
 
         def _email(self):

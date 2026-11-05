@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **«Apps conectadas»: los correos al dueño, con formato.** Los avisos «Paynani: nueva app conectada», «app desconectada» y «app revocada» salían como un solo párrafo de texto plano. Ahora empiezan por la conclusión, traen los datos en renglones (app y versión, nombre, dirección, cuándo en la hora del host, cómo e id) y terminan con qué hacer si no fuiste tú. Salen en texto plano y en HTML adaptable al teléfono (`send.sh --html`), sin imágenes ni nada de fuera; los asuntos no cambian. El aviso de desconexión ahora dice también la dirección. El formato vive en `web/owner_notice.py`; `Notifier.owner()` y `roster_api.send_sh_notifier()` aceptan la parte HTML como argumento opcional, y los demás avisos siguen saliendo igual. Lo pidió Julian (Telegram, 2026-11-05).
+
 - **API del dueño: el id numérico de Telegram en el roster** (PaynaniWebMT#2). Una app del dueño emparejada en «Apps conectadas» (PaynaniWebMT) ve y escribe el id numérico de Telegram de un contacto, como PaynaniWeb: `ListRoster` de `/api/owner` devuelve `telegram`, la columna tal cual, y `SaveRosterContact` acepta un `@usuario` o un id. Lo decidió Julian (Iris[Q54] = A). PaynaniApp y `/api/agent` no cambian: siguen sin ver el id y sólo escriben un `@usuario`. En el registro de cambios del roster y en `updated_by` de las reglas, lo que hace una app del dueño queda como `owner:<client_id>:<dirección>` en lugar de `api::<dirección>`, y el correo que avisa de cada cambio dice «desde PaynaniWebMT», con la app y cómo desconectarla.
 
 ## 0.23.0 (2026-11-05)

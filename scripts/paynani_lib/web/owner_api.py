@@ -36,7 +36,7 @@ import datetime as dt
 from dataclasses import dataclass
 
 from .. import i18n
-from . import api_actions, owner_changes, owner_clients
+from . import api_actions, owner_changes, owner_clients, owner_notice
 from .api_actions import ApiError
 
 RATE_PER_MINUTE = 120        # el doble que un token de agente, por el polling (FR-A5)
@@ -136,10 +136,8 @@ def disconnect(call: OwnerCall) -> dict:
                                   path=owner_clients.clients_path(call.ctx.user_path()))
     if record is None:
         raise ApiError(401, "token_revoked", "This client was already revoked.")
-    call.ctx.notifier.owner(
-        call.ctx.user(), "Paynani: app desconectada",
-        f"«{record['name']}» ({record['client_id']}) se desconectó de tu paynani {call.origin()}. "
-        "Su token ya no abre la API del dueño.")
+    notice = owner_notice.app_disconnected(record, call.ip)
+    call.ctx.notifier.owner(call.ctx.user(), "Paynani: app desconectada", notice.text(), notice.html())
     return {"client_id": record["client_id"], "revoked_at": record["revoked_at"]}
 
 
