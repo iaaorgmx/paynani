@@ -131,6 +131,10 @@ check("POST /api/owner/pair: 201 con token y client_id", (201, True, True),
       (status, data.get("token", "").startswith("pw_"), data.get("client_id", "").startswith("w_")))
 check("request_id en cuerpo y encabezado", data.get("request_id"), hdrs.get("x-request-id"))
 check("el dueño recibe un correo", True, any("nueva app conectada" in str(a) for a in sent))
+check("el correo dice la app y su versión", True, any("PaynaniWebMT 0.1.0" in str(a) for a in sent))
+saved = next(r for r in json.loads(store.read_text()) if r["client_id"] == data["client_id"])
+check("app_name y app_version de primer nivel llegan al registro", ("MT de prueba", "PaynaniWebMT", "0.1.0"),
+      (saved["name"], saved["app_name"], saved["app_version"]))
 check("el correo no lleva el token", False, any(data["token"] in str(a) for a in sent))
 status, _, body = req("POST", "/api/owner/pair", json_body={"code": code, "name": "otra vez"})
 check("el mismo código otra vez: 410 code_expired", (410, "code_expired"), (status, json.loads(body).get("code")))
