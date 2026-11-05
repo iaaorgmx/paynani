@@ -38,7 +38,7 @@ from ..telegram import uploads as tg_uploads
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
 from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (apps_pages, about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (apps_pages, owner_api, about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -793,6 +793,97 @@ def make_handler(ctx: Context):
                 f"`scripts/paynani web clients revoke {record['client_id']}`.")
             body = {"result": "success", "client_id": record["client_id"], "token": token, "request_id": request_id}
             self._send(201, "application/json; charset=UTF-8", json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                       [("X-Request-Id", request_id), ("Cache-Control", "no-store")])
+
+        def _owner_post(self, raw: bytes):
+            """`POST /api/owner` (A2 #720): el marco de `/api/agent` con el token de un cliente web."""
+            request_id = secrets.token_hex(8)
+            address = auth.client_ip(self.headers, self.client_address[0])
+            remaining = self.CTX.api_limits.blocked_for(address)
+            if remaining:
+                self._api_audit("too_many_attempts", request_id, "", address)
+                self._api_reply(429, request_id, code="too_many_attempts",
+                                message="Too many failed authentication attempts.", retry_after=remaining)
+                return
+            query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+            if "api_token" in query or "token" in query:
+                self._api_auth_failure(request_id, "", address)
+                self._api_reply(401, request_id, code="invalid_token", message="The token cannot be in the URL.")
+                return
+            # Sólo en el encabezado (Q14): ni en el cuerpo ni en la URL.
+            scheme, _, value = self.headers.get("Authorization", "").partition(" ")
+            token = value.strip() if scheme.lower() == "bearer" else ""
+            try:
+                outcome, client = owner_clients.lookup(token, path=owner_clients.clients_path(self.CTX.user_path()))
+            except (OSError, ValueError):
+                self._api_audit("internal_error", request_id, api_security.safe_prefix(token), address)
+                self._api_reply(500, request_id, code="internal_error", message="Client store unavailable.")
+                return
+            if outcome != "ok":
+                prefix = client.get("prefix", "") if client else api_security.safe_prefix(token)
+                self._api_auth_failure(request_id, prefix, address, kind=outcome)
+                messages = {"invalid_token": "Owner token invalid.", "token_revoked": "This app was revoked."}
+                self._api_reply(401, request_id, code=outcome, message=messages[outcome])
+                return
+            prefix = client.get("prefix", "")
+            self.CTX.api_limits.success(address)
+            remaining = self.CTX.api_limits.admit_call(client["sha256"], owner_api.RATE_PER_MINUTE)
+            if remaining:
+                self._api_audit("rate_limited", request_id, prefix, address)
+                self._api_reply(429, request_id, code="rate_limited",
+                                message="Too many requests for this app.", retry_after=remaining)
+                return
+            kind = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            files = []
+            try:
+                if kind == "application/json":
+                    data = json.loads(raw)
+                    if not isinstance(data, dict):
+                        raise ValueError("expected a JSON object")
+                elif kind == "multipart/form-data":
+                    data, files = multipart.parse(raw, self.headers.get("Content-Type", ""))
+                    if (any(len(f["data"]) > webchat_source.MAX_FILE for f in files)
+                            or sum(len(f["data"]) for f in files) > webchat_source.MAX_MESSAGE):
+                        self._api_reply(413, request_id, code="body_too_large",
+                                        message="20 MB per file and 25 MB per message.")
+                        return
+                else:
+                    self._api_reply(415, request_id, code="invalid_content_type",
+                                    message="Use JSON or multipart/form-data.")
+                    return
+            except (UnicodeError, ValueError):
+                self._api_reply(400, request_id, code="invalid_body", message="Invalid request body.")
+                return
+            if "api_token" in data:
+                self._api_reply(400, request_id, code="invalid_body", message="Send the token only in the header.")
+                return
+            self._api_audit("owner_sensitive" if owner_api.is_sensitive(data.get("action")) else "call",
+                            request_id, prefix, address)
+            try:
+                owner_clients.touch(client["sha256"], path=owner_clients.clients_path(self.CTX.user_path()))
+            except (OSError, ValueError):
+                self._api_audit("internal_error", request_id, prefix, address)
+                self._api_reply(500, request_id, code="internal_error", message="Client store unavailable.")
+                return
+            try:
+                result = owner_api.run(self.CTX, client, address, data, request_id=request_id, files=files)
+            except api_actions.ApiError as exc:
+                if exc.code in ("quota_exceeded", "opted_out", "forbidden", "internal_error", "rate_limited"):
+                    self._api_audit(exc.code, request_id, prefix, address)
+                self._api_error(exc, request_id)
+                return
+            except Exception as exc:  # noqa: BLE001 -- un error interno no deja la conexión sin respuesta
+                sys.stderr.write(f"paynani-web: owner api {data.get('action')!r} {request_id}: {type(exc).__name__}\n")
+                self._api_audit("internal_error", request_id, prefix, address)
+                self._api_reply(500, request_id, code="internal_error", message="Internal error.")
+                return
+            if isinstance(result, owner_api.FileResult):
+                self._send(200, "application/octet-stream", result.data,
+                           [("X-Request-Id", request_id), ("Cache-Control", "no-store"),
+                            *downloads.headers(result.name)])
+                return
+            body = {"result": "success", **result, "request_id": request_id}
+            self._send(200, "application/json; charset=UTF-8", json.dumps(body, ensure_ascii=False).encode("utf-8"),
                        [("X-Request-Id", request_id), ("Cache-Control", "no-store")])
 
         def _api_error(self, exc, request_id: str):
@@ -2934,6 +3025,9 @@ def make_handler(ctx: Context):
                 length = -1
             limit = (CATCHALL_BODY_BYTES if urlparse(self.path).path in ("/messages/catch-all", "/whatsapp/catch-all",
                                                                          "/telegram/catch-all")
+                     # FR-A9: subidas de hasta 25 MB; en JSON, lo mismo que el Catch-All (reglas largas).
+                     else (WEBCHAT_BODY_BYTES if self.headers.get("Content-Type", "").lower().startswith(
+                         "multipart/form-data") else CATCHALL_BODY_BYTES) if urlparse(self.path).path == "/api/owner"
                      else WEBCHAT_BODY_BYTES if urlparse(self.path).path in ("/webchat/enviar",
                                                                              "/telegram/messages/enviar",
                                                                              "/whatsapp/messages/enviar")
@@ -2952,6 +3046,9 @@ def make_handler(ctx: Context):
                 return
             if self.route == "/api/owner/pair":
                 self._owner_pair(raw)
+                return
+            if self.route == "/api/owner":
+                self._owner_post(raw)
                 return
             if self.user is None:
                 self._html(200, setup_page(self.lang))
