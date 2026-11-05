@@ -33,12 +33,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from .. import guard, i18n
-from .. import web_uploads
-from ..telegram import uploads as tg_uploads
 from ..brand import brand_svg
 from ..whatsapp import media as wa_media
 from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (apps_pages, owner_api, about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (apps_pages, owner_api, about_pages, downloads, msgmenu, channel_send, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -2106,62 +2104,23 @@ def make_handler(ctx: Context):
             if self.route == "/telegram/messages/enviar":
                 values = {"t": post.get("t", "").strip()[:40], "text": post.get("text", "").replace("\r\n", "\n"),
                           "reply_to": post.get("reply_to", "").strip()[:130]}
-                # PRD #685 F2: la cita sólo si el servicio cita (`replies`) y tiene forma de mensaje
-                # de Telegram; el servicio revisa que sea de este hilo (FR-14). Si no, el envío es
-                # el de siempre: un núcleo viejo no recibe un campo que no conoce.
-                extra = ({"reply_to": values["reply_to"]} if TG_ANY_REF.match(values["reply_to"])
-                         and source.status().get("replies") is True else {})
                 if not TG_THREAD.match(values["t"]):
                     self._telegram_messages(values=values, error=telegram_pages.error_text("not_found"), code=404)
                     return
                 if self.files is None:
                     self._telegram_messages(values=values, error=telegram_pages.error_text("malformed"), code=400)
                     return
-                files = self.files[:tg_uploads.MAX_FILES + 1]
-                if (not values["text"].strip() and not files) or len(values["text"]) > telegram_source.MAX_TEXT:
-                    self._telegram_messages(values=values, error=telegram_pages.error_text("invalid", {"field": "text"}),
-                                            code=400)
-                    return
-                # Los archivos van primero al núcleo (#662): `uploads.save` los revisa por los
-                # bytes y da un `up_…` de un solo uso; la web nunca elige una ruta.
-                ups, names = [], {}
+                # La cita, los archivos y lo que se borra si falla: web/channel_send.py, que
+                # comparte con la API del dueño (PaynaniWebMT PRD #2, FR-A6). El servicio revisa
+                # que la cita sea de este hilo (FR-14).
                 try:
-                    if len(files) > tg_uploads.MAX_FILES:
-                        raise tg_uploads.Rejected("too_many")
-                    for f in files:
-                        saved = tg_uploads.save(self.CTX.state_dir() / "telegram", f["name"][:200], f["data"])
-                        ups.append(saved["upload"])
-                        names[saved["upload"]] = saved["name"]
-                except tg_uploads.Rejected as exc:
-                    for ref in ups:
-                        tg_uploads.drop(self.CTX.state_dir() / "telegram", ref)
-                    self._telegram_messages(values=values, error=telegram_pages.error_text(exc.code), code=400)
-                    return
-                try:
-                    if ups:
-                        source.request_slow("telegram.send", thread=values["t"], text=values["text"], uploads=ups,
-                                            **extra)
-                    else:
-                        source.request("telegram.send", thread=values["t"], text=values["text"], **extra)
-                except telegram_source.Failed as exc:
+                    channel_send.send(channel_send.telegram(), source, self.CTX.state_dir() / "telegram",
+                                      {"thread": values["t"]}, values["text"], self.files, values["reply_to"])
+                except channel_send.SendError as exc:
                     code = {"rate_limited": 429, "unavailable": 503}.get(exc.code, 400)
-                    # Con archivos, un corte por tiempo no dice si salieron: no se invita a
-                    # mandarlos otra vez sin revisar el hilo (#662).
-                    key = "send_unknown" if ups and exc.fields.get("timed_out") else exc.code
-                    error = telegram_pages.error_text(key, exc.fields)
-                    # Un envío parcial (#667): los que salieron vienen en `sent_uploads`. Como
-                    # cada POST sube todo otra vez, se dice cuáles ya llegaron.
-                    sent = [names[u] for u in exc.fields.get("sent_uploads") or [] if u in names]
-                    # Un fallo definitivo (no un corte por tiempo, que pudo seguir mandando):
-                    # los que no salieron se borran ya, para no llenar los 20 pendientes con
-                    # reintentos (revisión de Metis en #666). El siguiente POST sube otra vez.
-                    if ups and not exc.fields.get("timed_out"):
-                        done = set(exc.fields.get("sent_uploads") or [])
-                        for ref in ups:
-                            if ref not in done:
-                                tg_uploads.drop(self.CTX.state_dir() / "telegram", ref)
-                    if sent:
-                        error += " " + i18n.t("web.tg.err.partial", names=", ".join(sent))
+                    error = telegram_pages.error_text("send_unknown" if exc.unknown else exc.code, exc.fields)
+                    if exc.sent:
+                        error += " " + i18n.t("web.tg.err.partial", names=", ".join(exc.sent))
                     self._telegram_messages(values=values, error=error, code=code)
                     return
                 self._redirect(f"/telegram/messages/ver?t={values['t']}&ok=sent#responder")
@@ -2566,57 +2525,19 @@ def make_handler(ctx: Context):
             if self.route == "/whatsapp/messages/enviar":
                 values = {"n": post.get("n", "").strip()[:40], "text": post.get("text", "").replace("\r\n", "\n"),
                           "reply_to": post.get("reply_to", "").strip()[:130]}
-                # PRD #685 F2: la cita sólo si el servicio cita (`replies`) y con forma de mensaje
-                # de WhatsApp (wa: o wo_).
-                rt = values["reply_to"]
-                extra = ({"reply_to": rt} if (WA_MESSAGE_ID.match(rt) or WA_SENT_ID.match(rt))
-                         and source.status().get("replies") is True else {})
                 if self.files is None:
                     self._whatsapp_messages(values=values, error=whatsapp_pages.error_text("malformed"), code=400)
                     return
-                files = self.files[:web_uploads.MAX_FILES + 1]
-                if (not values["text"].strip() and not files) or len(values["text"]) > whatsapp_source.MAX_TEXT:
-                    self._whatsapp_messages(values=values, error=whatsapp_pages.error_text("invalid", {"field": "text"}),
-                                            code=400)
-                    return
-                # Los archivos van primero al núcleo (#670 FR-5), como en Telegram (#662):
-                # `web_uploads.save` los revisa por los bytes y da un `up_…` de un solo uso.
-                wa_root = self.CTX.state_dir() / "whatsapp"
-                ups, names = [], {}
+                # La cita (PRD #685 F2), los archivos (#670 FR-5) y lo que se borra si falla:
+                # web/channel_send.py, que comparte con la API del dueño (PaynaniWebMT PRD #2, FR-A6).
                 try:
-                    if len(files) > web_uploads.MAX_FILES:
-                        raise web_uploads.Rejected("too_many")
-                    for f in files:
-                        saved = web_uploads.save(wa_root, f["name"][:200], f["data"])
-                        ups.append(saved["upload"])
-                        names[saved["upload"]] = saved["name"]
-                except web_uploads.Rejected as exc:
-                    for ref in ups:
-                        web_uploads.drop(wa_root, ref)
-                    self._whatsapp_messages(values=values, error=whatsapp_pages.error_text(exc.code), code=400)
-                    return
-                try:
-                    if ups:
-                        source.request_slow("whatsapp.send", number=values["n"], text=values["text"], uploads=ups,
-                                            **extra)
-                    else:
-                        source.request("whatsapp.send", number=values["n"], text=values["text"], **extra)
-                except whatsapp_source.Failed as exc:
+                    channel_send.send(channel_send.whatsapp(), source, self.CTX.state_dir() / "whatsapp",
+                                      {"number": values["n"]}, values["text"], self.files, values["reply_to"])
+                except channel_send.SendError as exc:
                     code = {"rate_limited": 429, "unavailable": 503, "not_connected": 409, "timeout": 504}.get(exc.code, 400)
-                    # Con archivos, un corte por tiempo (del servicio o de la espera) no dice
-                    # si salieron: no se invita a mandarlos otra vez sin revisar el hilo.
-                    unknown = ups and (exc.code == "timeout" or exc.fields.get("timed_out"))
-                    error = whatsapp_pages.error_text("send_unknown" if unknown else exc.code, exc.fields)
-                    sent = [names[u] for u in exc.fields.get("sent_uploads") or [] if u in names]
-                    if sent:
-                        error += " " + i18n.t("web.wa.err.partial", names=", ".join(sent))
-                    # Un fallo definitivo: los que no salieron se borran ya, para no llenar los
-                    # 20 pendientes con reintentos. El siguiente POST sube otra vez.
-                    if ups and not unknown:
-                        done = set(exc.fields.get("sent_uploads") or [])
-                        for ref in ups:
-                            if ref not in done:
-                                web_uploads.drop(wa_root, ref)
+                    error = whatsapp_pages.error_text("send_unknown" if exc.unknown else exc.code, exc.fields)
+                    if exc.sent:
+                        error += " " + i18n.t("web.wa.err.partial", names=", ".join(exc.sent))
                     self._whatsapp_messages(values=values, error=error, code=code)
                     return
                 self._redirect(f"/whatsapp/messages/ver?n={_quote(values['n'], safe='')}&ok=sent#responder")
