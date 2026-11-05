@@ -134,6 +134,16 @@ check("con pause: los minutos de pausa", True, r[1].get("agent_pause_min", 0) > 
 check("número que no sirve: invalid_number", (400, "invalid_number"),
       code(call("SendOwnerSms", number="hola", text="x")))
 check("texto vacío: empty_text", (400, "empty_text"), code(call("SendOwnerSms", number=ANA, text="  ")))
+OTHER = "+525588887777"
+r = call("SendOwnerSms", number="55 8888 7777", text="hola")
+check("FR-3: fuera del roster sin outside_roster_ok: 403 password_required con el número",
+      (403, "password_required", OTHER), (r[0], r[1].get("code"), r[1].get("number")))
+r = call("SendOwnerSms", number=OTHER, text="hola", outside_roster_ok=True)
+check("con outside_roster_ok (la app ya pidió la contraseña): encola, in_roster false",
+      (200, "queued", False), (r[0], r[1].get("status"), r[1].get("in_roster")))
+convs = {c["number"]: c for c in call("ListSmsConversations")[1]["conversations"]}
+check("ListSmsConversations: in_roster por fila", (True, False),
+      (convs.get(ANA, {}).get("in_roster"), convs.get(OTHER, {}).get("in_roster")))
 r = call("GetSmsStatuses", number=ANA)
 check("GetSmsStatuses: la orden de la web con su estado", (200, True),
       (r[0], any(i["id"].startswith("w_") and i["status"] for i in r[1].get("items", []))))

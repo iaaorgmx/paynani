@@ -160,9 +160,9 @@ Errores comunes de estas acciones, además de los de [Errores](#errores):
 
 | Acción | Parámetros | Responde |
 |---|---|---|
-| `ListSmsConversations` | `offset` | Lo de `ListSmsConversations` de `/api/agent` y `phone` (abajo) |
+| `ListSmsConversations` | `offset` | Lo de `ListSmsConversations` de `/api/agent`, `in_roster` en cada conversación y `phone` (abajo) |
 | `GetSmsThread` | `number`, `offset` | Lo de `GetSmsThread` de `/api/agent`, `in_roster` y `phone` |
-| `SendOwnerSms` | `number`, `text`, `pause` (bool) | `{order_id, number, status: "queued", agent_pause_min, in_roster}` |
+| `SendOwnerSms` | `number`, `text`, `pause` (bool), `outside_roster_ok` (bool) | `{order_id, number, status: "queued", agent_pause_min, in_roster}` |
 | `GetSmsStatuses` | `number` | `{count, offline, items: [{id, status, error}]}`, sólo los mensajes de la web (`w_…`) |
 | `ListOptOuts` | | `{opt_outs: [{number, at, by, …}]}`, la más reciente primero |
 | `SaveOptOut` / `DeleteOptOut` | `number` | `{number, opted_out, changed}` |
@@ -182,7 +182,10 @@ Errores comunes de estas acciones, además de los de [Errores](#errores):
 - `400 invalid_number`, `empty_text`, `text_too_long` o `no_sms_phone`;
 - `429 rate_limited` (con `retry_at`), con el tope por hora de la web.
 
-**Fuera del roster:** a un número fuera del roster (`in_roster: false`), la app pide su contraseña antes de mandar (FR-A10).
+**Fuera del roster (FR-3, FR-A10):** a un número fuera del roster, paynani responde
+`403 password_required` (con el `number` ya normalizado) y no manda nada. La app pide
+entonces su contraseña y vuelve a llamar con `outside_roster_ok: true`. Así la regla
+vive en paynani y no depende de que cada app se acuerde.
 
 ```bash
 curl -s https://<túnel>/api/owner -H "Authorization: Bearer $PW" -H 'Content-Type: application/json' \

@@ -83,7 +83,11 @@ def _sms_number(call: OwnerCall, store) -> str:
 
 @owner_api.action("ListSmsConversations")
 def list_sms_conversations(call: OwnerCall) -> dict:
-    return {**api_actions.list_sms_conversations(call), "phone": _sms_phone(call)}
+    data = api_actions.list_sms_conversations(call)
+    names = call.ctx.phone_names()
+    # La marca «Roster» de cada fila, como la lista de PaynaniWeb.
+    data["conversations"] = [{**c, "in_roster": c["number"] in names} for c in data["conversations"]]
+    return {**data, "phone": _sms_phone(call)}
 
 
 @owner_api.action("GetSmsThread")
@@ -101,6 +105,12 @@ def send_owner_sms(call: OwnerCall) -> dict:
     store = _sms_store(call)
     number = _sms_number(call, store)
     text = call.text("text", limit=outgoing.MAX_TEXT + 1)
+    in_roster = number in call.ctx.phone_names()
+    # FR-3: a un número fuera del roster, sólo si la app ya pidió su contraseña (FR-A10).
+    # Así la regla vive aquí y no depende de que cada app se acuerde.
+    if not in_roster and not _flag(call, "outside_roster_ok"):
+        raise ApiError(403, "password_required", "That number is not on the roster; ask the owner's password first.",
+                       number=number)
     try:
         order = sms_owner.send(store, number, text, pause=_flag(call, "pause"),
                                source=f"owner:{call.client['client_id']}:{call.ip}")
@@ -112,7 +122,7 @@ def send_owner_sms(call: OwnerCall) -> dict:
             raise ApiError(429, "rate_limited", "Too many texts this hour.", retry_at=exc.retry_at or "") from None
         raise ApiError(400, exc.code, str(exc)) from None
     return {"order_id": order["id"], "number": number, "status": "queued",
-            "agent_pause_min": order.get("agent_pause_min", 0), "in_roster": number in call.ctx.phone_names()}
+            "agent_pause_min": order.get("agent_pause_min", 0), "in_roster": in_roster}
 
 
 @owner_api.action("GetSmsStatuses")
