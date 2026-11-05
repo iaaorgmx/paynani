@@ -1265,33 +1265,15 @@ def make_handler(ctx: Context):
             except ValueError:
                 return 0
 
+        # Las reglas del canal viven en sms/owner.py, que comparte con la API del dueño
+        # (PaynaniWebMT PRD #2, FR-A6); aquí quedan los textos y los códigos HTTP.
         def _sms_state(self, store) -> str:
-            """FR-6: ¿el teléfono emparejado acepta órdenes del dueño?"""
-            if not store.device():
-                return messages_pages.PHONE_NONE
-            # Un teléfono «solo Webchat» (#671) no manda SMS: no es que la app sea vieja.
-            if not store.sms_enabled():
-                return messages_pages.PHONE_NO_SMS
-            return messages_pages.PHONE_OK if store.accepts("owner") else messages_pages.PHONE_OLD
-
-        def _sms_region(self, store) -> str | None:
-            """La región del teléfono emparejado (FR-2), o la de la instalación."""
-            import re as _re
-            import phone as phone_mod
-            for sim in (store.device() or {}).get("sims") or []:
-                country = str((sim or {}).get("country") or "").strip().upper()
-                if _re.fullmatch(r"[A-Z]{2}", country):
-                    return country
-            return phone_mod.default_region()
+            from ..sms import owner as sms_owner
+            return sms_owner.phone_state(store)
 
         def _sms_offline_ttl(self, state: str) -> int:
-            """FR-7: con el teléfono emparejado pero desconectado, los minutos en que vence
-            una orden; 0 si está conectado (o no hay a quién mandar)."""
-            from ..sms import health, outgoing
-            if state != messages_pages.PHONE_OK:
-                return 0
-            facts = health.phone_facts(self.CTX.state_dir())
-            return 0 if facts and facts["online"] else outgoing.DEFAULT_TTL_MIN
+            from ..sms import owner as sms_owner
+            return sms_owner.offline_ttl(self.CTX.state_dir(), state)
 
         def _sms_optout(self, notice: str = "", error: str = "", value: str = "", code: int = 200):
             """GET /messages/bajas (PRD #491 FR-13): la lista de bajas de la API."""
@@ -1405,7 +1387,8 @@ def make_handler(ctx: Context):
 
         def _sms_optout_post(self, post: dict):
             """POST /messages/bajas: `accion=agregar|quitar` y `n`. CSRF y Origin, como todo POST."""
-            from ..sms import api_replies, outgoing
+            from ..sms import outgoing
+            from ..sms import owner as sms_owner
             from ..sms import store as sms_store
             store = sms_store.Store(self.CTX.state_dir())
             raw = post.get("n", "").strip()[:40]
@@ -1414,12 +1397,12 @@ def make_handler(ctx: Context):
                 self._sms_optout(error=i18n.t("web.sms.optout.err.action"), value=raw, code=400)
                 return
             try:
-                number = outgoing.normalize(raw, self._sms_region(store))
+                number = sms_owner.normalize(store, raw)
             except outgoing.Refused:
                 self._sms_optout(error=i18n.t("web.sms.err.invalid_number"), value=raw, code=400)
                 return
             try:
-                changed = api_replies.set_opt_out(store, number, action == "agregar", by=f"web:{self.ip}")
+                changed = sms_owner.set_opt_out(store, number, action == "agregar", by=f"web:{self.ip}")
             except (OSError, ValueError):
                 self._sms_optout(error=i18n.t("web.sms.optout.err.unreadable"), value=raw, code=500)
                 return
@@ -1430,17 +1413,13 @@ def make_handler(ctx: Context):
         def _sms_statuses(self):
             """GET /messages/estados?n=<número> (PRD #489 FR-5): el estado de cada mensaje
             de la web en la conversación, para que sms.js los actualice sin recargar."""
+            from ..sms import owner as sms_owner
             from ..sms import store as sms_store
-            from ..sms import thread as sms_thread
             store = sms_store.Store(self.CTX.state_dir())
-            number = self.query.get("n", [""])[0]
-            items = [i for i in sms_thread.items(store, self.CTX.state_dir() / "events.jsonl", calls=True)
-                     if number and i["number"] == number]
-            body = {"count": len(items),
-                    "offline": bool(self._sms_offline_ttl(self._sms_state(store))),
-                    "items": [{"id": i["id"], "status": i["status"],
-                               "label": messages_pages.status_label(i["status"], i.get("error", ""))}
-                              for i in items if i.get("id", "").startswith("w_")]}
+            body = sms_owner.statuses(store, self.CTX.state_dir(), self.query.get("n", [""])[0])
+            body["items"] = [{"id": i["id"], "status": i["status"],
+                              "label": messages_pages.status_label(i["status"], i["error"])}
+                             for i in body["items"]]
             self._send(200, "application/json; charset=UTF-8", json.dumps(body, ensure_ascii=False).encode("utf-8"),
                        [("Cache-Control", "no-store")])
 
@@ -1492,6 +1471,7 @@ def make_handler(ctx: Context):
             from urllib.parse import quote as _quote
             from ..sms import config as sms_config
             from ..sms import outgoing
+            from ..sms import owner as sms_owner
             from ..sms import store as sms_store
             th = i18n.th
             store = sms_store.Store(self.CTX.state_dir())
@@ -1501,7 +1481,7 @@ def make_handler(ctx: Context):
                 self._messages(values, "", 409)
                 return
             try:
-                number = outgoing.normalize(values["n"], self._sms_region(store))
+                number = sms_owner.normalize(store, values["n"])
             except outgoing.Refused:
                 self._messages(values, th("web.sms.err.invalid_number"), 400)
                 return
@@ -1513,10 +1493,11 @@ def make_handler(ctx: Context):
                 if error:
                     self._messages(values, error, 403)
                     return
-            pause = sms_config.web_agent_pause_min() if values["pause"] else 0
             try:
-                outgoing.queue(store, to=number, text=values["text"].replace("\r\n", "\n"), origin="owner",
-                               source=self.ip, agent_pause_min=pause, per_hour=sms_config.web_sms_per_hour())
+                sms_owner.send(store, number, values["text"], pause=values["pause"], source=self.ip)
+            except sms_owner.NotReady:
+                self._messages(values, "", 409)
+                return
             except outgoing.Refused as exc:
                 if exc.code == "rate_limited":
                     message = th("web.sms.err.rate_limited", n=sms_config.web_sms_per_hour(),
