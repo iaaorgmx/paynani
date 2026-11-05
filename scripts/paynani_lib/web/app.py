@@ -34,10 +34,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from .. import guard, i18n
 from ..brand import brand_svg
 from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
-from . import (apps_pages, owner_api, about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
-from . import (about_pages, channel_send, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
-from . import (about_pages, channel_react, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
-from . import (about_pages, channel_media, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (apps_pages, owner_api, channel_media, channel_react, channel_send, about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
