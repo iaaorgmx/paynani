@@ -142,7 +142,7 @@ check("la lista como la de correos: a todo lo ancho, cabecera Contacto / Último
       ('<main class="panel panel-ancho">' in page,
        '<li class="correos-cabecera" aria-hidden="true"><span>Contacto</span><span>Último mensaje</span>'
        '<span>Fecha</span><span>Mensajes</span><span></span></li>' in page,
-       '<span class="flecha" aria-hidden="true"><svg' in page))   # el chevron de Clients de CM (#717)
+       '<span class="flecha fila-flecha" aria-hidden="true"><svg' in page))   # el chevron de Clients de CM (#717)
 check("/messages: 200, marcado en el menú", (200, True), (status, 'href="/messages" class="activo"' in page))
 check("dos conversaciones, Beto primero", [BETO, ANA],
       [n.replace("%2B", "+") for n in re.findall(r'href="/messages/ver\?n=([^"]+)"', page)])

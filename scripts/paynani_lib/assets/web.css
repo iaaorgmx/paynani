@@ -456,8 +456,9 @@ body.web-shell {
 .web-shell .correos .correos-cabecera span:first-child { padding-left: 1.35em; }
 .web-shell .correos li a { position: relative; }
 /* El chevron de cada fila (#717), como el de Clients de ServiceButtonCustomerManager: oscuro, grueso, ~19 px. */
-.web-shell .flecha { display: inline-flex; color: var(--ink); line-height: 1; }
-.web-shell .flecha svg { width: 19px; height: 19px; }
+/* Su propia clase: el chevron del desplegable de Email Accounts en el menú también es .flecha (Metis en #718). */
+.web-shell .fila-flecha { display: inline-flex; color: var(--ink); line-height: 1; }
+.web-shell .fila-flecha svg { width: 19px; height: 19px; }
 .web-shell .correos .flecha { justify-content: flex-end; align-self: center; }
 .web-shell .conversaciones .estado-celda { display: flex; flex-direction: column; align-items: flex-start; gap: .15rem; }
 .web-shell .conversaciones .marca-llamada { margin-left: 0; }
