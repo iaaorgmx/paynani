@@ -1119,16 +1119,8 @@ def make_handler(ctx: Context):
                 error = self._check_current(post.get("password", "")[:users.MAX_PASSWORD])
                 if not error:
                     try:
-                        name = values["name"].strip()
-                        if not name or len(name) > 100 or not values["permissions"]:
-                            raise ValueError("invalid name or permissions")
-                        hour, day = int(values["sms_per_hour"]), int(values["sms_per_day"])
-                        if not (1 <= hour <= 100000 and 1 <= day <= 100000):
-                            raise ValueError("invalid limits")
-                        expiry = token_pages.expiry_from_form(values["expiry"], values["custom"])
-                        secret, record = api_tokens.create(name, expires_at=expiry,
-                            permissions=values["permissions"], limits={"sms_per_hour": hour, "sms_per_day": day},
-                            agent_replies=values["agent_replies"], path=path)
+                        # La misma validación que CreateApiToken de la API del dueño (#721).
+                        secret, record = token_pages.create_from_values(values, path=path)
                     except (ValueError, OSError):
                         error = i18n.th("web.tokens.invalid")
                 if error:
