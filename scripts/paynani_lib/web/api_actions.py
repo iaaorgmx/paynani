@@ -343,11 +343,19 @@ def _phones(call: Call) -> list[str]:
     return [phone_mod.to_e164(p.strip(), region) or p.strip() for p in values if p.strip()]
 
 
-def save_roster_contact(call: Call) -> dict:
-    member = {"name": call.text("name").strip(), "email": call.text("email").strip(),
-              "type": call.text("type").strip(), "github": call.text("github").strip(), "phones": _phones(call)}
+def roster_member(call: Call) -> dict:
+    """La fila que se pide guardar, sin la columna Telegram. La API del dueño la agrega."""
+    return {"name": call.text("name").strip(), "email": call.text("email").strip(),
+            "type": call.text("type").strip(), "github": call.text("github").strip(), "phones": _phones(call)}
+
+
+def roster_save(call: Call, member: dict) -> dict:
     return call.roster("roster.save", account=_account_value(call.text("account").strip()),
                        row=call.number("row"), member=member, etag=call.text("etag"))
+
+
+def save_roster_contact(call: Call) -> dict:
+    return roster_save(call, roster_member(call))
 
 
 def delete_roster_contact(call: Call) -> dict:
