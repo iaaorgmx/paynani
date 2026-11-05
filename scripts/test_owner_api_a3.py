@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "harness"))
 
 from paynani_lib import accounts_cli  # noqa: E402
+from paynani_lib.sms import roster_api  # noqa: E402
 from paynani_lib.web import (account_config, api_actions, api_tokens, app, dashboard, mail, mail_compose, notify,  # noqa: E402
                              owner_clients, users)
 
@@ -256,18 +257,29 @@ def beto_now():
 contact = dict(name="Beto", email="beto@example.com", type="Human")
 status, body = api("SaveRosterContact", row=beto["row"], telegram="@beto_tg", etag=etag, **contact)
 row, etag = beto_now()
-check("SaveRosterContact con telegram: guarda el @usuario", (200, "@beto_tg"), (status, row.get("telegram_username")))
+check("SaveRosterContact con telegram: guarda el @usuario", (200, "@beto_tg"), (status, row.get("telegram")))
 status, body = api("SaveRosterContact", row=row["row"], etag=etag, **contact)
 row, etag = beto_now()
-check("…sin telegram en el pedido, la fila conserva el suyo", (200, "@beto_tg"), (status, row.get("telegram_username")))
+check("…sin telegram en el pedido, la fila conserva el suyo", (200, "@beto_tg"), (status, row.get("telegram")))
+# Iris[Q54] = A: una app del dueño ve y escribe el id numérico, como PaynaniWeb (FR-15).
 status, body = api("SaveRosterContact", row=row["row"], telegram="123456789", etag=etag, **contact)
-check("…un id numérico se rechaza, como en PaynaniApp (Q270)", (400, "telegram", "telegram_username_only"),
-      (status, body.get("field"), body.get("reason")))
-check("…y la fila no cambió", "@beto_tg", beto_now()[0].get("telegram_username"))
+row, etag = beto_now()
+check("…un id numérico se guarda, como desde PaynaniWeb", (200, "123456789"), (status, row.get("telegram")))
+check("…y ListRoster trae la columna tal cual, no has_telegram", (False, False), ("has_telegram" in row, "telegram_username" in row))
+status, body = api("SaveRosterContact", row=row["row"], telegram="no es un telegram", etag=etag, **contact)
+check("…un valor que no es @usuario ni id: 400 con el campo", (400, "telegram"), (status, body.get("field")))
+check("…y la fila no cambió", "123456789", beto_now()[0].get("telegram"))
 status, body = api("SaveRosterContact", row=row["row"], telegram=["x"], etag=etag, **contact)
 check("…telegram que no es texto: invalid_parameter", (400, "telegram"), (status, body.get("field")))
 status, body = api("SaveRosterContact", row=row["row"], telegram="", etag=beto_now()[1], **contact)
-check("…vacío lo borra", (200, False), (status, beto_now()[0].get("has_telegram")))
+check("…vacío lo borra, también un id", (200, ""), (status, beto_now()[0].get("telegram")))
+changes = [json.loads(line) for line in (state / roster_api.CHANGES_LOG).read_text(encoding="utf-8").splitlines() if line.strip()]
+devices = {c["device_id"].split(":")[0] for c in changes if c.get("device_id")}
+check("el registro de cambios del roster dice que fue una app del dueño, no un token de agente", {"owner"}, devices)
+check("…con el id de la app emparejada", True, all(c["device_id"].split(":")[1].startswith("w_") for c in changes if c.get("device_id")))
+check("who_changed de una app del dueño", "owner app w_abc123", roster_api.who_changed("owner:w_abc123:203.0.113.9"))
+check("sees_telegram_id: PaynaniWeb y la app del dueño sí; la API de agentes y el teléfono no", (True, True, False, False),
+      tuple(roster_api.sees_telegram_id(d) for d in ("web:1.2.3.4", "owner:w_1:1.2.3.4", "api:pn_abc:1.2.3.4", "dev_123")))
 status, body = api("GetCatchAll", channel="whatsapp")
 check("GetCatchAll de WhatsApp: 200", 200, status)
 status, body = api("SaveCatchAll", channel="whatsapp", enabled=False, text="Avísame.", etag=body.get("etag", ""))

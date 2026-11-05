@@ -96,10 +96,14 @@ class Call:
             raise ApiError(400, "missing_parameter", f"{key} is required.", field=key)
         return value
 
+    def roster_device(self) -> str:
+        """Quién le habla al servicio del roster: el token de la API y la dirección."""
+        return f"api:{self.record.get('prefix', '')}:{self.ip}"
+
     def roster(self, kind: str, **fields) -> dict:
         """Un pedido de §11 al servicio del roster, como lo hacen la web y PaynaniApp."""
         msg = {"type": kind, "id": "q_" + secrets.token_hex(16), **fields}
-        res = self.ctx.roster_service().handle(msg, f"api:{self.record.get('prefix', '')}:{self.ip}")
+        res = self.ctx.roster_service().handle(msg, self.roster_device())
         if res.get("type") == "result":
             return res.get("data") or {}
         code = str(res.get("code") or "invalid")
