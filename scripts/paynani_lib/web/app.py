@@ -1749,15 +1749,7 @@ def make_handler(ctx: Context):
         def _signed(self, account_id: str) -> bool:
             """Si la cuenta tiene firma: PAYNANI_SIGNATURE_FILE para la del agente,
             `signature_file` de accounts.json para las demás."""
-            from .. import accounts as accounts_mod
-            try:
-                if account_id == accounts_mod.MAIN:
-                    import idle_listener
-                    env = idle_listener.load_env(self.CTX.env_path())
-                    return bool(env.get("PAYNANI_SIGNATURE_FILE") or env.get("AGENT_EMAIL_SIGNATURE_FILE"))
-                return bool(accounts_mod.get(account_id, self.CTX.accounts_file).get("signature_file"))
-            except Exception:  # noqa: BLE001 -- sólo es para mostrar
-                return False
+            return mail.has_signature(account_id, self.CTX.accounts_file, self.CTX.env_path())
 
         def _compose_post(self, post: dict):
             """
