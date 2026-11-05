@@ -202,8 +202,8 @@ curl -s https://<túnel>/api/owner -H "Authorization: Bearer $PW" -H 'Content-Ty
 | `SendWhatsApp` | `number`, `text`, `reply_to`, archivos (multipart) | `{sent: true, …}` |
 | `ReactWhatsApp` | `ref`, `emoji` («» quita la tuya) | `{reactions}` |
 | `GetWhatsAppMedia` | `ref`, `kind` (`image` o `file`), `index` (fotos mandadas desde la web) | Los bytes ([Archivos](#archivos)) |
-| `LinkWhatsApp` | `mode` (`qr` o `code`), `number` (E.164, con `code`) | `{link_id, code?, expires_at, …}` |
-| `GetWhatsAppLinkCode` | | `{link: {state, mode, qr?, …} \| null, ended}` |
+| `LinkWhatsApp` | `mode` (`qr` o `code`), `number` (E.164, con `code`) | `{link_id, code?, qr_svg?, expires_in_s, …}` |
+| `GetWhatsAppLinkCode` | | `{link: {state, mode, qr_svg?, expires_in_s, …} \| null, ended}` |
 | `CancelWhatsAppLink` | | `{canceled: true}` |
 | `UnlinkWhatsApp` | `confirm: true` | `{unlinked: true, remote}` |
 
@@ -223,7 +223,9 @@ curl -s https://<túnel>/api/owner -H "Authorization: Bearer $PW" -H 'Content-Ty
   - `404 not_found` si el mensaje o el canal no reaccionan;
   - `404 message_too_old` si el mensaje no tiene id en WhatsApp (#707).
 - **El código de vinculación** sólo viaja en la respuesta de `LinkWhatsApp`. El QR se
-  pide con `GetWhatsAppLinkCode` mientras dure. **Errores:**
+  pide con `GetWhatsAppLinkCode` mientras dure. Llega ya dibujado como `qr_svg`, con
+  `sms/qr.py` y sin `<title>`, para que la app lo valide contra esa forma fija. El texto
+  del QR nunca sale de paynani. **Errores:**
   - `409 already_linked`;
   - `400 invalid_number` o `invalid` (`field: mode`).
 - **Acciones delicadas:** `LinkWhatsApp`, `CancelWhatsAppLink` y `UnlinkWhatsApp`.

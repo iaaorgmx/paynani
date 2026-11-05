@@ -188,6 +188,13 @@ check("LinkWhatsApp con código: el código viaja sólo aquí", (200, True), (r[
 r = call("GetWhatsAppLinkCode")
 check("GetWhatsAppLinkCode: la vinculación de este cliente", ("waiting", "code"),
       ((r[1]["link"] or {}).get("state"), (r[1]["link"] or {}).get("mode")))
+call("CancelWhatsAppLink")
+r = call("LinkWhatsApp", mode="qr")
+check("LinkWhatsApp con QR: el QR dibujado (qr_svg, sin <title>), nunca el texto qr",
+      (200, True, False, False), (r[0], r[1].get("qr_svg", "").startswith("<svg "), "qr" in r[1],
+                                  "<title>" in r[1].get("qr_svg", "")))
+link = call("GetWhatsAppLinkCode")[1]["link"] or {}
+check("GetWhatsAppLinkCode con QR: qr_svg, sin qr", (True, False), ("qr_svg" in link, "qr" in link))
 check("otro cliente no ve la vinculación de éste (estado por client_id)", None,
       call("GetWhatsAppLinkCode", tok=token2)[1]["link"])
 check("CancelWhatsAppLink: cancelada", (200, True), (lambda x: (x[0], x[1].get("canceled")))(call("CancelWhatsAppLink")))

@@ -261,7 +261,7 @@ def get_whatsapp_status(call: OwnerCall) -> dict:
     status = _status(call, "whatsapp")
     if status["configured"]:
         cur, ended = channel_link.wa_current(call.ctx, _key(call), call.ctx.whatsapp())
-        status["link"] = cur
+        status["link"] = _with_qr(cur)
         status["link_ended"] = ended
     return status
 
@@ -293,6 +293,18 @@ def get_whatsapp_media(call: OwnerCall) -> FileResult:
     return _media(call, "whatsapp")
 
 
+def _with_qr(data: dict | None) -> dict | None:
+    """El QR vigente dibujado aquí, con sms/qr.py, como PaynaniWeb: `qr_svg` (sin `<title>`,
+    para que la app lo valide contra una forma fija), en lugar del texto `qr`."""
+    if not isinstance(data, dict):
+        return data
+    out = {k: v for k, v in data.items() if k != "qr"}
+    if data.get("qr"):
+        from ..sms import qr
+        out["qr_svg"] = qr.to_svg(qr.encode(str(data["qr"])))
+    return out
+
+
 def _link_error(exc: channel_link.LinkError) -> ApiError:
     status = {"already_linked": 409, "unavailable": 503, "invalid_number": 400, "invalid": 400}.get(exc.code, 400)
     extra = {"field": exc.fields["field"]} if "field" in exc.fields else {}
@@ -309,7 +321,8 @@ def link_whatsapp(call: OwnerCall) -> dict:
                                     call.text("number", limit=40))
     except channel_link.LinkError as exc:
         raise _link_error(exc) from None
-    return {k: v for k, v in data.items() if k in ("link_id", "code", "expires_at", "state", "mode")}
+    return _with_qr({k: v for k, v in data.items()
+                     if k in ("link_id", "code", "expires_at", "expires_in_s", "state", "mode", "qr")})
 
 
 @owner_api.action("GetWhatsAppLinkCode")
@@ -317,7 +330,7 @@ def get_whatsapp_link_code(call: OwnerCall) -> dict:
     """La vinculación en curso de este cliente (el QR mientras dura), o `link: null` con la
     razón con que terminó."""
     cur, ended = channel_link.wa_current(call.ctx, _key(call), _source(call, "whatsapp"))
-    return {"link": cur, "ended": ended}
+    return {"link": _with_qr(cur), "ended": ended}
 
 
 @owner_api.action("CancelWhatsAppLink", sensitive=True)
