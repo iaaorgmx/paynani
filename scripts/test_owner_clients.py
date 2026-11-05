@@ -132,6 +132,12 @@ check("POST /api/owner/pair: 201 con token y client_id", (201, True, True),
 check("request_id en cuerpo y encabezado", data.get("request_id"), hdrs.get("x-request-id"))
 check("el dueño recibe un correo", True, any("nueva app conectada" in str(a) for a in sent))
 check("el correo dice la app y su versión", True, any("PaynaniWebMT 0.1.0" in str(a) for a in sent))
+mail = next(a for a in sent if "nueva app conectada" in a[1])
+check("el correo sale en texto plano y en HTML", (4, True), (len(mail), mail[3].startswith("<!DOCTYPE html>")))
+check("el texto plano: la conclusión primero y los datos en renglones", (True, True, True),
+      (mail[2].startswith("Se conectó «MT de prueba» a tu paynani."), "\n  App:        PaynaniWebMT 0.1.0\n" in mail[2],
+       f"\n  Id:         {data['client_id']}\n" in mail[2]))
+check("y cómo revocarla, con su id", True, f"`scripts/paynani web clients revoke {data['client_id']}`" in mail[2])
 saved = next(r for r in json.loads(store.read_text()) if r["client_id"] == data["client_id"])
 check("app anidada (contrato del PRD, FR-A2) llega al registro", ("MT de prueba", "PaynaniWebMT", "0.1.0"),
       (saved["name"], saved["app_name"], saved["app_version"]))
@@ -187,6 +193,10 @@ status, _, page = req("POST", "/apps/revoke", form={"csrf": csrf, "password": GO
 check("revocar desde la página: 200 con el aviso", (200, True), (status, "App revocada" in page))
 check("y el token ya no abre", "token_revoked", owner_clients.lookup(data["token"], path=store)[0])
 check("correo al dueño al revocar", True, any("app revocada" in str(a) for a in sent))
+mail = next(a for a in sent if "app revocada" in a[1])
+check("el correo de revocar: texto plano y HTML, con la app y su id", (4, True, True, True),
+      (len(mail), mail[2].startswith("Se revocó «MT de prueba» desde PaynaniWeb."), f"Id:         {target}" in mail[2],
+       ">App revocada</h1>" in mail[3]))
 status, _, _ = req("POST", "/apps/revoke", form={"csrf": csrf, "password": GOOD, "id": target}, cookie=cookie)
 check("revocar otra vez: 404", 404, status)
 

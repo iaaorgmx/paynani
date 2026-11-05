@@ -18,12 +18,15 @@ from ..sms import roster_api
 
 class Notifier:
     def __init__(self, send=None, log=None):
-        # send(to, subject, body); las pruebas pasan uno que anota.
+        # send(to, subject, body) o, cuando el aviso lleva HTML, send(to, subject, body, html);
+        # las pruebas pasan uno que anota.
         self.send = send or roster_api.send_sh_notifier
         self.log = log or (lambda line: print(f"paynani-web: {line}", file=sys.stderr, flush=True))
         self.threads: list[threading.Thread] = []
 
-    def owner(self, user: dict | None, subject: str, body: str) -> None:
+    def owner(self, user: dict | None, subject: str, body: str, html: str | None = None) -> None:
+        """`body` es el texto plano, que va siempre; `html`, la misma información con formato
+        (`owner_notice`)."""
         to = (user or {}).get("email", "")
         if not to:
             self.log(f"aviso sin destinatario ({subject})")
@@ -31,7 +34,7 @@ class Notifier:
 
         def run():
             try:
-                self.send(to, subject, body)
+                self.send(to, subject, body) if html is None else self.send(to, subject, body, html)
             except Exception as exc:  # noqa: BLE001 -- cualquier falla de send.sh se dice y ya
                 self.log(f"no salió el aviso al dueño «{subject}» ({type(exc).__name__})")
 

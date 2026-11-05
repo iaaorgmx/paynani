@@ -88,16 +88,23 @@ def _digest(msg: dict) -> str:
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def send_sh_notifier(to: str, subject: str, body: str) -> None:
-    """El correo al humano con scripts/send.sh, que lo vuelve a comprobar contra roster.md."""
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as fh:
-        fh.write(body)
-        path = fh.name
+def send_sh_notifier(to: str, subject: str, body: str, html: str | None = None) -> None:
+    """El correo al humano con scripts/send.sh, que lo vuelve a comprobar contra roster.md.
+    Con `html`, sale además esa parte (`--html`): el texto plano va siempre."""
+    paths = []
     try:
-        subprocess.run(["bash", str(_REPO_ROOT / "scripts" / "send.sh"), to, subject, path],
+        for content, suffix in ((body, ".txt"), (html, ".html")):
+            if content is None:
+                continue
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=suffix, delete=False) as fh:
+                paths.append(fh.name)
+                fh.write(content)
+        extra = ["--html", paths[1]] if html is not None else []
+        subprocess.run(["bash", str(_REPO_ROOT / "scripts" / "send.sh"), *extra, to, subject, paths[0]],
                        capture_output=True, text=True, timeout=120, check=True)
     finally:
-        Path(path).unlink(missing_ok=True)
+        for path in paths:
+            Path(path).unlink(missing_ok=True)
 
 
 class RosterService:

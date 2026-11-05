@@ -217,6 +217,10 @@ status, _, body = call({"action": "Disconnect"})
 check("Disconnect: 200 y el cliente queda revocado", (200, "token_revoked"),
       (status, owner_clients.lookup(token, path=store)[0]))
 check("correo al dueño", True, any("app desconectada" in str(a) for a in sent))
+mail = next(a for a in sent if "app desconectada" in a[1])
+check("el correo de desconectar: texto plano y HTML, con la conclusión primero", (4, True, True),
+      (len(mail), "se desconectó de tu paynani. Su token ya no abre la API del dueño.\n" in mail[2],
+       ">App desconectada</h1>" in mail[3]))
 check("después, el token da 401 token_revoked", (401, "token_revoked"),
       (lambda r: (r[0], r[2]["code"]))(call({"action": "GetInstance"}, ip="198.51.100.90")))
 
