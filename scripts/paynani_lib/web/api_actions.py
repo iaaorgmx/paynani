@@ -160,7 +160,9 @@ def list_mail(call: Call) -> dict:
             "mail": [_mail_row(r) for r in chunk]}
 
 
-def get_mail_thread(call: Call) -> dict:
+def get_mail_thread(call: Call, *, error_detail: bool = False) -> dict:
+    """Un correo con su conversación. Con `error_detail` (la API del dueño), un mensaje que
+    no se pudo leer trae también el dato sin secretos de `MailError.detail`."""
     account = _mail_account(call)
     event_id = call.text("event_id").strip()
     message_id = call.text("message_id").strip()
@@ -187,6 +189,8 @@ def get_mail_thread(call: Call) -> dict:
             item["message"] = got["message"]
         else:
             item["error"] = getattr(got.get("error"), "code", "gone")
+            if error_detail:
+                item["error_detail"] = str(getattr(got.get("error"), "detail", "") or "")
         item["selected"] = r is row
         messages.append(item)
     return {"account": account["id"], "messages": messages}
@@ -411,6 +415,11 @@ def save_catch_all(call: Call) -> dict:
     permission = CATCHALL_WRITE[channel]
     if permission not in granted_permissions(call.record):
         raise ApiError(403, "forbidden", f"This token lacks the {permission} permission.", permission=permission)
+    return catch_all_save(call, channel)
+
+
+def catch_all_save(call: Call, channel: str) -> dict:
+    """Guarda el Catch-All de `channel`, ya con el permiso revisado (la API del dueño, #721, no lo pide)."""
     enabled = call.params.get("enabled")
     if not isinstance(enabled, bool):
         raise ApiError(400, "invalid_parameter", "enabled must be true or false.", field="enabled")
@@ -424,7 +433,9 @@ def _notify(call: Call, kind: str, account_id: str, email: str) -> None:
     """El mismo aviso al dueño que manda la web, diciendo que vino de la API."""
     when = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
     what = i18n.t(f"web.acctmail.what_{kind}", email=email, id=account_id)
-    what += f" (API token {call.record.get('name', '')} {call.record.get('prefix', '')}…)"
+    # La API del dueño (#721) dice de qué app vino: «desde PaynaniWebMT (<nombre>)» (FR-A10).
+    what += (f" ({call.origin()})" if hasattr(call, "origin")
+             else f" (API token {call.record.get('name', '')} {call.record.get('prefix', '')}…)")
     user = call.ctx.user()
     if user:
         call.ctx.notifier.owner(user, i18n.t(f"web.acctmail.{kind}", email=email),

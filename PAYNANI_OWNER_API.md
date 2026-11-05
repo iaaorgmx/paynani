@@ -142,6 +142,304 @@ Sin parámetros. La app se revoca a sí misma («Desconectar» en PaynaniWebMT).
 `{"client_id", "revoked_at"}`, y le llega un correo al dueño. Después, el token da
 `401 token_revoked`.
 
+## Mensajes de texto, WhatsApp, Telegram y Webchat (A4)
+
+Estas acciones hacen lo mismo que las páginas de PaynaniWeb, con las mismas funciones:
+`sms/owner.py`, `web/channel_send.py`, `web/channel_react.py`, `web/channel_media.py` y
+`web/channel_link.py`. WhatsApp y Telegram se piden al servicio con `by: web`, como la
+web, y no con `by: api`. Así el dueño ve sus conversaciones completas, igual que en
+PaynaniWeb. El estado en curso (una vinculación de WhatsApp o el `check` de un token de
+Telegram) es de cada app emparejada: otra app no lo ve.
+
+Errores comunes de estas acciones, además de los de [Errores](#errores):
+- `503 <canal>_unavailable`: el canal no está configurado o su servicio no contesta.
+- `404 not_found`: no hay conversación, mensaje o archivo con esa referencia.
+- `400 invalid_parameter` con `field`: un parámetro no tiene la forma esperada.
+
+### Mensajes de texto
+
+| Acción | Parámetros | Responde |
+|---|---|---|
+| `ListSmsConversations` | `offset` | Lo de `ListSmsConversations` de `/api/agent`, `in_roster` en cada conversación y `phone` (abajo) |
+| `GetSmsThread` | `number`, `offset` | Lo de `GetSmsThread` de `/api/agent`, `in_roster` y `phone` |
+| `SendOwnerSms` | `number`, `text`, `pause` (bool), `outside_roster_ok` (bool) | `{order_id, number, status: "queued", agent_pause_min, in_roster}` |
+| `GetSmsStatuses` | `number` | `{count, offline, items: [{id, status, error}]}`, sólo los mensajes de la web (`w_…`) |
+| `ListOptOuts` | | `{opt_outs: [{number, at, by, …}]}`, la más reciente primero |
+| `SaveOptOut` / `DeleteOptOut` | `number` | `{number, opted_out, changed}` |
+
+**El objeto `phone`:** `{state, offline_ttl_min, agent_pause_min, per_hour}`.
+- `state` puede ser:
+  - `ok`;
+  - `no_phone`: no hay teléfono emparejado;
+  - `old_app`: la app no acepta órdenes del dueño;
+  - `no_sms_phone`: el teléfono es sólo Webchat.
+- `offline_ttl_min` > 0 dice en cuántos minutos vence una orden si el teléfono sigue sin conexión.
+
+**Números:** se normalizan con la región de la SIM del teléfono, como en la web.
+
+**Errores de `SendOwnerSms`:**
+- `409 phone_not_ready` (con `state`);
+- `400 invalid_number`, `empty_text`, `text_too_long` o `no_sms_phone`;
+- `429 rate_limited` (con `retry_at`), con el tope por hora de la web.
+
+**Fuera del roster (FR-3, FR-A10):** a un número fuera del roster, paynani responde
+`403 password_required` (con el `number` ya normalizado) y no manda nada. La app pide
+entonces su contraseña y vuelve a llamar con `outside_roster_ok: true`. Así la regla
+vive en paynani y no depende de que cada app se acuerde.
+
+```bash
+curl -s https://<túnel>/api/owner -H "Authorization: Bearer $PW" -H 'Content-Type: application/json' \
+  -d '{"action":"SendOwnerSms","number":"55 1111 2222","text":"Ya salió tu pedido","pause":true}'
+```
+
+### WhatsApp
+
+| Acción | Parámetros | Responde |
+|---|---|---|
+| `GetWhatsAppStatus` | | `{configured: false}`, o `{configured: true, state, me, since, linking, …, link, link_ended}` |
+| `ListWhatsAppConversations` | `limit` (1–100), `before` | `{threads, next_before}` |
+| `GetWhatsAppThread` | `number`, `limit`, `before` | El hilo del servicio: `{number, name, in_roster, can_reply, messages, next_before}` |
+| `SendWhatsApp` | `number`, `text`, `reply_to`, archivos (multipart) | `{sent: true, …}` |
+| `ReactWhatsApp` | `ref`, `emoji` («» quita la tuya) | `{reactions}` |
+| `GetWhatsAppMedia` | `ref`, `kind` (`image` o `file`), `index` (fotos mandadas desde la web) | Los bytes ([Archivos](#archivos)) |
+| `LinkWhatsApp` | `mode` (`qr` o `code`), `number` (E.164, con `code`) | `{link_id, code?, qr_svg?, expires_in_s, …}` |
+| `GetWhatsAppLinkCode` | | `{link: {state, mode, qr_svg?, expires_in_s, …} \| null, ended}` |
+| `CancelWhatsAppLink` | | `{canceled: true}` |
+| `UnlinkWhatsApp` | `confirm: true` | `{unlinked: true, remote}` |
+
+- **La cita:** `reply_to` sólo va si es un mensaje de WhatsApp (`wa:…` o `wo_…`) y el
+  servicio cita (`replies` en el estado). Si no, el mensaje sale sin cita.
+- **Archivos:** hasta 10 por mensaje, con los topes de la web. Se suben al núcleo antes
+  de mandar.
+- **Errores de `SendWhatsApp`:**
+  - el código del servicio: `not_allowed`, `not_started`, `409 not_connected`,
+    `429 rate_limited` o `504 timeout`;
+  - el de los archivos: `too_many`, `too_big`, `bad_type`…;
+  - `504 send_unknown` si un corte por tiempo con archivos no dice si salieron. Revisa
+    el hilo antes de repetir.
+
+  `sent` trae los nombres de los archivos que sí salieron.
+- **Errores de `ReactWhatsApp`:**
+  - `404 not_found` si el mensaje o el canal no reaccionan;
+  - `404 message_too_old` si el mensaje no tiene id en WhatsApp (#707).
+- **El código de vinculación** sólo viaja en la respuesta de `LinkWhatsApp`. El QR se
+  pide con `GetWhatsAppLinkCode` mientras dure. Llega ya dibujado como `qr_svg`, con
+  `sms/qr.py` y sin `<title>`, para que la app lo valide contra esa forma fija. El texto
+  del QR nunca sale de paynani. **Errores:**
+  - `409 already_linked`;
+  - `400 invalid_number` o `invalid` (`field: mode`).
+- **Acciones delicadas:** `LinkWhatsApp`, `CancelWhatsAppLink` y `UnlinkWhatsApp`.
+
+```bash
+curl -s https://<túnel>/api/owner -H "Authorization: Bearer $PW" \
+  -F action=SendWhatsApp -F number=+15550100001 -F text='La factura' -F files=@factura.pdf
+curl -s https://<túnel>/api/owner -H "Authorization: Bearer $PW" -H 'Content-Type: application/json' \
+  -d '{"action":"GetWhatsAppMedia","ref":"wa:…","kind":"image"}' -o foto.jpg
+```
+
+### Telegram
+
+| Acción | Parámetros | Responde |
+|---|---|---|
+| `GetTelegramStatus` | | `{configured: false, owner_telegram}`, o `{configured: true, state, bot_username, since, counters, …, check}` |
+| `ListTelegramConversations` | `limit`, `before` | `{threads, next_before}` |
+| `GetTelegramThread` | `thread` (`t_…`), `limit`, `before` | El hilo del servicio |
+| `SendTelegram` | `thread`, `text`, `reply_to`, archivos (multipart) | `{sent: true, …}` |
+| `ReactTelegram` | `ref`, `emoji` | `{reactions}` |
+| `GetTelegramMedia` | `ref`, `kind`, `index` | Los bytes |
+| `SetupTelegram` | `token`, `bot_username`, `owner_telegram`, `confirm_dedicated` | `{bot_username, owner_saved, started}` |
+| `CheckTelegramToken` | `token` | `{bot_username, same_token, webhook}` |
+| `ApplyTelegramToken` | `confirm_dedicated`, `confirm_webhook` | `{result: "applied" \| "unchanged", bot_username}` |
+| `CancelTelegramToken` | | `{canceled: true}` |
+
+- **`SetupTelegram`** es la configuración inicial (como `paynani telegram setup`).
+  Guarda el Telegram del dueño en su fila del roster (#682); `owner_saved: false` dice
+  que hay que agregarlo desde Roster. **Errores:**
+  - `409 already_configured`;
+  - `400 owner_invalid`, `owner_row` u `owner_taken` (con `name`);
+  - los de `setup.initial` (`502` si Telegram no contesta).
+- **Cambiar el token** son dos pasos (FR-10): `CheckTelegramToken` y luego
+  `ApplyTelegramToken`. El `check` se queda en paynani, 5 minutos, y es de esta app.
+  `GetTelegramStatus` lo devuelve en `check` mientras siga vigente. **Errores:**
+  - `400 token_format` o `token_rejected`;
+  - `409 check_expired`;
+  - `400 missing_field` (`field`);
+  - `409 rollback` (`reason`).
+- **Acciones delicadas:** `SetupTelegram`, `CheckTelegramToken` y `ApplyTelegramToken`.
+  El correo al dueño dice «desde PaynaniWebMT (<nombre>)».
+
+### Webchat
+
+| Acción | Parámetros | Responde |
+|---|---|---|
+| `GetWebchatThread` | `since` o `before` (`w_…`), `limit` (1–100, 20 por omisión) | `{messages, next_before, typing, draft, replies, reactions}` |
+| `SendWebchat` | `text`, `reply_to` (`w_…`), archivos (multipart, hasta 10) | `{message}` |
+| `ReactWebchat` | `ref` (`w_…`), `emoji` | `{reactions}` |
+| `GetWebchatFile` | `ref` (`f_…`) | Los bytes |
+| `GetAgentTyping` | | `{typing, draft}` |
+
+- **Lo nuevo:** con `since`, sólo los mensajes posteriores (para el polling, junto con
+  `GetChanges`). Con `before`, la página anterior.
+- **`replies` y `reactions`** dicen si este paynani ya cita y reacciona en Webchat.
+- **Cada mensaje** trae `id`, `dir`, `by`, `at`, `text`, `files` (`{n, name, kind, size, ref}`),
+  `reply_to` y `reactions`.
+- **Errores de `SendWebchat`:** los del almacén (`empty`, `too_big`, `bad_type`, …).
+
+```bash
+curl -s https://<túnel>/api/owner -H "Authorization: Bearer $PW" -H 'Content-Type: application/json' \
+  -d '{"action":"GetWebchatThread","since":"w_0123456789abcdef0123456789abcdef"}'
+```
+
+## Correo (A3, #721)
+
+Lo mismo que «Email Accounts» y «Nuevo correo» de PaynaniWeb. `ListAccounts`, `ListMail`,
+`GetMailThread`, `AddAccount` y `RemoveAccount` son las acciones de `/api/agent`
+([PAYNANI_API.md](PAYNANI_API.md)), con los mismos parámetros, respuestas y errores, sin
+permisos: el dueño puede todo. La cuenta del agente es `account: "main"`.
+
+```bash
+curl -sS https://<gateway>/api/owner -H 'Authorization: Bearer pw_…' -H 'Content-Type: application/json' \
+  -d '{"action": "ListMail", "account": "main", "offset": 0}'
+```
+
+- `AddAccount` y `RemoveAccount` son delicadas: el aviso al dueño dice
+  «desde PaynaniWebMT (<nombre>)» en lugar del API Token.
+- `ListAccounts` trae además, en cada cuenta, lo que muestran las pantallas de correo:
+  `from_name`, el nombre con que escribe (vacío si no tiene), y `signed`, `true` si tiene
+  firma.
+- En `GetMailThread`, un mensaje que no se pudo leer trae, junto a `error` (el código),
+  `error_detail`: un dato sin secretos, como `imap.example.com: timed out`, o vacío.
+- Los errores `400` y `503` de `SendOwnerMail` y `SaveMainAccountConfig` que vienen de una
+  regla de PaynaniWeb traen `detail` aparte del `message`, para que la app arme el texto en
+  su idioma. Puede venir vacío.
+
+### `SendOwnerMail` (delicada)
+
+El correo que escribe el dueño, como «Nuevo correo» (#590, #591). paynani lo manda desde la
+cuenta y lo guarda en Enviados.
+
+| Parámetro | |
+|---|---|
+| `account` | `main` o el id de una cuenta adicional |
+| `to`, `cc`, `bcc` | Direcciones separadas por comas |
+| `subject`, `text` | El asunto y el cuerpo (texto) |
+| `confirm_outside` | `true` para mandar aunque haya destinatarios fuera del roster de esa cuenta |
+
+```json
+{"account": "main", "sent": true, "message_id": "<…>", "outside_roster": [], "sent_copy": "saved", "notice": "skipped"}
+```
+
+- Si alguien no está en el roster de la cuenta y no viene `confirm_outside: true`, responde
+  `409 outside_roster` con `outside` (la lista) y no manda nada. La app pide su contraseña
+  y vuelve a llamar con `confirm_outside: true`. Cuando sale a alguien fuera del roster, al
+  dueño le llega el aviso de siempre.
+- Una dirección o un campo inválido da `400` con el código de PaynaniWeb: `invalid_address`,
+  `no_recipients`, `too_many`, `subject`, `text` o `unknown_account`. Sin el servicio de
+  correo, `503 not_available`.
+- `502 unknown_outcome`: el envío falló a la mitad y pudo haber salido. Revisa Enviados antes
+  de reintentar. `502 send_failed`: el servidor SMTP lo rechazó.
+
+### `GetMainAccountConfig`
+
+La configuración de la cuenta del agente, como «Configuración»: `config` (servidores,
+puertos, nombre…, **sin** la contraseña del buzón), `fields` (los que se pueden cambiar) y
+`rev`, la huella de lo guardado.
+
+### `SaveMainAccountConfig` (delicada)
+
+| Parámetro | |
+|---|---|
+| `rev` | El de `GetMainAccountConfig` |
+| uno o más de `fields` | El valor nuevo. Los que no vienen quedan como estaban |
+| `new_password` | Opcional: la contraseña nueva del buzón |
+
+```json
+{"changed": ["AGENT_EMAIL_FROM_NAME"], "ready": "connected", "recovered": false, "probe": […]}
+```
+
+- `409 stale`: alguien cambió la configuración después de leerla. Vuelve a leer.
+- paynani prueba IMAP y SMTP, guarda `.env` y Himalaya juntos y reinicia el listener. Si algo
+  falla, deshace el cambio y responde `probe_failed`, `write_failed`, `restart_failed` o
+  `not_ready`, con `rollback` (`ok` o `failed`), `probe` y `field_errors`.
+- `ready`: `connected` (volvió), `waiting` (todavía no confirma) o vacío (no hizo falta
+  reiniciar). Al dueño le llega un correo con lo que cambió.
+
+## Roster y reglas (A3, #721)
+
+`ListRoster`, `SaveRosterContact`, `DeleteRosterContact`, `GetRules`, `SaveRules`,
+`GetDefaultRules`, `SaveDefaultRules` y `GetCatchAll` son las de `/api/agent`, sin permisos.
+`SaveCatchAll` también, pero sin el permiso por canal: el dueño guarda el Catch-All de
+`sms`, `whatsapp` o `telegram`.
+
+```bash
+curl -sS https://<gateway>/api/owner -H 'Authorization: Bearer pw_…' -H 'Content-Type: application/json' \
+  -d '{"action": "SaveCatchAll", "channel": "whatsapp", "enabled": true, "text": "Avísame de los códigos.", "etag": "…"}'
+```
+
+### `PreviewRules`
+
+Cómo quedan unas reglas sin guardarlas (la vista previa de PaynaniWeb).
+
+| Parámetro | |
+|---|---|
+| `text` | Las reglas, con su encabezado `---` |
+| `general` | `true` para las generales (`rules/default.md`) |
+| `row`, `roster_etag`, `account` | Para las de un contacto, como en `GetRules` |
+
+`{"effective": "…"}`: el texto que leería el agente, ya con las generales. Un encabezado
+inválido da `400` con el código y el campo, como `SaveRules`.
+
+## Dashboard y Agente (A3, #721)
+
+### `GetDashboard`
+
+`account` opcional (para la tarjeta de correo de esa cuenta). Responde `dashboard`, lo que
+arma `dashboard.py` para la página de inicio, y `numbers`, lo mismo que `/dashboard.json`.
+Usa la misma caché de 60 s que la web, así que pedirlo seguido no cuesta.
+
+### `GetAgent`
+
+Sin parámetros. `{"agent": {…}}`: la página del agente (#644), con su estado, el harness, la
+actividad del día y los canales.
+
+## API Tokens (A3, #721)
+
+Los tokens `pn_` de los agentes, como la pantalla «API Tokens». El `id` de un token es el que
+usa la web en sus direcciones; el secreto sólo sale al crearlo.
+
+### `ListApiTokens`
+
+`{"tokens": [{"id", "name", "prefix", "permissions", "limits", "agent_replies", "created_at",
+"expires_at", "last_used_at", "revoked_at", "status"}]}`. `status` es `active`, `expired` o
+`revoked`.
+
+### `GetApiToken`
+
+`id`. El token, más `sms_today` (los SMS que mandó hoy, hora UTC). `404 not_found` si no existe.
+
+### `CreateApiToken` (delicada)
+
+| Parámetro | |
+|---|---|
+| `name` | Hasta 100 caracteres |
+| `permissions` | Lista: `read`, `telegram.read`, `sms.send`, `roster.write`, `accounts.write`, `catchall.sms.write`, `catchall.whatsapp.write`, `catchall.telegram.write` |
+| `expiry` | `5m`, `1h`, `1d`, `7d`, `never` o `custom` |
+| `custom` | Con `expiry: "custom"`: la fecha ISO 8601, en el futuro |
+| `sms_per_hour`, `sms_per_day` | De 1 a 100000. Por omisión, 60 y 500 |
+| `agent_replies` | `true` si el agente contesta las respuestas a sus SMS |
+
+```json
+{"token": {"id": "…", "name": "Plantako", "status": "active", …}, "secret": "pn_…"}
+```
+
+`secret` no se vuelve a ver: paynani guarda su SHA-256. Algo inválido da
+`400 invalid_token_values`.
+
+### `RevokeApiToken` (delicada) y `SetApiTokenAgentReplies`
+
+`id`, y para el segundo `agent_replies` (`true` o `false`). Responden el token como queda.
+Un token que no existe o ya está revocado da `404 not_found`.
+
 ## Archivos
 
 - **Subir:** la acción que acepta archivos se llama con `multipart/form-data`: los
