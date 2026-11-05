@@ -167,6 +167,7 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
     {entry('whatsapp', '/whatsapp/messages', 'chat', 'web.wa.nav') if whatsapp else ''}
     {entry('telegram', '/telegram/messages', 'chat', 'web.tg.nav') if telegram else ''}
     {entry('roster', '/roster', 'roster', 'web.nav.roster')}
+    {entry('apps', '/apps', 'web', 'web.apps.title')}
     {entry('api_tokens', '/api-tokens', 'key', 'web.tokens.title')}
     {entry('about', '/about', 'info', 'web.about.nav')}
   </nav>

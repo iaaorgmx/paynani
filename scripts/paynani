@@ -364,6 +364,14 @@ def main(argv: list[str] | None = None) -> int:
     web_user_add.add_argument("--password-stdin", action="store_true",
                               help="Read the password from one line of stdin instead of asking.")
     web_user_sub.add_parser("show", help="Show the PaynaniWeb user, without the password hash.")
+    web_pair = web_sub.add_parser(
+        "pair", help="One-time code to connect a web client such as PaynaniWebMT (PaynaniWebMT#2). "
+                     "Give it only to the owner.")
+    web_pair.add_argument("--url", help="Public address of this install (default: PAYNANI_SMS_PUBLIC_URL).")
+    web_clients = web_sub.add_parser("clients", help="List the connected web clients, or revoke one.")
+    web_clients_sub = web_clients.add_subparsers(dest="web_clients_command")
+    web_clients_revoke = web_clients_sub.add_parser("revoke", help="Revoke a web client: its token stops working.")
+    web_clients_revoke.add_argument("client_id", help="The w_... id from `scripts/paynani web clients`.")
     web_passwd = web_sub.add_parser("passwd", help="Change the PaynaniWeb user's password.")
     web_passwd.add_argument("--password-stdin", action="store_true",
                             help="Read the new password from one line of stdin instead of asking.")
@@ -456,6 +464,12 @@ def main(argv: list[str] | None = None) -> int:
             return web_cli.run_user_show(args)
         if args.web_command == "passwd":
             return web_cli.run_passwd(args)
+        if args.web_command == "pair":
+            from paynani_lib.sms import config as sms_config
+            sms_config.load_sms_env()
+            return web_cli.run_pair(args)
+        if args.web_command == "clients":
+            return web_cli.run_clients(args)
     if args.command == "sms":
         from paynani_lib.sms import config as sms_config
         sms_config.load_sms_env()
