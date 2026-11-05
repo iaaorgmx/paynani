@@ -89,7 +89,7 @@ class Notice:
             f'color:{GRANA}">paynani</p>'
             f'<h1 style="margin:0 0 10px;font-size:20px;line-height:26px;font-weight:700;color:{TINTA}">'
             f'{e(self.title)}</h1>'
-            f'<p style="margin:0 0 20px;font-size:15px;line-height:22px;color:{TINTA}">{_inline(self.lead)}</p>'
+            f'<p style="margin:0 0 20px;font-size:15px;line-height:22px;color:{TINTA}">{e(self.lead)}</p>'
             f'{rows}{after}{warn}'
             '</td></tr></table>'
             f'<p style="margin:14px 0 0;font-family:{_FONT};font-size:12px;line-height:18px;color:{GRIS}">'

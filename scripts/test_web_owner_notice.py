@@ -82,6 +82,10 @@ check("el nombre y la app salen escapados", (False, False, True, True),
       ("<img" in page, "<b>" in page, "&lt;img src=x onerror=alert(1)&gt;&quot;&amp;" in page,
        "&lt;b&gt;MT&lt;/b&gt;" in page))
 check("un acento grave en un dato no abre un comando", True, "&lt;b&gt;MT&lt;/b&gt; `1`" in page)
+# Andy en #740: tampoco en la conclusión, que lleva el nombre.
+page = owner_notice.app_connected(dict(RECORD, name="Mi `app` nueva"), "192.0.2.7").html()
+check("un nombre con acentos graves sale tal cual en la conclusión", True, "Se conectó «Mi `app` nueva» a tu paynani." in page)
+check("y el único comando es el de revocar", 1, page.count("<code"))
 
 # Sin nombre de app ni versión, y con un sello que no se entiende.
 bare = dict(RECORD, app_name="", app_version="", paired_at="ayer")
