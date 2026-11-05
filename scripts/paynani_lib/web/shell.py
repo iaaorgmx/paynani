@@ -159,7 +159,7 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
     # Sin títulos de grupo (#715): todo va debajo de la sección «AI Agent», con About y Sign out al final,
     # separados por la misma línea que hay debajo del usuario.
     return f"""
-  <nav aria-label="{th('web.nav.management')}">
+  <nav aria-label="{th('web.nav.menu')}">
     <details class="cuentas"{open_attr}>
       <summary{' class="activo"' if active == 'email' else ''}>{icon('mail')}<span>{th('web.nav.email')}</span>{icon('chevron', 'flecha')}</summary>
       {''.join(items)}
