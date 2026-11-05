@@ -215,6 +215,29 @@ check("PreviewRules con un encabezado inválido: 400, no 500", (400, True), (sta
 status, body = api("PreviewRules", row=beto["row"], roster_etag=etag,
                    text="---\nversion: 1\nenabled: true\n---\n\n## General\n\nSólo Beto.\n")
 check("PreviewRules de un contacto: 200 con su texto", (200, True), (status, "Sólo Beto." in body.get("effective", "")))
+
+
+def beto_now():
+    listing = api("ListRoster")[1]
+    return next(m for m in listing["members"] if m["name"] == "Beto"), listing.get("etag", "")
+
+
+# La columna Telegram del formulario (PRD #609 FR-13), como en PaynaniWeb.
+contact = dict(name="Beto", email="beto@example.com", type="Human")
+status, body = api("SaveRosterContact", row=beto["row"], telegram="@beto_tg", etag=etag, **contact)
+row, etag = beto_now()
+check("SaveRosterContact con telegram: guarda el @usuario", (200, "@beto_tg"), (status, row.get("telegram_username")))
+status, body = api("SaveRosterContact", row=row["row"], etag=etag, **contact)
+row, etag = beto_now()
+check("…sin telegram en el pedido, la fila conserva el suyo", (200, "@beto_tg"), (status, row.get("telegram_username")))
+status, body = api("SaveRosterContact", row=row["row"], telegram="123456789", etag=etag, **contact)
+check("…un id numérico se rechaza, como en PaynaniApp (Q270)", (400, "telegram", "telegram_username_only"),
+      (status, body.get("field"), body.get("reason")))
+check("…y la fila no cambió", "@beto_tg", beto_now()[0].get("telegram_username"))
+status, body = api("SaveRosterContact", row=row["row"], telegram=["x"], etag=etag, **contact)
+check("…telegram que no es texto: invalid_parameter", (400, "telegram"), (status, body.get("field")))
+status, body = api("SaveRosterContact", row=row["row"], telegram="", etag=beto_now()[1], **contact)
+check("…vacío lo borra", (200, False), (status, beto_now()[0].get("has_telegram")))
 status, body = api("GetCatchAll", channel="whatsapp")
 check("GetCatchAll de WhatsApp: 200", 200, status)
 status, body = api("SaveCatchAll", channel="whatsapp", enabled=False, text="Avísame.", etag=body.get("etag", ""))

@@ -220,6 +220,21 @@ curl -sS https://<gateway>/api/owner -H 'Authorization: Bearer pw_…' -H 'Conte
   -d '{"action": "SaveCatchAll", "channel": "whatsapp", "enabled": true, "text": "Avísame de los códigos.", "etag": "…"}'
 ```
 
+### `SaveRosterContact` y la columna Telegram
+
+Además de lo de `/api/agent`, acepta `telegram`, el campo «Telegram» del formulario de
+PaynaniWeb:
+
+- Con un `@usuario`, lo guarda (y agrega la columna si el roster no la tiene).
+- Vacío, lo borra.
+- Sin `telegram` en el pedido, la fila conserva el suyo.
+- Un id numérico responde `400 invalid` con `field: "telegram"` y
+  `reason: "telegram_username_only"`: igual que PaynaniApp, el id sólo se escribe desde
+  PaynaniWeb. Una fila que ya tiene un id lo conserva aunque llegue `telegram` vacío.
+
+`ListRoster` no devuelve el id: cada contacto trae `has_telegram` y, si es un `@usuario`,
+`telegram_username`.
+
 ### `PreviewRules`
 
 Cómo quedan unas reglas sin guardarlas (la vista previa de PaynaniWeb).

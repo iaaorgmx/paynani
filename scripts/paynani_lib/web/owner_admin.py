@@ -150,7 +150,6 @@ def save_main_account_config(call: owner_api.OwnerCall) -> dict:
 # ---- Roster y reglas --------------------------------------------------------------------
 
 owner_api.reuse("ListRoster", api_actions.list_roster)
-owner_api.reuse("SaveRosterContact", api_actions.save_roster_contact)
 owner_api.reuse("DeleteRosterContact", api_actions.delete_roster_contact)
 owner_api.reuse("GetRules", api_actions.get_rules)
 owner_api.reuse("SaveRules", api_actions.save_rules)
@@ -163,6 +162,20 @@ owner_api.reuse("GetCatchAll", api_actions.get_catch_all)
 def save_catch_all(call: owner_api.OwnerCall) -> dict:
     """Los tres canales, sin el permiso por canal del token de agente: el dueño puede todo."""
     return api_actions.catch_all_save(call, api_actions._catch_all_channel(call))
+
+
+@owner_api.action("SaveRosterContact")
+def save_roster_contact(call: owner_api.OwnerCall) -> dict:
+    """
+    Como la de `/api/agent`, más la columna Telegram del formulario de PaynaniWeb (PRD #609
+    FR-13): con `telegram` en el pedido se guarda (vacío la borra); sin él, la fila conserva
+    la suya. Como PaynaniApp y la API (Q270 de #628), aquí sólo se escribe un `@usuario`: el
+    servicio del roster rechaza un id numérico con `telegram_username_only`.
+    """
+    member = api_actions.roster_member(call)
+    if "telegram" in call.params:
+        member["telegram"] = call.text("telegram", limit=64).strip()
+    return api_actions.roster_save(call, member)
 
 
 @owner_api.action("PreviewRules")
