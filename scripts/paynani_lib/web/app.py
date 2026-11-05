@@ -16,7 +16,6 @@ pone el túnel.
 """
 from __future__ import annotations
 
-import base64
 import datetime as dt
 import hashlib
 import html
@@ -34,11 +33,11 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from .. import guard, i18n
 from ..brand import brand_svg
-from ..whatsapp import media as wa_media
 from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from . import (apps_pages, owner_api, about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
 from . import (about_pages, channel_send, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
 from . import (about_pages, channel_react, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (about_pages, channel_media, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -1592,24 +1591,18 @@ def make_handler(ctx: Context):
                         "after": new[-1]["id"] if new else after, "typing": bool(store.is_typing())}
                 self._send(200, "application/json; charset=UTF-8", json.dumps(data, ensure_ascii=False).encode("utf-8"))
                 return
-            ref = self.query.get("ref", [""])[0]
-            found = store.file_path(ref) if webchat_source.REF_RE.match(ref) else None
-            if not found:
-                self._send(404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
-                return
-            path, mime, name = found
+            # Las reglas viven en web/channel_media.py (PaynaniWebMT PRD #2, FR-A6).
             try:
-                data = Path(path).read_bytes()
-            except OSError:
+                media = channel_media.webchat_file(store, self.query.get("ref", [""])[0])
+            except channel_media.MediaError:
                 self._send(404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
                 return
-            inline = mime in ("image/jpeg", "image/png", "image/webp", "image/gif")
-            filename = quote(str(name or "archivo"), safe="")
+            filename = quote(media.name, safe="")
             # Iris[Q3]: un `f_…` nunca cambia de contenido, así que el navegador lo guarda
             # (sólo en ese navegador, `private`) y no lo vuelve a bajar en cada visita.
             # Antes, cada vez que se abría Webchat se bajaban otra vez todas las fotos.
-            self._send(200, mime if inline else "application/octet-stream", data,
-                       [("Content-Disposition", f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{filename}"),
+            self._send(200, media.mime, media.data,
+                       [("Content-Disposition", f"{'inline' if media.inline else 'attachment'}; filename*=UTF-8''{filename}"),
                         ("Content-Security-Policy", "default-src 'none'; sandbox"),
                         MEDIA_CACHE])
 
@@ -1957,8 +1950,7 @@ def make_handler(ctx: Context):
                 self._telegram_image()
                 return
             if self.route == "/telegram/file":
-                self._download(lambda: self.CTX.telegram().request("telegram.file", ref=self.query.get("ref", [""])[0]),
-                               TG_REF.match(self.query.get("ref", [""])[0]), telegram_source.Failed)
+                self._download("telegram", self.query.get("ref", [""])[0])
                 return
             if self.route == "/telegram":
                 done = self.query.get("ok", [""])[0]
@@ -1989,38 +1981,22 @@ def make_handler(ctx: Context):
                                                         notice=notice, error=error))
 
         def _telegram_image(self):
-            """GET /telegram/media?ref=<tg:…>: la foto de un mensaje recibido. El servicio
-            decide en cada pedido (FR-17) y cualquier rechazo es el mismo 404."""
-            ref = self.query.get("ref", [""])[0]
-            index = self.query.get("i", [""])[0]
+            """GET /telegram/media?ref=<tg:…>: la foto de un mensaje, recibida (`tg:…`) o mandada
+            desde la web (`tgo:…` y su índice, #662). Las reglas viven en web/channel_media.py
+            (PaynaniWebMT PRD #2, FR-A6): cualquier rechazo es el mismo 404."""
             not_found = (404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
-            # Una foto recibida (`tg:…`) o una que mandó el dueño desde la web (`tgo:…` y su
-            # índice, #662).
-            if not (TG_REF.match(ref) and not index) and not (TG_OUT_REF.match(ref) and TG_FILE_INDEX.match(index)):
-                self._send(*not_found)
-                return
             try:
-                if ref.startswith("tgo:"):
-                    data = self.CTX.telegram().request("telegram.image", ref=ref, index=int(index))
-                else:
-                    data = self.CTX.telegram().request("telegram.image", ref=ref)
-            except telegram_source.Failed as exc:
+                media = channel_media.image('telegram', self.CTX.telegram(), self.query.get('ref', [""])[0],
+                                            self.query.get("i", [""])[0])
+            except channel_media.MediaError as exc:
                 if exc.code == "unavailable":
                     self._send(503, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
                 else:
                     self._send(*not_found)
                 return
-            try:
-                body = base64.b64decode(str(data.get("data") or ""), validate=True)
-            except (ValueError, TypeError):
-                body = b""
-            mime = wa_media.image_mime(body[:16])
-            if not body or len(body) > wa_media.IMAGE_MAX_BYTES or mime is None:
-                self._send(*not_found)
-                return
-            self._send(200, mime, body, [("Content-Disposition", "inline"),
-                                         ("Content-Security-Policy", "default-src 'none'; sandbox"),
-                                         MEDIA_CACHE])
+            self._send(200, media.mime, media.data, [("Content-Disposition", "inline"),
+                                                     ("Content-Security-Policy", "default-src 'none'; sandbox"),
+                                                     MEDIA_CACHE])
 
         def _telegram_messages(self, *, values: dict | None = None, error: str = "", add_error: str = "",
                                code: int = 200):
@@ -2343,8 +2319,7 @@ def make_handler(ctx: Context):
                 self._whatsapp_image()
                 return
             if self.route == "/whatsapp/file":
-                self._download(lambda: self.CTX.whatsapp().request("whatsapp.file", message_id=self.query.get("id", [""])[0]),
-                               WA_MESSAGE_ID.match(self.query.get("id", [""])[0]), whatsapp_source.Failed)
+                self._download("whatsapp", self.query.get("id", [""])[0])
                 return
             if self.route == "/whatsapp":
                 done = self.query.get("ok", [""])[0]
@@ -2368,72 +2343,43 @@ def make_handler(ctx: Context):
                                                                   code=code_info, notice=notice, error=error,
                                                                   number=number))
 
-        def _download(self, ask, valid, failed):
+        def _download(self, channel: str, ref: str):
             """
             GET /whatsapp/file?id=wa:… y /telegram/file?ref=tg:… (#676): un documento recibido.
-            El servicio decide en cada pedido y da los bytes; un id mal formado, uno que no
-            se puede mostrar, uno fuera de media/ o uno que no existe dan el mismo 404.
-            Siempre como descarga (`attachment`, octet-stream, nosniff). Desde #680 (Metis[Q49]) el
-            navegador la guarda como las fotos (MEDIA_CACHE); los errores siguen con no-store.
+            Las reglas viven en web/channel_media.py (PaynaniWebMT PRD #2, FR-A6): un id mal
+            formado, uno que no se puede mostrar, uno fuera de media/ o uno que no existe dan el
+            mismo 404. Siempre como descarga (`attachment`, octet-stream, nosniff). Desde #680
+            (Metis[Q49]) el navegador la guarda como las fotos (MEDIA_CACHE); los errores siguen
+            sin caché.
             """
-            not_found = (404, "text/plain; charset=UTF-8", b"")
-            if not valid:
-                self._send(*not_found)
-                return
+            source = self.CTX.whatsapp() if channel == "whatsapp" else self.CTX.telegram()
             try:
-                data = ask()
-            except failed as exc:
-                if exc.code in ("service_down", "unavailable"):
-                    self._send(503, "text/plain; charset=UTF-8", b"")
-                else:
-                    self._send(*not_found)
+                media = channel_media.document(channel, source, ref)
+            except channel_media.MediaError as exc:
+                self._send(503 if exc.code == "unavailable" else 404, "text/plain; charset=UTF-8", b"")
                 return
-            try:
-                body = base64.b64decode(str(data.get("data") or ""), validate=True)
-            except (ValueError, TypeError):
-                body = b""
-            if not body or len(body) > downloads.FILE_MAX_BYTES:
-                self._send(*not_found)
-                return
-            self._send(200, "application/octet-stream", body, downloads.headers(str(data.get("name") or "")) + [MEDIA_CACHE])
+            self._send(200, media.mime, media.data, downloads.headers(media.name) + [MEDIA_CACHE])
 
         def _whatsapp_image(self):
             """
-            GET /whatsapp/media?id=<id del mensaje> (#573): la foto de un mensaje de WhatsApp.
-            La pide al servicio, que decide con FR-16a en cada pedido y abre el archivo. Un
-            id inventado, uno de fuera del roster, uno que no es foto o uno sin archivo dan
-            el mismo 404. El tipo sale de los primeros bytes, otra vez aquí.
+            GET /whatsapp/media?id=<id del mensaje> (#573): la foto de un mensaje de WhatsApp,
+            recibida (`wa:…`) o mandada desde la web (`wo_…` y su índice, #670 FR-4). Las reglas
+            viven en web/channel_media.py (PaynaniWebMT PRD #2, FR-A6): cualquier rechazo es el
+            mismo 404.
             """
-            mid = self.query.get("id", [""])[0]
-            index = self.query.get("i", [""])[0]
             not_found = (404, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
-            # Una foto recibida (`wa:…`) o una que mandó el dueño desde la web (`wo_…` y su
-            # índice, #670 FR-4).
-            if not (WA_MESSAGE_ID.match(mid) and not index) and not (WA_SENT_ID.match(mid) and TG_FILE_INDEX.match(index)):
-                self._send(*not_found)
-                return
             try:
-                if mid.startswith("wo_"):
-                    data = self.CTX.whatsapp().request("whatsapp.image", message_id=mid, index=int(index))
-                else:
-                    data = self.CTX.whatsapp().request("whatsapp.image", message_id=mid)
-            except whatsapp_source.Failed as exc:
-                if exc.code in ("service_down", "unavailable"):
+                media = channel_media.image('whatsapp', self.CTX.whatsapp(), self.query.get('id', [""])[0],
+                                            self.query.get("i", [""])[0])
+            except channel_media.MediaError as exc:
+                if exc.code == "unavailable":
                     self._send(503, "text/plain; charset=UTF-8", b"", [("Cache-Control", "no-store")])
                 else:
                     self._send(*not_found)
                 return
-            try:
-                body = base64.b64decode(str(data.get("data") or ""), validate=True)
-            except (ValueError, TypeError):
-                body = b""
-            mime = wa_media.image_mime(body[:16])
-            if not body or len(body) > wa_media.IMAGE_MAX_BYTES or mime is None:
-                self._send(*not_found)
-                return
-            self._send(200, mime, body, [("Content-Disposition", "inline"),
-                                         ("Content-Security-Policy", "default-src 'none'; sandbox"),
-                                         MEDIA_CACHE])
+            self._send(200, media.mime, media.data, [("Content-Disposition", "inline"),
+                                                     ("Content-Security-Policy", "default-src 'none'; sandbox"),
+                                                     MEDIA_CACHE])
 
         def _whatsapp_current(self):
             """GET /whatsapp/link/current (§11): el QR vigente de la vinculación de esta

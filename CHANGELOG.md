@@ -7,6 +7,7 @@
 - **Mensajes de texto: las reglas del dueño en un solo lugar** (paynani#722, PaynaniWebMT PRD #2 FR-A6). El estado del teléfono, la región, el vencimiento sin conexión, el envío con «Pausar al agente», los estados de la conversación y las bajas salen de las páginas de PaynaniWeb a `sms/owner.py`, para que la API del dueño use las mismas. PaynaniWeb se ve y se comporta igual.
 - **WhatsApp y Telegram: el envío del dueño en un solo lugar** (paynani#722, PaynaniWebMT PRD #2 FR-A6). La cita, los archivos y lo que se borra cuando un envío falla salen de las páginas de PaynaniWeb a `web/channel_send.py`, para que la API del dueño use lo mismo. PaynaniWeb se ve y se comporta igual.
 - **Reacciones del dueño en un solo lugar** (paynani#722, PaynaniWebMT PRD #2 FR-A6). Las reglas para poner o quitar una reacción en WhatsApp, Telegram y Webchat, y para leer las de un hilo, salen de las páginas de PaynaniWeb a `web/channel_react.py`, para que la API del dueño use las mismas. PaynaniWeb se ve y se comporta igual.
+- **Fotos y documentos de los canales en un solo lugar** (paynani#722, PaynaniWebMT PRD #2 FR-A6 y FR-A9). Las reglas para abrir una foto o bajar un documento de WhatsApp, Telegram y Webchat salen de las páginas de PaynaniWeb a `web/channel_media.py`, para que la API del dueño use las mismas. PaynaniWeb se ve y se comporta igual.
 
 ## 0.22.0 (2026-11-04)
 
