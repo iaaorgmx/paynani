@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el menú lateral sin títulos de grupo (#715).** Se quitan «Management» y «Tools». Todas las opciones quedan debajo de la sección «AI Agent», y al final van About y, justo debajo, Sign out. Lo pidió Julian.
+
 ## 0.22.0 (2026-11-04)
 
 ### Si actualizas desde 0.21.0

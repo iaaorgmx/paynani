@@ -204,7 +204,6 @@ body.web-shell {
 .web-shell .agente-chip.agente-warn { background: rgba(217, 164, 65, .18); color: #f0c97a; }
 .web-shell .agente-chip.agente-bad { background: rgba(214, 90, 80, .2); color: #f2a39b; }
 .web-shell .grupo { padding: 14px 16px 6px; font-size: .85rem; color: var(--menu-tenue); }
-.web-shell .grupo.separa { border-top: 1px solid var(--menu-borde); margin-top: 6px; }
 .web-shell nav a, .web-shell nav summary, .web-shell .salir button {
   display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 16px 0 18px;
   color: var(--menu-texto); text-decoration: none; font: inherit; font-size: .9rem;
