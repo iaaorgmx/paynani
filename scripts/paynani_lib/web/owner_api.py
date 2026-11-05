@@ -136,3 +136,7 @@ def disconnect(call: OwnerCall) -> dict:
         f"«{record['name']}» ({record['client_id']}) se desconectó de tu paynani {call.origin()}. "
         "Su token ya no abre la API del dueño.")
     return {"client_id": record["client_id"], "revoked_at": record["revoked_at"]}
+
+
+# Las acciones de A3 (#721) se registran al importarse.
+from . import owner_admin  # noqa: E402,F401
