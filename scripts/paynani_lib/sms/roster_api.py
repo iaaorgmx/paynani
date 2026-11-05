@@ -780,7 +780,8 @@ _CHANNEL_NAMES = {"sms": "SMS", "whatsapp": "WhatsApp", "telegram": "Telegram"}
 
 def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
     """El asunto y el cuerpo del correo al humano: qué cambió y desde dónde, el
-    teléfono (Q5) o PaynaniWeb y su dirección (#434 FR-9)."""
+    teléfono (Q5), PaynaniWeb y su dirección (#434 FR-9), un token de la API o una app del
+    dueño emparejada en «Apps conectadas» (PaynaniWebMT#2)."""
     device = entry["device_id"]
     web = from_web(device)
     api = device.startswith(API_PREFIX)
@@ -790,6 +791,12 @@ def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
         app = "la API"
         revoke = ("Si no fuiste tú, revisa el roster y revoca ese token en la pantalla «API Tokens» de "
                   "PaynaniWeb.")
+    elif from_owner(device):
+        client_id, _, ip = device[len(OWNER_PREFIX):].partition(":")
+        origin = f"Desde PaynaniWebMT (app {client_id}, dirección {ip}), a las {entry['at']}:"
+        app = "PaynaniWebMT"
+        revoke = ("Si no fuiste tú, revisa el roster y desconecta esa app en «Apps conectadas» de PaynaniWeb "
+                  f"o con `scripts/paynani web clients revoke {client_id}`.")
     else:
         origin = (f"Desde PaynaniWeb (dirección {device[len(WEB_PREFIX):]}), a las {entry['at']}:" if web
                   else f"Desde el teléfono {device}, a las {entry['at']}:")

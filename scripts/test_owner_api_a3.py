@@ -104,13 +104,15 @@ class FakeOps:
 
 
 owner_mail = []
+roster_mail = []      # los correos del servicio del roster al dueño: [(para, asunto, cuerpo)]
 mailer = mail_compose.Fake(book={"main": ["ana@example.com"]})
 updater = account_config.Fake()
 ctx = app.Context(user_file, notifier=notify.Notifier(send=lambda to, s, b: owner_mail.append((to, s, b)),
                                                       log=lambda line: None),
                   agent_email="agente@example.com", accounts_file=accounts_file, ledger_path=state / "events.jsonl",
                   env_path=env_path, state_dir=state, roster_path=roster, mailer=mailer, updater=updater,
-                  dashboard_source=dashboard.Fake(), roster_notifier=lambda *a: None)
+                  dashboard_source=dashboard.Fake(),
+                  roster_notifier=lambda to, subject, body: roster_mail.append((to, subject, body)))
 ops = FakeOps()
 ctx.account_ops = ops
 ctx.probe_imap = lambda host, port, user, pw: {"ok": True, "steps": [{"ok": True, "text": "imap"}]}
@@ -280,6 +282,25 @@ check("…con el id de la app emparejada", True, all(c["device_id"].split(":")[1
 check("who_changed de una app del dueño", "owner app w_abc123", roster_api.who_changed("owner:w_abc123:203.0.113.9"))
 check("sees_telegram_id: PaynaniWeb y la app del dueño sí; la API de agentes y el teléfono no", (True, True, False, False),
       tuple(roster_api.sees_telegram_id(d) for d in ("web:1.2.3.4", "owner:w_1:1.2.3.4", "api:pn_abc:1.2.3.4", "dev_123")))
+# El correo que avisa al dueño de cada cambio dice de dónde vino (revisión de Metis en #737).
+edits = [(s, b) for _, s, b in roster_mail if "edición en roster.md" in s]
+check("el correo de una edición del roster desde la app del dueño dice PaynaniWebMT, no PaynaniApp", (True, True, False),
+      (bool(edits), all(s.endswith("desde PaynaniWebMT") for s, _ in edits), any("PaynaniApp" in s + b or "teléfono" in b for s, b in edits)))
+check("…con la app y la dirección, y cómo desconectarla", (True, True, True),
+      (edits[-1][1].startswith(f"Desde PaynaniWebMT (app {client['client_id']}, dirección "), "«Apps conectadas»" in edits[-1][1],
+       f"web clients revoke {client['client_id']}" in edits[-1][1]))
+check("ningún correo del roster de esta prueba habla del teléfono ni de un token de la API", [],
+      [s for _, s, b in roster_mail if "PaynaniApp" in s or "la API" in s or "paynani sms revoke" in b or "API Tokens" in b])
+subject, text = roster_api.notice({"device_id": "owner:w_abc123:203.0.113.9", "at": "2026-11-05T19:30:00Z", "action": "rules_default",
+                                   "roster": "rules/default.md", "row": None, "name": "reglas generales", "backup": "",
+                                   "rules": {"file": "rules/default.md", "enabled": True, "reply": {}, "bytes": 10}}, {}, {})
+check("el correo de un cambio de reglas desde la app del dueño", (True, True, True),
+      (subject.endswith("desde PaynaniWebMT"), "revisa el archivo y desconecta esa app" in text, "web clients revoke w_abc123" in text))
+for device, said in (("web:1.2.3.4", "desde PaynaniWeb"), ("api:pn_abc:1.2.3.4", "desde la API"), ("dev_123", "desde PaynaniApp")):
+    subject, _ = roster_api.notice({"device_id": device, "at": "x", "action": "rules_default", "roster": "rules/default.md", "row": None,
+                                    "name": "reglas generales", "backup": "",
+                                    "rules": {"file": "rules/default.md", "enabled": True, "reply": {}, "bytes": 10}}, {}, {})
+    check(f"…y los demás orígenes siguen igual: {device.split(':')[0]}", True, subject.endswith(said))
 status, body = api("GetCatchAll", channel="whatsapp")
 check("GetCatchAll de WhatsApp: 200", 200, status)
 status, body = api("SaveCatchAll", channel="whatsapp", enabled=False, text="Avísame.", etag=body.get("etag", ""))
