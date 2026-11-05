@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **Mensajes de texto: las reglas del dueño en un solo lugar** (paynani#722, PaynaniWebMT PRD #2 FR-A6). El estado del teléfono, la región, el vencimiento sin conexión, el envío con «Pausar al agente», los estados de la conversación y las bajas salen de las páginas de PaynaniWeb a `sms/owner.py`, para que la API del dueño use las mismas. PaynaniWeb se ve y se comporta igual.
+
 ## 0.22.0 (2026-11-04)
 
 ### Si actualizas desde 0.21.0
