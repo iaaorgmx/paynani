@@ -501,12 +501,8 @@ def _sms_store(call: Call):
 
 def _sms_region(store) -> str | None:
     """La región de la SIM del teléfono emparejado, o la de la instalación (como la web)."""
-    import phone as phone_mod
-    for sim in (store.device() or {}).get("sims") or []:
-        country = str((sim or {}).get("country") or "").strip().upper()
-        if re.fullmatch(r"[A-Z]{2}", country):
-            return country
-    return phone_mod.default_region()
+    from ..sms import owner as sms_owner
+    return sms_owner.region(store)
 
 
 def _phone_online(call: Call) -> bool:
