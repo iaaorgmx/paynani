@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "harness"))
 
 from paynani_lib import accounts_cli  # noqa: E402
-from paynani_lib.web import (account_config, api_tokens, app, dashboard, mail_compose, notify,  # noqa: E402
+from paynani_lib.web import (account_config, api_actions, api_tokens, app, dashboard, mail, mail_compose, notify,  # noqa: E402
                              owner_clients, users)
 
 passed = failed = 0
@@ -139,12 +139,42 @@ def sensitive_count() -> int:
 # --- Correo -----------------------------------------------------------------------------------
 status, body = api("ListAccounts")
 check("ListAccounts: la del agente y la adicional", (200, ["main", "ventas"]), (status, [a["id"] for a in body["accounts"]]))
+check("…con el nombre con que escribe cada una y si tiene firma (las pantallas de correo)",
+      [("Agente", False), ("", False)], [(a.get("from_name"), a.get("signed")) for a in body["accounts"]])
+signature = tmp / "firma.txt"
+signature.write_text("Agente\n", encoding="utf-8")
+env_before = env_path.read_text(encoding="utf-8")
+env_path.write_text(env_before + f"PAYNANI_SIGNATURE_FILE={signature}\n", encoding="utf-8")
+check("…una cuenta con firma dice signed", True, api("ListAccounts")[1]["accounts"][0]["signed"])
+env_path.write_text(env_before, encoding="utf-8")
 status, body = api("ListMail", account="main")
 check("ListMail: 200 con la lista paginada", (200, "main", 0), (status, body["account"], body["offset"]))
 status, body = api("ListMail", account="nada")
 check("ListMail con una cuenta que no existe: 404", (404, "not_found"), (status, body["code"]))
 status, body = api("GetMailThread", account="main")
 check("GetMailThread sin event_id ni message_id: 400", (400, "missing_parameter"), (status, body["code"]))
+
+
+def unreadable_thread():
+    """GetMailThread de un recibido cuyo buzón no abre: el registro y el buzón, de mentira."""
+    row = {"kind": "in", "event_id": "imap:INBOX:1:5", "at": "2026-10-21T18:25:00Z", "sender_name": "Ana",
+           "sender_address": "ana@example.com", "subject": "Hola", "observed_at": "2026-10-21T18:25:00Z",
+           "message_id": "<m5@example.com>", "in_reply_to": "", "references": ""}
+    real_rows, real_env = api_actions._mail_rows, mail.env_for
+
+    def no_mailbox(*args, **kwargs):
+        raise mail.MailError("connect", "imap.example.com: timed out")
+    api_actions._mail_rows, mail.env_for = (lambda call, account_id: [row]), no_mailbox
+    try:
+        return api("GetMailThread", account="main", event_id="imap:INBOX:1:5")
+    finally:
+        api_actions._mail_rows, mail.env_for = real_rows, real_env
+
+
+status, body = unreadable_thread()
+check("GetMailThread de un correo que no se pudo leer: el código y el detalle sin secretos",
+      (200, "connect", "imap.example.com: timed out", True),
+      (status, body["messages"][0].get("error"), body["messages"][0].get("error_detail"), body["messages"][0]["selected"]))
 
 before_sensitive = sensitive_count()
 status, body = api("SendOwnerMail", account="main", to="ana@example.com", subject="Hola", text="Qué tal")
@@ -161,8 +191,8 @@ status, body = api("SendOwnerMail", account="main", to="ana@example.com, beto@ex
 check("…con confirm_outside: sale, y el permiso dice allow_outside", (200, ["beto@example.com"], True),
       (status, body["outside_roster"], mailer.sent[-1]["allow_outside"]))
 status, body = api("SendOwnerMail", account="main", to="no-es-correo", subject="Hola", text="x")
-check("SendOwnerMail con una dirección inválida: 400 con el código de mail_compose", (400, True),
-      (status, body["code"] != "internal_error"))
+check("SendOwnerMail con una dirección inválida: 400 con el código de mail_compose y su detalle aparte", (400, True, True),
+      (status, body["code"] != "internal_error", "detail" in body))
 status, body = api("SendOwnerMail", account="main", to="ana@example.com", subject="x", text="x", confirm_outside="sí")
 check("confirm_outside que no es booleano: invalid_parameter", (400, "confirm_outside"), (status, body.get("field")))
 check("cada SendOwnerMail queda en la bitácora como owner_sensitive", 5, sensitive_count() - before_sensitive)

@@ -20,7 +20,7 @@ import re
 import sys
 
 from .. import i18n
-from . import api_actions, api_tokens, account_config, config_pages, dashboard, mail_compose, owner_api, token_pages
+from . import api_actions, api_tokens, account_config, config_pages, dashboard, mail, mail_compose, owner_api, token_pages
 from .api_actions import ApiError
 
 TOKEN_ID = re.compile(r"[a-f0-9]{64}")
@@ -40,11 +40,30 @@ def _bool(call: owner_api.OwnerCall, key: str, default: bool = False) -> bool:
 
 # ---- Correo ------------------------------------------------------------------------------
 
-owner_api.reuse("ListAccounts", api_actions.list_accounts)
 owner_api.reuse("ListMail", api_actions.list_mail)
-owner_api.reuse("GetMailThread", api_actions.get_mail_thread)
 owner_api.reuse("AddAccount", api_actions.add_account, sensitive=True)
 owner_api.reuse("RemoveAccount", api_actions.remove_account, sensitive=True)
+
+
+@owner_api.action("ListAccounts")
+def list_accounts(call: owner_api.OwnerCall) -> dict:
+    """
+    Como la de `/api/agent`, más lo que muestran las pantallas de correo de PaynaniWeb:
+    `from_name`, el nombre con que escribe la cuenta (el del hilo), y `signed`, si tiene firma
+    («Nuevo correo» lo dice debajo del mensaje).
+    """
+    out = api_actions.list_accounts(call)
+    for account in out["accounts"]:
+        account["from_name"] = mail.sender_name(account["id"], call.ctx.accounts_file, call.ctx.env_path())
+        account["signed"] = mail.has_signature(account["id"], call.ctx.accounts_file, call.ctx.env_path())
+    return out
+
+
+@owner_api.action("GetMailThread")
+def get_mail_thread(call: owner_api.OwnerCall) -> dict:
+    """Como la de `/api/agent`, y un mensaje que no se pudo leer trae `error_detail`: el dato
+    sin secretos que PaynaniWeb pone en «No se pudo conectar al servidor de correo (…)»."""
+    return api_actions.get_mail_thread(call, error_detail=True)
 
 
 @owner_api.action("SendOwnerMail", sensitive=True)
@@ -79,10 +98,11 @@ def send_owner_mail(call: owner_api.OwnerCall) -> dict:
                            "before trying again.") from None
     except mail_compose.Refused as exc:
         status = 503 if exc.code == "not_available" else 400
-        raise ApiError(status, exc.code, str(exc.detail or exc.code)) from None
+        raise ApiError(status, exc.code, str(exc.detail or exc.code), detail=str(exc.detail or "")) from None
     if not res.get("ok"):
         code = str(res.get("code") or "send_failed")
-        raise ApiError(502 if code == "send_failed" else 400, code, str(res.get("detail") or code))
+        raise ApiError(502 if code == "send_failed" else 400, code, str(res.get("detail") or code),
+                       detail=str(res.get("detail") or ""))
     return {"account": account["id"], "sent": True, "message_id": res.get("message_id", ""),
             "outside_roster": res.get("outside_roster") or outside,
             "sent_copy": res.get("sent_copy", ""), "notice": res.get("notice", "")}
@@ -118,14 +138,14 @@ def save_main_account_config(call: owner_api.OwnerCall) -> dict:
     try:
         changes = account_config.changes(before, form)
     except account_config.Refused as exc:
-        raise ApiError(400, exc.code, config_pages.error_text(exc.code, exc.detail)) from None
+        raise ApiError(400, exc.code, config_pages.error_text(exc.code, exc.detail), detail=str(exc.detail or "")) from None
     if not changes:
         return {"changed": [], "ready": ""}
     try:
         res = call.ctx.updater.update(changes, by=f"owner:{call.client['client_id']}:{call.ip}")
     except account_config.Refused as exc:
         raise ApiError(503 if exc.code == "not_available" else 400, exc.code,
-                       config_pages.error_text(exc.code, exc.detail)) from None
+                       config_pages.error_text(exc.code, exc.detail), detail=str(exc.detail or "")) from None
     except Exception as exc:  # noqa: BLE001 -- pudo haber escrito: no se invita a reintentar a ciegas
         sys.stderr.write(f"paynani-web: SaveMainAccountConfig terminó con {type(exc).__name__}\n")
         raise ApiError(502, "unknown_outcome", "The change may or may not have been saved; read the "
@@ -135,7 +155,8 @@ def save_main_account_config(call: owner_api.OwnerCall) -> dict:
         return {"changed": [], "ready": ""}
     if not res.get("ok"):
         status = 400 if code in ("invalid", "probe_failed", "unknown_field") else 409 if code == "busy" else 502
-        raise ApiError(status, code, str(res.get("detail") or code), rollback=res.get("rollback", ""),
+        raise ApiError(status, code, str(res.get("detail") or code), detail=str(res.get("detail") or ""),
+                       rollback=res.get("rollback", ""),
                        probe=res.get("probe"), field_errors=res.get("field_errors"))
     changed = list(res.get("changed") or list(changes))
     fields = ", ".join(config_pages.label(k) for k in changed)
