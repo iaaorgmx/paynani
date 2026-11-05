@@ -69,10 +69,10 @@ def telegram() -> Channel:
 
 
 def send(channel: Channel, source, root: Path, target: dict, text: str, files: list[dict],
-         reply_to: str = "") -> None:
+         reply_to: str = "") -> dict:
     """Manda `text` y `files` (`[{"name", "data"}]`) a `target` (`{"number": …}` o
-    `{"thread": …}`) por `source`. `root` es la carpeta del canal en el estado. Levanta
-    `SendError`; si vuelve, salió."""
+    `{"thread": …}`) por `source`. `root` es la carpeta del canal en el estado. Devuelve lo
+    que contestó el servicio; levanta `SendError`."""
     text = text.replace("\r\n", "\n")
     extra = ({"reply_to": reply_to} if any(p.match(reply_to) for p in channel.reply_refs)
              and source.status().get("replies") is True else {})
@@ -93,9 +93,8 @@ def send(channel: Channel, source, root: Path, target: dict, text: str, files: l
         raise SendError(exc.code) from None
     try:
         if ups:
-            source.request_slow(channel.kind, **target, text=text, uploads=ups, **extra)
-        else:
-            source.request(channel.kind, **target, text=text, **extra)
+            return source.request_slow(channel.kind, **target, text=text, uploads=ups, **extra) or {}
+        return source.request(channel.kind, **target, text=text, **extra) or {}
     except channel.failed as exc:
         unknown = bool(ups) and (exc.code in channel.timeout_codes or bool(exc.fields.get("timed_out")))
         done = exc.fields.get("sent_uploads") or []

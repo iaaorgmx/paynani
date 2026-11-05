@@ -35,7 +35,7 @@ from .. import guard, i18n
 from ..brand import brand_svg
 from . import about_strings, agent_strings, msgmenu_strings, webchat_strings, catchall_strings, compose_strings, config_strings, dashboard_strings, strings, telegram_strings, token_strings, whatsapp_strings  # noqa: F401 -- suma las claves web.* a los catálogos
 from ..whatsapp import media as wa_media
-from . import (apps_pages, owner_api, about_pages, channel_media, channel_react, downloads, msgmenu, channel_send, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
+from . import (apps_pages, owner_api, channel_link, channel_media, channel_react, channel_send, about_pages, downloads, msgmenu, agent, agent_pages, multipart, webchat_pages, webchat_source, webchat_ws, websocket, accounts_pages, dashboard, dashboard_pages, api_actions, api_auth, api_security, api_tokens, auth, owner_clients, mail, mail_pages, messages_pages, notify, profile_pages, roster_pages, shell, token_pages,
                thread, users, whatsapp_pages, whatsapp_source, telegram_pages, telegram_source, compose_pages, mail_compose, account_config, config_pages)
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -2072,7 +2072,7 @@ def make_handler(ctx: Context):
                 self._redirect(f"/telegram/messages/ver?t={values['t']}&ok=sent#responder")
                 return
             if self.route == "/telegram/token/cancel":
-                self.CTX.tg_check(sid, pop=True)
+                channel_link.tg_cancel(self.CTX, sid)
                 self._redirect("/telegram?ok=canceled")
                 return
             if self.route == "/telegram/token/apply":
@@ -2112,58 +2112,44 @@ def make_handler(ctx: Context):
             if problem:
                 self._telegram_bot(error=problem, code=status_code)
                 return
-            if not telegram_source.TOKEN_RE.match(token):
-                self._telegram_bot(error=i18n.t("web.tg.err.token_format"), code=400)
-                return
+            # La regla vive en web/channel_link.py (PaynaniWebMT PRD #2, FR-A6).
             try:
-                data = source.request("telegram.token_check", token=token)
-            except telegram_source.Failed as exc:
-                key = "web.tg.err.token_rejected" if exc.code == "invalid" else ""
-                self._telegram_bot(error=i18n.t(key) if key else telegram_pages.error_text(exc.code, exc.fields),
-                                   code=503 if exc.code == "unavailable" else 400)
+                check = channel_link.tg_check(self.CTX, sid, source, token)
+            except channel_link.LinkError as exc:
+                if exc.code in ("token_format", "token_rejected"):
+                    self._telegram_bot(error=i18n.t("web.tg.err." + exc.code), code=400)
+                else:
+                    self._telegram_bot(error=telegram_pages.error_text(exc.code, exc.fields),
+                                       code=503 if exc.code == "unavailable" else 400)
                 return
             finally:
                 token = ""
-            check = {"check": str(data.get("check") or ""), "bot_username": str(data.get("bot_username") or ""),
-                     "same_token": bool(data.get("same_token")), "webhook": bool(data.get("webhook"))}
-            self.CTX.tg_check_set(sid, check)
             self._telegram_bot(check=check)
 
         def _telegram_apply(self, post: dict):
             """POST /telegram/token/apply: el `check` de esta sesión, con las confirmaciones
             de FR-10. El `check` sale de la memoria del servidor, nunca del formulario."""
-            sid = self.session["sid"]
-            pending = self.CTX.tg_check(sid)
-            if pending is None:
-                self._telegram_bot(error=i18n.t("web.tg.check_expired"), code=409)
-                return
-            if post.get("confirm_dedicated") != "1":
-                self._telegram_bot(error=i18n.t("web.tg.err.missing_field", field=i18n.t("web.tg.confirm_dedicated")),
-                                   code=400, check=pending)
-                return
-            if pending["webhook"] and post.get("confirm_webhook") != "1":
-                self._telegram_bot(error=i18n.t("web.tg.err.missing_field", field=i18n.t("web.tg.confirm_webhook")),
-                                   code=400, check=pending)
-                return
-            self.CTX.tg_check(sid, pop=True)
+            # La regla vive en web/channel_link.py (PaynaniWebMT PRD #2, FR-A6).
             try:
-                data = self.CTX.telegram().request("telegram.token_apply", check=pending["check"],
-                                                   confirm_dedicated=True,
-                                                   confirm_delete_webhook=bool(pending["webhook"]))
-            except telegram_source.Failed as exc:
-                if exc.code == "not_found":
+                data = channel_link.tg_apply(self.CTX, self.session["sid"], self.CTX.telegram(),
+                                             confirm_dedicated=post.get("confirm_dedicated") == "1",
+                                             confirm_webhook=post.get("confirm_webhook") == "1")
+            except channel_link.LinkError as exc:
+                if exc.code == "check_expired":
                     self._telegram_bot(error=i18n.t("web.tg.check_expired"), code=409)
+                elif exc.code == "missing_field":
+                    self._telegram_bot(error=i18n.t("web.tg.err.missing_field",
+                                                    field=i18n.t("web.tg." + exc.fields["field"])),
+                                       code=400, check=exc.fields["check"])
+                elif exc.code == "rollback":
+                    self._telegram_bot(error=i18n.t("web.tg.rollback", reason=exc.fields["reason"]), code=409)
                 else:
                     self._telegram_bot(error=telegram_pages.error_text(exc.code, exc.fields),
                                        code=503 if exc.code == "unavailable" else 400)
                 return
-            result = str(data.get("result") or "")
-            if result in ("applied", "unchanged"):
-                self.CTX.notifier.owner(self.user, i18n.t("web.tg.mail_subject"),
-                                        i18n.t("web.tg.mail_body", ip=self.ip, bot=data.get("bot_username") or "?"))
-                self._redirect(f"/telegram?ok={result}")
-                return
-            self._telegram_bot(error=i18n.t("web.tg.rollback", reason=str(data.get("reason") or "?")), code=409)
+            self.CTX.notifier.owner(self.user, i18n.t("web.tg.mail_subject"),
+                                    i18n.t("web.tg.mail_body", ip=self.ip, bot=data.get("bot_username") or "?"))
+            self._redirect(f"/telegram?ok={data['result']}")
 
         # ---- La configuración inicial de Telegram (#635, Q279 y Q281 a Q283) -------
         def _telegram_setup_page(self, *, error: str = "", username: str = "", owner_telegram: str | None = None,
@@ -2178,43 +2164,8 @@ def make_handler(ctx: Context):
                                                           owner_telegram=owner_telegram))
 
         def _tg_owner_row(self) -> tuple[dict | None, str]:
-            """(la fila del dueño en el roster principal, su `etag`). La del correo de la
-            cuenta de la web; si no está, la del dueño (la primera Human). None si no hay."""
-            import roster as roster_mod
-            listing = self._rq("roster.list", account=None)
-            data = listing.get("data") or {}
-            members = data.get("members") or []
-            mine = roster_mod.normalise(str((self.user or {}).get("email") or ""))
-            member = (next((m for m in members if mine and roster_mod.normalise(m.get("email", "")) == mine), None)
-                      or next((m for m in members if m.get("owner")), None))
-            return member, str(data.get("etag") or "")
-
-        def _tg_owner_problem(self, value: str, member: dict | None) -> str:
-            """Por qué no se puede guardar `value` en la fila del dueño (#682), o "". Se revisa
-            antes de setup.initial para que, si falla, no se escriba nada."""
-            import roster as roster_mod
-            wanted = roster_mod.telegram_value(value)
-            if wanted is None:
-                return i18n.t("web.tg.setup.err.owner_invalid")
-            if member is None:
-                return i18n.t("web.tg.setup.err.owner_row")
-            listing = self._rq("roster.list", account=None)
-            for other in (listing.get("data") or {}).get("members") or []:
-                if other["row"] != member["row"] and roster_mod.telegram_value(other.get("telegram", "")) == wanted:
-                    return i18n.t("web.tg.setup.err.owner_taken", name=other.get("name") or "?")
-            return ""
-
-        def _tg_owner_save(self, value: str, member: dict, etag: str) -> bool:
-            """Guarda `value` en la columna Telegram de la fila del dueño, con `roster.save`
-            como la página del roster (crea la columna si falta, Q269). Si ya lo tenía, nada."""
-            import roster as roster_mod
-            if roster_mod.telegram_value(member.get("telegram", "")) == roster_mod.telegram_value(value):
-                return True
-            fields = {"name": member.get("name", ""), "email": member.get("email", ""), "type": member.get("type", ""),
-                      "github": member.get("github", ""), "phones": list(member.get("phones") or []),
-                      "telegram": value}
-            res = self._rq("roster.save", account=None, row=member["row"], member=fields, etag=etag)
-            return res.get("type") == "result"
+            """(la fila del dueño en el roster principal, su `etag`); web/channel_link.py."""
+            return channel_link.tg_owner_row(self._rq, self.user)
 
         def _telegram_setup(self, post: dict):
             """
@@ -2237,29 +2188,26 @@ def make_handler(ctx: Context):
                 self._telegram_setup_page(error=problem, username=username, owner_telegram=owner_tg,
                                           code=403 if password else 400)
                 return
-            # #682: el Telegram del dueño va a su fila del roster; si no se puede, no se escribe nada.
-            member, etag = self._tg_owner_row()
-            problem = self._tg_owner_problem(owner_tg, member)
-            if problem:
-                self._telegram_setup_page(error=problem, username=username, owner_telegram=owner_tg, code=400)
-                return
+            # La regla vive en web/channel_link.py (PaynaniWebMT PRD #2, FR-A6). #682: el
+            # Telegram del dueño va a su fila del roster; si no se puede, no se escribe nada.
             token = post.get("token", "").strip()
             try:
-                done = tg_setup.initial(token, username, dedicated=post.get("confirm_dedicated") == "1",
-                                        env=self.CTX.telegram_env())
-            except tg_setup.SetupError as exc:
-                code = 502 if exc.code == tg_setup.UNREACHABLE else 409 if exc.code == tg_setup.ALREADY else 400
-                self._telegram_setup_page(error=i18n.t("web.tg.setup.err." + exc.code), username=username,
-                                          owner_telegram=owner_tg, code=code)
+                done = channel_link.tg_setup(self.CTX, self._rq, self.user, token=token, username=username,
+                                             owner_telegram=owner_tg,
+                                             dedicated=post.get("confirm_dedicated") == "1")
+            except channel_link.LinkError as exc:
+                if exc.code in ("owner_invalid", "owner_row", "owner_taken"):
+                    error, code = i18n.t("web.tg.setup.err." + exc.code, **exc.fields), 400
+                else:
+                    error = i18n.t("web.tg.setup.err." + exc.code)
+                    code = 502 if exc.code == tg_setup.UNREACHABLE else 409 if exc.code == tg_setup.ALREADY else 400
+                self._telegram_setup_page(error=error, username=username, owner_telegram=owner_tg, code=code)
                 return
             finally:
                 token = ""
                 post.pop("token", None)
-            # El bot ya quedó: si el roster cambió entretanto o no se pudo escribir, la página
-            # lo dice y se agrega desde Roster.
-            saved = self._tg_owner_save(owner_tg, member, etag)
-            started = self.CTX.telegram_start()
-            bot = done["bot_username"] or "?"
+            saved, started = done["saved"], done["started"]
+            bot = done["bot_username"]
             body = i18n.t("web.tg.setup.mail_body", ip=self.ip, bot=bot)
             body += "\n\n" + i18n.t("web.tg.setup.mail_owner" if saved else "web.tg.setup.mail_owner_failed",
                                     bot=bot, owner=owner_tg)
@@ -2282,21 +2230,9 @@ def make_handler(ctx: Context):
         def _wa_current(self) -> tuple[dict | None, str]:
             """(la vinculación vigente de esta sesión por `link_current`, aviso de que
             terminó). Al terminar, el `link_id` se olvida."""
-            sid = self.session["sid"]
-            link = self.CTX.wa_link(sid)
-            if link is None:
-                return None, ""
-            try:
-                cur = self.CTX.whatsapp().request("whatsapp.link_current", link_id=link["link_id"])
-            except whatsapp_source.Failed as exc:
-                if exc.code != "not_found":
-                    return {"state": "retry", "mode": link["mode"]}, ""
-                cur = {"state": "ended", "reason": "gone"}
-            if cur.get("state") == "ended":
-                reason = str(cur.get("reason") or "gone")
-                self.CTX.wa_link_drop(sid, reason)
-                return None, self._wa_ended_text(reason)
-            return dict(cur, mode=link["mode"]), ""
+            # La regla vive en web/channel_link.py (PaynaniWebMT PRD #2, FR-A6).
+            cur, reason = channel_link.wa_current(self.CTX, self.session["sid"], self.CTX.whatsapp())
+            return cur, self._wa_ended_text(reason) if reason else ""
 
         def _whatsapp_get(self):
             if not self.CTX.whatsapp_configured():
@@ -2469,43 +2405,36 @@ def make_handler(ctx: Context):
             if problem:
                 self._whatsapp_account(error=problem, number=number, status_code=403 if password else 400)
                 return
+            # Las reglas viven en web/channel_link.py (PaynaniWebMT PRD #2, FR-A6).
             if self.route == "/whatsapp/link/cancel":
                 try:
-                    source.request("whatsapp.link_cancel")
-                except whatsapp_source.Failed as exc:
+                    channel_link.wa_cancel(self.CTX, sid, source)
+                except channel_link.LinkError as exc:
                     self._whatsapp_account(error=whatsapp_pages.error_text(exc.code, exc.fields), status_code=503)
                     return
-                self.CTX.wa_link_drop(sid)
                 self._redirect("/whatsapp?ok=canceled")
                 return
             if self.route == "/whatsapp/unlink":
                 try:
-                    data = source.request("whatsapp.unlink")
-                except whatsapp_source.Failed as exc:
+                    data = channel_link.wa_unlink(self.CTX, sid, source)
+                except channel_link.LinkError as exc:
                     self._whatsapp_account(error=whatsapp_pages.error_text(exc.code, exc.fields), status_code=503)
                     return
-                self.CTX.wa_link_drop(sid)
                 self._redirect("/whatsapp?ok=" + ("unlinked" if data.get("remote") else "unlinked_local"))
                 return
             # /whatsapp/link
             mode = post.get("mode", "qr")
-            fields = {"mode": mode}
-            if mode == "code":
-                clean = re.sub(r"[\s().-]", "", number)
-                if not re.fullmatch(r"\+[1-9]\d{6,14}", clean):
-                    self._whatsapp_account(error=th("web.wa.err.invalid_number"), number=number, status_code=400)
-                    return
-                fields["number"] = clean
-            elif mode != "qr":
-                self._whatsapp_account(error=whatsapp_pages.error_text("invalid", {"field": "mode"}), status_code=400)
-                return
             try:
-                data = source.request("whatsapp.link", **fields)
-            except whatsapp_source.Failed as exc:
-                self._whatsapp_account(error=whatsapp_pages.error_text(exc.code, exc.fields), number=number,
-                                       status_code={"already_linked": 409, "unavailable": 503}.get(exc.code, 400))
+                data = channel_link.wa_link(self.CTX, sid, source, mode, number)
+            except channel_link.LinkError as exc:
+                if exc.code == "invalid_number":
+                    self._whatsapp_account(error=th("web.wa.err.invalid_number"), number=number, status_code=400)
+                elif exc.code == "invalid":
+                    self._whatsapp_account(error=whatsapp_pages.error_text("invalid", {"field": "mode"}), status_code=400)
+                else:
+                    self._whatsapp_account(error=whatsapp_pages.error_text(exc.code, exc.fields), number=number,
+                                           status_code={"already_linked": 409, "unavailable": 503}.get(exc.code, 400))
                 return
-            self.CTX.wa_link_set(sid, str(data.get("link_id", "")), mode)
             if mode == "code":
                 # El código sólo viaja en esta respuesta; link_current no lo repite (§11).
                 self._whatsapp_account(code_info=data)
