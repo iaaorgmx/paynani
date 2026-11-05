@@ -3,6 +3,7 @@
 ## Sin publicar
 
 - **WhatsApp y Telegram: el envío del dueño en un solo lugar** (paynani#722, PaynaniWebMT PRD #2 FR-A6). La cita, los archivos y lo que se borra cuando un envío falla salen de las páginas de PaynaniWeb a `web/channel_send.py`, para que la API del dueño use lo mismo. PaynaniWeb se ve y se comporta igual.
+- **Apps conectadas: emparejar PaynaniWebMT con paynani (#719, PRD iaaorgmx/PaynaniWebMT#2).** Una app web del dueño se empareja con la dirección del gateway y un código de un solo uso, como PaynaniApp, pero no ocupa el lugar del teléfono: puede haber varias. El código sale de `scripts/paynani web pair` o de la pantalla nueva «Apps conectadas» en PaynaniWeb (pide la contraseña). `POST /api/owner/pair` devuelve un token `pw_`; paynani guarda sólo su SHA-256 y le manda un correo al dueño por cada app nueva y cada revocada. `scripts/paynani web clients [revoke <client_id>]` las lista y las revoca. El token todavía no abre nada: la API del dueño (`/api/owner`) llega con #720. No hay servicios ni pasos de instalación nuevos.
 
 ## 0.22.0 (2026-11-04)
 
