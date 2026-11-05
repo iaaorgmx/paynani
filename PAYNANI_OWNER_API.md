@@ -381,15 +381,19 @@ curl -sS https://<gateway>/api/owner -H 'Authorization: Bearer pw_…' -H 'Conte
 Además de lo de `/api/agent`, acepta `telegram`, el campo «Telegram» del formulario de
 PaynaniWeb:
 
-- Con un `@usuario`, lo guarda (y agrega la columna si el roster no la tiene).
+- Con un `@usuario` o un id numérico, lo guarda (y agrega la columna si el roster no la
+  tiene).
 - Vacío, lo borra.
 - Sin `telegram` en el pedido, la fila conserva el suyo.
-- Un id numérico responde `400 invalid` con `field: "telegram"` y
-  `reason: "telegram_username_only"`: igual que PaynaniApp, el id sólo se escribe desde
-  PaynaniWeb. Una fila que ya tiene un id lo conserva aunque llegue `telegram` vacío.
+- Un valor que no es `@usuario` ni id responde `400 invalid` con `field: "telegram"`.
 
-`ListRoster` no devuelve el id: cada contacto trae `has_telegram` y, si es un `@usuario`,
-`telegram_username`.
+Una app del dueño ve y escribe el id numérico de Telegram, como PaynaniWeb: es la misma
+pantalla con el mismo dueño. `ListRoster` devuelve en cada contacto `telegram`, la columna
+tal cual (`@usuario`, el id o vacío). PaynaniApp y `/api/agent` siguen sin ver el id: les
+llega `has_telegram` y `telegram_username`, y sólo escriben un `@usuario`.
+
+En el registro de cambios del roster y en `updated_by` de las reglas, lo que hace una app
+del dueño queda como `owner:<client_id>:<dirección>`, no como un token de agente.
 
 ### `PreviewRules`
 

@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **API del dueño: el id numérico de Telegram en el roster** (PaynaniWebMT#2). Una app del dueño emparejada en «Apps conectadas» (PaynaniWebMT) ve y escribe el id numérico de Telegram de un contacto, como PaynaniWeb: `ListRoster` de `/api/owner` devuelve `telegram`, la columna tal cual, y `SaveRosterContact` acepta un `@usuario` o un id. Lo decidió Julian (Iris[Q54] = A). PaynaniApp y `/api/agent` no cambian: siguen sin ver el id y sólo escriben un `@usuario`. En el registro de cambios del roster y en `updated_by` de las reglas, lo que hace una app del dueño queda como `owner:<client_id>:<dirección>` en lugar de `api::<dirección>`, y el correo que avisa de cada cambio dice «desde PaynaniWebMT», con la app y cómo desconectarla.
+
 ## 0.23.0 (2026-11-05)
 
 ### Si actualizas desde 0.22.0

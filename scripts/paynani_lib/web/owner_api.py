@@ -59,6 +59,11 @@ class OwnerCall(api_actions.Call):
         """Para los correos y la bitácora de las acciones delicadas (FR-A10)."""
         return f"desde {self.client.get('app_name') or 'PaynaniWebMT'} ({self.client.get('name') or ''})"
 
+    def roster_device(self) -> str:
+        """Al servicio del roster le habla una app del dueño, no un token de agente: como
+        PaynaniWeb, ve y escribe el id de Telegram de cada fila (`roster_api.sees_telegram_id`)."""
+        return f"owner:{self.client.get('client_id') or ''}:{self.ip}"
+
 
 ACTIONS: dict[str, tuple[bool, object]] = {}
 

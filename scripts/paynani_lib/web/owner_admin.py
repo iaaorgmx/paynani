@@ -190,8 +190,8 @@ def save_roster_contact(call: owner_api.OwnerCall) -> dict:
     """
     Como la de `/api/agent`, más la columna Telegram del formulario de PaynaniWeb (PRD #609
     FR-13): con `telegram` en el pedido se guarda (vacío la borra); sin él, la fila conserva
-    la suya. Como PaynaniApp y la API (Q270 de #628), aquí sólo se escribe un `@usuario`: el
-    servicio del roster rechaza un id numérico con `telegram_username_only`.
+    la suya. Como PaynaniWeb, acepta un `@usuario` o el id numérico: una app del dueño es
+    de quienes ven y escriben el id (`roster_api.sees_telegram_id`, Iris[Q54] = A).
     """
     member = api_actions.roster_member(call)
     if "telegram" in call.params:
