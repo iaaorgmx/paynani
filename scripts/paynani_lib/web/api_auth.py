@@ -53,14 +53,14 @@ class Limits:
         for address in [key for key, until in self.blocked.items() if until <= now]:
             del self.blocked[address]
 
-    def admit_call(self, sha256: str) -> int:
-        """Zero when accepted, or seconds until the oldest of 60 calls ages out."""
+    def admit_call(self, sha256: str, limit: int = 60) -> int:
+        """Zero when accepted, or seconds until the oldest of `limit` calls ages out."""
         now = self.clock()
         with self.lock:
             calls = self.calls.setdefault(sha256, collections.deque())
             while calls and now - calls[0] >= 60:
                 calls.popleft()
-            if len(calls) >= 60:
+            if len(calls) >= limit:
                 return max(1, int(60 - (now - calls[0]) + 0.999))
             calls.append(now)
             return 0
