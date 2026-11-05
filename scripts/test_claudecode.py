@@ -1244,6 +1244,10 @@ class WatchRegistry(unittest.TestCase):
         self.assertIn(f"watcher pid {proc.pid}", context)
         self.assertNotIn("ARM THE MAIL WATCH NOW", context)
         self.assertIn("--from-hook", context, "it still says how to re-arm when the Monitor expires")
+        # Andy en #739: lo que está pasado el cursor lo entrega el Monitor vivo; aquí no se repite.
+        self.assertNotIn("[mail] one", context)
+        self.assertNotIn("while no session was watching", context)
+        self.assertIn("1 mail notification(s) are waiting", context)
 
     def test_after_the_watch_ends_the_hook_asks_to_arm_again(self):
         """The other side of #738: an ended registry is rewritten pending, as before."""
