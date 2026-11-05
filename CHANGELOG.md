@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **Fotos y documentos de los canales en un solo lugar** (paynani#722, PaynaniWebMT PRD #2 FR-A6 y FR-A9). Las reglas para abrir una foto o bajar un documento de WhatsApp, Telegram y Webchat salen de las páginas de PaynaniWeb a `web/channel_media.py`, para que la API del dueño use las mismas. PaynaniWeb se ve y se comporta igual.
+
 ## 0.22.0 (2026-11-04)
 
 ### Si actualizas desde 0.21.0
