@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **WhatsApp y Telegram: el envío del dueño en un solo lugar** (paynani#722, PaynaniWebMT PRD #2 FR-A6). La cita, los archivos y lo que se borra cuando un envío falla salen de las páginas de PaynaniWeb a `web/channel_send.py`, para que la API del dueño use lo mismo. PaynaniWeb se ve y se comporta igual.
+
 ## 0.22.0 (2026-11-04)
 
 ### Si actualizas desde 0.21.0
