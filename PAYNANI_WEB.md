@@ -71,6 +71,7 @@ con PaynaniWeb y todavía no hay usuario.
 | **Mensajes de WhatsApp** | Sólo con WhatsApp activado (`whatsapp.env` con `WHATSAPP_ENABLED=1`). Las conversaciones de WhatsApp, como «Mensajes de texto» las de SMS, sin mensaje nuevo: sólo se contesta donde el contacto ya escribió. «Cuenta de WhatsApp» (`/whatsapp`) vincula, cancela y desvincula (ver abajo). |
 | **Mensajes de Telegram** | Siempre (#635); sin bot configurado lleva a «Cuenta de Telegram». Las conversaciones con el bot de Telegram, sin mensaje nuevo: sólo se contesta donde la persona ya escribió. «Cuenta de Telegram» (`/telegram`) hace la configuración inicial, muestra el estado y cambia el token (ver abajo). |
 | **Roster** | Lo mismo que la pantalla «Roster» de PaynaniApp, con el mismo servicio: contactos por cuenta, alta, edición, baja, instrucciones por contacto y reglas generales con vista previa. |
+| **Apps conectadas** | Las apps que administran esta instalación a distancia, como PaynaniWebMT (PRD iaaorgmx/PaynaniWebMT#2, #719), arriba de «API Tokens». Cada una con su nombre, app y versión, cuándo se emparejó, su último uso y su estado. «Generar código» da la dirección del gateway (`PAYNANI_SMS_PUBLIC_URL`) y un código de 8 caracteres, de un solo uso, que vence en 10 minutos; «Revocar» corta su token. Las dos piden la contraseña de la web. No ocupan el lugar del teléfono: puede haber varias. Al emparejar una y al revocarla le llega un correo al dueño. Desde la terminal: `scripts/paynani web pair` y `scripts/paynani web clients [revoke <client_id>]`. |
 | **Perfil** | El nombre, el correo y la contraseña del dueño. Se abre con el ícono que está junto a tu nombre en el menú lateral, como en el /dash de ServiceButton (#626). Ya no hay avatar arriba a la derecha: «Cerrar sesión» está en el menú lateral. |
 | **Acerca de** | Como el About de PaynaniApp (#636), debajo de «API Tokens». Muestra la versión con su commit, con un botón que la copia, y el aviso de código abierto bajo la licencia MIT. Debajo, tres grupos: **Proyecto** (sitio, código y licencia); **Ayuda** (reportar un problema, que abre un issue en paynani con la versión ya escrita, las novedades y esta guía); y **Créditos**. Los enlaces abren en otra pestaña. En Créditos, **Development team** (#686) abre `/about/team`: la tabla de los humanos y agentes de IA que han colaborado en paynani, PaynaniWeb y PaynaniApp, con su avatar, nombre, `@usuario`, tipo (y el harness de cada agente), rol (Maintainer, Committer o Contributor, con su alcance, según [GOVERNANCE.md](GOVERNANCE.md)) y proyectos; el avatar y el nombre llevan a su perfil de GitHub. Quien apoya sin commits (pruebas reales) se agrega a mano en `team.json`. Los datos (`web/team.json`) y los avatares (`assets/team/`) son una copia que se actualiza antes de cada versión con `scripts/update_team.py`: la página no le pide nada a GitHub (Iris[Q33]). El estado de la instalación está en el Dashboard. |
 | **Agente de IA** | En el menú lateral, debajo de tu nombre y arriba de «Management» (#644), va la sección «AI Agent». Tiene una entrada con el robot, el nombre del agente y, abajo, el harness (Claude Code, OpenClaw, Hermes, Codex u OpenCode) y su estado. Al picarla se abre la página del agente (`/agent`), que no tiene otra entrada en el menú (ver abajo). |
@@ -392,6 +393,9 @@ escribe con `paynani_lib/webchat/store.py`, sin un servicio aparte.
   `web/known_ips.json`, modo 600). Los cambios al roster y a las cuentas quedan
   donde los dejan `paynani roster` y `paynani account`: `state/history/` y
   `state/roster_changes.jsonl`.
+- **Las apps conectadas** viven en `web/owner_clients.json` (id, nombre, app,
+  fechas y el SHA-256 del token; el token en claro sólo existe al emparejar) y el
+  código vigente en `web/owner_pairing.json`, como hash. Los dos en modo 600.
 - **En el navegador** quedan dos cookies que no son de la sesión: el idioma
   (`paynani_web_lang`) y si el menú va colapsado (`paynani_web_nav`). Ninguna
   lleva datos del dueño.
@@ -564,6 +568,14 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   correo, ni el `.env`. El formulario de agregar cuenta no devuelve la contraseña
   del correo cuando hay un error.
 - **Los documentos recibidos** por WhatsApp y Telegram (#676) se bajan siempre como archivo: `attachment` con el nombre limpio (sin `/`, `\\`, comillas ni saltos de línea, y con `filename*` en UTF-8), `application/octet-stream`, `nosniff`, `no-store` y `CSP sandbox`. Así un `.html` o un `.svg` que alguien mande no corre en el origen de PaynaniWeb. El servicio los da en cada pedido sólo si el mensaje se ve en el hilo, y nunca más de 20 MB.
+- **Emparejar una app** (`POST /api/owner/pair`, JSON
+  `{"code", "name", "app": {"name", "version"}}`, como en el PRD; también acepta
+  `app_name` y `app_version` de primer nivel) responde `201` con `client_id` y un token `pw_…`.
+  Un código vencido, usado o equivocado da `410 code_expired`; diez equivocados en
+  10 minutos bloquean el emparejamiento (`429 too_many_attempts`) hasta generar un
+  código nuevo. Cada intento queda en `api_security.jsonl` (`owner_paired`,
+  `owner_pair_failed`, `owner_pair_blocked`, `owner_revoked`), nunca el token.
+  Un token `pw_` no abre `/api/agent`, y uno `pn_` no sirve como token de app.
 - Todo lo que viene de un correo, un SMS, el roster o las reglas se escapa antes de
   ir a la página. El HTML de un correo se muestra como texto, sin enlaces activos.
 - **La caché del navegador (Iris[Q3]):**
