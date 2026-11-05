@@ -156,7 +156,8 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
         cls = ' class="activo"' if active == key else ""
         return f'<a href="{href}"{cls}{current}>{icon(ico)}<span>{th(label_key)}</span></a>'
 
-    # Sin títulos de grupo (#715): todo va debajo de la sección «AI Agent», con About y Sign out al final.
+    # Sin títulos de grupo (#715): todo va debajo de la sección «AI Agent», con About y Sign out al final,
+    # separados por la misma línea que hay debajo del usuario.
     return f"""
   <nav aria-label="{th('web.nav.management')}">
     <details class="cuentas"{open_attr}>
@@ -168,6 +169,7 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
     {entry('telegram', '/telegram/messages', 'chat', 'web.tg.nav') if telegram else ''}
     {entry('roster', '/roster', 'roster', 'web.nav.roster')}
     {entry('api_tokens', '/api-tokens', 'key', 'web.tokens.title')}
+    <hr class="separa-menu">
     {entry('about', '/about', 'info', 'web.about.nav')}
     <form method="post" action="/logout" class="salir">
       <input type="hidden" name="csrf" value="{e(csrf)}">
