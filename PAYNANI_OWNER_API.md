@@ -290,6 +290,148 @@ curl -s https://<túnel>/api/owner -H "Authorization: Bearer $PW" -H 'Content-Ty
   -d '{"action":"GetWebchatThread","since":"w_0123456789abcdef0123456789abcdef"}'
 ```
 
+## Correo (A3, #721)
+
+Lo mismo que «Email Accounts» y «Nuevo correo» de PaynaniWeb. `ListAccounts`, `ListMail`,
+`GetMailThread`, `AddAccount` y `RemoveAccount` son las acciones de `/api/agent`
+([PAYNANI_API.md](PAYNANI_API.md)), con los mismos parámetros, respuestas y errores, sin
+permisos: el dueño puede todo. La cuenta del agente es `account: "main"`.
+
+```bash
+curl -sS https://<gateway>/api/owner -H 'Authorization: Bearer pw_…' -H 'Content-Type: application/json' \
+  -d '{"action": "ListMail", "account": "main", "offset": 0}'
+```
+
+- `AddAccount` y `RemoveAccount` son delicadas: el aviso al dueño dice
+  «desde PaynaniWebMT (<nombre>)» en lugar del API Token.
+
+### `SendOwnerMail` (delicada)
+
+El correo que escribe el dueño, como «Nuevo correo» (#590, #591). paynani lo manda desde la
+cuenta y lo guarda en Enviados.
+
+| Parámetro | |
+|---|---|
+| `account` | `main` o el id de una cuenta adicional |
+| `to`, `cc`, `bcc` | Direcciones separadas por comas |
+| `subject`, `text` | El asunto y el cuerpo (texto) |
+| `confirm_outside` | `true` para mandar aunque haya destinatarios fuera del roster de esa cuenta |
+
+```json
+{"account": "main", "sent": true, "message_id": "<…>", "outside_roster": [], "sent_copy": "saved", "notice": "skipped"}
+```
+
+- Si alguien no está en el roster de la cuenta y no viene `confirm_outside: true`, responde
+  `409 outside_roster` con `outside` (la lista) y no manda nada. La app pide su contraseña
+  y vuelve a llamar con `confirm_outside: true`. Cuando sale a alguien fuera del roster, al
+  dueño le llega el aviso de siempre.
+- Una dirección o un campo inválido da `400` con el código de PaynaniWeb: `invalid_address`,
+  `no_recipients`, `too_many`, `subject`, `text` o `unknown_account`. Sin el servicio de
+  correo, `503 not_available`.
+- `502 unknown_outcome`: el envío falló a la mitad y pudo haber salido. Revisa Enviados antes
+  de reintentar. `502 send_failed`: el servidor SMTP lo rechazó.
+
+### `GetMainAccountConfig`
+
+La configuración de la cuenta del agente, como «Configuración»: `config` (servidores,
+puertos, nombre…, **sin** la contraseña del buzón), `fields` (los que se pueden cambiar) y
+`rev`, la huella de lo guardado.
+
+### `SaveMainAccountConfig` (delicada)
+
+| Parámetro | |
+|---|---|
+| `rev` | El de `GetMainAccountConfig` |
+| uno o más de `fields` | El valor nuevo. Los que no vienen quedan como estaban |
+| `new_password` | Opcional: la contraseña nueva del buzón |
+
+```json
+{"changed": ["AGENT_EMAIL_FROM_NAME"], "ready": "connected", "recovered": false, "probe": […]}
+```
+
+- `409 stale`: alguien cambió la configuración después de leerla. Vuelve a leer.
+- paynani prueba IMAP y SMTP, guarda `.env` y Himalaya juntos y reinicia el listener. Si algo
+  falla, deshace el cambio y responde `probe_failed`, `write_failed`, `restart_failed` o
+  `not_ready`, con `rollback` (`ok` o `failed`), `probe` y `field_errors`.
+- `ready`: `connected` (volvió), `waiting` (todavía no confirma) o vacío (no hizo falta
+  reiniciar). Al dueño le llega un correo con lo que cambió.
+
+## Roster y reglas (A3, #721)
+
+`ListRoster`, `SaveRosterContact`, `DeleteRosterContact`, `GetRules`, `SaveRules`,
+`GetDefaultRules`, `SaveDefaultRules` y `GetCatchAll` son las de `/api/agent`, sin permisos.
+`SaveCatchAll` también, pero sin el permiso por canal: el dueño guarda el Catch-All de
+`sms`, `whatsapp` o `telegram`.
+
+```bash
+curl -sS https://<gateway>/api/owner -H 'Authorization: Bearer pw_…' -H 'Content-Type: application/json' \
+  -d '{"action": "SaveCatchAll", "channel": "whatsapp", "enabled": true, "text": "Avísame de los códigos.", "etag": "…"}'
+```
+
+### `PreviewRules`
+
+Cómo quedan unas reglas sin guardarlas (la vista previa de PaynaniWeb).
+
+| Parámetro | |
+|---|---|
+| `text` | Las reglas, con su encabezado `---` |
+| `general` | `true` para las generales (`rules/default.md`) |
+| `row`, `roster_etag`, `account` | Para las de un contacto, como en `GetRules` |
+
+`{"effective": "…"}`: el texto que leería el agente, ya con las generales. Un encabezado
+inválido da `400` con el código y el campo, como `SaveRules`.
+
+## Dashboard y Agente (A3, #721)
+
+### `GetDashboard`
+
+`account` opcional (para la tarjeta de correo de esa cuenta). Responde `dashboard`, lo que
+arma `dashboard.py` para la página de inicio, y `numbers`, lo mismo que `/dashboard.json`.
+Usa la misma caché de 60 s que la web, así que pedirlo seguido no cuesta.
+
+### `GetAgent`
+
+Sin parámetros. `{"agent": {…}}`: la página del agente (#644), con su estado, el harness, la
+actividad del día y los canales.
+
+## API Tokens (A3, #721)
+
+Los tokens `pn_` de los agentes, como la pantalla «API Tokens». El `id` de un token es el que
+usa la web en sus direcciones; el secreto sólo sale al crearlo.
+
+### `ListApiTokens`
+
+`{"tokens": [{"id", "name", "prefix", "permissions", "limits", "agent_replies", "created_at",
+"expires_at", "last_used_at", "revoked_at", "status"}]}`. `status` es `active`, `expired` o
+`revoked`.
+
+### `GetApiToken`
+
+`id`. El token, más `sms_today` (los SMS que mandó hoy, hora UTC). `404 not_found` si no existe.
+
+### `CreateApiToken` (delicada)
+
+| Parámetro | |
+|---|---|
+| `name` | Hasta 100 caracteres |
+| `permissions` | Lista: `read`, `telegram.read`, `sms.send`, `roster.write`, `accounts.write`, `catchall.sms.write`, `catchall.whatsapp.write`, `catchall.telegram.write` |
+| `expiry` | `5m`, `1h`, `1d`, `7d`, `never` o `custom` |
+| `custom` | Con `expiry: "custom"`: la fecha ISO 8601, en el futuro |
+| `sms_per_hour`, `sms_per_day` | De 1 a 100000. Por omisión, 60 y 500 |
+| `agent_replies` | `true` si el agente contesta las respuestas a sus SMS |
+
+```json
+{"token": {"id": "…", "name": "Plantako", "status": "active", …}, "secret": "pn_…"}
+```
+
+`secret` no se vuelve a ver: paynani guarda su SHA-256. Algo inválido da
+`400 invalid_token_values`.
+
+### `RevokeApiToken` (delicada) y `SetApiTokenAgentReplies`
+
+`id`, y para el segundo `agent_replies` (`true` o `false`). Responden el token como queda.
+Un token que no existe o ya está revocado da `404 not_found`.
+
 ## Archivos
 
 - **Subir:** la acción que acepta archivos se llama con `multipart/form-data`: los

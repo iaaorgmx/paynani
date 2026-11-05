@@ -140,3 +140,5 @@ def disconnect(call: OwnerCall) -> dict:
 
 # Las acciones de A4 (#722) se registran al importarse.
 from . import owner_channels  # noqa: E402,F401
+# Las acciones de A3 (#721) se registran al importarse.
+from . import owner_admin  # noqa: E402,F401

@@ -50,6 +50,26 @@ def expiry_from_form(choice: str, custom: str, now: dt.datetime | None = None) -
     return value.isoformat()
 
 
+def create_from_values(values: dict, *, path: Path) -> tuple[str, dict]:
+    """
+    Crea un API Token con lo que llega del formulario de PaynaniWeb o de la API del dueño
+    (`CreateApiToken`, iaaorgmx/paynani#721): la misma validación en los dos. `values` trae
+    name, expiry, custom, permissions (lista), sms_per_hour, sms_per_day y agent_replies.
+    ValueError si algo no vale; OSError si no se pudo guardar.
+    """
+    name = str(values.get("name", "")).strip()
+    permissions = list(values.get("permissions") or [])
+    if not name or len(name) > 100 or not permissions or any(p not in PERMISSIONS for p in permissions):
+        raise ValueError("invalid name or permissions")
+    hour, day = int(values.get("sms_per_hour", "")), int(values.get("sms_per_day", ""))
+    if not (1 <= hour <= 100000 and 1 <= day <= 100000):
+        raise ValueError("invalid limits")
+    expiry = expiry_from_form(str(values.get("expiry", "")), str(values.get("custom", "")))
+    return api_tokens.create(name, expires_at=expiry, permissions=permissions,
+                             limits={"sms_per_hour": hour, "sms_per_day": day},
+                             agent_replies=bool(values.get("agent_replies")), path=path)
+
+
 def usage_today(state_dir: Path, prefix: str, now: dt.datetime | None = None) -> int:
     """Count accepted API SMS orders for this prefix on the current UTC date."""
     day = (now or dt.datetime.now(dt.timezone.utc)).date()
