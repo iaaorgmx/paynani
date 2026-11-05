@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- **Claude Code: después de compactar, la página del agente ya no dice «No session»** (#738). Al compactar el contexto, Claude Code vuelve a correr el hook `SessionStart`, y el hook reescribía en `pending` el registro de la vigilancia de esa sesión (`state/sessions/<id>/watch.json`) aunque su Monitor siguiera vivo y entregando avisos. La página del agente, en PaynaniWeb y PaynaniWebMT, decía «No session» hasta que el Monitor expiraba. Ahora, si el registro de la misma sesión está vivo, el hook lo deja como está y le dice a la sesión que la vigilancia sigue armada y que no arranque otra. Cuando el Monitor expira, se vuelve a armar como siempre.
 - **API del dueño: el id numérico de Telegram en el roster** (PaynaniWebMT#2). Una app del dueño emparejada en «Apps conectadas» (PaynaniWebMT) ve y escribe el id numérico de Telegram de un contacto, como PaynaniWeb: `ListRoster` de `/api/owner` devuelve `telegram`, la columna tal cual, y `SaveRosterContact` acepta un `@usuario` o un id. Lo decidió Julian (Iris[Q54] = A). PaynaniApp y `/api/agent` no cambian: siguen sin ver el id y sólo escriben un `@usuario`. En el registro de cambios del roster y en `updated_by` de las reglas, lo que hace una app del dueño queda como `owner:<client_id>:<dirección>` en lugar de `api::<dirección>`, y el correo que avisa de cada cambio dice «desde PaynaniWebMT», con la app y cómo desconectarla.
 
 ## 0.23.0 (2026-11-05)

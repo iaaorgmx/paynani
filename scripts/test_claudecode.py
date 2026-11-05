@@ -1222,6 +1222,42 @@ class WatchRegistry(unittest.TestCase):
         self.assertEqual(proc.pid, record["watcher_pid"])
         self.assertIsNotNone(record["expires_at"])
 
+    def test_a_compaction_leaves_a_live_watch_armed(self):
+        """
+        #738: Claude Code runs SessionStart again when it compacts a session, and
+        that session's Monitor keeps running. The hook rewrote the registry
+        pending, and the agent page said "No session" while mail was still being
+        shown. A live registry of the same session is now left as it is.
+        """
+        self.spool.write_text("a\nb\n", encoding="utf-8")
+        self._hook("sess-compact", spool_through=4)
+        proc = self._watch("sess-compact")
+        self.assertTrue(self._wait(lambda: self._registry("sess-compact")["status"] == "armed"))
+        before = self._registry("sess-compact")
+        context = self._hook("sess-compact", spool_through=4)
+        after = self._registry("sess-compact")
+        self.assertEqual("armed", after["status"])
+        self.assertEqual("live", self.ss.registry_state(after))
+        self.assertEqual((proc.pid, before["armed_at"], before["token"]),
+                         (after["watcher_pid"], after["armed_at"], after["token"]))
+        self.assertIn("STILL ARMED", context)
+        self.assertIn(f"watcher pid {proc.pid}", context)
+        self.assertNotIn("ARM THE MAIL WATCH NOW", context)
+        self.assertIn("--from-hook", context, "it still says how to re-arm when the Monitor expires")
+
+    def test_after_the_watch_ends_the_hook_asks_to_arm_again(self):
+        """The other side of #738: an ended registry is rewritten pending, as before."""
+        import signal
+        self._hook("sess-compact-end", spool_through=0)
+        proc = self._watch("sess-compact-end")
+        self.assertTrue(self._wait(lambda: self._registry("sess-compact-end")["status"] == "armed"))
+        proc.send_signal(signal.SIGTERM)
+        self.assertTrue(self._wait(lambda: self._registry("sess-compact-end")["status"] == "ended"))
+        context = self._hook("sess-compact-end", spool_through=0)
+        self.assertEqual("pending", self._registry("sess-compact-end")["status"])
+        self.assertIn("ARM THE MAIL WATCH NOW", context)
+        self.assertNotIn("STILL ARMED", context)
+
     def test_the_watcher_marks_its_registry_ended_on_exit(self):
         import signal
         self._hook("sess-three", spool_through=0)
