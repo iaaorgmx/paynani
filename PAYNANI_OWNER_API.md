@@ -304,6 +304,14 @@ curl -sS https://<gateway>/api/owner -H 'Authorization: Bearer pw_…' -H 'Conte
 
 - `AddAccount` y `RemoveAccount` son delicadas: el aviso al dueño dice
   «desde PaynaniWebMT (<nombre>)» en lugar del API Token.
+- `ListAccounts` trae además, en cada cuenta, lo que muestran las pantallas de correo:
+  `from_name`, el nombre con que escribe (vacío si no tiene), y `signed`, `true` si tiene
+  firma.
+- En `GetMailThread`, un mensaje que no se pudo leer trae, junto a `error` (el código),
+  `error_detail`: un dato sin secretos, como `imap.example.com: timed out`, o vacío.
+- Los errores `400` y `503` de `SendOwnerMail` y `SaveMainAccountConfig` que vienen de una
+  regla de PaynaniWeb traen `detail` aparte del `message`, para que la app arme el texto en
+  su idioma. Puede venir vacío.
 
 ### `SendOwnerMail` (delicada)
 
