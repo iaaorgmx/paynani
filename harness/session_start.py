@@ -1222,7 +1222,17 @@ def main():
         # Everything below is this runtime only. The other two are pushed to by a
         # supervised service; here nothing can speak into a session, so the
         # session has to come and get it, and this hook is where it is told how.
-        if spool_lines:
+        # #738: computed before the replay, because a live watch of this same
+        # session (the hook ran again after a compaction) delivers that mail itself.
+        session_id = _safe_session_id(payload.get("session_id"))
+        current = read_registry(session_id) if session_id else None
+        still_armed = current is not None and registry_state(current) == "live"
+        if spool_lines and still_armed:
+            parts.append(
+                f"{len(spool_lines)} mail notification(s) are waiting past the cursor; the "
+                "Monitor of this session, still armed, delivers them. They are not repeated here."
+            )
+        elif spool_lines:
             parts.append(
                 f"Mail that arrived while no session was watching "
                 f"({len(spool_lines)} message(s)"
@@ -1251,9 +1261,13 @@ def main():
         # number the agent has to copy is a number it can get wrong, and one
         # digit repeated mail or skipped it (#170). The watcher reads it back
         # by the session id Claude Code puts in its environment.
-        session_id = _safe_session_id(payload.get("session_id"))
         registered = False
-        if session_id:
+        # #738: the hook runs again inside the same session (Claude Code compacts
+        # its context, and SessionStart fires with source "compact"). That
+        # session's Monitor survives it and keeps delivering mail, so a live
+        # registry (`still_armed`, above) is left as it is: rewriting it pending
+        # made the agent page say "No session" while the watch was running.
+        if session_id and not still_armed:
             try:
                 write_registry(session_id, spool_through)
                 registered = True
@@ -1274,24 +1288,40 @@ def main():
                 "starting anywhere else either repeats messages or steps over "
                 "ones nobody has seen. "
             )
-        parts.append(
-            "ARM THE MAIL WATCH NOW, before doing anything else, with a persistent "
-            "Monitor running exactly:\n\n"
-            + arm +
-            "Each stdout line is one new mail notification, except a line saying "
-            "the watch could not be armed because another session already holds "
-            "it — that one is not mail. " + offset_note +
-            "Arming is also what acknowledges the replay above — if you skip it, "
-            "the next session shows these same messages again, and no new mail "
-            "reaches you for the rest of this one. When the Monitor expires, "
-            "re-arm it with the same command.\n\n"
-            "Seeing a notice is not the same as dealing with it. After you act on "
-            "a roster notice, close it with "
-            f"`{REPO}/scripts/paynani event mark <event_id> handled`, or `replied` "
-            "if you answered it, or `closed` if it needs nothing. The event id is "
-            "the last field of the notice. A notice you leave open is shown again "
-            "at the next session start."
-        )
+        if still_armed:
+            parts.append(
+                "THE MAIL WATCH OF THIS SESSION IS STILL ARMED (watcher pid "
+                f"{current.get('watcher_pid')}, until {current.get('expires_at')}): this hook ran "
+                "again inside the same session, after a compaction for example, and the Monitor "
+                "that armed it is still delivering mail. Do not start another one. When that "
+                "Monitor expires, re-arm it with a persistent Monitor running exactly:\n\n"
+                f"    bash {SESSION_WATCH} {STATE_DIR} --from-hook\n\n"
+                "Seeing a notice is not the same as dealing with it. After you act on "
+                "a roster notice, close it with "
+                f"`{REPO}/scripts/paynani event mark <event_id> handled`, or `replied` "
+                "if you answered it, or `closed` if it needs nothing. The event id is "
+                "the last field of the notice. A notice you leave open is shown again "
+                "at the next session start."
+            )
+        else:
+            parts.append(
+                "ARM THE MAIL WATCH NOW, before doing anything else, with a persistent "
+                "Monitor running exactly:\n\n"
+                + arm +
+                "Each stdout line is one new mail notification, except a line saying "
+                "the watch could not be armed because another session already holds "
+                "it — that one is not mail. " + offset_note +
+                "Arming is also what acknowledges the replay above — if you skip it, "
+                "the next session shows these same messages again, and no new mail "
+                "reaches you for the rest of this one. When the Monitor expires, "
+                "re-arm it with the same command.\n\n"
+                "Seeing a notice is not the same as dealing with it. After you act on "
+                "a roster notice, close it with "
+                f"`{REPO}/scripts/paynani event mark <event_id> handled`, or `replied` "
+                "if you answered it, or `closed` if it needs nothing. The event id is "
+                "the last field of the notice. A notice you leave open is shown again "
+                "at the next session start."
+            )
     elif runtime == "codex":
         if spool_lines:
             replay_instructions = codex_replay_instructions(spool_lines)

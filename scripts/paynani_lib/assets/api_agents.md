@@ -259,6 +259,8 @@ ask a person who opted out to opt back in.
 | `token_revoked` | 401 | The owner revoked the token |
 | `token_expired` | 401 | The token expired |
 | `too_many_attempts` | 429 | Too many failed authentications from your address; `retry_after` |
+| `body_too_large` | 413 | The request body is over 64 KB |
+| `code_expired` | 410 | Only on `POST /api/owner/pair` (owner apps, not agents): the pairing code expired, was used or is not the current one |
 | `rate_limited` | 429 | Over 60 calls per minute; `retry_after` |
 | `quota_exceeded` | 429 | Over the token's SMS limit; `retry_at` |
 | `invalid_content_type` | 415 | The body is not JSON or a form |

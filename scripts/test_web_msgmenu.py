@@ -147,6 +147,13 @@ check("msgmenu.js: no abre sobre un enlace, una foto o un botón, ni al seleccio
 check("msgmenu.js: copia con el portapapeles y, si no, con execCommand; avisa con role=status (FR-5)", True,
       all(x in js for x in ("navigator.clipboard", 'execCommand("copy")', '"role", "status"')))
 check("msgmenu.js: sin innerHTML con texto del mensaje (el SVG es fijo)", False, "innerHTML = text" in js)
+# #731: sólo emojis, no cualquier carácter desde U+2000 (Ximena en PaynaniWebMT#11).
+for ok in ("", "👍", "❤️", "👍🏽", "👨‍👩‍👧", "🇲🇽", "1️⃣", "#️⃣", "🏴‍☠️", "™"):
+    check(f"valid_emoji: {ok!r} pasa", True, msgmenu.valid_emoji(ok))
+for bad in ("界", "a", "ñ", "1", "#", "😀a", "Ж", "‏", " 👍", "👍" * 17, "<b>"):
+    check(f"valid_emoji: {bad!r} no pasa", False, msgmenu.valid_emoji(bad))
+check("reactions(): una letra no se dibuja como reacción", "", msgmenu.reactions([{"emoji": "界", "count": 3}]))
+check("reactions_allowed(): una lista sin emojis no reacciona", None, msgmenu.reactions_allowed(["界", "a"]))
 check("el .env y Himalaya de la instalación no cambiaron", BEFORE, [sha(p) for p in REAL])
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
