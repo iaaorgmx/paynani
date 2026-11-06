@@ -82,8 +82,9 @@ cookie = next(c for c in hdrs["set-cookie-all"] if c.startswith(auth.SESSION_COO
 
 status, _, page = req("GET", "/?lang=en-US", cookie=cookie)
 nav = page.split('<aside class="lateral"', 1)[1].split("</aside>", 1)[0]
-check("el menú tiene «About» justo debajo de «API Tokens»", True,
-      bool(re.search(r'href="/api-tokens"[^>]*>.*?</a>\s*<a href="/about"[^>]*>.*?<span>About</span></a>', nav, re.S)))
+# Entre los dos va la línea de separación que pidió Julian (#715).
+check("el menú tiene «About» justo debajo de «API Tokens», con la línea de por medio", True,
+      bool(re.search(r'href="/api-tokens"[^>]*>.*?</a>\s*<hr class="separa-menu">\s*<a href="/about"[^>]*>.*?<span>About</span></a>', nav, re.S)))
 
 status, hdrs, page = req("GET", "/about?lang=en-US", cookie=cookie)
 check("/about: 200, título «About» y la entrada activa", (200, True, True),

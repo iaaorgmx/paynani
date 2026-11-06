@@ -261,9 +261,16 @@ for path in ("/?lang=en-US", "/about?lang=en-US", "/roster?lang=en-US"):
     _, _, page = req("GET", path, cookie=cookie)
     side = menu(page)
     order = [side.find(mark) for mark in ('<div class="usuario">', 'href="/profile"', '<div class="grupo">AI Agent</div>',
-                                          '<a href="/agent" class="agente-entrada"', '<div class="grupo">Management</div>')]
-    check(f"{path.split('?')[0]}: la sección «AI Agent» va debajo del usuario y arriba de «Management» (Q303)", True,
-          -1 not in order and order == sorted(order))
+                                          '<a href="/agent" class="agente-entrada"', '<details class="cuentas"',
+                                          'href="/about"', 'action="/logout"')]
+    check(f"{path.split('?')[0]}: «AI Agent» debajo del usuario, y debajo todas las opciones, con About y Sign out al final (Q303, #715)",
+          True, -1 not in order and order == sorted(order))
+    check(f"{path.split('?')[0]}: sin los títulos «Management» ni «Tools» (#715)", (False, False, 1),
+          ('<div class="grupo">Management</div>' in side, '<div class="grupo">Tools</div>' in side, side.count('<div class="grupo">')))
+    tokens_to_about = side[side.find('href="/api-tokens"'):side.find('href="/about"')]
+    check(f"{path.split('?')[0]}: una línea separa API Tokens de About (#715)", 1, tokens_to_about.count('<hr class="separa-menu">'))
+    about_to_logout = side[side.find('href="/about"'):side.find('action="/logout"')]
+    check(f"{path.split('?')[0]}: Sign out va justo debajo de About (#715)", 0, about_to_logout.count("<a "))
 _, _, page = req("GET", "/?lang=en-US", cookie=cookie)
 side = menu(page)
 check("el nombre del agente va escapado", True, '<span class="agente-nombre">Iris &lt;Agente&gt;</span>' in side)

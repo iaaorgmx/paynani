@@ -149,8 +149,8 @@ status, _, page = text("/webchat?lang=en-US", cookie)
 csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
 side = page.split('<aside class="lateral"', 1)[1].split("</aside>", 1)[0]
 order = [side.find(m) for m in ('<div class="grupo">AI Agent</div>', 'class="agente-entrada"', 'href="/webchat"',
-                                '<div class="grupo">Management</div>')]
-check("«Webchat» va en la sección «AI Agent», debajo del agente y arriba de Management", True,
+                                '<details class="cuentas"')]
+check("«Webchat» va en la sección «AI Agent», debajo del agente y arriba de Email Accounts (#715)", True,
       -1 not in order and order == sorted(order))
 check("en /webchat la entrada está activa y la del agente no", (True, False),
       ('<a href="/webchat" class="activo" aria-current="page">' in side, "agente-entrada activo" in side))

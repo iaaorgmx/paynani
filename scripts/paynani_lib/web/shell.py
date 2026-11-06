@@ -2,10 +2,10 @@
 El marco de PaynaniWeb con sesión: el menú lateral, la barra de arriba y el
 encabezado de PDSL-201 (PRD #434 FR-10, FR-12).
 
-- **Menú** (FR-10): *Management* con Email Accounts (un desplegable con una
-  entrada por cuenta: la del agente, del `.env`, y las de `accounts.json`),
-  Messages, «WhatsApp messages» (sólo con WhatsApp configurado, PRD #550 FR-24) y
-  Roster; *Tools* con Log out. Lo que el PRD deja fuera de la v1 (AI
+- **Menú** (FR-10; sin títulos de grupo desde #715): debajo de la sección «AI Agent»,
+  Email Accounts (un desplegable con una entrada por cuenta: la del agente, del `.env`,
+  y las de `accounts.json`), Messages, «WhatsApp messages» (sólo con WhatsApp
+  configurado, PRD #550 FR-24), Roster, API Tokens, About y, al final, Log out. Lo que el PRD deja fuera de la v1 (AI
   Assistant, Settings, Sessions, el buscador, el chat flotante) no se dibuja: un
   control que no hace nada es peor que no tenerlo.
 - **Perfil** (#626, como el /dash de ServiceButton): un ícono junto al nombre, en el
@@ -156,9 +156,10 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
         cls = ' class="activo"' if active == key else ""
         return f'<a href="{href}"{cls}{current}>{icon(ico)}<span>{th(label_key)}</span></a>'
 
+    # Sin títulos de grupo (#715): todo va debajo de la sección «AI Agent», con About y Sign out al final,
+    # separados por la misma línea que hay debajo del usuario.
     return f"""
-  <div class="grupo">{th('web.nav.management')}</div>
-  <nav aria-label="{th('web.nav.management')}">
+  <nav aria-label="{th('web.nav.menu')}">
     <details class="cuentas"{open_attr}>
       <summary{' class="activo"' if active == 'email' else ''}>{icon('mail')}<span>{th('web.nav.email')}</span>{icon('chevron', 'flecha')}</summary>
       {''.join(items)}
@@ -169,10 +170,8 @@ def _nav(accounts: list[dict], active: str, active_account: str, csrf: str, acco
     {entry('roster', '/roster', 'roster', 'web.nav.roster')}
     {entry('apps', '/apps', 'web', 'web.apps.title')}
     {entry('api_tokens', '/api-tokens', 'key', 'web.tokens.title')}
+    <hr class="separa-menu">
     {entry('about', '/about', 'info', 'web.about.nav')}
-  </nav>
-  <div class="grupo separa">{th('web.nav.tools')}</div>
-  <nav aria-label="{th('web.nav.tools')}">
     <form method="post" action="/logout" class="salir">
       <input type="hidden" name="csrf" value="{e(csrf)}">
       <button type="submit">{icon('logout')}<span>{th('web.logout')}</span></button>
