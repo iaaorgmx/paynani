@@ -1019,8 +1019,9 @@ tipo nuevo (sección 10):
   puede traer varios, y la app los edita como lista. Sin columna `Phone`, `phones` es
   `[]`; sin `GitHub`, `github` es `""`.
 - `telegram` es la celda `Telegram` (PRD #609 FR-11): un id numérico o un `@usuario`,
-  o `""`. **Sólo va a PaynaniWeb** (`device_id` `web:…`; FR-15, `TELEGRAM.md` §8): a
-  PaynaniApp y a la API les llega `has_telegram` (`true`/`false`) en su lugar, también
+  o `""`. **Sólo va a PaynaniWeb y a las apps del dueño** (`device_id` `web:…` y
+  `owner:…`, como PaynaniWebMT; FR-15, `TELEGRAM.md` §8): a
+  PaynaniApp y a la API de los agentes les llega `has_telegram` (`true`/`false`) en su lugar, también
   en la respuesta de `roster.save`, y `telegram_username` (Q270 = A, #628): el
   `@usuario` si la celda es uno, o `""` si es un id o está vacía. Sin la columna, `""`
   (o `has_telegram: false`).

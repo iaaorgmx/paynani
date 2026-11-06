@@ -96,10 +96,14 @@ class Call:
             raise ApiError(400, "missing_parameter", f"{key} is required.", field=key)
         return value
 
+    def roster_device(self) -> str:
+        """Quién le habla al servicio del roster: el token de la API y la dirección."""
+        return f"api:{self.record.get('prefix', '')}:{self.ip}"
+
     def roster(self, kind: str, **fields) -> dict:
         """Un pedido de §11 al servicio del roster, como lo hacen la web y PaynaniApp."""
         msg = {"type": kind, "id": "q_" + secrets.token_hex(16), **fields}
-        res = self.ctx.roster_service().handle(msg, f"api:{self.record.get('prefix', '')}:{self.ip}")
+        res = self.ctx.roster_service().handle(msg, self.roster_device())
         if res.get("type") == "result":
             return res.get("data") or {}
         code = str(res.get("code") or "invalid")
@@ -160,7 +164,9 @@ def list_mail(call: Call) -> dict:
             "mail": [_mail_row(r) for r in chunk]}
 
 
-def get_mail_thread(call: Call) -> dict:
+def get_mail_thread(call: Call, *, error_detail: bool = False) -> dict:
+    """Un correo con su conversación. Con `error_detail` (la API del dueño), un mensaje que
+    no se pudo leer trae también el dato sin secretos de `MailError.detail`."""
     account = _mail_account(call)
     event_id = call.text("event_id").strip()
     message_id = call.text("message_id").strip()
@@ -187,6 +193,8 @@ def get_mail_thread(call: Call) -> dict:
             item["message"] = got["message"]
         else:
             item["error"] = getattr(got.get("error"), "code", "gone")
+            if error_detail:
+                item["error_detail"] = str(getattr(got.get("error"), "detail", "") or "")
         item["selected"] = r is row
         messages.append(item)
     return {"account": account["id"], "messages": messages}
@@ -339,11 +347,19 @@ def _phones(call: Call) -> list[str]:
     return [phone_mod.to_e164(p.strip(), region) or p.strip() for p in values if p.strip()]
 
 
-def save_roster_contact(call: Call) -> dict:
-    member = {"name": call.text("name").strip(), "email": call.text("email").strip(),
-              "type": call.text("type").strip(), "github": call.text("github").strip(), "phones": _phones(call)}
+def roster_member(call: Call) -> dict:
+    """La fila que se pide guardar, sin la columna Telegram. La API del dueño la agrega."""
+    return {"name": call.text("name").strip(), "email": call.text("email").strip(),
+            "type": call.text("type").strip(), "github": call.text("github").strip(), "phones": _phones(call)}
+
+
+def roster_save(call: Call, member: dict) -> dict:
     return call.roster("roster.save", account=_account_value(call.text("account").strip()),
                        row=call.number("row"), member=member, etag=call.text("etag"))
+
+
+def save_roster_contact(call: Call) -> dict:
+    return roster_save(call, roster_member(call))
 
 
 def delete_roster_contact(call: Call) -> dict:
@@ -411,6 +427,11 @@ def save_catch_all(call: Call) -> dict:
     permission = CATCHALL_WRITE[channel]
     if permission not in granted_permissions(call.record):
         raise ApiError(403, "forbidden", f"This token lacks the {permission} permission.", permission=permission)
+    return catch_all_save(call, channel)
+
+
+def catch_all_save(call: Call, channel: str) -> dict:
+    """Guarda el Catch-All de `channel`, ya con el permiso revisado (la API del dueño, #721, no lo pide)."""
     enabled = call.params.get("enabled")
     if not isinstance(enabled, bool):
         raise ApiError(400, "invalid_parameter", "enabled must be true or false.", field="enabled")
@@ -424,7 +445,9 @@ def _notify(call: Call, kind: str, account_id: str, email: str) -> None:
     """El mismo aviso al dueño que manda la web, diciendo que vino de la API."""
     when = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
     what = i18n.t(f"web.acctmail.what_{kind}", email=email, id=account_id)
-    what += f" (API token {call.record.get('name', '')} {call.record.get('prefix', '')}…)"
+    # La API del dueño (#721) dice de qué app vino: «desde PaynaniWebMT (<nombre>)» (FR-A10).
+    what += (f" ({call.origin()})" if hasattr(call, "origin")
+             else f" (API token {call.record.get('name', '')} {call.record.get('prefix', '')}…)")
     user = call.ctx.user()
     if user:
         call.ctx.notifier.owner(user, i18n.t(f"web.acctmail.{kind}", email=email),
@@ -501,12 +524,8 @@ def _sms_store(call: Call):
 
 def _sms_region(store) -> str | None:
     """La región de la SIM del teléfono emparejado, o la de la instalación (como la web)."""
-    import phone as phone_mod
-    for sim in (store.device() or {}).get("sims") or []:
-        country = str((sim or {}).get("country") or "").strip().upper()
-        if re.fullmatch(r"[A-Z]{2}", country):
-            return country
-    return phone_mod.default_region()
+    from ..sms import owner as sms_owner
+    return sms_owner.region(store)
 
 
 def _phone_online(call: Call) -> bool:

@@ -26,10 +26,8 @@ THREAD_PAGE = 20         # mensajes por página de un hilo (#680)
 MAX_TEXT = 1000
 
 # Lo que dice el teléfono emparejado sobre las órdenes del dueño (FR-6).
-PHONE_OK = "ok"
-PHONE_NONE = "no_phone"
-PHONE_OLD = "old_app"
-PHONE_NO_SMS = "no_sms_phone"   # PaynaniApp sólo Webchat (PaynaniApp-Agentic#175): no manda SMS
+# El estado del teléfono lo decide sms/owner.py, que comparte con la API del dueño.
+from ..sms.owner import PHONE_NO_SMS, PHONE_NONE, PHONE_OK, PHONE_OLD  # noqa: F401
 
 
 def _who(conv_or_item: dict, names: dict) -> str:

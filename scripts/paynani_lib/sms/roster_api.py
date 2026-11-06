@@ -56,10 +56,26 @@ NOTIFY_WINDOW_S = 24 * 3600
 
 API_PREFIX = "api:"   # device_id de un cambio por la API (PRD #491): «api:<prefijo del token>:<dirección>»
 WEB_PREFIX = "web:"   # device_id de un cambio hecho desde PaynaniWeb (#435 T8): «web:<dirección>»
+# device_id de un cambio por la API del dueño (PaynaniWebMT#2): «owner:<client_id>:<dirección>»
+OWNER_PREFIX = "owner:"
 
 
 def from_web(device_id: str) -> bool:
     return str(device_id or "").startswith(WEB_PREFIX)
+
+
+def from_owner(device_id: str) -> bool:
+    return str(device_id or "").startswith(OWNER_PREFIX)
+
+
+def sees_telegram_id(device_id: str) -> bool:
+    """
+    Quién ve y escribe el id numérico de Telegram de una fila (PRD #609 FR-15): PaynaniWeb
+    y las apps del dueño emparejadas en «Apps conectadas» (PaynaniWebMT), que son la misma
+    pantalla con el mismo dueño (Julian, Iris[Q54] = A, 2026-11-05). PaynaniApp y la API de
+    los agentes, no (Q270 de #628).
+    """
+    return from_web(device_id) or from_owner(device_id)
 
 
 def _now_iso() -> str:
@@ -72,16 +88,23 @@ def _digest(msg: dict) -> str:
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def send_sh_notifier(to: str, subject: str, body: str) -> None:
-    """El correo al humano con scripts/send.sh, que lo vuelve a comprobar contra roster.md."""
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as fh:
-        fh.write(body)
-        path = fh.name
+def send_sh_notifier(to: str, subject: str, body: str, html: str | None = None) -> None:
+    """El correo al humano con scripts/send.sh, que lo vuelve a comprobar contra roster.md.
+    Con `html`, sale además esa parte (`--html`): el texto plano va siempre."""
+    paths = []
     try:
-        subprocess.run(["bash", str(_REPO_ROOT / "scripts" / "send.sh"), to, subject, path],
+        for content, suffix in ((body, ".txt"), (html, ".html")):
+            if content is None:
+                continue
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=suffix, delete=False) as fh:
+                paths.append(fh.name)
+                fh.write(content)
+        extra = ["--html", paths[1]] if html is not None else []
+        subprocess.run(["bash", str(_REPO_ROOT / "scripts" / "send.sh"), *extra, to, subject, paths[0]],
                        capture_output=True, text=True, timeout=120, check=True)
     finally:
-        Path(path).unlink(missing_ok=True)
+        for path in paths:
+            Path(path).unlink(missing_ok=True)
 
 
 class RosterService:
@@ -218,7 +241,7 @@ class RosterService:
         if not isinstance(member, dict):
             raise EditError("missing_field", field="member", detail="falta member")
         before: dict = {}
-        web = from_web(device_id)
+        web = sees_telegram_id(device_id)
 
         def transform(text):
             nonlocal before
@@ -228,9 +251,9 @@ class RosterService:
                     before = current[row - 1]
             asked = dict(member)
             if not web and "telegram" in asked:
-                # Q270 = A (#628): PaynaniApp y la API escriben un @usuario; el id numérico
-                # sólo se escribe desde PaynaniWeb (FR-15). Un vacío no borra un id que la
-                # app no ve: la fila lo conserva.
+                # Q270 = A (#628): PaynaniApp y la API de los agentes escriben un @usuario; el
+                # id numérico sólo se escribe desde PaynaniWeb o una app del dueño (FR-15,
+                # `sees_telegram_id`). Un vacío no borra un id que la app no ve: la fila lo conserva.
                 value = str(asked.get("telegram") or "").strip()
                 kind = roster_mod.telegram_value(value) if value else None
                 if value and (kind is None or kind[0] == "id"):
@@ -682,11 +705,12 @@ class RosterService:
 
 def _for_device(response: dict, device_id: str) -> dict:
     """
-    El id de Telegram de cada fila sólo va a PaynaniWeb (PRD #609 FR-15, TELEGRAM.md §8):
-    a PaynaniApp y a la API les llega `has_telegram` en su lugar. Sin `telegram`, una
-    edición desde ellas conserva el de la fila (roster_edit).
+    El id de Telegram de cada fila sólo va a PaynaniWeb y a las apps del dueño (PRD #609
+    FR-15, TELEGRAM.md §8; `sees_telegram_id`): a PaynaniApp y a la API de los agentes les
+    llega `has_telegram` en su lugar. Sin `telegram`, una edición desde ellas conserva el de
+    la fila (roster_edit).
     """
-    if from_web(device_id) or response.get("type") != "result":
+    if sees_telegram_id(device_id) or response.get("type") != "result":
         return response
     data = response.get("data")
     if not isinstance(data, dict) or not isinstance(data.get("members"), list):
@@ -747,9 +771,12 @@ def unnotified(state_dir: Path, *, now: float | None = None, window_s: int = NOT
 
 
 def who_changed(device_id: str) -> str:
-    """`updated_by` de un archivo de reglas: PaynaniWeb y su dirección, el token de la API o el teléfono."""
+    """`updated_by` de un archivo de reglas: PaynaniWeb y su dirección, la app del dueño, el
+    token de la API o el teléfono."""
     if from_web(device_id):
         return f"PaynaniWeb {device_id[len(WEB_PREFIX):]}"
+    if from_owner(device_id):
+        return f"owner app {device_id[len(OWNER_PREFIX):].split(':', 1)[0]}"
     if device_id.startswith(API_PREFIX):
         return f"API token {device_id[len(API_PREFIX):].split(':', 1)[0]}"
     return f"phone {device_id}"
@@ -760,7 +787,8 @@ _CHANNEL_NAMES = {"sms": "SMS", "whatsapp": "WhatsApp", "telegram": "Telegram"}
 
 def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
     """El asunto y el cuerpo del correo al humano: qué cambió y desde dónde, el
-    teléfono (Q5) o PaynaniWeb y su dirección (#434 FR-9)."""
+    teléfono (Q5), PaynaniWeb y su dirección (#434 FR-9), un token de la API o una app del
+    dueño emparejada en «Apps conectadas» (PaynaniWebMT#2)."""
     device = entry["device_id"]
     web = from_web(device)
     api = device.startswith(API_PREFIX)
@@ -770,6 +798,12 @@ def notice(entry: dict, member: dict, before: dict) -> tuple[str, str]:
         app = "la API"
         revoke = ("Si no fuiste tú, revisa el roster y revoca ese token en la pantalla «API Tokens» de "
                   "PaynaniWeb.")
+    elif from_owner(device):
+        client_id, _, ip = device[len(OWNER_PREFIX):].partition(":")
+        origin = f"Desde PaynaniWebMT (app {client_id}, dirección {ip}), a las {entry['at']}:"
+        app = "PaynaniWebMT"
+        revoke = ("Si no fuiste tú, revisa el roster y desconecta esa app en «Apps conectadas» de PaynaniWeb "
+                  f"o con `scripts/paynani web clients revoke {client_id}`.")
     else:
         origin = (f"Desde PaynaniWeb (dirección {device[len(WEB_PREFIX):]}), a las {entry['at']}:" if web
                   else f"Desde el teléfono {device}, a las {entry['at']}:")

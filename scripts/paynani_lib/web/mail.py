@@ -320,6 +320,20 @@ def sender_name(account_id: str, accounts_file: Path | None, env_path: Path) -> 
     return name.replace("\r", "").replace("\n", "").strip()
 
 
+def has_signature(account_id: str, accounts_file: Path | None, env_path: Path) -> bool:
+    """Si la cuenta tiene firma: PAYNANI_SIGNATURE_FILE (o AGENT_EMAIL_SIGNATURE_FILE) para la
+    del agente, `signature_file` de accounts.json para las demás. «Nuevo correo» lo dice
+    debajo del mensaje. False si no hay o no se puede leer: sólo es para mostrar."""
+    import idle_listener
+    try:
+        if account_id == accounts.MAIN:
+            env = idle_listener.load_env(env_path)
+            return bool(env.get("PAYNANI_SIGNATURE_FILE") or env.get("AGENT_EMAIL_SIGNATURE_FILE"))
+        return bool(accounts.get(account_id, accounts_file).get("signature_file"))
+    except Exception:  # noqa: BLE001 -- sólo es para mostrar
+        return False
+
+
 def env_for(account_id: str, accounts_file: Path | None, env_path: Path) -> dict:
     """El login de la cuenta: el del .env para `main`, o el de accounts.json con la
     contraseña que nombra en el .env. Nunca el del agente para otra cuenta."""

@@ -17,6 +17,8 @@ una la manda por `react_url` (JSON); las del mensaje se dibujan bajo el globo co
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 
 from .. import i18n
 from .shell import e
@@ -71,12 +73,28 @@ def reactions_allowed(value):
     return None
 
 
+def _emoji_part(c: str) -> bool:
+    """Un carácter que puede ir en un emoji: un símbolo (`So`: los pictogramas y las banderas),
+    un tono de piel, un selector de variación, el ZWJ, el keycap, una etiqueta de bandera de
+    región, o un dígito, # o * (sólo dentro de un keycap; lo revisa valid_emoji)."""
+    o = ord(c)
+    return (unicodedata.category(c) == "So" or 0x1F3FB <= o <= 0x1F3FF or o in (0xFE0E, 0xFE0F, 0x200D, 0x20E3)
+            or 0xE0020 <= o <= 0xE007F or c in "#*0123456789")
+
+
 def valid_emoji(value: str) -> bool:
-    """Un emoji, o nada (quitar la nuestra): hasta 16 caracteres, sin letras, espacios ni marcas
-    de HTML. La lista exacta la revisa el servicio (FR-14)."""
+    """Un emoji, o nada (quitar la nuestra): hasta 16 caracteres, sólo partes de emoji, con al
+    menos un símbolo o un keycap, y los dígitos, # y * sólo como keycap (1️⃣). Una letra, también
+    de otro alfabeto (界), no pasa (#731). La lista exacta la revisa el servicio (FR-14)."""
     if not isinstance(value, str) or len(value) > 16:
         return False
-    return all(ord(c) >= 0x2000 or c in "#*0123456789" for c in value)
+    if not value:
+        return True
+    if not all(_emoji_part(c) for c in value):
+        return False
+    if not any(unicodedata.category(c) == "So" or c == "⃣" for c in value):
+        return False
+    return re.search("[#*0-9](?!️?⃣)", value) is None
 
 
 def reactions(items) -> str:
