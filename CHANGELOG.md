@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el chevron de las listas (#717).** En Email, Text Messages, Telegram y WhatsApp, el «›» de cada fila es ahora un chevron dibujado, más grande, oscuro y de trazo grueso, como el de Clients de ServiceButtonCustomerManager, y también se ve en el teléfono. API Tokens también lo tiene, a la derecha de cada fila, y abre el detalle del token. Lo pidió Julian.
+
 - **PaynaniWeb: el menú lateral sin títulos de grupo (#715).** Se quitan «Management» y «Tools». Todas las opciones quedan debajo de la sección «AI Agent», y al final van About y, justo debajo, Sign out. Lo pidió Julian.
 
 - **Claude Code: después de compactar, la página del agente ya no dice «No session»** (#738). Al compactar el contexto, Claude Code vuelve a correr el hook `SessionStart`, y el hook reescribía en `pending` el registro de la vigilancia de esa sesión (`state/sessions/<id>/watch.json`) aunque su Monitor siguiera vivo y entregando avisos. La página del agente, en PaynaniWeb y PaynaniWebMT, decía «No session» hasta que el Monitor expiraba. Ahora, si el registro de la misma sesión está vivo, el hook lo deja como está y le dice a la sesión que la vigilancia sigue armada y que no arranque otra. Cuando el Monitor expira, se vuelve a armar como siempre.

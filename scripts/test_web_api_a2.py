@@ -76,6 +76,10 @@ try:
     assert secret not in json.dumps(records) and record["agent_replies"] is True
     assert record["permissions"] == ["read", "sms.send"]
     assert "https://example.ngrok.io/api/agents.md" in page
+    # #717: cada fila de la lista lleva el chevron de las listas, que abre el detalle.
+    status, _, page = req("GET", "/api-tokens", cookie=cookie)
+    assert status == 200 and f'<td class="token-ir"><a href="/api-tokens/detail?id={record["sha256"]}"' in page
+    assert '<span class="flecha fila-flecha" aria-hidden="true"><svg' in page
     status, _, page = req("GET", "/api-tokens/detail?id=" + record["sha256"], cookie=cookie)
     assert status == 200 and secret not in page
     assert req("POST", "/api-tokens/agent-replies", form={"csrf": csrf, "id": record["sha256"], "password": password}, cookie=cookie)[0] == 303
