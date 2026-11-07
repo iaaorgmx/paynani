@@ -147,6 +147,13 @@ check("msgmenu.js: no abre sobre un enlace, una foto o un botón, ni al seleccio
 check("msgmenu.js: copia con el portapapeles y, si no, con execCommand; avisa con role=status (FR-5)", True,
       all(x in js for x in ("navigator.clipboard", 'execCommand("copy")', '"role", "status"')))
 check("msgmenu.js: sin innerHTML con texto del mensaje (el SVG es fijo)", False, "innerHTML = text" in js)
+# #735: el scroll que hace la propia página (hilo.js, el polling de reacciones) no cierra el menú; lo
+# recoloca junto a su globo y sólo lo cierra si el globo sale de la pantalla.
+check("msgmenu.js: con scroll o resize el menú sigue a su globo (#735)", (True, True, True),
+      ('addEventListener("scroll", follow' in js, 'addEventListener("resize", follow' in js,
+       "place(menu.box, menu.row)" in js))
+check("msgmenu.js: ya no cierra el menú con cualquier scroll (#735)", False,
+      bool(re.search(r'addEventListener\("(scroll|resize)", function \(\) \{ close\(false\); \}', js)))
 # #731: sólo emojis, no cualquier carácter desde U+2000 (Ximena en PaynaniWebMT#11).
 for ok in ("", "👍", "❤️", "👍🏽", "👨‍👩‍👧", "🇲🇽", "1️⃣", "#️⃣", "🏴‍☠️", "™"):
     check(f"valid_emoji: {ok!r} pasa", True, msgmenu.valid_emoji(ok))

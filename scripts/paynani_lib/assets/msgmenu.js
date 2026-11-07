@@ -539,7 +539,16 @@
     }
   });
 
-  // Al moverse la página o cambiar de tamaño, el menú quedaría lejos de su globo: se cierra.
-  window.addEventListener("scroll", function () { close(false); }, { passive: true });
-  window.addEventListener("resize", function () { close(false); });
+  // Al moverse la página o cambiar de tamaño, el menú sigue a su globo; se cierra sólo si el globo
+  // sale de la pantalla. La página también se mueve sin que la persona haga nada: hilo.js baja al
+  // final mientras cargan las fotos y carga los anteriores con scrollBy, y el polling de reacciones
+  // cambia la altura de un globo. Cerrar con cualquier scroll cerraba el menú apenas se abría (#735).
+  function follow() {
+    if (!menu) { return; }
+    var r = (menu.row.querySelector(".globo") || menu.row).getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) { close(false); return; }
+    place(menu.box, menu.row);
+  }
+  window.addEventListener("scroll", follow, { passive: true });
+  window.addEventListener("resize", follow);
 })();
