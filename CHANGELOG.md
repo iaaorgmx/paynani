@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: el menú del mensaje ya no se cierra solo (#735).** Con la conversación abierta, el menú del mensaje (PRD #685) se cerraba apenas se abría, porque se cerraba con cualquier `scroll` y la página también se mueve sola: baja al final mientras cargan las fotos, carga los anteriores y cambia la altura de un globo con el polling de reacciones. Ahora, con `scroll` o `resize`, el menú se vuelve a colocar junto a su globo y sólo se cierra si el globo sale de la pantalla. Es el mismo arreglo de PaynaniWebMT#28.
+
 - **PaynaniWeb: el chevron de las listas (#717).** En Email, Text Messages, Telegram y WhatsApp, el «›» de cada fila es ahora un chevron dibujado, más grande, oscuro y de trazo grueso, como el de Clients de ServiceButtonCustomerManager, y también se ve en el teléfono. API Tokens también lo tiene, a la derecha de cada fila, y abre el detalle del token. Lo pidió Julian.
 
 - **PaynaniWeb: el menú lateral sin títulos de grupo (#715).** Se quitan «Management» y «Tools». Todas las opciones quedan debajo de la sección «AI Agent», y al final van About y, justo debajo, Sign out. Lo pidió Julian.
