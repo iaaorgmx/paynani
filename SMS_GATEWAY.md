@@ -1629,7 +1629,7 @@ la misma pasarela, con el token del teléfono (ver «Archivos»).
   sigue vigente hasta que vence y la app reintenta sin volver a subir.
 - **Citar (#745):** `reply_to` con el id `w_…` del mensaje citado. Se guarda como desde
   la web: un id que ya no está se guarda sin cita (`missing`), uno sin forma de `w_…`
-  responde `bad_reply`. El aviso al agente agrega «(respondiendo a «…»)».
+  responde `bad_reply`, y `""` es lo mismo que no mandarlo. El aviso al agente agrega «(respondiendo a «…»)».
 
 ### `webchat.react`: reaccionar a un mensaje (#745)
 

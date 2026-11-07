@@ -195,6 +195,8 @@ class WebchatRelay:
         reply_to = msg.get("reply_to")
         if reply_to is not None and not isinstance(reply_to, str):
             return _error(rid, "invalid", field="reply_to", reason="id w_ y 32 hex")
+        # "" es «sin cita», como en PaynaniWeb y en la API del dueño (Andy en #746).
+        reply_to = reply_to.strip() or None if reply_to is not None else None
         uploads = msg.get("uploads") or []
         if not isinstance(uploads, list) or len(uploads) > MAX_UPLOADS \
                 or not all(isinstance(u, str) for u in uploads) or len(set(uploads)) != len(uploads):

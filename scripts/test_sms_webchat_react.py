@@ -115,6 +115,10 @@ async def main() -> None:
         quote = ((r.get("data") or {}).get("message") or {}).get("reply_to") or {}
         check("reply_to que ya no está: se guarda con missing", ("result", True, None),
               (r.get("type"), quote.get("missing"), quote.get("ref")))
+        r = await app.ask("webchat.send", text="Sin cita", reply_to="")
+        msg = (r.get("data") or {}).get("message") or {}
+        check("reply_to vacío: se guarda sin cita, como la web", ("result", False),
+              (r.get("type"), "reply_to" in msg))
         r = await app.ask("webchat.send", text="x", reply_to="w_mal")
         check("reply_to sin forma de w_: bad_reply", "bad_reply", r.get("code"))
         r = await app.ask("webchat.send", text="x", reply_to=5)
