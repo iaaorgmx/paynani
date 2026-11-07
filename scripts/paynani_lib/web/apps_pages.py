@@ -209,12 +209,15 @@ def _copy_field(label: str, value: str, text: str) -> str:
 def code_body(base: str, code: str) -> str:
     """La dirección y el código (#742 §4), con iconos de copiar en lugar de botones."""
     minutes = owner_clients.CODE_TTL_S // 60
+    # Sin barras invertidas dentro de las llaves de un f-string: es SyntaxError antes de Python 3.12 (PEP 701).
+    base_html = f"<code>{e(base)}</code>"
+    code_html = f'<code class="apps-code">{e(code)}</code>'
     expires = (f'<div class="campo"><div><div class="campo-etq">{_th("expires")}</div>'
                f'<div class="campo-val"><span class="apps-vence" data-segundos="{owner_clients.CODE_TTL_S}">'
                f'{_th("minutes", min=minutes)}</span></div></div></div>')
     return (f'<div class="codigo-caja">'
-            f'{_copy_field(_th("address"), f"<code>{e(base)}</code>", base)}'
-            f'{_copy_field(_th("pair_code"), f"<code class=\"apps-code\">{e(code)}</code>", code)}'
+            f'{_copy_field(_th("address"), base_html, base)}'
+            f'{_copy_field(_th("pair_code"), code_html, code)}'
             f'{expires}</div>'
             f'<p class="aviso-codigo">{_th("once")}</p>'
             f'<p class="acciones"><a class="secundario" href="/apps">{_th("done")}</a></p>'
