@@ -2,6 +2,12 @@
 
 ## Sin publicar
 
+- **PaynaniWeb: nueva UI de «Apps conectadas» (#742).** Lo pidió Julian.
+  - La lista es como la tabla de Email: ocupa todo el ancho, con cabecera gris y las mismas píldoras de estado (Activa en verde, Revocada en rojo). Cada fila abre el detalle de la app y lleva su chevron al final. En el teléfono las filas se apilan como en Email.
+  - Ya no hay un campo de contraseña en cada fila. «Revocar esta app» está en el detalle (`/apps/detail?id=…`), con la contraseña.
+  - «Emparejar app» (`/apps/pair`) pide la contraseña antes de generar el código.
+  - La dirección y el código se copian con un icono de copiar, como en ServiceButtonWebApp (`assets/apps.js`). «Vence en» cuenta hacia atrás. Sin script, los iconos no se muestran y el texto se puede seleccionar.
+
 - **PaynaniWeb: el menú del mensaje ya no se cierra solo (#735).** Con la conversación abierta, el menú del mensaje (PRD #685) se cerraba apenas se abría, porque se cerraba con cualquier `scroll` y la página también se mueve sola: baja al final mientras cargan las fotos, carga los anteriores y cambia la altura de un globo con el polling de reacciones. Ahora, con `scroll` o `resize`, el menú se vuelve a colocar junto a su globo y sólo se cierra si el globo sale de la pantalla. Es el mismo arreglo de PaynaniWebMT#28.
 
 - **PaynaniWeb: el chevron de las listas (#717).** En Email, Text Messages, Telegram y WhatsApp, el «›» de cada fila es ahora un chevron dibujado, más grande, oscuro y de trazo grueso, como el de Clients de ServiceButtonCustomerManager, y también se ve en el teléfono. API Tokens también lo tiene, a la derecha de cada fila, y abre el detalle del token. Lo pidió Julian.

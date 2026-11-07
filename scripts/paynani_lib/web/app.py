@@ -51,6 +51,7 @@ STATIC = {
     "/assets/compose.js": (ASSETS / "compose.js", "application/javascript; charset=UTF-8"),
     "/assets/api_tokens.js": (ASSETS / "api_tokens.js", "application/javascript; charset=UTF-8"),
     "/assets/about.js": (ASSETS / "about.js", "application/javascript; charset=UTF-8"),
+    "/assets/apps.js": (ASSETS / "apps.js", "application/javascript; charset=UTF-8"),
     "/assets/adjuntos.js": (ASSETS / "adjuntos.js", "application/javascript; charset=UTF-8"),
     "/assets/webchat.js": (ASSETS / "webchat.js", "application/javascript; charset=UTF-8"),
     "/assets/barra.js": (ASSETS / "barra.js", "application/javascript; charset=UTF-8"),
@@ -1070,8 +1071,8 @@ def make_handler(ctx: Context):
             if self.route in ("/api-tokens", "/api-tokens/new", "/api-tokens/detail"):
                 self._tokens_get()
                 return
-            if self.route == "/apps":
-                self._apps_page(200)
+            if self.route in ("/apps", "/apps/detail", "/apps/pair"):
+                self._apps_get()
                 return
             self._page(404, title=t("web.notfound.h1"), body="", icon_name="warn")
 
@@ -1151,31 +1152,61 @@ def make_handler(ctx: Context):
                 return
             self._redirect("/api-tokens/detail?id=" + digest + "&ok=1")
 
-        def _apps_page(self, code: int, *, error: str = "", notice: str = ""):
-            """«Apps conectadas» (PaynaniWebMT#2 FR-A3)."""
+        def _apps_records(self) -> list[dict] | None:
             try:
-                records = owner_clients.list_clients(path=owner_clients.clients_path(self.CTX.user_path()))
+                return owner_clients.list_clients(path=owner_clients.clients_path(self.CTX.user_path()))
             except (OSError, ValueError):
+                return None
+
+        def _apps_get(self):
+            """«Apps conectadas» (PaynaniWebMT#2 FR-A3; la UI de #742): la lista, el detalle y «Emparejar app»."""
+            if self.route == "/apps/pair":
+                self._apps_pair(200)
+            elif self.route == "/apps/detail":
+                self._apps_detail(self.query.get("id", [""])[0][:20])
+            else:
+                self._apps_page(200)
+
+        def _apps_page(self, code: int, *, error: str = "", notice: str = ""):
+            records = self._apps_records()
+            if records is None:
                 records, error = [], error or i18n.th("web.tokens.invalid")
             self._page(code, title=i18n.t("web.apps.title"),
-                       body=apps_pages.list_body(records, self.session["csrf"], error=error, notice=notice), active="apps")
+                       body=apps_pages.list_body(records, error=error, notice=notice), active="apps", wide=True)
+
+        def _apps_pair(self, code: int, *, error: str = ""):
+            self._page(code, title=i18n.t("web.apps.pair_new"), body=apps_pages.pair_body(self.session["csrf"], error=error),
+                       active="apps", back="/apps", wide=True)
+
+        def _apps_detail(self, client_id: str, *, code: int = 200, error: str = ""):
+            record = next((r for r in self._apps_records() or [] if r.get("client_id") == client_id), None)
+            if record is None:
+                self._page(404, title=i18n.t("web.apps.title"), body=f'<p>{i18n.th("web.apps.missing")}</p>',
+                           active="apps", back="/apps", wide=True)
+                return
+            self._page(code, title=record.get("name") or i18n.t("web.apps.title"),
+                       body=apps_pages.detail_body(record, self.session["csrf"], error=error), active="apps", back="/apps", wide=True)
 
         def _apps_post(self, post: dict):
+            client_id = post.get("id", "")[:20]
             error = self._check_current(post.get("password", "")[:users.MAX_PASSWORD])
             if error:
-                self._apps_page(400, error=error)
+                if self.route == "/apps/code":
+                    self._apps_pair(400, error=error)
+                else:
+                    self._apps_detail(client_id, code=400, error=error)
                 return
             path = owner_clients.clients_path(self.CTX.user_path())
             if self.route == "/apps/code":
                 base = os.environ.get("PAYNANI_SMS_PUBLIC_URL", "").strip().rstrip("/")
                 if not base:
-                    self._apps_page(400, error=i18n.t("web.apps.no_url"))
+                    self._apps_pair(400, error=i18n.t("web.apps.no_url"))
                     return
                 code = owner_clients.new_code(path=path)
-                self._page(200, title=i18n.t("web.apps.title"), body=apps_pages.code_body(base, code),
-                           active="apps")
+                self._page(200, title=i18n.t("web.apps.pair_code"), body=apps_pages.code_body(base, code),
+                           active="apps", back="/apps", wide=True)
                 return
-            record = owner_clients.revoke(post.get("id", "")[:20], path=path)
+            record = owner_clients.revoke(client_id, path=path)
             if record is None:
                 self._apps_page(404, error=i18n.t("web.apps.missing"))
                 return

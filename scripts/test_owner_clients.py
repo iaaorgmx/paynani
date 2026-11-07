@@ -187,7 +187,46 @@ check("generar código: 200 con la dirección y el código", (200, True, True),
 check("ese código empareja", "ok", owner_clients.pair(shown.group(1), "Desde la página", path=store)[0])
 check("CSRF malo: 403", 403, req("POST", "/apps/code", form={"csrf": "x", "password": GOOD}, cookie=cookie)[0])
 
+# --- #742: la UI nueva (lista como Email, detalle, «Emparejar app», iconos de copiar) -----------
+check("código: iconos de copiar (ocultos sin script) con la dirección y el código, sin botones «Copy»",
+      (2, True, True, False),
+      (page.count('class="icono-copiar" hidden'), 'data-copiar="https://agente.ngrok.app"' in page,
+       f'data-copiar="{shown.group(1)}"' in page, ">Copiar</button>" in page))
+check("código: apps.js, «Vence en» con la cuenta atrás y la vuelta a la lista", (True, True, True),
+      ('<script src="/assets/apps.js" defer></script>' in page, f'data-segundos="{owner_clients.CODE_TTL_S}"' in page,
+       'class="atras" href="/apps"' in page))
+status, hdrs, js = req("GET", "/assets/apps.js")
+check("/assets/apps.js: 200 con navigator.clipboard", (200, True), (status, "navigator.clipboard" in js))
+evil = owner_clients.pair(owner_clients.new_code(path=store), '<b>"x"</b>', app_name="MT<i>", path=store)
+check("una app con un nombre con HTML se empareja", "ok", evil[0])
+status, _, page = req("GET", "/apps?lang=es-MX", cookie=cookie)
+check("lista: tabla .correos a todo lo ancho, con cabecera y chevron por fila",
+      (200, True, True, True, True),
+      (status, '<ul class="correos apps">' in page, 'class="correos-cabecera"' in page, "panel-ancho" in page,
+       page.count("fila-flecha") >= page.count('class="app-fila')))
+check("lista: cada fila abre su detalle, sin campos de contraseña", (True, False),
+      (f'href="/apps/detail?id={data["client_id"]}"' in page, 'type="password"' in page.split("<main", 1)[1]))
+check("lista: «Emparejar app» y el resumen", (True, True),
+      ('<a class="secundario" href="/apps/pair">Emparejar app</a>' in page, re.search(r"\d+ apps · \d+ activas", page) is not None))
+check("lista: el nombre con HTML sale escapado", (False, True), ('<b>"x"</b>' in page, "&lt;b&gt;&quot;x&quot;&lt;/b&gt;" in page))
+status, _, page = req("GET", "/apps/pair?lang=es-MX", cookie=cookie)
+check("/apps/pair: 200 con la contraseña y «Generar código»", (200, True, True, True),
+      (status, 'action="/apps/code"' in page, 'type="password" name="password"' in page, 'href="/apps" class="activo"' in page))
+status, _, page = req("POST", "/apps/code", form={"csrf": csrf, "password": "mala"}, cookie=cookie)
+check("contraseña mala en «Generar código»: 400 en la misma página, con el error", (400, True, True),
+      (status, 'action="/apps/code"' in page, 'role="alert"' in page))
 target = data["client_id"]
+status, _, page = req("GET", f"/apps/detail?id={target}&lang=es-MX", cookie=cookie)
+check("detalle: 200 con sus datos y «Revocar esta app»", (200, True, True, True, True),
+      (status, "MT de prueba" in page, f"<code>{target}</code>" in page, "Revocar esta app" in page,
+       f'name="id" value="{target}"' in page))
+check("detalle: sin hashes ni token", (False, False),
+      (any(r["sha256"] in page for r in json.loads(store.read_text())), data["token"] in page))
+check("detalle de una app que no existe: 404", 404, req("GET", "/apps/detail?id=w_nada", cookie=cookie)[0])
+status, _, page = req("POST", "/apps/revoke", form={"csrf": csrf, "password": "mala", "id": target}, cookie=cookie)
+check("revocar con contraseña mala: 400 en el detalle y la app sigue activa", (400, True, "ok"),
+      (status, "Revocar esta app" in page, owner_clients.lookup(data["token"], path=store)[0]))
+
 sent.clear()
 status, _, page = req("POST", "/apps/revoke", form={"csrf": csrf, "password": GOOD, "id": target}, cookie=cookie)
 check("revocar desde la página: 200 con el aviso", (200, True), (status, "App revocada" in page))
@@ -199,6 +238,9 @@ check("el correo de revocar: texto plano y HTML, con la app y su id", (4, True, 
        ">App revocada</h1>" in mail[3]))
 status, _, _ = req("POST", "/apps/revoke", form={"csrf": csrf, "password": GOOD, "id": target}, cookie=cookie)
 check("revocar otra vez: 404", 404, status)
+status, _, page = req("GET", f"/apps/detail?id={target}&lang=es-MX", cookie=cookie)
+check("detalle de una revocada: «Revocada», con la fecha y sin formulario", (200, True, False),
+      (status, "estado-app-revoked" in page, 'action="/apps/revoke"' in page))
 
 # --- el CLI -----------------------------------------------------------------------------------
 env = {**os.environ, "PAYNANI_WEB_USER": str(user_file)}
