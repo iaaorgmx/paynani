@@ -1,6 +1,19 @@
 # Changelog
 
-## Sin publicar
+## 0.24.0 (2026-11-07)
+
+### Si actualizas desde 0.23.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.24.0
+python3 scripts/upgrade_plan.py --from v0.23.0     # y haz lo que imprima
+```
+
+El plan reinicia el listener (con las cuentas adicionales), el despachador, la pasarela SMS, Telegram y PaynaniWeb. Cambió `harness/event.py`, que todos ellos usan para escribir avisos. WhatsApp no se reinicia. No hay servicios nuevos, pasos de instalación ni dependencias nuevas del puente de WhatsApp (`package.json` no cambió). En Claude Code cambió `session_start.py`: la siguiente sesión arma la vigilancia con el código nuevo, y la que está abierta puede seguir igual. `scripts/healthcheck.py` y `scripts/paynani doctor` tienen que salir bien.
+
+PaynaniApp 1.0.7 necesita esta versión para citar y reaccionar en Webchat; con una anterior, la app no ofrece ninguna de las dos cosas. **Para probarlo:** en PaynaniApp, Webchat, deja el dedo sobre un mensaje y elige un emoji, o desliza un mensaje a la derecha para citarlo.
 
 - **Pasarela: citas y reacciones de Webchat para PaynaniApp (#745).** El dueño ya citaba y reaccionaba en Webchat desde PaynaniWeb y PaynaniWebMT (PRD #685), pero la pasarela del teléfono sólo tenía `webchat.thread` y `webchat.send`. Lo vio Julian al probar PaynaniApp v1.0.6. Ahora (SMS_GATEWAY.md §13):
   - `webchat.react` (`ref`, `emoji`; `""` la quita) pone la reacción del dueño, la misma de la web, y entra en el tope de 20 por minuto de `webchat.send`.
