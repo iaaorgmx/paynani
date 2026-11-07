@@ -1007,18 +1007,20 @@ def webchat_event(*, message_id, owner_name, owner_email, text, files, sent_at, 
 
 
 def webchat_reaction_event(*, event_hex, message_id, owner_name, owner_email, emoji, removed,
-                           excerpt, sent_at, local_time, observed_at=None):
+                           excerpt, sent_at, local_time, observed_at=None, origin="web"):
     """
     El dueño puso o quitó una reacción en el Webchat (PRD #685 FR-16a). `event_id` es `wc:` +
     32 hex nuevos (no los del mensaje: una reacción no es un mensaje). `emoji` es la que puso,
     o la que quitó si `removed`. `excerpt` es una línea del mensaje al que reaccionó. Lo que
-    pone el agente no avisa, así que esto sólo sale de la web.
+    pone el agente no avisa. `origin` es `web` (PaynaniWeb) o `app` (PaynaniApp, por la
+    pasarela del teléfono, paynani #745), como en `webchat_event`.
     """
     ref = "wc:" + event_hex
     who = owner_name or owner_email or "el dueño"
     quoted = f"«{safe_excerpt(excerpt or '', 40)}»"
     action = f"quitó su reacción {emoji} de {quoted}" if removed else f"reaccionó {emoji} a {quoted}"
-    line = f"[webchat {local_time}, roster] {who} (PaynaniWeb) {action}"
+    where = "PaynaniApp" if origin == "app" else "PaynaniWeb"
+    line = f"[webchat {local_time}, roster] {who} ({where}) {action}"
     record = {
         "schema_version": SCHEMA_VERSION,
         "event_type": WEBCHAT_RECEIVED,

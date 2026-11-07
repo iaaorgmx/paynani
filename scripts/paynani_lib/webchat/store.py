@@ -382,7 +382,7 @@ def reactions_of(current: dict[str, str] | None) -> list[dict]:
 
 
 def react(ref: str, emoji: str, *, by: str = "owner", owner: dict | None = None,
-          state_dir: Path | None = None) -> dict:
+          origin: str = "web", state_dir: Path | None = None) -> dict:
     """
     Pone (`emoji`) o quita (`""`) la reacción del dueño (`by="owner"`, desde la web) o del
     agente (`by="agent"`, desde la CLI) en el mensaje `ref` (`w_…`). Una por mensaje y por
@@ -390,7 +390,8 @@ def react(ref: str, emoji: str, *, by: str = "owner", owner: dict | None = None,
 
     La del dueño avisa al agente (FR-16a) con un evento `wc:` de `kind: "reaction"`; la del
     agente no avisa. Poner la misma que ya está, o quitar una que no hay, no cambia nada ni
-    avisa. Errores: `Rejected("not_found")` y `Rejected("bad_emoji")`.
+    avisa. Errores: `Rejected("not_found")` y `Rejected("bad_emoji")`. `origin` es `web` o
+    `app` (el dueño desde PaynaniApp, por la pasarela, paynani #745): sólo cambia el aviso.
     """
     if by not in ("owner", "agent"):
         raise ValueError(f"by debe ser owner o agent, no {by!r}")
@@ -417,7 +418,7 @@ def react(ref: str, emoji: str, *, by: str = "owner", owner: dict | None = None,
                     event_hex=hexpart, message_id=ref, owner_name=name,
                     owner_email=(owner or {}).get("email", ""), emoji=emoji or before,
                     removed=not emoji, excerpt=excerpt_of(original), sent_at=row["at"],
-                    local_time=time.strftime("%H:%M:%S"), observed_at=row["at"])
+                    local_time=time.strftime("%H:%M:%S"), observed_at=row["at"], origin=origin)
             _append_line(r / "reactions.jsonl", row)
             current = dict(current, **{by: emoji})
     if envelope is not None:
