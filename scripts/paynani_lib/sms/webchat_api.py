@@ -4,12 +4,13 @@ Webchat desde PaynaniApp (PRD #653, SMS_GATEWAY.md §13).
 El teléfono emparejado platica con el agente en la misma conversación que PaynaniWeb. Todo
 pasa por el almacén del núcleo (`paynani_lib/webchat/store.py`); no hay servicio aparte.
 
-- `webchat.thread` y `webchat.send` llegan por el WebSocket del teléfono (`handle`).
+- `webchat.thread`, `webchat.send` y `webchat.react` llegan por el WebSocket del teléfono
+  (`handle`). Citar (`reply_to`) y reaccionar son de paynani #745, como en PaynaniWeb.
 - Los archivos suben por `POST /sms/webchat/upload` (`save_upload`) a
   `state/webchat/uploads/`, fuera de `files/`: un `up_…` pendiente no se puede descargar.
   Se consume sólo cuando el mensaje se guarda.
-- `watch` avisa `webchat.changed` cuando cambian los mensajes, «escribiendo…» o el
-  borrador.
+- `watch` avisa `webchat.changed` cuando cambian los mensajes, las reacciones,
+  «escribiendo…» o el borrador.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ from typing import Awaitable, Callable
 
 from ..webchat import store
 
-TYPES = ("webchat.thread", "webchat.send")
+TYPES = ("webchat.thread", "webchat.send", "webchat.react")
 GRANT = "webchat.owner"
 ID_RE = re.compile(r"^q_[0-9a-f]{32}$")
 MSG_RE = re.compile(r"^w_[0-9a-f]{32}$")
@@ -42,7 +43,7 @@ REPLAY_MAX = 64
 REPLAY_TTL_S = 600
 WATCH_S = 0.3                 # cada cuánto se mira el almacén; también el mínimo entre dos `draft`
 FULL_EVERY_S = 5.0            # sin cambios, cada cuánto se vuelve a leer «escribiendo…» y el borrador
-MESSAGE_FIELDS = ("id", "dir", "by", "at", "text", "files")
+MESSAGE_FIELDS = ("id", "dir", "by", "at", "text", "files", "reply_to", "reactions")
 
 
 class WebchatRelay:
@@ -115,8 +116,9 @@ class WebchatRelay:
         future = asyncio.get_running_loop().create_future()
         self.inflight[rid] = (digest, future)
         response = _error(rid, "unavailable")
+        act = self.react if msg.get("type") == "webchat.react" else self.send
         try:
-            response = await asyncio.to_thread(self.send, msg, rid, device_id)
+            response = await asyncio.to_thread(act, msg, rid, device_id)
         finally:
             self.inflight.pop(rid, None)
             future.set_result(response)
@@ -166,7 +168,9 @@ class WebchatRelay:
             "messages": [_message(m) for m in page],
             "next_before": next_before,
             "typing": bool(store.is_typing(state_dir=self.state_dir)),
-            "draft": store.draft(state_dir=self.state_dir)}}
+            "draft": store.draft(state_dir=self.state_dir),
+            # #745: este paynani cita y reacciona, como `GetWebchatThread` de la API del dueño.
+            "replies": True, "reactions": True}}
 
     def _agent(self) -> str:
         try:
@@ -188,17 +192,17 @@ class WebchatRelay:
             text = ""
         if not isinstance(text, str):
             return _error(rid, "invalid", field="text", reason="texto")
+        reply_to = msg.get("reply_to")
+        if reply_to is not None and not isinstance(reply_to, str):
+            return _error(rid, "invalid", field="reply_to", reason="id w_ y 32 hex")
         uploads = msg.get("uploads") or []
         if not isinstance(uploads, list) or len(uploads) > MAX_UPLOADS \
                 or not all(isinstance(u, str) for u in uploads) or len(set(uploads)) != len(uploads):
             return _error(rid, "invalid", field="uploads", reason=f"hasta {MAX_UPLOADS} up_ distintos")
         now = self.clock()
-        with self.lock:
-            while self.sent and now - self.sent[0] >= RATE_WINDOW_S:
-                self.sent.popleft()
-            if len(self.sent) >= RATE_MAX:
-                retry = max(1, int(RATE_WINDOW_S - (now - self.sent[0])) + 1)
-                return _error(rid, "rate_limited", retry_after_s=retry)
+        limited = self._rate_limited(rid, now)
+        if limited:
+            return limited
         files = []
         for up in uploads:
             item = self._pending(up, device_id, now)
@@ -208,7 +212,8 @@ class WebchatRelay:
         try:
             message = store.append("owner", text.replace("\r\n", "\n").strip(),
                                    [(meta["name"], data) for meta, data in files],
-                                   owner=owner, origin="app", state_dir=self.state_dir)
+                                   owner=owner, origin="app", reply_to=reply_to,
+                                   state_dir=self.state_dir)
         except store.Rejected as exc:
             return _error(rid, exc.code)
         with self.lock:
@@ -217,6 +222,49 @@ class WebchatRelay:
             self._drop(up)
         self.log(f"webchat: mensaje del dueño desde PaynaniApp ({device_id}, {len(files)} archivo(s))")
         return {"type": "result", "ref": rid, "ok": True, "data": {"message": _message(message)}}
+
+    def _rate_limited(self, rid: str, now: float) -> dict | None:
+        """El tope de 20 por minuto, de mensajes y reacciones juntos; None si hay lugar."""
+        with self.lock:
+            while self.sent and now - self.sent[0] >= RATE_WINDOW_S:
+                self.sent.popleft()
+            if len(self.sent) >= RATE_MAX:
+                retry = max(1, int(RATE_WINDOW_S - (now - self.sent[0])) + 1)
+                return _error(rid, "rate_limited", retry_after_s=retry)
+        return None
+
+    # --- webchat.react (#745) ----------------------------------------------
+    def react(self, msg: dict, rid: str, device_id: str) -> dict:
+        """
+        La reacción del dueño desde el teléfono: `ref` (`w_…`) y `emoji` (`""` la quita).
+        Es la misma de la web (`by="owner"`): una por mensaje, y la del teléfono reemplaza a la
+        que haya puesto en PaynaniWeb. El aviso al agente dice «(PaynaniApp)».
+        """
+        owner = self.owner()
+        if owner is None:
+            return _error(rid, "unavailable")
+        ref = msg.get("ref")
+        if not isinstance(ref, str) or not MSG_RE.match(ref):
+            return _error(rid, "invalid", field="ref", reason="id w_ y 32 hex")
+        emoji = msg.get("emoji", "")
+        if emoji is None:
+            emoji = ""
+        if not isinstance(emoji, str):
+            return _error(rid, "invalid", field="emoji", reason="texto")
+        now = self.clock()
+        limited = self._rate_limited(rid, now)
+        if limited:
+            return limited
+        try:
+            result = store.react(ref, emoji, by="owner", owner=owner, origin="app",
+                                 state_dir=self.state_dir)
+        except store.Rejected as exc:
+            return _error(rid, exc.code)
+        with self.lock:
+            self.sent.append(now)
+        self.log(f"webchat: reacción del dueño desde PaynaniApp ({device_id})")
+        return {"type": "result", "ref": rid, "ok": True,
+                "data": {"ref": result["ref"], "reactions": result["reactions"]}}
 
     # --- las subidas -------------------------------------------------------
     @property
@@ -307,7 +355,7 @@ class WebchatRelay:
         r = store.root(self.state_dir)
         out = []
         for path in (r / "messages.jsonl", r / "typing.json", r / "draft.json",
-                     self.state_dir / "lifecycle.jsonl"):
+                     self.state_dir / "lifecycle.jsonl", r / "reactions.jsonl"):
             try:
                 st = path.stat()
                 out.append((st.st_mtime_ns, st.st_size))
@@ -316,13 +364,15 @@ class WebchatRelay:
         return tuple(out)
 
     def snapshot(self) -> tuple:
-        """Lo que se compara para avisar: (mensajes, escribiendo, borrador)."""
-        return (self.marks()[0], bool(store.is_typing(state_dir=self.state_dir)),
-                store.draft(state_dir=self.state_dir))
+        """Lo que se compara para avisar: (mensajes, escribiendo, borrador, reacciones)."""
+        marks = self.marks()
+        return (marks[0], bool(store.is_typing(state_dir=self.state_dir)),
+                store.draft(state_dir=self.state_dir), marks[4])
 
     async def watch(self, on_change: Callable[[str, dict], Awaitable[None]]) -> None:
         """
-        Para siempre: `on_change(what, extra)` con `messages`, `typing` o `draft`. Cada
+        Para siempre: `on_change(what, extra)` con `messages`, `reactions` (#745), `typing`
+        o `draft`. Cada
         `watch_s` sólo mira `mtime` y tamaño; lee el almacén cuando algo cambió o cada
         `FULL_EVERY_S` (el «escribiendo…» supuesto y el borrador vencen con el reloj). Dos
         `draft` seguidos nunca salen más juntos que `watch_s`.
@@ -347,6 +397,8 @@ class WebchatRelay:
                 await on_change("typing", {"typing": now[1]})
             if now[2] != last[2]:
                 await on_change("draft", {"draft": now[2]})
+            if now[3] != last[3]:
+                await on_change("reactions", {})
             last = now
 
 

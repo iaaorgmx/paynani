@@ -2,6 +2,15 @@
 
 ## Sin publicar
 
+- **Pasarela: citas y reacciones de Webchat para PaynaniApp (#745).** El dueño ya citaba y reaccionaba en Webchat desde PaynaniWeb y PaynaniWebMT (PRD #685), pero la pasarela del teléfono sólo tenía `webchat.thread` y `webchat.send`. Lo vio Julian al probar PaynaniApp v1.0.6. Ahora (SMS_GATEWAY.md §13):
+  - `webchat.react` (`ref`, `emoji`; `""` la quita) pone la reacción del dueño, la misma de la web, y entra en el tope de 20 por minuto de `webchat.send`.
+  - `webchat.send` acepta `reply_to`.
+  - `webchat.thread` trae `reply_to` y `reactions` en cada mensaje que los tiene, más `replies` y `reactions` en `true` para que la app sepa que este paynani los tiene.
+  - `webchat.changed` avisa `what: "reactions"` cuando el dueño o el agente ponen o quitan una.
+  - El aviso al agente de una reacción desde el teléfono dice «(PaynaniApp)» en lugar de «(PaynaniWeb)».
+
+  La pantalla de PaynaniApp que lo usa va aparte, en iaaorgmx/PaynaniApp.
+
 - **PaynaniWeb: nueva UI de «Apps conectadas» (#742).** Lo pidió Julian.
   - La lista es como la tabla de Email: ocupa todo el ancho, con cabecera gris y las mismas píldoras de estado (Activa en verde, Revocada en rojo). Cada fila abre el detalle de la app y lleva su chevron al final. En el teléfono las filas se apilan como en Email.
   - Ya no hay un campo de contraseña en cada fila. «Revocar esta app» está en el detalle (`/apps/detail?id=…`), con la contraseña.

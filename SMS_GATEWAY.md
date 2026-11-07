@@ -1538,11 +1538,11 @@ la misma pasarela, con el token del teléfono (ver «Archivos»).
 ### Anuncio en el `welcome`
 
 ```json
-"accepts": ["sms.in", …, "webchat.thread", "webchat.send"],
+"accepts": ["sms.in", …, "webchat.thread", "webchat.send", "webchat.react"],
 "grants": ["webchat.owner"]
 ```
 
-- La pasarela pone `webchat.thread` y `webchat.send` en `accepts` **sólo si** la
+- La pasarela pone `webchat.thread`, `webchat.send` y `webchat.react` en `accepts` **sólo si** la
   instalación tiene el almacén de Webchat y un usuario de PaynaniWeb (el dueño). Sin
   ellos no los anuncia y la app no muestra la sección «AI Agent».
 - `webchat.owner` va sólo al teléfono emparejado (el `device_id` de `device.json`). Sin
@@ -1566,7 +1566,8 @@ la misma pasarela, con el token del teléfono (ver «Archivos»).
        {"n": 0, "name": "foto.jpg", "kind": "image", "size": 48213, "ref": "f_…"}]},
     {"id": "w_…", "dir": "out", "by": "agent", "at": "2026-11-02T03:11:40Z",
      "text": "Van 12 hoy.", "files": []}],
-  "next_before": null, "typing": true, "draft": null}}
+  "next_before": null, "typing": true, "draft": null,
+  "replies": true, "reactions": true}}
 ```
 
 - **Orden:** del más viejo al más nuevo, como `store.messages()` y la web (distinto de
@@ -1586,6 +1587,20 @@ la misma pasarela, con el token del teléfono (ver «Archivos»).
   nunca una ruta. Se descargan con `GET /sms/webchat/file`.
 - **Estado:** `typing` es «escribiendo…». `draft` es el borrador de
   `webchat send --stream`, `{"text": "…", "at": "…"}` o `null`.
+- **Citas y reacciones (#745):** un mensaje que cita a otro trae `reply_to`, y uno con
+  reacciones trae `reactions`, con la misma forma que el almacén (WEBCHAT.md):
+
+  ```json
+  "reply_to": {"ref": "w_…", "name": "Metis", "excerpt": "Sí, te lo mandé al correo", "missing": false},
+  "reactions": [{"emoji": "👍", "count": 1, "mine": true}, {"emoji": "❤️", "count": 1, "mine": false}]
+  ```
+
+  Sin cita o sin reacciones, el campo no viene. `mine` es la del dueño, la misma que pone
+  en PaynaniWeb. Una cita con `missing: true` es de un mensaje que ya no está (`ref` en
+  `null`).
+- **`replies` y `reactions`** dicen que este paynani cita y reacciona, como
+  `GetWebchatThread` de la API del dueño. Un paynani anterior a #745 no los manda: la app
+  no ofrece «Reply» ni reacciones y lo trata como `false`.
 
 ### `webchat.send`: escribirle al agente
 
@@ -1612,6 +1627,30 @@ la misma pasarela, con el token del teléfono (ver «Archivos»).
   `result` con `"replayed": true`.
 - **Uploads:** un `up_…` se consume sólo cuando el mensaje se guarda. Si el envío falla,
   sigue vigente hasta que vence y la app reintenta sin volver a subir.
+- **Citar (#745):** `reply_to` con el id `w_…` del mensaje citado. Se guarda como desde
+  la web: un id que ya no está se guarda sin cita (`missing`), uno sin forma de `w_…`
+  responde `bad_reply`. El aviso al agente agrega «(respondiendo a «…»)».
+
+### `webchat.react`: reaccionar a un mensaje (#745)
+
+```json
+{"type": "webchat.react", "id": "q_…", "ref": "w_…", "emoji": "👍"}
+```
+
+```json
+{"type": "result", "ref": "q_…", "ok": true, "data": {
+  "ref": "w_…", "reactions": [{"emoji": "👍", "count": 1, "mine": true}]}}
+```
+
+- **Es la reacción del dueño**, la misma que pone en PaynaniWeb (`store.react(…,
+  by="owner")`): una por mensaje, y otra la reemplaza. `"emoji": ""` la quita. Se acepta
+  cualquier emoji, pero uno solo.
+- **Aviso al agente:** como desde la web (PRD #685 FR-16a), con «(PaynaniApp)»:
+  `Dueña (PaynaniApp) reaccionó 👍 a «Sí, te lo mandé al correo»`. Poner la misma que ya
+  está, o quitar una que no hay, no cambia nada ni avisa.
+- **Tope:** cuenta en los mismos 20 por minuto que `webchat.send`.
+- **Reenvío seguro:** con el mismo `id` y lo mismo, responde el mismo `result` con
+  `"replayed": true`. El mismo `id` con otro `emoji` responde `invalid` (`id_reused`).
 
 ### Archivos
 
@@ -1643,16 +1682,21 @@ Los errores HTTP traen `{"error": "<code>"}` con los mismos códigos de abajo.
 
 ```json
 {"type": "webchat.changed", "what": "messages"}
+{"type": "webchat.changed", "what": "reactions"}
 {"type": "webchat.changed", "what": "typing", "typing": true}
 {"type": "webchat.changed", "what": "draft", "draft": {"text": "Van 12 hoy y …", "at": "…"}}
 ```
 
 - **Sin `id` ni `ref`.** `what` es `messages` (hay un mensaje nuevo, del agente o del
-  dueño desde la web), `typing` o `draft`.
+  dueño desde la web), `reactions` (alguien puso o quitó una reacción, #745), `typing` o
+  `draft`.
 - **A quién llega:** a toda conexión con `webchat.owner`, aunque no haya pedido
   `webchat.thread`. Así la app puede avisar con la pantalla cerrada (FR-11).
 - **Qué hace la app con `messages`:** pide `webchat.thread` con `after` = el último id
   que tiene. Con eso arma la notificación sin otra llamada.
+- **Qué hace la app con `reactions`:** vuelve a pedir la página que muestra
+  (`webchat.thread` sin `after`), porque la reacción puede ser de un mensaje viejo. No
+  avisa con una notificación.
 - **Contenido:** `messages` no lleva contenido. `draft` lleva el texto del borrador (o
   `null` cuando se borra), porque la conexión es la del teléfono del dueño.
 - **Frecuencia:** la pasarela no manda más de un `draft` cada 300 ms.
@@ -1715,8 +1759,10 @@ Además de los de las secciones 5 y 11:
 | `too_big` | Un archivo de más de 20 MB, o más de 25 MB en el mensaje |
 | `bad_type` | El tipo real del archivo no está permitido o no coincide con el nombre |
 | `bad_upload` | Un `up_…` que no existe, venció, ya se usó o es de otro teléfono |
-| `rate_limited` | Más de 20 mensajes por minuto. Va `retry_after_s` |
-| `not_found` | `before` o `after` con un id que no existe |
+| `rate_limited` | Más de 20 mensajes y reacciones por minuto. Va `retry_after_s` |
+| `bad_reply` | `webchat.send` con un `reply_to` sin forma de `w_…` |
+| `bad_emoji` | `webchat.react` con algo que no es un solo emoji |
+| `not_found` | `before` o `after` con un id que no existe, o `webchat.react` a un mensaje que no está |
 | `invalid` | Un campo no pasa la validación. Van `field` y `reason` |
 
 Ningún error cierra la conexión.
@@ -1725,5 +1771,7 @@ Ningún error cierra la conexión.
 
 - Un `webchat.send` queda en `state/webchat/messages.jsonl` como del dueño, con el mismo
   evento `webchat.received` que la web, marcado como venido de PaynaniApp.
+- Un `webchat.react` queda en `state/webchat/reactions.jsonl` como del dueño, con el mismo
+  evento de reacción que la web, marcado como venido de PaynaniApp.
 - La pasarela no escribe en su log el texto de los mensajes, los nombres de archivo ni
   el borrador, igual que con los SMS (sección 8).
