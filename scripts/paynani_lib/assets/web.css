@@ -863,3 +863,44 @@ body.web-shell {
 .web-shell .reacciones .reac { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 1px 8px; font-size: .95rem; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; min-height: 28px; color: var(--ink); }
 .web-shell .reacciones .reac small { font-size: .75rem; color: var(--quiet); }
 .web-shell .reacciones .reac-mia { border-color: var(--accent); background: rgba(143, 45, 43, .1); }
+
+/* «Apps conectadas» (#742): la lista con la tabla de Email (.correos), el detalle, «Emparejar app»
+   y el código con iconos de copiar, como Business Information de ServiceButtonWebApp. */
+.web-shell .correos.apps li a, .web-shell .correos.apps .correos-cabecera {
+  grid-template-columns: minmax(14rem, 26%) 1fr 11rem 11rem 7.5rem 1.6rem;
+}
+.web-shell .correos.apps .app-id { display: block; background: none; border: 0; padding: 0; font-size: .75rem; font-weight: 400; color: var(--quiet); }
+.web-shell .app-version { color: var(--quiet); font-size: .85rem; }
+.web-shell .correos.apps li.app-revocada a, .web-shell .correos.apps li.app-revocada .quien { color: var(--quiet); }
+.web-shell .estado-app-active { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-ink); }
+.web-shell .estado-app-revoked { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad-ink); }
+.web-shell .apps-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin: 0 0 .8rem; }
+.web-shell .apps-barra .resumen, .web-shell .apps-barra .acciones { margin: 0; }
+.web-shell .apps-nota { font-size: .85rem; margin-top: 1rem; }
+.web-shell .app-detalle { max-width: 46rem; }
+.web-shell dl.app-detalle { margin: 0 0 1.5rem; }
+.web-shell .zona-peligro { border: 1px solid var(--bad-line); border-radius: 10px; padding: 1rem 1.1rem; max-width: 46rem; }
+.web-shell .zona-peligro h2 { font-size: 1rem; margin: 0 0 .4rem; color: var(--bad-ink); }
+.web-shell .zona-peligro p { margin: 0 0 .8rem; color: var(--quiet); font-size: .92rem; }
+.web-shell .formulario-fila { display: flex; flex-wrap: wrap; gap: .6rem; align-items: flex-end; max-width: 46rem; }
+.web-shell .formulario-fila label { display: flex; flex-direction: column; gap: .3rem; font-size: .9rem; flex: 1 1 14rem; }
+.web-shell .codigo-caja { max-width: 46rem; border: 1px solid var(--line); border-radius: 10px; padding: .4rem 1.1rem; margin-bottom: 1rem; }
+.web-shell .campo { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 0; }
+.web-shell .campo + .campo { border-top: 1px solid var(--line); }
+.web-shell .campo-val { color: var(--quiet); margin-top: .2rem; overflow-wrap: anywhere; }
+.web-shell .campo-val code { background: none; border: 0; padding: 0; color: inherit; }
+.web-shell .campo-val code.apps-code { color: var(--ink); font-size: 1.6rem; letter-spacing: .16em; font-weight: 700; }
+.web-shell .icono-copiar { position: relative; flex: none; border: 0; background: none; color: var(--ink); padding: .35rem; border-radius: 6px; cursor: pointer; line-height: 0; }
+.web-shell .icono-copiar[hidden] { display: none; }
+.web-shell .icono-copiar svg { width: 22px; height: 22px; }
+.web-shell .icono-copiar:hover { background: var(--bg); }
+.web-shell .icono-copiar .tip { display: none; position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 5;
+  background: #1c1c1a; color: #fff; font-size: .75rem; font-weight: 600; line-height: 1; padding: .4rem .5rem; border-radius: 4px; white-space: nowrap; }
+.web-shell .icono-copiar .tip::before { content: ""; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-bottom-color: #1c1c1a; }
+.web-shell .icono-copiar:hover .tip, .web-shell .icono-copiar:focus-visible .tip, .web-shell .icono-copiar.copiado .tip { display: block; }
+.web-shell .aviso-codigo { max-width: 46rem; background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-ink); border-radius: 8px; padding: .6rem .8rem; font-size: .9rem; }
+@media (max-width: 900px) {
+  .web-shell .correos.apps li a { grid-template-columns: 1fr auto; }
+  .web-shell .correos.apps .app-cel { grid-column: 1 / -1; }
+  .web-shell .correos.apps .app-pareada { display: none; }
+}
