@@ -1156,16 +1156,41 @@ def antigravity_output(text):
     """
     The stdout payload for agy's SessionStart and PreInvocation hooks (#749 FR-2).
 
-    The hooks reference describes a `systemMessage` step as an object with its
-    own `systemMessage` text and optional `metadata`. F0 measures this on a real
-    host; if agy wants another shape, this is the one place that changes.
+    A `systemMessage` step is an object holding its own `systemMessage` text.
+    No `metadata`: F0 on agy 1.5.3 showed that `{"source": "paynani"}` there
+    makes agy drop the whole step ("type mismatch: cannot convert string to
+    message"), while the same step without it reaches the model (#749).
     """
     if not text:
         return {}
-    return {"injectSteps": [{"systemMessage": {
-        "systemMessage": text,
-        "metadata": {"source": "paynani"},
-    }}]}
+    return {"injectSteps": [{"systemMessage": {"systemMessage": text}}]}
+
+
+def antigravity_output_valid(payload):
+    """
+    Whether `payload` has exactly the shape F0 saw agy accept.
+
+    agy reports a rejected hook only in its own log, never to the hook, so the
+    hook cannot learn afterwards that nothing was shown. Checking the shape
+    before acknowledging is what stands between a future change here and mail
+    marked seen that no conversation ever got (#749 F0).
+    """
+    if not isinstance(payload, dict):
+        return False
+    if payload == {}:
+        return True
+    steps = payload.get("injectSteps")
+    if set(payload) != {"injectSteps"} or not isinstance(steps, list) or not steps:
+        return False
+    for step in steps:
+        if not isinstance(step, dict) or set(step) != {"systemMessage"}:
+            return False
+        inner = step["systemMessage"]
+        if not isinstance(inner, dict) or set(inner) != {"systemMessage"}:
+            return False
+        if not isinstance(inner["systemMessage"], str):
+            return False
+    return True
 
 
 def antigravity_turn_start(payload):
@@ -1243,8 +1268,9 @@ def antigravity_command():
             "may be waiting that this hook could not show. Tell your human and run "
             f"`{REPO}/scripts/paynani doctor`.")), flush=True)
         return 0
-    print(json.dumps(antigravity_output(text)), flush=True)
-    if acknowledge:
+    payload = antigravity_output(text)
+    print(json.dumps(payload), flush=True)
+    if acknowledge and antigravity_output_valid(payload):
         try:
             acknowledge()
         except Exception:  # noqa: BLE001 - not acknowledged means shown again, not lost

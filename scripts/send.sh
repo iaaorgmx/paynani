@@ -706,6 +706,19 @@ fi
 
 himalaya_version=$(himalaya --version 2>/dev/null || true)
 himalaya_major=$(printf '%s\n' "$himalaya_version" | sed -n 's/.*himalaya v\{0,1\}\([0-9][0-9]*\)\..*/\1/p' | head -n 1)
+if [ -z "$himalaya_version" ]; then
+    # No answer at all is not v1: the binary is missing from PATH, or this runs
+    # in a sandbox that cannot execute it (Antigravity CLI, #749 F0).
+    if command -v himalaya >/dev/null 2>&1; then
+        echo "himalaya is on PATH ($(command -v himalaya)) but \`himalaya --version\` printed nothing." >&2
+    else
+        echo "himalaya was not found on PATH ($PATH)." >&2
+    fi
+    echo 'If this runs inside an agent sandbox (Antigravity CLI runs commands in one by' >&2
+    echo 'default), run send.sh outside it: the sandbox has no network either.' >&2
+    echo 'Otherwise install Himalaya v2.x as in INSTALL.md section 4.' >&2
+    exit 2
+fi
 if [ "$himalaya_major" != "2" ]; then
     himalaya_shown=$(printf '%s\n' "$himalaya_version" | sed -n 's/.*himalaya v\{0,1\}\([0-9][^[:space:]]*\).*/v\1/p' | head -n 1)
     [ -n "$himalaya_shown" ] || himalaya_shown=${himalaya_version:-unavailable}

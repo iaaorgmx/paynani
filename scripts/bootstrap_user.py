@@ -29,6 +29,7 @@ terminal) or an invalid option.
 from __future__ import annotations
 
 import argparse
+import errno
 import getpass
 import json
 import os
@@ -624,6 +625,15 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
     except NeedData as exc:
         ctx.say(f"bootstrap_user: {exc}")
         return EX_USAGE
+    except OSError as exc:
+        # An agent sandbox (Antigravity CLI's, #749 F0) mounts ~/.config and the
+        # harness folders read-only; a traceback there reads like a bug in paynani.
+        if exc.errno not in (errno.EROFS, errno.EACCES, errno.EPERM):
+            raise
+        ctx.say(f"bootstrap_user: cannot write {exc.filename or 'a file'}: {exc.strerror}.")
+        ctx.say("      If this runs inside an agent sandbox, run the same command again"
+                " outside it; the steps already done are skipped.")
+        return EX_STEP
 
     if args.dry_run:
         return EX_OK

@@ -87,6 +87,11 @@ for mode, observed in (("unexpected-a", "unexpected argument '-a'"), ("no-smtp",
     check(f"send.sh refuses Himalaya v1 before SMTP ({observed})", run.returncode != 0 and "paynani needs v2.x to send" in run.stderr and "v1.x has no `smtp send`" in run.stderr and "Upgrading the binary alone is not enough" in run.stderr, run.stderr)
     check(f"Himalaya v1 refusal does not reach legacy failure ({observed})", observed not in run.stderr and "smtp send" not in calls and calls.strip() == "--version", calls + run.stderr)
 
+# A sandbox that cannot run himalaya answers nothing at all; that is not v1 (#749 F0).
+run, calls = run_send("")
+check("send.sh with a silent himalaya does not blame v1", run.returncode == 2 and "printed nothing" in run.stderr and "sandbox" in run.stderr and "v1.x" not in run.stderr, run.stderr)
+check("send.sh with a silent himalaya sends nothing", "smtp send" not in calls, calls)
+
 run, calls = run_send("himalaya v2.1.0", "--dry-run")
 check("send.sh dry-run still works with Himalaya v2", run.returncode == 0 and "dry-run: nothing sent" in run.stdout, run.stdout + run.stderr)
 check("Himalaya v2 dry-run checks version without sending", "--version" in calls and "smtp send" not in calls, calls)

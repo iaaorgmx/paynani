@@ -516,6 +516,25 @@ def himalaya_fails(w):
 with_world(himalaya_fails)
 
 
+def read_only_config(w):
+    # An agent sandbox mounts ~/.config read-only (Antigravity CLI, #749 F0):
+    # a clear message and EX_STEP, not a traceback.
+    w.himalaya.parent.mkdir(parents=True)
+    w.himalaya.parent.chmod(0o500)
+    try:
+        code = w.run(*w.full())
+    finally:
+        w.himalaya.parent.chmod(0o700)
+    if os.geteuid() == 0:
+        check("read-only config: skipped as root (root ignores the mode)", True)
+        return
+    check("a config folder it cannot write stops with EX_STEP, not a traceback",
+          code == bu.EX_STEP and "cannot write" in w.text and "outside it" in w.text, w.text)
+
+
+with_world(read_only_config)
+
+
 def doctor_not_ok(w):
     w.runner.add(has("scripts/paynani", "doctor"), 0, json.dumps({"status": "warning"}))
     code = w.run(*w.full())

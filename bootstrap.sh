@@ -26,7 +26,8 @@
 #                       the user half detects the runtime and asks to confirm.
 #   --user U            Who paynani is installed for. Default $SUDO_USER. Required
 #                       when this runs as root without sudo.
-#   --dir PATH          Where to clone. Default <harness root>/workspace/paynani.
+#   --dir PATH          Where to clone. Default <harness root>/workspace/paynani;
+#                       for antigravity, ~/.gemini/workspace/paynani.
 #   --ref REF           Tag or branch to install. Default the newest v* tag.
 #   --env-file PATH     Credentials already written (paynani .env format), for the
 #                       no-questions mode. Copied to a private temporary file.
@@ -117,6 +118,12 @@ declare -A RUNTIME_ROOT=(
     [openclaw]=.openclaw [hermes]=.hermes [claudecode]=.claude
     [codex]=.codex [opencode]=.opencode [antigravity]=.gemini/antigravity-cli
 )
+# Where the clone goes: <root>/workspace/paynani, except on Antigravity CLI, whose
+# agent cannot read anything under ~/.gemini/antigravity-cli (#749 F0).
+declare -A CLONE_ROOT=([antigravity]=.gemini)
+clone_dir_for() {   # clone_dir_for RUNTIME
+    printf '%s/%s/workspace/paynani\n' "$home" "${CLONE_ROOT[$1]:-${RUNTIME_ROOT[$1]}}"
+}
 
 runtime="" user="" dir="" ref="" env_file="" owner_name="" owner_email=""
 assume_yes=0 with_sms=0 upgrade=0 dry_run=0 test_mail=0
@@ -346,12 +353,12 @@ detect_roots() {   # prints the runtimes whose harness directory exists
 
 if [[ -z "$dir" ]]; then
     if [[ -n "$runtime" ]]; then
-        dir="$home/${RUNTIME_ROOT[$runtime]}/workspace/paynani"
+        dir=$(clone_dir_for "$runtime")
     else
         mapfile -t found < <(detect_roots)
         case ${#found[@]} in
             0) die "$EX_USAGE" "no harness found under $home: pass --runtime or --dir" ;;
-            1) dir="$home/${RUNTIME_ROOT[${found[0]}]}/workspace/paynani" ;;
+            1) dir=$(clone_dir_for "${found[0]}") ;;
             *)
                 if [[ $assume_yes -eq 1 || ! -t 0 ]]; then
                     die "$EX_USAGE" "several harnesses found (${found[*]}) and nothing to choose with: pass --runtime or --dir"
@@ -367,7 +374,7 @@ if [[ -z "$dir" ]]; then
                 done
                 [[ $valid -eq 1 ]] || die "$EX_USAGE" "'$choice' is not one of: ${found[*]}"
                 runtime=$choice
-                dir="$home/${RUNTIME_ROOT[$runtime]}/workspace/paynani"
+                dir=$(clone_dir_for "$runtime")
                 ;;
         esac
     fi

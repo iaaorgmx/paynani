@@ -296,6 +296,13 @@ that is normal. `agy` turns down a command that needs approval without
 stopping, so ask your human to allow `scripts/paynani` and `scripts/send.sh`
 in `~/.gemini/antigravity-cli/settings.json` (the exact lines are in that
 section), and check the result of every send before you say it went out.
+Clone into `~/.gemini/workspace/paynani`: your file tools cannot read anything
+under `~/.gemini/antigravity-cli`. Your sandbox has no network, no systemd and
+no `sudo`, so `preflight.py`, `send.sh`, `event show`, `healthcheck.py`,
+`install.sh` and `bootstrap_user.py` have to run outside it, and your human
+runs `sudo loginctl enable-linger` in their own terminal. Run
+`scripts/paynani onboard` in the background and hand over its link at once:
+`agy` shows a command's output only when the command ends.
 
 On **macOS**, `scripts/install.sh` delegates to `scripts/install_macos.py`, which
 renders and converges two LaunchAgents in `~/Library/LaunchAgents` instead of
