@@ -22,7 +22,7 @@
 #                     [--yes] [--with-sms] [--upgrade] [--dry-run] [--test-mail]
 #
 # Options:
-#   --runtime R         openclaw, hermes, claudecode, codex or opencode. Without it
+#   --runtime R         openclaw, hermes, claudecode, codex, opencode or antigravity. Without it
 #                       the user half detects the runtime and asks to confirm.
 #   --user U            Who paynani is installed for. Default $SUDO_USER. Required
 #                       when this runs as root without sudo.
@@ -112,10 +112,10 @@ GETFACL=${BOOTSTRAP_GETFACL:-getfacl}
 HIMALAYA_INSTALLER=https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh
 
 # The runtime names, in the order of HARNESS_ROOTS in harness/paths.py.
-RUNTIMES=(openclaw hermes claudecode codex opencode)
+RUNTIMES=(openclaw hermes claudecode codex opencode antigravity)
 declare -A RUNTIME_ROOT=(
     [openclaw]=.openclaw [hermes]=.hermes [claudecode]=.claude
-    [codex]=.codex [opencode]=.opencode
+    [codex]=.codex [opencode]=.opencode [antigravity]=.gemini/antigravity-cli
 )
 
 runtime="" user="" dir="" ref="" env_file="" owner_name="" owner_email=""

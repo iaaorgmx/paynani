@@ -224,6 +224,9 @@ check_status 'help is runnable' 0 --help
 [[ "$LAST_OUTPUT" == *'--runtime opencode'* ]] || {
     printf 'FAIL help documents OpenCode\n'; fail=$((fail + 1));
 }
+[[ "$LAST_OUTPUT" == *'--runtime antigravity'* ]] || {
+    printf 'FAIL help documents Antigravity CLI\n'; fail=$((fail + 1));
+}
 [[ "$LAST_OUTPUT" == *'--upgrade'* && "$LAST_OUTPUT" == *'--uninstall'* ]] || {
     printf 'FAIL help documents upgrade and uninstall modes\n'; fail=$((fail + 1));
 }
@@ -284,6 +287,10 @@ check_status 'Hermes options cannot leak into OpenCode flow' 64 \
     --runtime opencode --profile default
 check_status 'non-interactive cannot leak into OpenCode flow' 64 \
     --runtime opencode --non-interactive
+check_status 'Hermes options cannot leak into Antigravity flow' 64 \
+    --runtime antigravity --profile default
+check_status 'non-interactive cannot leak into Antigravity flow' 64 \
+    --runtime antigravity --non-interactive
 check_status 'delivery target requires a chat ID' 64 \
     --runtime hermes --deliver telegram
 check_status 'profile and delivery configuration are alternatives' 64 \
@@ -386,6 +393,34 @@ check_status 'second OpenCode convergence is idempotent' 0 --runtime opencode
 check_status 'OpenCode uninstall names the plugin step' 10 --runtime opencode --uninstall
 [[ "$LAST_OUTPUT" == *'opencode_plugin.py --uninstall'* ]] || {
     printf 'FAIL OpenCode uninstall did not name the plugin removal step\n'
+    fail=$((fail + 1))
+}
+reset_install; rm -rf "$FAKE_SYSTEMD_STATE"
+mkdir -p "$FAKE_SYSTEMD_STATE"
+
+# Antigravity CLI (#749, T4): the same shape as OpenCode, with the hooks step.
+check_status 'fresh Antigravity convergence creates managed artifacts' 10 \
+    --runtime antigravity
+runtime_env="$clone/runtime.env"
+[[ "$(file_mode "$runtime_env")" == 600 ]] || {
+    printf 'FAIL Antigravity generated runtime configuration is not mode 0600\n'
+    fail=$((fail + 1))
+}
+[[ "$(<"$runtime_env")" == 'PAYNANI_RUNTIME=antigravity' ]] || {
+    printf 'FAIL generated runtime configuration selects Antigravity\n'
+    fail=$((fail + 1))
+}
+[[ "$LAST_OUTPUT" == *'antigravity_spool_probe=accepted'*'antigravity.spool'* &&
+   "$LAST_OUTPUT" == *'verification_smoke=antigravity-spool result=writable'* &&
+   "$LAST_OUTPUT" == *'antigravity_hook_next_step='*'scripts/antigravity_hook.py --install'* &&
+   "$LAST_OUTPUT" == *'session-hooks=unobservable'* ]] || {
+    printf 'FAIL Antigravity convergence did not report the spool probe and the hooks step\n'
+    fail=$((fail + 1))
+}
+check_status 'second Antigravity convergence is idempotent' 0 --runtime antigravity
+check_status 'Antigravity uninstall names the hooks step' 10 --runtime antigravity --uninstall
+[[ "$LAST_OUTPUT" == *'antigravity_hook.py --uninstall'* ]] || {
+    printf 'FAIL Antigravity uninstall did not name the hooks removal step\n'
     fail=$((fail + 1))
 }
 reset_install; rm -rf "$FAKE_SYSTEMD_STATE"

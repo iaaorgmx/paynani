@@ -707,7 +707,7 @@ def spool_facts(selected):
     be seen from out here. Rather than infer it from a proxy and call the guess a
     health state, this reports what is true and says what it does not know.
     """
-    if selected not in ("claudecode", "codex", "opencode"):
+    if selected not in ("claudecode", "codex", "opencode", "antigravity"):
         return None
     out = {"spool": None, "bytes_total": 0, "bytes_unread": 0,
            "session_arming": "unobservable"}
@@ -718,6 +718,11 @@ def spool_facts(selected):
         elif selected == "opencode":
             from adapters import opencode as adapter
             offset_name = "opencode.offset"
+        elif selected == "antigravity":
+            # The offset session_start.py --antigravity advances after the hook
+            # has shown the mail in an agy conversation (#749).
+            from adapters import antigravity as adapter
+            offset_name = "antigravity.offset"
         else:
             from adapters import codex as adapter
             offset_name = "codex.offset"
@@ -749,6 +754,10 @@ def spool_facts(selected):
         out.update(watch_registry_facts())
     if selected == "codex":
         out["session_arming"] = "queue-or-replay"
+    if selected == "antigravity":
+        # Shown by agy's SessionStart and PreInvocation hooks; whether a session
+        # runs them is not visible from here.
+        out["session_arming"] = "agy-hooks"
     if selected == "opencode":
         out["session_arming"] = "opencode-plugin"
         out.update(opencode_plugin_facts(spool.parent))

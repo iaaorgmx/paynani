@@ -24,14 +24,15 @@ EX_USAGE = 2
 EX_UNSUPPORTED = 3
 EX_NOT_ROOT = 4
 
-RUNTIMES = ("openclaw", "hermes", "claudecode", "codex", "opencode")
-MACOS_RUNTIMES = ("openclaw", "codex", "opencode")
+RUNTIMES = ("openclaw", "hermes", "claudecode", "codex", "opencode", "antigravity")
+MACOS_RUNTIMES = ("openclaw", "codex", "opencode", "antigravity")
 RUNTIME_ROOT = {
     "openclaw": ".openclaw",
     "hermes": ".hermes",
     "claudecode": ".claude",
     "codex": ".codex",
     "opencode": ".opencode",
+    "antigravity": ".gemini/antigravity-cli",
 }
 HOMEBREW_INSTALL = "https://brew.sh/"
 

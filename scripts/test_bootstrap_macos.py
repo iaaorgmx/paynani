@@ -335,7 +335,7 @@ def unsupported_runtime(w: World):
     code, out, err = w.run("--runtime", "hermes", "--yes", "--dry-run")
     text = out + err
     check("macOS rejects unsupported runtimes before Homebrew", code == 3, text)
-    check("the supported set is named", "openclaw codex opencode" in text, text)
+    check("the supported set is named", "openclaw codex opencode antigravity" in text, text)
 
 
 with_world(unsupported_runtime)

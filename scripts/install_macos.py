@@ -418,7 +418,7 @@ def parse(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Install paynani on macOS with launchd."
     )
-    parser.add_argument("--runtime", required=True, choices=("openclaw", "hermes", "codex", "opencode"))
+    parser.add_argument("--runtime", required=True, choices=("openclaw", "hermes", "codex", "opencode", "antigravity"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--upgrade", action="store_true")
     parser.add_argument("--uninstall", action="store_true")
@@ -433,7 +433,7 @@ def parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--with-telegram", action="store_true")
     args = parser.parse_args(argv)
     if args.runtime == "hermes":
-        die("macOS install currently supports --runtime openclaw, codex and opencode only", EX_USAGE)
+        die("macOS install currently supports --runtime openclaw, codex, opencode and antigravity only", EX_USAGE)
     modes = sum(bool(x) for x in (args.upgrade, args.uninstall))
     if modes > 1:
         die("--upgrade and --uninstall are mutually exclusive", EX_USAGE)
@@ -634,6 +634,12 @@ def install(args: argparse.Namespace) -> int:
         print(f"opencode_spool_probe=accepted spool={state_dir() / 'opencode.spool'}")
         print("opencode_spool_probe=plugin-reads-in-process scope=writability-only")
         print(f"opencode_plugin_next_step=python3 {ROOT / 'scripts' / 'opencode_plugin.py'} --install")
+    elif args.runtime == "antigravity":
+        # Read from inside agy by its SessionStart and PreInvocation hooks (#749),
+        # which are registered separately; nothing here can see a session run them.
+        print(f"antigravity_spool_probe=accepted spool={state_dir() / 'antigravity.spool'}")
+        print("antigravity_spool_probe=hooks-replay scope=writability-only")
+        print(f"antigravity_hook_next_step=python3 {ROOT / 'scripts' / 'antigravity_hook.py'} --install")
     else:
         print(f"codex_spool_probe=accepted spool={state_dir() / 'codex.spool'}")
         print("codex_spool_probe=queue-or-replay scope=writability-only")

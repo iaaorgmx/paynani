@@ -49,9 +49,12 @@ import paths as harness_paths  # noqa: E402
 from paynani_lib import accounts_cli, envfile, harness_step, himalaya_config, i18n, probe, roster_cli, validate  # noqa: E402
 
 EX_OK, EX_STEP, EX_USAGE = 0, 1, 2
-RUNTIMES = ("openclaw", "hermes", "claudecode", "codex", "opencode")
+RUNTIMES = ("openclaw", "hermes", "claudecode", "codex", "opencode", "antigravity")
+# Keyed by the root relative to the home directory: Antigravity CLI is the first
+# root two levels deep (#749), so the last path component is not enough.
 RUNTIME_OF_ROOT = {".openclaw": "openclaw", ".hermes": "hermes", ".claude": "claudecode",
-                   ".codex": "codex", ".opencode": "opencode"}
+                   ".codex": "codex", ".opencode": "opencode",
+                   ".gemini/antigravity-cli": "antigravity"}
 HIMALAYA_NAME = "paynani"
 
 # Where each piece of the mailbox lives, in the order the listener prefers them
@@ -103,7 +106,7 @@ PENDING_AT_INSTALL_BY_RUNTIME = {
 # closing message asks the owner to fix. The queue rows are not: an owner who already
 # opened a session would be told to do it again (Ximena, review of #483).
 SESSION_NOT_OPENED = ("session_watch_state", "registered_session")
-APP_NAMES = {"claudecode": "Claude Code", "codex": "Codex"}
+APP_NAMES = {"claudecode": "Claude Code", "codex": "Codex", "antigravity": "Antigravity CLI"}
 
 
 class NeedData(Exception):
@@ -196,8 +199,9 @@ def need_terminal(ctx: Ctx, what: str) -> None:
 def detect_runtimes(home: Path) -> list[str]:
     found = []
     for root in harness_paths.HARNESS_ROOTS:
-        name = RUNTIME_OF_ROOT.get(Path(root).name)
-        if name and (Path(home) / Path(root).name).is_dir():
+        relative = root.replace("~/", "", 1)
+        name = RUNTIME_OF_ROOT.get(relative)
+        if name and (Path(home) / relative).is_dir():
             found.append(name)
     return found
 
@@ -570,7 +574,7 @@ def steps_for(args):
         ("install" if not args.upgrade else "upgrade", step_install,
          "scripts/version.sh --apply REF" if args.upgrade else "scripts/install.sh --runtime <runtime>"),
         ("harness rules", step_rules, "scripts/bootstrap_user.py --yes (adds the permission rules)"),
-        ("harness step", step_harness_step, "python3 scripts/<claude_hook|codex_hook|opencode_plugin|openclaw_rules>.py --install"),
+        ("harness step", step_harness_step, "python3 scripts/<claude_hook|codex_hook|opencode_plugin|openclaw_rules|antigravity_hook>.py --install"),
         ("verification", step_verify, "scripts/paynani doctor && scripts/healthcheck.py"),
     ]
 
