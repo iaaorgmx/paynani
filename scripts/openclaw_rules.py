@@ -146,12 +146,16 @@ def split(text):
     return before, inner, after
 
 
-def state(path, root=None):
-    """present, outdated, or absent: what --check and healthcheck.py report."""
+def state(path, root=None, wanted=None):
+    """
+    present, outdated, or absent: what --check and healthcheck.py report.
+    `wanted` is the block to compare against; by default OpenClaw's. Antigravity's
+    rule (`antigravity_rules.py`, #749) uses these same helpers with its own block.
+    """
     parts = split(read(path))
     if parts is None:
         return "absent"
-    return "present" if parts[1] == block(root) else "outdated"
+    return "present" if parts[1] == (wanted if wanted is not None else block(root)) else "outdated"
 
 
 def _write(path, text, current):
@@ -168,8 +172,9 @@ def _write(path, text, current):
     tmp.replace(path)
 
 
-def install(path):
-    wanted = block()
+def install(path, wanted=None):
+    """Write or refresh the block; `wanted` defaults to OpenClaw's, as in `state()`."""
+    wanted = wanted if wanted is not None else block()
     current = read(path)
     parts = split(current)
     if parts is not None and parts[1] == wanted:
