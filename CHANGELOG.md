@@ -10,6 +10,14 @@
   - `--install` muestra lo que va a escribir.
   - `--check` dice si la llave falta, está apagada (`"enabled": false`) o apunta a otro clone.
   - Pruebas en `scripts/test_antigravity_hook.py`.
+- **Antigravity CLI: `--runtime antigravity` en la instalación (#749, T4).**
+  - `scripts/install.sh`, `bootstrap.sh` (Linux) y `scripts/bootstrap_macos.py` + `scripts/install_macos.py` (macOS) lo aceptan. Escriben `PAYNANI_RUNTIME=antigravity` en `runtime.env` y prueban que se pueda escribir `state/antigravity.spool`. Al final nombran el paso de los hooks (`antigravity_hook_next_step=`), y `--uninstall` dice cómo quitarlos.
+  - La carpeta del harness es `~/.gemini/antigravity-cli`. Por omisión el clone va en `~/.gemini/antigravity-cli/workspace/paynani`.
+  - `bootstrap_user.py` registra los hooks con `antigravity_hook.py` después de mostrarlos. Ahora también detecta una raíz de dos niveles (`detect_runtimes()` usa la ruta relativa completa).
+  - `paynani doctor` reporta `harness_step` como `blocked` mientras falten los hooks, o si apuntan a otro clone o están apagados.
+  - `healthcheck.py` dice cuántos bytes de `antigravity.spool` no ha mostrado el hook.
+  - `install_manifest.py` conoce el runtime, y `upgrade_plan.py` vuelve a instalar los hooks cuando cambia `antigravity_hook.py`.
+  - Pruebas en `scripts/test_antigravity_install.py`, `scripts/test_install.sh` y las de macOS.
 
 ## 0.24.0 (2026-11-07)
 
