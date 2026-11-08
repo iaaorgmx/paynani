@@ -1194,25 +1194,82 @@ def antigravity_replayed(spool_lines):
             pass
 
 
+ANTIGRAVITY_SYSTEMCTL_TIMEOUT = 3
+
+
+def antigravity_unit_states():
+    """
+    (listener, dispatcher) states within a fixed budget.
+
+    The hook is registered with a 10 s timeout, and agy drops a hook that runs
+    past it. `unit_state()` allows 5 s per unit, so two slow calls alone could
+    use the whole budget; here both units go in one `systemctl` call with a
+    3 s limit, and a slow systemd reads as "unknown" rather than as silence.
+    """
+    if platform.system() == "Darwin":
+        return unit_state(SERVICE), unit_state(DISPATCH_SERVICE)
+    try:
+        r = subprocess.run(["systemctl", "--user", "is-active", SERVICE, DISPATCH_SERVICE],
+                           capture_output=True, text=True,
+                           timeout=ANTIGRAVITY_SYSTEMCTL_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return "unknown", "unknown"
+    answers = (r.stdout or "").split()
+    states = []
+    for index in range(2):
+        state = answers[index] if index < len(answers) else ""
+        if state == "active":
+            states.append("active")
+        elif state in {"inactive", "failed", "deactivating"}:
+            states.append("down")
+        else:
+            states.append("unknown")
+    return states[0], states[1]
+
+
 def antigravity_command():
     """
     One agy hook call: SessionStart, or PreInvocation at the start of a turn.
 
-    agy ignores the exit code and reads only stdout, so every path prints JSON,
-    `{}` when there is nothing to say. PreInvocation runs before every model
-    call, so the check for call 0 comes before anything slow.
+    agy ignores the exit code and reads only stdout, so every path prints JSON:
+    `{}` when there is nothing to say, and the error itself when something here
+    breaks, so a broken hook is visible in the conversation rather than silent.
+    """
+    try:
+        text, acknowledge = antigravity_reply()
+    except Exception as exc:  # noqa: BLE001 - the error must reach the agent as text
+        print(json.dumps(antigravity_output(
+            f"paynani: the session hook failed ({type(exc).__name__}: {exc}). Mail "
+            "may be waiting that this hook could not show. Tell your human and run "
+            f"`{REPO}/scripts/paynani doctor`.")), flush=True)
+        return 0
+    print(json.dumps(antigravity_output(text)), flush=True)
+    if acknowledge:
+        try:
+            acknowledge()
+        except Exception:  # noqa: BLE001 - not acknowledged means shown again, not lost
+            pass
+    return 0
+
+
+def antigravity_reply():
+    """
+    (text, acknowledge) for one hook call. `acknowledge` runs only after the
+    text was printed, so mail is never marked seen without having been shown.
+
+    PreInvocation runs before every model call, so the check for call 0 comes
+    before anything slow. Nothing here calls the network: `version_line()` can
+    refresh from GitHub and is left to the other runtimes' session starts.
     """
     payload = read_hook_input()
     session_start = "invocationNum" not in payload
     if not antigravity_turn_start(payload):
-        print("{}", flush=True)
-        return 0
+        return "", None
 
     spool_lines, spool_capped, spool_through = read_spool_backlog(
         ANTIGRAVITY_SPOOL, ANTIGRAVITY_OFFSET)
     lines, capped = read_backlog()
-    listener_state = unit_state(SERVICE)
-    dispatcher_state = unit_state(DISPATCH_SERVICE)
+    listener_state, dispatcher_state = antigravity_unit_states()
     faults = dispatcher_faults()
     unattended = unattended_roster(exclude=event_ids_in(spool_lines))
 
@@ -1254,23 +1311,21 @@ def antigravity_command():
             "answered it, or `closed` if it needs nothing. A notice left open is shown again.")
     if session_start and not parts:
         parts.append("paynani: no unseen mail. New mail is shown at the start of each turn.")
-    if session_start:
-        version = version_line()
-        if version:
-            parts.append(version)
 
     text = "\n\n".join(parts)
     off = {c for c in ("sms", "whatsapp", "telegram")
            if ev.has_catch_all(text, c) and not catch_all_active_now(c)}
     if off:
         text = ev.redact_catch_all(text, off)
-    print(json.dumps(antigravity_output(text)), flush=True)
     # Acknowledge only what was shown whole. A payload so large a harness might cut
     # it is left unacknowledged and shown again; repeating mail beats losing it.
-    if spool_lines and len(text.encode("utf-8")) <= ANTIGRAVITY_ACK_CONTEXT_LIMIT:
+    if not spool_lines or len(text.encode("utf-8")) > ANTIGRAVITY_ACK_CONTEXT_LIMIT:
+        return text, None
+
+    def acknowledge():
         antigravity_replayed(spool_lines)
         acknowledge_spool(ANTIGRAVITY_OFFSET, spool_through)
-    return 0
+    return text, acknowledge
 
 
 def main():

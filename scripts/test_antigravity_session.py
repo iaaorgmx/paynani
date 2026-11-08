@@ -32,19 +32,19 @@ class Hook(unittest.TestCase):
         patches = [
             mock.patch.object(ss, "ANTIGRAVITY_SPOOL", self.spool),
             mock.patch.object(ss, "ANTIGRAVITY_OFFSET", self.offset),
-            mock.patch.object(ss, "unit_state", self._unit_state),
+            mock.patch.object(ss, "antigravity_unit_states", self._unit_states),
             mock.patch.object(ss, "dispatcher_faults", lambda: []),
             mock.patch.object(ss, "read_backlog", lambda: ([], False)),
             mock.patch.object(ss, "unattended_roster", lambda **kw: self.unattended),
-            mock.patch.object(ss, "version_line", lambda: ""),
+            mock.patch.object(ss, "version_line", side_effect=AssertionError("network")),
             mock.patch.object(ss.ledger, "transition", self._transition),
         ]
         for patcher in patches:
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def _unit_state(self, unit):
-        return self.healthy["listener" if unit == ss.SERVICE else "dispatcher"]
+    def _unit_states(self):
+        return self.healthy["listener"], self.healthy["dispatcher"]
 
     def _transition(self, path, event_id, state, **kw):
         self.presented.append((event_id, state, kw.get("runtime")))
@@ -95,7 +95,7 @@ class Hook(unittest.TestCase):
 
     def test_later_model_calls_say_nothing_and_touch_nothing(self):
         self.spool.write_text(LINE_A + "\n")
-        with mock.patch.object(ss, "unit_state", side_effect=AssertionError("slow path")):
+        with mock.patch.object(ss, "antigravity_unit_states", side_effect=AssertionError("slow path")):
             self.assertEqual({}, self.run_hook(self.common(invocationNum=3)))
         self.assertFalse(self.offset.exists())
 
@@ -141,8 +141,54 @@ class Hook(unittest.TestCase):
                 mock.patch.object(ss, "antigravity_command", lambda: 7):
             self.assertEqual(7, ss.main())
 
+    def test_a_failure_is_json_with_the_error_and_no_acknowledgement(self):
+        self.spool.write_text(LINE_A + "\n")
+        with mock.patch.object(ss, "unattended_roster", side_effect=PermissionError("state/x")):
+            text = self.text_of(self.run_hook(self.common()))
+        self.assertIn("session hook failed (PermissionError: state/x)", text)
+        self.assertIn("paynani doctor", text)
+        self.assertFalse(self.offset.exists())
+        self.assertEqual([], self.presented)
+
+    def test_a_failed_acknowledgement_does_not_print_twice(self):
+        self.spool.write_text(LINE_A + "\n")
+        with mock.patch.object(ss, "acknowledge_spool", side_effect=OSError("disk")):
+            result = self.run_hook(self.common())   # json.loads fails on two objects
+        self.assertIn(LINE_A, self.text_of(result))
+
+    def test_session_start_never_asks_the_network(self):
+        # version_line is patched to raise; a call would show up as the error text.
+        self.assertNotIn("failed", self.text_of(self.run_hook(self.common())))
+
     def test_spool_paths_knows_the_runtime(self):
         self.assertEqual((self.spool, self.offset), ss.spool_paths("antigravity"))
+
+
+class UnitStates(unittest.TestCase):
+    def run_with(self, stdout=None, raises=None):
+        def fake(cmd, **kw):
+            self.assertEqual(ss.ANTIGRAVITY_SYSTEMCTL_TIMEOUT, kw["timeout"])
+            self.assertEqual([ss.SERVICE, ss.DISPATCH_SERVICE], cmd[-2:])
+            if raises:
+                raise raises
+            return mock.Mock(stdout=stdout, returncode=0)
+        with mock.patch.object(ss.platform, "system", lambda: "Linux"), \
+                mock.patch.object(ss.subprocess, "run", fake):
+            return ss.antigravity_unit_states()
+
+    def test_one_call_reads_both(self):
+        self.assertEqual(("active", "down"), self.run_with("active\ninactive\n"))
+        self.assertEqual(("down", "active"), self.run_with("failed\nactive\n"))
+
+    def test_slow_systemd_is_unknown_not_silence(self):
+        self.assertEqual(("unknown", "unknown"),
+                         self.run_with(raises=ss.subprocess.TimeoutExpired("systemctl", 3)))
+
+    def test_short_answer_is_unknown(self):
+        self.assertEqual(("active", "unknown"), self.run_with("active\n"))
+
+    def test_the_budget_fits_the_registered_timeout(self):
+        self.assertLess(ss.ANTIGRAVITY_SYSTEMCTL_TIMEOUT, 10)
 
 
 if __name__ == "__main__":
