@@ -122,11 +122,11 @@ class MacOSInstallTest(unittest.TestCase):
         path.chmod(0o700)
         return path
 
-    def run_install(self, *args: str) -> subprocess.CompletedProcess:
+    def run_install(self, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, str(self.clone / "scripts" / "install_macos.py"), *args],
             cwd=self.clone,
-            env=self.env,
+            env=dict(self.env, **(env or {})),
             text=True,
             capture_output=True,
             timeout=20,
@@ -213,8 +213,21 @@ class MacOSInstallTest(unittest.TestCase):
         self.assertNotIn("OPENCLAW=", runtime_text)
         env = self.read_plist("com.paynani.dispatch")["EnvironmentVariables"]
         self.assertEqual("antigravity", env["PAYNANI_RUNTIME"])
+        # Metis[Q157]: autonomous mode is on by default.
+        self.assertIn('PAYNANI_ANTIGRAVITY_MODE="agent"', runtime_text)
+        self.assertEqual("agent", env["PAYNANI_ANTIGRAVITY_MODE"])
         second = self.run_install("--runtime", "antigravity")
         self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+
+    def test_antigravity_autonomous_mode_off_survives_a_rerun(self):
+        first = self.run_install("--runtime", "antigravity", env={"PAYNANI_ANTIGRAVITY_MODE": "off"})
+        self.assertEqual(10, first.returncode, first.stdout + first.stderr)
+        second = self.run_install("--runtime", "antigravity")
+        self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+        runtime_text = (self.clone / "runtime.env").read_text(encoding="utf-8")
+        self.assertIn('PAYNANI_ANTIGRAVITY_MODE="off"', runtime_text)
+        env = self.read_plist("com.paynani.dispatch")["EnvironmentVariables"]
+        self.assertEqual("off", env["PAYNANI_ANTIGRAVITY_MODE"])
 
     def test_dry_run_reports_plan_without_writing_artifacts(self):
         completed = self.run_install("--runtime", "openclaw", "--dry-run")

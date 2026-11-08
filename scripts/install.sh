@@ -167,7 +167,7 @@ load_recorded_runtime_env() {
         [[ -n "$line" && "$line" != '#'* && "$line" == *=* ]] || continue
         name=${line%%=*}
         name=${name//[[:space:]]/}
-        [[ "$name" == HERMES_* ]] || continue
+        [[ "$name" == HERMES_* || "$name" == PAYNANI_ANTIGRAVITY_MODE ]] || continue
         value=${line#*=}
         if [[ ${#value} -ge 2 && "$value" == '"'*'"' ]]; then
             value=${value:1:${#value}-2}
@@ -636,6 +636,24 @@ migrate_ownership_manifest() {
     changes_made=1
 }
 
+# Antigravity's autonomous mode (#749): on by default, so mail wakes the agent
+# with `agy -p` (Julian, Metis[Q157]). The environment wins, then the value this
+# installer already wrote, so an owner's "off" survives an upgrade. Anything but
+# "agent" is written as "off".
+antigravity_mode_setting() {
+    local value=${PAYNANI_ANTIGRAVITY_MODE:-}
+    if [[ -z "$value" ]]; then
+        load_recorded_runtime_env
+        value=${recorded_runtime_env[PAYNANI_ANTIGRAVITY_MODE]:-agent}
+    fi
+    value=${value,,}
+    if [[ "$value" == agent ]]; then
+        printf 'agent'
+    else
+        printf 'off'
+    fi
+}
+
 render_artifact() {
     local destination=$1 source=$2
     if [[ "$source" == generated-runtime-config ]]; then
@@ -670,6 +688,7 @@ render_artifact() {
         if [[ "$runtime" == antigravity ]]; then
             printf 'PAYNANI_RUNTIME=antigravity\n'
             printf '%s' "$recorded_env_line"
+            printf 'PAYNANI_ANTIGRAVITY_MODE=%s\n' "$(antigravity_mode_setting)"
             return
         fi
         python3 - "$notify_secret_file" "$roster_secret_file" <<'PYINNER'

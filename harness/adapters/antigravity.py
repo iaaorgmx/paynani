@@ -43,7 +43,8 @@ SPOOL_RELATIVE = "antigravity.spool"
 # prompt or the reply: only ids, times, the outcome and a one-line reason.
 STATUS_RELATIVE = "antigravity.json"
 
-# PAYNANI_ANTIGRAVITY_MODE=agent turns on a headless `agy -p` per event.
+# PAYNANI_ANTIGRAVITY_MODE=agent turns on a headless `agy -p` per event. The
+# installer writes it to runtime.env by default (#749, Metis[Q157]).
 MODE_VAR = "PAYNANI_ANTIGRAVITY_MODE"
 # The turn limit handed to `agy --print-timeout`, in seconds. The dispatcher
 # waits for the run, so this bounds how long one event can hold the queue.
@@ -305,7 +306,8 @@ def _start_agent_run(envelope):
     Opt-in: run `agy -p` in the clone so mail reaches an agent with no TUI open.
 
     Off unless PAYNANI_ANTIGRAVITY_MODE=agent, because it lets a roster message
-    start work on this machine with nobody watching. Never with
+    start work on this machine with nobody watching. The installer writes
+    `agent` to runtime.env by default (#749, Metis[Q157]). Never with
     --dangerously-skip-permissions: agy's own permission rules and agentMode
     decide what the run may do. A new conversation per event: resuming one by id
     worked in F0 but took 105 s against 7 s, and a fresh one cannot collide with

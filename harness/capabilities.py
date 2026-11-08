@@ -211,7 +211,8 @@ CAPABILITIES = {
             "Delivery is a durable spool append. agy's SessionStart hook replays it "
             "for a new conversation and PreInvocation (invocationNum 0) at the start "
             "of each turn, so a resumed conversation sees it too (#749). Agent mode "
-            "(PAYNANI_ANTIGRAVITY_MODE=agent) is opt-in: agy -p per event."
+            "(PAYNANI_ANTIGRAVITY_MODE=agent, agy -p per event) is a setting; the "
+            "installer turns it on by default (Metis[Q157])."
         ),
         "documentation": {
             "how_it_arrives": "Paynani appends one line to state/antigravity.spool; with agent mode it also runs agy -p.",

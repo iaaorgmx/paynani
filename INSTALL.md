@@ -1997,12 +1997,19 @@ prefix rule of its own, `command(<clone>/scripts/send.sh)`, and stops asking.
 Approve exactly `scripts/send.sh` and `scripts/paynani` that way, not a
 broader prefix.
 
-**Optional: let mail reach the agent with no conversation open.** Setting
+**Autonomous mode: mail reaches the agent with no conversation open.**
 `PAYNANI_ANTIGRAVITY_MODE=agent` in `runtime.env` makes the dispatcher run
 `agy -p "<notice>" --output-format json --print-timeout <n>s` in the clone for
-each event, after it writes the spool. It is **off by default**, because it
-lets a roster message start work on this machine with nobody watching. Read the
-roster rules in `AGENTS.md` before turning it on.
+each event, after it writes the spool. The installer writes it **on by
+default** (Metis[Q157]), so a roster message starts work on this machine
+within seconds, with nobody watching. The roster rules in `AGENTS.md` are what
+keeps that safe. Without it, mail waits in the spool until someone starts a
+turn in `agy`.
+
+To turn it off, run the installer again with `PAYNANI_ANTIGRAVITY_MODE=off` in
+the environment; later runs keep the value the file already has. Do not edit
+`runtime.env` by hand: the installer owns it, and a file changed outside it
+stops the next upgrade with `changed-outside-installer`.
 
 - Each event gets a new `agy` conversation. Resuming one by id worked in #749
   F2, but took 105 s against 7 s for a new one, and a new one cannot collide
