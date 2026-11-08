@@ -142,6 +142,39 @@ Sin parámetros. La app se revoca a sí misma («Desconectar» en PaynaniWebMT).
 `{"client_id", "revoked_at"}`, y le llega un correo al dueño. Después, el token da
 `401 token_revoked`.
 
+### `ListClients`
+
+Sin parámetros (#769). Las apps emparejadas, como «Apps conectadas» en PaynaniWeb,
+sin el hash del token:
+
+```json
+{"clients": [{"client_id": "w_1d8e33f4", "name": "…", "prefix": "pw_AbCdEfGh", "app_name": "PaynaniWebMT",
+              "app_version": "0.1.0", "paired_at": "…", "paired_ip": "…", "last_used_at": "…", "revoked_at": null}]}
+```
+
+La que llama también sale en la lista: su `client_id` está en `client` de `GetInstance`.
+
+### `DeleteClient` (delicada)
+
+`client_id`. Borra de la lista para siempre una app **ya revocada** (#769). La bitácora
+de la API conserva lo que hizo, por el prefijo de su token. Para revocar una app desde
+otra está PaynaniWeb, o `scripts/paynani web clients revoke`.
+
+```json
+{"deleted": "w_1d8e33f4"}
+```
+
+| Error | Cuándo |
+|---|---|
+| `409 client_active` | La app sigue activa: primero se revoca |
+| `404 not_found` | No existe (o ya se borró) |
+| `400 invalid_parameter` | `client_id` no tiene la forma `w_` y 8 hexadecimales |
+
+```bash
+curl -s https://<paynani>/api/owner -H "Authorization: Bearer $OWNER" \
+  -H 'Content-Type: application/json' -d '{"action": "DeleteClient", "client_id": "w_1d8e33f4"}'
+```
+
 ## Mensajes de texto, WhatsApp, Telegram y Webchat (A4)
 
 Estas acciones hacen lo mismo que las páginas de PaynaniWeb, con las mismas funciones:

@@ -1178,7 +1178,8 @@ def make_handler(ctx: Context):
             elif self.route == "/apps/detail":
                 self._apps_detail(self.query.get("id", [""])[0][:20])
             else:
-                self._apps_page(200)
+                deleted = self.query.get("deleted", [""])[0] == "1"
+                self._apps_page(200, notice=i18n.t("web.apps.deleted") if deleted else "")
 
         def _apps_page(self, code: int, *, error: str = "", notice: str = ""):
             records = self._apps_records()
@@ -1218,6 +1219,23 @@ def make_handler(ctx: Context):
                 code = owner_clients.new_code(path=path)
                 self._page(200, title=i18n.t("web.apps.pair_code"), body=apps_pages.code_body(base, code),
                            active="apps", back="/apps", wide=True)
+                return
+            if self.route == "/apps/delete":
+                # Sólo una app ya revocada (#769); la misma regla que DeleteClient de la API del dueño.
+                before = next((r for r in self._apps_records() or [] if r.get("client_id") == client_id), None)
+                try:
+                    outcome = owner_clients.delete(client_id, path=path)
+                except (OSError, ValueError):
+                    outcome = "error"
+                if outcome == "deleted":
+                    self._api_audit("owner_deleted", secrets.token_hex(8), (before or {}).get("prefix", ""), self.ip)
+                    self._redirect("/apps?deleted=1")
+                    return
+                if outcome == "missing":
+                    self._apps_page(404, error=i18n.t("web.apps.missing"))
+                    return
+                key = "web.apps.delete_active" if outcome == "active" else "web.tokens.invalid"
+                self._apps_detail(client_id, code=400, error=i18n.th(key))
                 return
             record = owner_clients.revoke(client_id, path=path)
             if record is None:
@@ -2871,7 +2889,7 @@ def make_handler(ctx: Context):
             if self.route in ("/api-tokens/new", "/api-tokens/revoke", "/api-tokens/agent-replies", "/api-tokens/delete"):
                 self._tokens_post(post)
                 return
-            if self.route in ("/apps/code", "/apps/revoke"):
+            if self.route in ("/apps/code", "/apps/revoke", "/apps/delete"):
                 self._apps_post(post)
                 return
             if self.route == "/messages/enviar":

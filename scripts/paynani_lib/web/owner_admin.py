@@ -20,7 +20,7 @@ import re
 import sys
 
 from .. import i18n
-from . import api_actions, api_tokens, account_config, config_pages, dashboard, mail, mail_compose, owner_api, token_pages
+from . import api_actions, api_tokens, account_config, config_pages, dashboard, mail, mail_compose, owner_api, owner_clients, token_pages
 from .api_actions import ApiError
 
 TOKEN_ID = re.compile(r"[a-f0-9]{64}")
@@ -330,6 +330,36 @@ def delete_api_token(call: owner_api.OwnerCall) -> dict:
     if outcome == "active":
         raise ApiError(409, "token_active", "The token is still active: revoke it first.", field="id")
     return {"deleted": digest}
+
+
+CLIENT_ID = re.compile(r"w_[0-9a-f]{8}")
+
+
+@owner_api.action("ListClients")
+def list_clients(call: owner_api.OwnerCall) -> dict:
+    """Las apps emparejadas (#769), como «Apps conectadas»: sin el hash del token."""
+    try:
+        records = owner_clients.list_clients(path=owner_clients.clients_path(call.ctx.user_path()))
+    except (OSError, ValueError):
+        raise ApiError(500, "internal_error", "The connected apps could not be read.") from None
+    return {"clients": [owner_clients.public(r) for r in records]}
+
+
+@owner_api.action("DeleteClient", sensitive=True)
+def delete_client(call: owner_api.OwnerCall) -> dict:
+    """Borra una app ya revocada (#769, Iris[Q74]=B). Una activa se revoca primero (409)."""
+    client_id = call.required("client_id", limit=20)
+    if not CLIENT_ID.fullmatch(client_id):
+        raise ApiError(400, "invalid_parameter", "client_id must be an id from ListClients.", field="client_id")
+    try:
+        outcome = owner_clients.delete(client_id, path=owner_clients.clients_path(call.ctx.user_path()))
+    except (OSError, ValueError):
+        raise ApiError(500, "internal_error", "The app could not be deleted.") from None
+    if outcome == "missing":
+        raise ApiError(404, "not_found", "No such connected app.", field="client_id")
+    if outcome == "active":
+        raise ApiError(409, "client_active", "The app is still active: revoke it first.", field="client_id")
+    return {"deleted": client_id}
 
 
 @owner_api.action("SetApiTokenAgentReplies")
