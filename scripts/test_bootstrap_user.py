@@ -529,7 +529,11 @@ def read_only_config(w):
         check("read-only config: skipped as root (root ignores the mode)", True)
         return
     check("a config folder it cannot write stops with EX_STEP, not a traceback",
-          code == bu.EX_STEP and "cannot write" in w.text and "outside it" in w.text, w.text)
+          code == bu.EX_STEP and "Cannot write" in w.text and "outside it" in w.text, w.text)
+    # The same two lines as a failed step (Iris's review of #758): which step,
+    # and the command to run again outside the sandbox.
+    check("...and names the step and the command to repeat",
+          'Not ready: the step "' in w.text and "To repeat it: " in w.text, w.text)
 
 
 with_world(read_only_config)
