@@ -15,6 +15,7 @@ because nothing in this file checks them:
     Claude Code    ~/.claude/workspace/paynani
     OpenAI Codex   ~/.codex/workspace/paynani
     OpenCode       ~/.opencode/workspace/paynani
+    Antigravity    ~/.gemini/antigravity-cli/workspace/paynani
 
 The rule is deliberately boring, and it is the whole rule:
 
@@ -24,7 +25,8 @@ The rule is deliberately boring, and it is the whole rule:
 2. A harness keeps its agent's mail credentials in the workspace folder of its
    own installation directory — `~/.openclaw/workspace/.env`,
    `~/.hermes/workspace/.env`, `~/.claude/workspace/.env`,
-   `~/.codex/workspace/.env`, `~/.opencode/workspace/.env` — and this reads that file where it lies. Only the
+   `~/.codex/workspace/.env`, `~/.opencode/workspace/.env`,
+   `~/.gemini/antigravity-cli/workspace/.env` — and this reads that file where it lies. Only the
    credentials; state, `runtime.env`, the manifest and `hermes/` still hang off
    the clone. The harness owns that file, this project does not, and a password
    copied to a second location is a second thing to leak.
@@ -47,7 +49,11 @@ from pathlib import Path
 # scripts/test_paths.sh pins that one.
 #
 # The OpenClaw entry is an instance of the rule, not an exception to it.
-HARNESS_ROOTS = ("~/.openclaw", "~/.hermes", "~/.claude", "~/.codex", "~/.opencode")
+#
+# Antigravity's root is two levels down (#749 FR-4): `agy` shares ~/.gemini with
+# Gemini CLI, so ~/.gemini/workspace/.env could be another agent's mailbox. Its
+# own folder is ~/.gemini/antigravity-cli, and the rule applies there unchanged.
+HARNESS_ROOTS = ("~/.openclaw", "~/.hermes", "~/.claude", "~/.codex", "~/.opencode", "~/.gemini/antigravity-cli")
 HARNESS_ENV_RELATIVE = "workspace/.env"
 
 def _under(relative, home=None):

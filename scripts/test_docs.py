@@ -87,10 +87,12 @@ def documented_harness_roots(document):
     A row counts only when a cell is exactly a backtick-quoted
     `~/<root>/workspace/.env` -- that is the one shape that is unambiguously a
     claim about HARNESS_ROOTS, so nothing else in either table (an OS note, a
-    blank cell) can be misread as one.
+    blank cell) can be misread as one. A root may be nested
+    (`~/.gemini/antigravity-cli`, #749): the pattern takes every folder before
+    `/workspace/.env`, so a nested root is neither missed nor read as `.gemini`.
     """
     text = (ROOT / document).read_text()
-    return set(re.findall(r"`~/(\.[A-Za-z0-9_-]+)/workspace/\.env`", text))
+    return set(re.findall(r"`~/(\.[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/workspace/\.env`", text))
 
 
 expected_harness_roots = {root.removeprefix("~/") for root in harness_paths.HARNESS_ROOTS}

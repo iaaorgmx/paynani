@@ -159,6 +159,7 @@ file per harness:
 | Claude Code | `~/.claude/workspace/.env` |
 | OpenAI Codex | `~/.codex/workspace/.env` |
 | OpenCode | `~/.opencode/workspace/.env` |
+| Antigravity CLI | `~/.gemini/antigravity-cli/workspace/.env` |
 
 A clone that was set up with its own `.env` inside it keeps that instead; the
 command above answers with whichever this host has, and it reads the harness's

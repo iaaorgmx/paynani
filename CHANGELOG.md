@@ -1,5 +1,9 @@
 # Changelog
 
+## Sin publicar
+
+- **Antigravity CLI: las credenciales del buzón** (#749 FR-4, T5). `~/.gemini/antigravity-cli` es una raíz más de `HARNESS_ROOTS` (`harness/paths.py`) y de `PAYNANI_HARNESS_ROOTS` (`scripts/envpath.sh`), así que `~/.gemini/antigravity-cli/workspace/.env` se lee donde está, como con los demás harnesses. Es la primera raíz de dos niveles: `agy` comparte `~/.gemini` con Gemini CLI, y `~/.gemini/workspace/.env` nunca se toma. Las tablas de AGENTS.md (paso 2) e INSTALL.md tienen la fila nueva, y `test_docs.py` ya reconoce una raíz anidada en esas tablas.
+
 ## 0.24.0 (2026-11-07)
 
 ### Si actualizas desde 0.23.0
