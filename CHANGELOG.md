@@ -3,6 +3,14 @@
 ## Sin publicar
 
 - **Antigravity CLI: el adaptador (#749 T1).** El runtime `antigravity` entrega cada aviso en `state/antigravity.spool`, como Claude Code, y los hooks de `agy` lo van a mostrar al empezar cada conversación y cada turno (T2). Nivel `replay-only` en `harness/capabilities.py`, DESIGN.md y HARNESS_CAPABILITIES.md. Todavía no se instala: `--runtime antigravity` llega con T4.
+- **Antigravity CLI: el hook (#749 T2).** `harness/session_start.py --antigravity` contesta a los hooks `SessionStart` y `PreInvocation` de `agy` con `injectSteps`. En una conversación nueva muestra el correo del spool, los avisos del roster sin cerrar y si el listener o el despachador están caídos. Al empezar cada turno (`invocationNum` 0) muestra sólo el correo nuevo y los servicios caídos; en las demás llamadas al modelo contesta `{}` sin consultar nada. No usa la red, consulta los dos servicios en una sola llamada a `systemctl` de 3 s como máximo y, si algo falla, contesta con el error en el texto en lugar de dejar a `agy` sin JSON. Así una conversación retomada, que no dispara `SessionStart`, también ve el correo. Como `agy` no tiene Monitor, el hook marca el spool como visto después de imprimir la respuesta.
+- **Antigravity CLI: registro de los hooks (#749, T3).** `scripts/antigravity_hook.py --print | --check | --install | --uninstall` escribe los hooks de paynani en `~/.gemini/config/hooks.json`, bajo una llave propia, `paynani`. Ahí van `SessionStart` y `PreInvocation`, los dos con `python3 <clone>/harness/session_start.py --antigravity` y `timeout` 10.
+  - Las llaves de otros no se tocan.
+  - Antes de escribir deja un respaldo `.paynani.bak`. La escritura es atómica y el archivo conserva su modo.
+  - Un archivo que no es JSON, o que no es un objeto, se rechaza sin cambiarlo.
+  - `--install` muestra lo que va a escribir.
+  - `--check` dice si la llave falta, está apagada (`"enabled": false`) o apunta a otro clone.
+  - Pruebas en `scripts/test_antigravity_hook.py`.
 - **Antigravity CLI: las credenciales del buzón** (#749 FR-4, T5). `~/.gemini/antigravity-cli` es una raíz más de `HARNESS_ROOTS` (`harness/paths.py`) y de `PAYNANI_HARNESS_ROOTS` (`scripts/envpath.sh`), así que `~/.gemini/antigravity-cli/workspace/.env` se lee donde está, como con los demás harnesses. Es la primera raíz de dos niveles: `agy` comparte `~/.gemini` con Gemini CLI, y `~/.gemini/workspace/.env` nunca se toma. Las tablas de AGENTS.md (paso 2) e INSTALL.md tienen la fila nueva, y `test_docs.py` ya reconoce una raíz anidada en esas tablas.
 
 ## 0.24.0 (2026-11-07)

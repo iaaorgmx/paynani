@@ -68,6 +68,13 @@ OPENCODE_PROCESSES = STATE_DIR / "opencode.processes"
 # plugin that is in the middle of claiming it, not to a dead one.
 OPENCODE_LOCK_GRACE = 10
 SESSION_WATCH = REPO / "harness/session_watch.sh"
+# Antigravity CLI (#749): a spool like Claude Code's, but read by agy's own
+# SessionStart and PreInvocation hooks, which call this file with --antigravity.
+# There is no Monitor there, so the hook acknowledges the offset itself after it
+# has printed valid JSON, the way the Codex replay does.
+ANTIGRAVITY_SPOOL = STATE_DIR / "antigravity.spool"
+ANTIGRAVITY_OFFSET = STATE_DIR / "antigravity.offset"
+ANTIGRAVITY_ACK_CONTEXT_LIMIT = int(os.environ.get("PAYNANI_ANTIGRAVITY_ACK_CONTEXT_LIMIT", "8000"))
 RUNTIME_ENV = REPO / "runtime.env"
 # One registry per Claude Code session, written by the SessionStart hook and
 # kept by the watcher for as long as it lives (#170). The hook used to print a
@@ -264,6 +271,8 @@ def spool_paths(runtime):
         return CODEX_SPOOL, CODEX_OFFSET
     if runtime == "opencode":
         return OPENCODE_SPOOL, OPENCODE_OFFSET
+    if runtime == "antigravity":
+        return ANTIGRAVITY_SPOOL, ANTIGRAVITY_OFFSET
     return SPOOL, SESSION_OFFSET
 
 
@@ -1143,7 +1152,185 @@ def opencode_command(args):
     return 2
 
 
+def antigravity_output(text):
+    """
+    The stdout payload for agy's SessionStart and PreInvocation hooks (#749 FR-2).
+
+    The hooks reference describes a `systemMessage` step as an object with its
+    own `systemMessage` text and optional `metadata`. F0 measures this on a real
+    host; if agy wants another shape, this is the one place that changes.
+    """
+    if not text:
+        return {}
+    return {"injectSteps": [{"systemMessage": {
+        "systemMessage": text,
+        "metadata": {"source": "paynani"},
+    }}]}
+
+
+def antigravity_turn_start(payload):
+    """
+    Whether this hook call should say anything at all.
+
+    SessionStart carries no `invocationNum`. PreInvocation does, and fires before
+    every model call in a turn; only call 0 is the start of a turn. A resumed
+    conversation never fires SessionStart, so call 0 is how it learns about mail
+    that arrived while it was closed.
+    """
+    if "invocationNum" not in payload:
+        return True
+    try:
+        return int(payload.get("invocationNum")) == 0
+    except (TypeError, ValueError):
+        return False
+
+
+def antigravity_replayed(spool_lines):
+    for event_id in sorted(event_ids_in(spool_lines)):
+        try:
+            ledger.transition(LIFECYCLE, event_id, "presented", runtime="antigravity",
+                              detail="agy hook replay")
+        except (OSError, ValueError):
+            pass
+
+
+ANTIGRAVITY_SYSTEMCTL_TIMEOUT = 3
+
+
+def antigravity_unit_states():
+    """
+    (listener, dispatcher) states within a fixed budget.
+
+    The hook is registered with a 10 s timeout, and agy drops a hook that runs
+    past it. `unit_state()` allows 5 s per unit, so two slow calls alone could
+    use the whole budget; here both units go in one `systemctl` call with a
+    3 s limit, and a slow systemd reads as "unknown" rather than as silence.
+    """
+    if platform.system() == "Darwin":
+        return unit_state(SERVICE), unit_state(DISPATCH_SERVICE)
+    try:
+        r = subprocess.run(["systemctl", "--user", "is-active", SERVICE, DISPATCH_SERVICE],
+                           capture_output=True, text=True,
+                           timeout=ANTIGRAVITY_SYSTEMCTL_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return "unknown", "unknown"
+    answers = (r.stdout or "").split()
+    states = []
+    for index in range(2):
+        state = answers[index] if index < len(answers) else ""
+        if state == "active":
+            states.append("active")
+        elif state in {"inactive", "failed", "deactivating"}:
+            states.append("down")
+        else:
+            states.append("unknown")
+    return states[0], states[1]
+
+
+def antigravity_command():
+    """
+    One agy hook call: SessionStart, or PreInvocation at the start of a turn.
+
+    agy ignores the exit code and reads only stdout, so every path prints JSON:
+    `{}` when there is nothing to say, and the error itself when something here
+    breaks, so a broken hook is visible in the conversation rather than silent.
+    """
+    try:
+        text, acknowledge = antigravity_reply()
+    except Exception as exc:  # noqa: BLE001 - the error must reach the agent as text
+        print(json.dumps(antigravity_output(
+            f"paynani: the session hook failed ({type(exc).__name__}: {exc}). Mail "
+            "may be waiting that this hook could not show. Tell your human and run "
+            f"`{REPO}/scripts/paynani doctor`.")), flush=True)
+        return 0
+    print(json.dumps(antigravity_output(text)), flush=True)
+    if acknowledge:
+        try:
+            acknowledge()
+        except Exception:  # noqa: BLE001 - not acknowledged means shown again, not lost
+            pass
+    return 0
+
+
+def antigravity_reply():
+    """
+    (text, acknowledge) for one hook call. `acknowledge` runs only after the
+    text was printed, so mail is never marked seen without having been shown.
+
+    PreInvocation runs before every model call, so the check for call 0 comes
+    before anything slow. Nothing here calls the network: `version_line()` can
+    refresh from GitHub and is left to the other runtimes' session starts.
+    """
+    payload = read_hook_input()
+    session_start = "invocationNum" not in payload
+    if not antigravity_turn_start(payload):
+        return "", None
+
+    spool_lines, spool_capped, spool_through = read_spool_backlog(
+        ANTIGRAVITY_SPOOL, ANTIGRAVITY_OFFSET)
+    lines, capped = read_backlog()
+    listener_state, dispatcher_state = antigravity_unit_states()
+    faults = dispatcher_faults()
+    unattended = unattended_roster(exclude=event_ids_in(spool_lines))
+
+    parts = []
+    if listener_state == "down":
+        parts.append(f"MAIL LISTENER IS DOWN — {SERVICE} is not active, so no new mail "
+                     "is being detected at all. Tell your human.")
+    if dispatcher_state == "down":
+        parts.append(f"MAIL DISPATCHER IS DOWN — {DISPATCH_SERVICE} is not active. Mail "
+                     "is journalled but not delivered. Tell your human.")
+    if faults:
+        parts.append("THE DISPATCHER REPORTED PROBLEMS — the most recent lines of "
+                     f"{DISPATCH_ERR}:\n" + "\n".join(faults))
+    if spool_lines:
+        parts.append(
+            f"PAYNANI MAIL THAT ARRIVED SINCE THE LAST CHECK ({len(spool_lines)} message(s)"
+            + (f", showing the oldest {MAX_REPLAY}" if spool_capped else "")
+            + "). A line ending in `, roster]` is work for you; read each with "
+            f"`{REPO}/scripts/paynani event show <event_id> --body` before acting:\n"
+            + "\n".join(spool_lines))
+    if lines:
+        parts.append(f"Mail queued but not yet delivered ({len(lines)} message(s)"
+                     + (f", trimmed to the most recent {MAX_REPLAY}" if capped else "")
+                     + "); the dispatcher will deliver it as well:\n" + "\n".join(lines))
+    # The reminder of open notices goes with new conversations, and with a turn
+    # that brings new mail anyway: repeating it before every turn would teach the
+    # agent to skip the block.
+    if unattended and (session_start or spool_lines):
+        shown = unattended[-MAX_REPLAY:]
+        parts.append(
+            f"ROSTER MAIL NOT YET CLOSED ({len(unattended)} notice(s) from the last "
+            f"{UNATTENDED_DAYS} days). Read each with `{REPO}/scripts/paynani event show "
+            "<event_id> --body`, act on it, then close it:\n"
+            + "\n".join(unattended_line(event_id, envelope) for event_id, envelope in shown))
+    if parts and (spool_lines or unattended):
+        parts.append(
+            "After you act on a roster notice, close it with "
+            f"`{REPO}/scripts/paynani event mark <event_id> handled`, or `replied` if you "
+            "answered it, or `closed` if it needs nothing. A notice left open is shown again.")
+    if session_start and not parts:
+        parts.append("paynani: no unseen mail. New mail is shown at the start of each turn.")
+
+    text = "\n\n".join(parts)
+    off = {c for c in ("sms", "whatsapp", "telegram")
+           if ev.has_catch_all(text, c) and not catch_all_active_now(c)}
+    if off:
+        text = ev.redact_catch_all(text, off)
+    # Acknowledge only what was shown whole. A payload so large a harness might cut
+    # it is left unacknowledged and shown again; repeating mail beats losing it.
+    if not spool_lines or len(text.encode("utf-8")) > ANTIGRAVITY_ACK_CONTEXT_LIMIT:
+        return text, None
+
+    def acknowledge():
+        antigravity_replayed(spool_lines)
+        acknowledge_spool(ANTIGRAVITY_OFFSET, spool_through)
+    return text, acknowledge
+
+
 def main():
+    if sys.argv[1:2] == ["--antigravity"]:
+        return antigravity_command()
     if sys.argv[1:2] and sys.argv[1].startswith("--opencode-"):
         return opencode_command(sys.argv[1:])
     if sys.argv[1:2] == ["--registry"]:
