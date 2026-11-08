@@ -113,6 +113,10 @@ def write(path, data, existed):
         handle.write("\n")
         handle.flush()
         os.fsync(handle.fileno())
+    if existed:
+        # The file is the user's and may hold commands of their own: keep its mode
+        # (a 0600 file must not come back 0644 from the umask of the new one).
+        shutil.copymode(path, tmp)
     tmp.replace(path)
 
 
