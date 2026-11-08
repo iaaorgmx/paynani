@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from .. import i18n
-from . import api_tokens
+from . import api_tokens, when
 from .shell import ROW_CHEVRON
 
 # Un permiso del Catch-All por canal (PRD #576 FR-13, FR-13b); se marcan a mano. El
@@ -91,8 +91,9 @@ def usage_today(state_dir: Path, prefix: str, now: dt.datetime | None = None) ->
     return count
 
 
-def list_body(records: list[dict], query: str, selected: str) -> str:
+def list_body(records: list[dict], query: str, selected: str, *, notice: str = "") -> str:
     t = i18n.th
+    flash = f'<p class="aviso-ok" role="status">{e(notice)}</p>' if notice else ""
     shown = [r for r in records if (not selected or status(r) == selected)
              and (not query or query.casefold() in r.get("name", "").casefold()
                   or query.casefold() in r.get("prefix", "").casefold())]
@@ -110,7 +111,7 @@ def list_body(records: list[dict], query: str, selected: str) -> str:
                                            ("expired", t("web.tokens.status.expired")),
                                            ("revoked", t("web.tokens.status.revoked"))))
     empty_row = f'<tr><td colspan="7">{t("web.tokens.empty")}</td></tr>'
-    return (f'<div class="acciones"><a class="primario" href="/api-tokens/new">{t("web.tokens.create")}</a></div>'
+    return (f'{flash}<div class="acciones"><a class="primario" href="/api-tokens/new">{t("web.tokens.create")}</a></div>'
             f'<form method="get" action="/api-tokens" class="token-filter">'
             f'<label>{t("web.tokens.search")} <input name="q" value="{e(query)}"></label>'
             f'<label>{t("web.tokens.filter")} <select name="status">{options}</select></label>'
@@ -159,33 +160,112 @@ def created_body(secret: str, record: dict, url: str) -> str:
             f'<p><a href="/api-tokens">{t("web.tokens.back")}</a></p><script src="/assets/api_tokens.js" defer></script>')
 
 
-def detail_body(record: dict, csrf: str, state_dir: Path, *, error: str = "", ok: str = "") -> str:
+def _time(stamp: str | None) -> str:
+    """Fecha y hora legibles, como en «Connected apps»: `<time>` que time.js pasa a la zona del navegador."""
+    if not stamp:
+        return i18n.th("web.tokens.never")
+    iso, shown, title = when.render(stamp, i18n.current_lang())
+    if not iso:
+        return e(shown)
+    return f'<time datetime="{e(iso)}" title="{e(title)}">{e(shown)}</time>'
+
+
+def _relative(stamp: str | None, now: dt.datetime) -> str:
+    """«en 22 días», «hace 3 días», «hoy»: por días de calendario en UTC. Texto plano: se escapa al usarlo."""
+    moment = when.parse(stamp or "")
+    if moment is None:
+        return ""
+    days = (moment.astimezone(dt.timezone.utc).date() - now.astimezone(dt.timezone.utc).date()).days
+    t = i18n.t
+    if days == 0:
+        return t("web.tokens.rel.today")
+    if days == 1:
+        return t("web.tokens.rel.in_day")
+    if days == -1:
+        return t("web.tokens.rel.day_ago")
+    return t("web.tokens.rel.in_days", n=days) if days > 0 else t("web.tokens.rel.days_ago", n=-days)
+
+
+def _row(label: str, value: str, small: str = "") -> str:
+    note = f"<small>{small}</small>" if small else ""
+    return f'<div class="tok-fila"><dt>{label}</dt><dd>{value}{note}</dd></div>'
+
+
+def _password_form(action: str, csrf: str, digest: str, button: str, button_class: str, extra: str = "") -> str:
     t = i18n.th
+    return (f'<form method="post" action="{action}" class="formulario-fila">'
+            f'<input type="hidden" name="csrf" value="{e(csrf)}"><input type="hidden" name="id" value="{digest}">{extra}'
+            f'<label>{t("web.tokens.password")}<input type="password" name="password" autocomplete="current-password" required></label>'
+            f'<button class="{button_class}" type="submit">{button}</button></form>')
+
+
+def detail_body(record: dict, csrf: str, state_dir: Path, *, error: str = "", ok: str = "",
+                now: dt.datetime | None = None) -> str:
+    """
+    El detalle de un token (#760, mockup aprobado por Julian, Iris[Q72]=A): la cabecera con el
+    estado y el vencimiento, «Details», «SMS limits» y «Agent», y al final «Revoke this token»
+    (activo) o «Delete this token» (vencido o revocado). Nada de estilo en línea: la barra de uso
+    es un `<progress>`.
+    """
+    t = i18n.th
+    now = now or dt.datetime.now(dt.timezone.utc)
     digest = e(record["sha256"])
-    usage = usage_today(state_dir, record.get("prefix", ""))
-    fields = (("name", record.get("name")), ("prefix", record.get("prefix")),
-              ("permissions", ", ".join(record.get("permissions", []))),
-              ("created", record.get("created_at")), ("expires", record.get("expires_at") or t("web.tokens.never")),
-              ("last_used", record.get("last_used_at") or "—"),
-              ("status", t("web.tokens.status." + status(record))),
-              ("hour", record.get("limits", {}).get("sms_per_hour", 30)),
-              ("day", record.get("limits", {}).get("sms_per_day", 200)),
-              ("used_today", usage))
-    details = "".join(f'<dt>{t("web.tokens." + key)}</dt><dd>{e(value)}</dd>' for key, value in fields)
-    editable = status(record) == "active"
-    forms = ""
-    if editable:
-        forms = (f'<form method="post" action="/api-tokens/agent-replies" class="formulario">'
-                 f'<input type="hidden" name="csrf" value="{e(csrf)}"><input type="hidden" name="id" value="{digest}">'
-                 f'<label class="casilla"><input type="checkbox" name="agent_replies" value="1"{" checked" if record.get("agent_replies", False) else ""}> {t("web.tokens.agent_replies")}</label>'
-                 f'<label>{t("web.tokens.password")}<input type="password" name="password" autocomplete="current-password" required></label>'
-                 f'<button class="primario" type="submit">{t("web.tokens.save")}</button></form>'
-                 f'<form method="post" action="/api-tokens/revoke" class="formulario">'
-                 f'<input type="hidden" name="csrf" value="{e(csrf)}"><input type="hidden" name="id" value="{digest}">'
-                 f'<label>{t("web.tokens.password")}<input type="password" name="password" autocomplete="current-password" required></label>'
-                 f'<button class="peligro" type="submit">{t("web.tokens.revoke")}</button></form>')
-    error_notice = f'<p class="error" role="alert">{e(error)}</p>' if error else ""
-    saved_notice = f'<p class="aviso-ok">{t("web.tokens.saved")}</p>' if ok else ""
-    return (error_notice + saved_notice +
-            f'<dl class="token-detail">{details}</dl><p>{t("web.tokens.agent_replies")}: '
-            f'{t("web.tokens.yes") if record.get("agent_replies", False) else t("web.tokens.no")}</p>{forms}')
+    state = status(record, now)
+    limits = record.get("limits", {})
+    per_hour, per_day = limits.get("sms_per_hour", 30), limits.get("sms_per_day", 200)
+    usage = usage_today(state_dir, record.get("prefix", ""), now)
+
+    # La línea lleva un `<time>`: el texto del catálogo se escapa entero y luego entra la etiqueta.
+    slot = "\x00when\x00"
+    if state == "revoked":
+        line = e(i18n.t("web.tokens.line.revoked", when=slot)).replace(e(slot), _time(record.get("revoked_at")))
+    elif record.get("expires_at"):
+        key = "web.tokens.line.expired" if state == "expired" else "web.tokens.line.expires"
+        line = e(i18n.t(key, when=slot, rel=_relative(record.get("expires_at"), now))).replace(
+            e(slot), _time(record.get("expires_at")))
+    else:
+        line = t("web.tokens.line.never")
+    head = (f'<div class="tok-cabeza"><div><h2>{e(record.get("name", ""))}</h2>'
+            f'<code class="tok-prefijo">{e(record.get("prefix", ""))}…</code>'
+            f'<span class="tok-vence">{line}</span></div>'
+            f'<span class="estado estado-token-{state}">{t("web.tokens.status." + state)}</span></div>')
+
+    chips = "".join(f"<code>{e(p)}</code>" for p in record.get("permissions", []))
+    expires = record.get("expires_at")
+    details = (f'<section class="tok-tarjeta"><h3>{t("web.tokens.sec.details")}</h3><dl>'
+               + _row(t("web.tokens.permissions"), f'<div class="tok-permisos">{chips or "—"}</div>')
+               + _row(t("web.tokens.created"), _time(record.get("created_at")))
+               + _row(t("web.tokens.expires"), _time(expires), e(_relative(expires, now)) if expires else "")
+               + _row(t("web.tokens.last_used"), _time(record.get("last_used_at")))
+               + "</dl></section>")
+
+    sms = (f'<section class="tok-tarjeta"><h3>{t("web.tokens.sec.limits")}</h3><div class="tok-cifras">'
+           f'<div><b>{e(per_hour)}</b><span>{t("web.tokens.per_hour")}</span></div>'
+           f'<div><b>{e(per_day)}</b><span>{t("web.tokens.per_day")}</span></div>'
+           f'<div><b>{e(usage)}</b><span>{t("web.tokens.sent_today")}</span>'
+           f'<progress class="tok-uso" max="{e(per_day)}" value="{e(min(usage, int(per_day or 0)))}"></progress></div>'
+           f'</div></section>')
+
+    replies = bool(record.get("agent_replies", False))
+    if state == "active":
+        checked = " checked" if replies else ""
+        agent = (f'<section class="tok-tarjeta"><h3>{t("web.tokens.sec.agent")}</h3><div class="tok-ajuste">'
+                 + _password_form("/api-tokens/agent-replies", csrf, digest, t("web.tokens.save"), "primario",
+                                  f'<label class="casilla"><input type="checkbox" name="agent_replies" value="1"{checked}> '
+                                  f'{t("web.tokens.agent_replies")}</label>')
+                 + "</div></section>")
+        danger = (f'<section class="zona-peligro"><h2>{t("web.tokens.revoke_title")}</h2><p>{t("web.tokens.revoke_hint")}</p>'
+                  + _password_form("/api-tokens/revoke", csrf, digest, t("web.tokens.revoke"), "peligro") + "</section>")
+    else:
+        agent = (f'<section class="tok-tarjeta"><h3>{t("web.tokens.sec.agent")}</h3><dl>'
+                 + _row(t("web.tokens.agent_replies"), t("web.tokens.yes") if replies else t("web.tokens.no"),
+                        t("web.tokens.readonly"))
+                 + "</dl></section>")
+        danger = (f'<section class="zona-peligro zona-borrar"><h2>{t("web.tokens.delete_title")}</h2><p>{t("web.tokens.delete_hint")}</p>'
+                  + _password_form("/api-tokens/delete", csrf, digest, t("web.tokens.delete"), "peligro") + "</section>")
+
+    # `error` ya viene escapado (i18n.th en app.py): escaparlo otra vez mostraba «&amp;#x27;» en francés.
+    error_notice = f'<p class="error" role="alert">{error}</p>' if error else ""
+    saved_notice = f'<p class="aviso-ok" role="status">{t("web.tokens.saved")}</p>' if ok else ""
+    crumb = f'<p class="migas"><a href="/api-tokens">← {t("web.tokens.title")}</a></p>'
+    return f'{crumb}{error_notice}{saved_notice}<div class="tok">{head}{details}{sms}{agent}{danger}</div>'

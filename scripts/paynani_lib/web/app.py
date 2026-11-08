@@ -1102,7 +1102,9 @@ def make_handler(ctx: Context):
                 selected = self.query.get("status", [""])[0]
                 if selected not in ("", "active", "expired", "revoked"):
                     selected = ""
-                self._page(200, title=t("web.tokens.title"), body=token_pages.list_body(records, query, selected),
+                notice = t("web.tokens.deleted") if self.query.get("deleted", [""])[0] == "1" else ""
+                self._page(200, title=t("web.tokens.title"),
+                           body=token_pages.list_body(records, query, selected, notice=notice),
                            active="api_tokens", wide=True)
 
         def _tokens_post(self, post: dict):
@@ -1136,7 +1138,18 @@ def make_handler(ctx: Context):
                 self._page(404, title=t("web.tokens.title"), body=f'<p>{i18n.th("web.tokens.missing")}</p>', active="api_tokens")
                 return
             error = self._check_current(post.get("password", "")[:users.MAX_PASSWORD])
-            if not error:
+            if not error and self.route == "/api-tokens/delete":
+                # Sólo vencidos o revocados (#760); la misma regla que DeleteApiToken.
+                try:
+                    outcome = api_tokens.delete(digest, path=path)
+                except (OSError, ValueError):
+                    outcome = "error"
+                if outcome == "deleted":
+                    self._redirect("/api-tokens?deleted=1")
+                    return
+                error = {"active": i18n.th("web.tokens.delete_active"), "missing": i18n.th("web.tokens.missing")}.get(
+                    outcome, i18n.th("web.tokens.invalid"))
+            elif not error:
                 try:
                     changed = api_tokens.update(digest, path=path, revoke=self.route == "/api-tokens/revoke",
                         agent_replies=post.get("agent_replies") == "1" if self.route == "/api-tokens/agent-replies" else None)
@@ -1147,7 +1160,7 @@ def make_handler(ctx: Context):
             if error:
                 records = api_tokens.list_records(path=path)
                 record = next((r for r in records if r["sha256"] == digest), None)
-                body = token_pages.detail_body(record, csrf, self.CTX.state_dir(), error=error) if record else f'<p class="error">{token_pages.e(error)}</p>'
+                body = token_pages.detail_body(record, csrf, self.CTX.state_dir(), error=error) if record else f'<p class="error">{error}</p>'
                 self._page(400, title=t("web.tokens.title"), body=body, active="api_tokens", back="/api-tokens")
                 return
             self._redirect("/api-tokens/detail?id=" + digest + "&ok=1")
@@ -2855,7 +2868,7 @@ def make_handler(ctx: Context):
             if self.route in REACT_ROUTES:
                 self._react_post(post)
                 return
-            if self.route in ("/api-tokens/new", "/api-tokens/revoke", "/api-tokens/agent-replies"):
+            if self.route in ("/api-tokens/new", "/api-tokens/revoke", "/api-tokens/agent-replies", "/api-tokens/delete"):
                 self._tokens_post(post)
                 return
             if self.route in ("/apps/code", "/apps/revoke"):

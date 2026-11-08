@@ -904,3 +904,44 @@ body.web-shell {
   .web-shell .correos.apps .app-cel { grid-column: 1 / -1; }
   .web-shell .correos.apps .app-pareada { display: none; }
 }
+/* El detalle de un token (#760, mockup aprobado: Iris[Q72]=A). Reusa .zona-peligro y .formulario-fila de «Connected apps». */
+.web-shell .migas { font-size: .9rem; margin: 0 0 1rem; }
+.web-shell .migas a { color: var(--accent); text-decoration: none; }
+.web-shell .tok { max-width: 52rem; }
+.web-shell .tok-cabeza { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem;
+  border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: 1rem; background: var(--card); }
+.web-shell .tok-cabeza h2 { margin: 0; font-size: 1.25rem; }
+.web-shell .tok-prefijo { display: block; margin-top: .25rem; background: none; border: 0; padding: 0; font-size: .85rem; color: var(--quiet); }
+.web-shell .tok-vence { display: block; margin-top: .2rem; font-size: .88rem; color: var(--quiet); }
+.web-shell .tok-cabeza .estado { font-size: .85rem; padding: .25rem .7rem; }
+.web-shell .estado-token-active { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-ink); }
+.web-shell .estado-token-expired { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
+.web-shell .estado-token-revoked { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad-ink); }
+.web-shell .tok-tarjeta { border: 1px solid var(--line); border-radius: 10px; padding: .3rem 1.1rem; margin-bottom: 1rem; background: var(--card); }
+.web-shell .tok-tarjeta h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--quiet); margin: .8rem 0 .2rem; }
+.web-shell .tok-tarjeta dl { margin: 0; }
+.web-shell .tok-fila { display: grid; grid-template-columns: 11rem 1fr; gap: 1rem; padding: .7rem 0; align-items: start; }
+.web-shell .tok-fila + .tok-fila { border-top: 1px solid var(--line); }
+.web-shell .tok-fila dt { color: var(--quiet); margin: 0; }
+.web-shell .tok-fila dd { margin: 0; overflow-wrap: anywhere; }
+.web-shell .tok-fila small { display: block; color: var(--quiet); font-size: .82rem; margin-top: .15rem; }
+.web-shell .tok-permisos { display: flex; flex-wrap: wrap; gap: .35rem; }
+.web-shell .tok-permisos code { font-size: .8rem; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: .15rem .55rem; }
+.web-shell .tok-cifras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; padding: .8rem 0 1rem; }
+.web-shell .tok-cifras b { display: block; font-size: 1.5rem; }
+.web-shell .tok-cifras span { color: var(--quiet); font-size: .85rem; }
+.web-shell .tok-uso { display: block; width: 100%; height: 6px; margin-top: .4rem; appearance: none; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); overflow: hidden; }
+.web-shell .tok-uso::-webkit-progress-bar { background: var(--bg); }
+.web-shell .tok-uso::-webkit-progress-value { background: var(--accent); }
+.web-shell .tok-uso::-moz-progress-bar { background: var(--accent); }
+.web-shell .tok-ajuste { padding: .7rem 0 .9rem; }
+.web-shell .tok-ajuste .formulario-fila { max-width: 34rem; }
+.web-shell .tok-ajuste .casilla { flex: 1 1 100%; flex-direction: row; align-items: center; gap: .5rem; }
+.web-shell .tok .zona-peligro { margin-bottom: 1rem; max-width: 52rem; }
+.web-shell .zona-borrar { border-color: var(--line); }
+.web-shell .zona-borrar h2 { color: var(--ink); }
+@media (max-width: 900px) {
+  .web-shell .tok-fila { grid-template-columns: 1fr; gap: .2rem; }
+  .web-shell .tok-cifras { gap: .5rem; }
+  .web-shell .tok-cifras b { font-size: 1.2rem; }
+}
