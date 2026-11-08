@@ -104,7 +104,7 @@ def _retention_days(default=90):
 
 JOURNAL_RETENTION_DAYS = _retention_days()
 
-KNOWN_RUNTIMES = ("openclaw", "hermes", "claudecode", "codex", "opencode")
+KNOWN_RUNTIMES = ("openclaw", "hermes", "claudecode", "codex", "opencode", "antigravity")
 
 # How long to wait before trying a failed record again. Doubling, capped, so a
 # runtime that is down for an hour is retried every minute rather than every
