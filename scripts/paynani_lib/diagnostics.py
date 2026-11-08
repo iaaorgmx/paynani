@@ -595,7 +595,42 @@ OBSERVATION_LABELS = {
     "session_destination_available": "runtime destination session is observable",
     "last_delivery_attempt": "last delivery attempt is observable",
     "last_delivery_result": "last delivery result is observable",
+    "last_agent_run": "Antigravity CLI last agy -p run is observable",
 }
+
+# What the owner does about a failed headless agy run (#749 FR-10, FR-11).
+ANTIGRAVITY_RUN_FIXES = {
+    "login": ("open agy once in a terminal as this user and sign in; on a host whose keyring "
+              "does not work from systemd, see INSTALL.md §6 \"Antigravity CLI\" for "
+              "GEMINI_API_KEY or AGY_ADC_AUTH"),
+    "permission": ("agy refused a tool the run needed; allow that command in "
+                   "~/.gemini/antigravity-cli/settings.json, never with --dangerously-skip-permissions"),
+    "timeout": "raise PAYNANI_ANTIGRAVITY_TIMEOUT in runtime.env, or check what the run was doing in agy",
+    "run": "run scripts/healthcheck.py and read state/antigravity.json",
+}
+
+
+def _antigravity_run_check(name: str) -> dict:
+    """The last `agy -p` run (#749 F2). Mail is spooled either way, so a failure is a warning."""
+    try:
+        from adapters import antigravity as adapter
+        mode = adapter.agent_mode()
+        record = adapter.last_agent_run()
+    except Exception as exc:
+        return _check(name, "unknown", OBSERVATION_LABELS[name], {"error": exc.__class__.__name__})
+    facts = {"agent_mode": mode, "last_agent_run": record}
+    if record is None:
+        if mode:
+            return _check(name, "unknown", "agent mode is on and no agy -p run has been recorded yet", facts)
+        return _check(name, "ok", "agent mode is off; mail reaches agy through the hooks only", facts)
+    if record.get("ok"):
+        return _check(name, "ok", f"last agy -p run succeeded at {record.get('at')}", facts)
+    problem = record.get("problem") or "run"
+    what = "the Google login" if problem == "login" else problem
+    return _check(name, "warning",
+                  f"last agy -p run failed ({what}) at {record.get('at')}: {record.get('detail')}; "
+                  "the mail is in the spool for the next conversation",
+                  facts, ANTIGRAVITY_RUN_FIXES.get(problem, ANTIGRAVITY_RUN_FIXES["run"]))
 
 
 
@@ -716,6 +751,9 @@ def _observation_check(name: str, facts: dict) -> dict:
         if codex.get("last_queue"):
             return _check(name, "ok", "last Codex queue result was accepted", codex)
         return _check(name, "unknown", "no Codex queue result has been recorded", codex)
+
+    if selected == "antigravity" and name == "last_agent_run":
+        return _antigravity_run_check(name)
 
     if selected == "hermes" and name in {"notify_route_configured", "roster_route_configured"}:
         return _hermes_route_observation(name.removesuffix("_route_configured"))
