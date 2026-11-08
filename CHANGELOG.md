@@ -1,5 +1,15 @@
 # Changelog
 
+## Sin publicar
+
+- **Antigravity CLI: registro de los hooks (#749, T3).** `scripts/antigravity_hook.py --print | --check | --install | --uninstall` escribe los hooks de paynani en `~/.gemini/config/hooks.json`, bajo una llave propia, `paynani`. Ahí van `SessionStart` y `PreInvocation`, los dos con `python3 <clone>/harness/session_start.py --antigravity` y `timeout` 10.
+  - Las llaves de otros no se tocan.
+  - Antes de escribir deja un respaldo `.paynani.bak`, y la escritura es atómica.
+  - Un archivo que no es JSON, o que no es un objeto, se rechaza sin cambiarlo.
+  - `--install` muestra lo que va a escribir.
+  - `--check` dice si la llave falta, está apagada (`"enabled": false`) o apunta a otro clone.
+  - Pruebas en `scripts/test_antigravity_hook.py`.
+
 ## 0.24.0 (2026-11-07)
 
 ### Si actualizas desde 0.23.0
