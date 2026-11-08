@@ -1997,6 +1997,52 @@ prefix rule of its own, `command(<clone>/scripts/send.sh)`, and stops asking.
 Approve exactly `scripts/send.sh` and `scripts/paynani` that way, not a
 broader prefix.
 
+**Optional: let mail reach the agent with no conversation open.** Setting
+`PAYNANI_ANTIGRAVITY_MODE=agent` in `runtime.env` makes the dispatcher run
+`agy -p "<notice>" --output-format json --print-timeout <n>s` in the clone for
+each event, after it writes the spool. It is **off by default**, because it
+lets a roster message start work on this machine with nobody watching. Read the
+roster rules in `AGENTS.md` before turning it on.
+
+- Each event gets a new `agy` conversation. Resuming one by id worked in #749
+  F2, but took 105 s against 7 s for a new one, and a new one cannot collide
+  with a conversation your human has open.
+- `PAYNANI_ANTIGRAVITY_TIMEOUT` (seconds, default 300) is the turn limit. The
+  dispatcher waits for the run, so it also bounds how long one event holds the
+  queue.
+- The run counts only when `agy` exits 0 with `"status": "SUCCESS"` and stderr
+  names no refused permission. A failed run still leaves the event in the spool,
+  and the hooks show it in the next conversation. It is never run again,
+  because a retry would append the same line every time.
+- `state/antigravity.json` keeps the last run: event id, times, conversation id,
+  `ok`, and a `problem` (`login`, `permission`, `timeout` or `run`) with one
+  line of detail. It never keeps the prompt or the reply. `scripts/paynani
+  doctor` reports it as `last_agent_run`, with what to do.
+- The hooks run inside `agy -p` too. The run's own `PreInvocation` shows the
+  spool and moves `antigravity.offset`, so the event does not come back in the
+  next conversation.
+- `agentMode: "auto"` in `agy`'s settings decides commands that leave the
+  sandbox with a risk classifier instead of a question. The permission rules
+  above still apply.
+- The notice (sender and subject) goes in `agy`'s command line, so other users
+  of the machine can see it in `ps` while the run lasts. `agy` 1.5.3 does not
+  read a `-p` prompt from stdin (`-p -` is taken as the prompt `-`). On an
+  agent's own host there is usually one user; on a shared one, leave this mode
+  off.
+
+**The login when paynani starts `agy` by itself.** In #749 F2, `agy -p` ran
+from a systemd user service with the Google account and the system keyring, the
+same login the owner made in a terminal (Metis[Q138] = A). If the keyring does
+not work from systemd on your host (`doctor` reports a `login` problem), use one
+of `agy`'s two official alternatives. Your human sets either one; paynani never
+asks for or stores the key:
+
+- `GEMINI_API_KEY` with `"modelProvider": "gemini"` in `agy`'s settings, the key
+  in an environment file for the dispatcher service at mode 600, never in the
+  mailbox `.env` and never in a chat. It is billed per use in AI Studio, not
+  through the account's plan.
+- `AGY_ADC_AUTH=true` after `gcloud auth application-default login`.
+
 **Verifying it.** `scripts/paynani doctor` reports `harness_step` as `blocked`
 until the hooks are registered. `scripts/healthcheck.py` reports how many spool
 bytes no conversation has picked up yet; with no conversation open, unread bytes
