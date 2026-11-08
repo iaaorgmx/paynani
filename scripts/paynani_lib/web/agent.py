@@ -18,7 +18,7 @@ import statistics
 from .dashboard import CLOSED, Source, parse
 
 RUNTIMES = {"claudecode": "Claude Code", "openclaw": "OpenClaw", "hermes": "Hermes",
-            "codex": "Codex", "opencode": "OpenCode"}
+            "codex": "Codex", "opencode": "OpenCode", "antigravity": "Antigravity CLI"}
 # Claude Code: la sesión arma una vigilancia (watch_registry_facts), y eso es la evidencia.
 WATCH_RUNTIME = "claudecode"
 # Codex y OpenCode: el despachador escribe en un spool y la sesión lo lee; «aceptado» sólo
@@ -30,12 +30,55 @@ SPOOL_RUNTIMES = ("codex", "opencode")
 # state/delivery.json (healthcheck.delivery_facts). Un rechazo más nuevo que la última
 # aceptación, o una cola atorada más de STUCK_S, es que no le llega nada.
 PUSH_RUNTIMES = ("openclaw", "hermes")
+# Antigravity CLI (#749): el despachador escribe en un spool y los hooks de `agy` lo muestran
+# al empezar cada conversación. Que espere en el spool es lo normal, no una falla
+# (healthcheck.spool_facts), así que no hay «no_session»: lo que se sabe es si quedó en el spool.
+REPLAY_RUNTIMES = ("antigravity",)
 STUCK_S = 600
 ACTIVITY = 10
 
 
 def runtime_label(runtime: str) -> str:
     return RUNTIMES.get(runtime, runtime or "?")
+
+
+def evidence(runtime: str) -> str:
+    """Qué dice si el agente recibe los mensajes (#757): `watch` (la vigilancia de Claude Code),
+    `delivery` (lo que contestó un runtime push), `spool` (que la sesión tome lo del spool),
+    `replay` (lo que espera la siguiente conversación de `agy`), o "" si no se conoce."""
+    if runtime == WATCH_RUNTIME:
+        return "watch"
+    if runtime in PUSH_RUNTIMES:
+        return "delivery"
+    if runtime in SPOOL_RUNTIMES:
+        return "spool"
+    if runtime in REPLAY_RUNTIMES:
+        return "replay"
+    return ""
+
+
+def session(services: dict, runtime: str, events: list[dict] | None = None,
+            now: dt.datetime | None = None) -> dict:
+    """
+    `services.session` con lo que corresponde al runtime (#757). Conserva `live`, `armed_at` y
+    `expires_at` (la vigilancia de Claude Code, como antes) y agrega `runtime`, `runtime_label`,
+    `evidence`, `status` (el mismo semáforo del menú), `last_accepted` (sólo de este runtime) y,
+    con `replay`, `unread` (si hay algo esperando la siguiente conversación). PaynaniWeb y
+    PaynaniWebMT pintan la fila «Agent session» con esto.
+    """
+    base = services.get("session") or {}
+    out = {"live": bool(base.get("live")), "armed_at": str(base.get("armed_at") or ""),
+           "expires_at": str(base.get("expires_at") or ""),
+           "runtime": runtime, "runtime_label": runtime_label(runtime) if runtime else "",
+           "evidence": evidence(runtime), "status": status(services, runtime, events, now),
+           "last_accepted": delivered(services, "last_accepted", runtime)}
+    if not out["evidence"] and out["live"] and out["status"] != "offline":
+        # Sin saber el runtime, una vigilancia armada sigue siendo evidencia: se dice como antes.
+        out["evidence"], out["status"] = "watch", "online"
+    if out["evidence"] == "replay":
+        unread = base.get("unread_bytes")
+        out["unread"] = None if unread is None else int(unread) > 0
+    return out
 
 
 def _newer(a: str, b: str) -> bool:
@@ -75,6 +118,8 @@ def status(services: dict, runtime: str, events: list[dict] | None = None,
         oldest = (services.get("queue") or {}).get("oldest_age_s")
         if _newer(error, accepted) or (oldest is not None and oldest > STUCK_S):
             return "offline"
+        return "online" if accepted else "unknown"
+    if runtime in REPLAY_RUNTIMES:
         return "online" if accepted else "unknown"
     return "unknown"
 
@@ -171,7 +216,7 @@ def build(source: Source, now: dt.datetime) -> dict:
         "runtime": runtime,
         "runtime_label": runtime_label(runtime),
         "kind": ("watch" if runtime == WATCH_RUNTIME else "spool" if runtime in SPOOL_RUNTIMES
-                 else "push" if runtime in PUSH_RUNTIMES else ""),
+                 else "push" if runtime in PUSH_RUNTIMES else "replay" if runtime in REPLAY_RUNTIMES else ""),
         "status": status(services, runtime, events, now),
         "session": {"live": bool(session.get("live")), "armed_at": parse(session.get("armed_at")),
                     "expires_at": parse(session.get("expires_at"))},

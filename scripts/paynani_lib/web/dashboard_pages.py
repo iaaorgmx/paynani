@@ -140,6 +140,38 @@ def telegram_row(tg: dict, name: str = "") -> str:
                 _pill(tone, i18n.t("web.tg.state." + state) if state else _t("state.unknown"), "svc.telegram"))
 
 
+def session_row(session: dict, now: dt.datetime) -> str:
+    """
+    «Agent session» según el runtime (#757). Claude Code: la vigilancia, como antes. Los demás
+    no arman vigilancia, así que nunca dicen «No session» por eso: un runtime push dice cuándo
+    aceptó lo último; Codex y OpenCode, además, si un mensaje lleva más de 10 min sin que la
+    sesión lo tome; Antigravity, si algo espera la siguiente conversación. La píldora es el
+    mismo semáforo del menú (agent.status). Sin `evidence` (un modelo viejo) es la vigilancia.
+    """
+    kind = session.get("evidence", "watch")
+    if kind == "watch":
+        if session.get("live"):
+            armed = session.get("armed_at") and _parse_local(session["armed_at"], now)
+            return _row("profile", _th("svc.session"), _t("svc.armed", when=clock(armed, now)) if armed else "",
+                        _pill("ok", _t("state.live"), "svc.session"))
+        return _row("profile", _th("svc.session"), _t("svc.no_session"),
+                    _pill("warn", _t("state.none"), "svc.session"))
+    from .agent_pages import TONES
+    status = session.get("status") if session.get("status") in TONES else "unknown"
+    runtime = session.get("runtime_label") or session.get("runtime") or "?"
+    if kind == "replay":
+        unread = session.get("unread")
+        detail = _t("svc.replay." + ("unknown" if unread is None else "pending" if unread else "none"), runtime=runtime)
+    elif status == "no_session":
+        detail = _t("svc.spool.stuck", runtime=runtime)
+    else:
+        accepted = session.get("last_accepted") and _parse_local(session["last_accepted"], now)
+        detail = (_t("svc.delivery.at", runtime=runtime, when=clock(accepted, now)) if accepted
+                  else _t("svc.delivery.none", runtime=runtime))
+    return _row("profile", _th("svc.session"), detail,
+                _pill(TONES[status], i18n.t("web.agent.status." + status), "svc.session"))
+
+
 def services(model: dict) -> str:
     svc = model["services"]
     now = model["now"]
@@ -150,14 +182,7 @@ def services(model: dict) -> str:
                                     _t("svc.heartbeat", age=ago(listener.get("heartbeat_age_s")))) if x)
     rows.append(_row("mail", _th("svc.listener"), detail, _unit_pill(listener["unit"], "svc.listener")))
     rows.append(_row("inbox", _th("svc.dispatcher"), "", _unit_pill(svc["dispatcher"]["unit"], "svc.dispatcher")))
-    session = svc["session"]
-    if session["live"]:
-        armed = session.get("armed_at") and _parse_local(session["armed_at"], now)
-        rows.append(_row("profile", _th("svc.session"), _t("svc.armed", when=clock(armed, now)) if armed else "",
-                         _pill("ok", _t("state.live"), "svc.session")))
-    else:
-        rows.append(_row("profile", _th("svc.session"), _t("svc.no_session"),
-                         _pill("warn", _t("state.none"), "svc.session")))
+    rows.append(session_row(svc["session"], now))
     rows.append(phone_row(svc.get("phone")))
     if model.get("whatsapp") is not None:
         rows.append(whatsapp_row(model["whatsapp"]))

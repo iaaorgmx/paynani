@@ -484,6 +484,32 @@ def _unit_check(name: str, unit: str) -> dict:
     return _check(name, "blocked", f"{name} service is {unit}")
 
 
+def antigravity_unread(spool: Path | None = None) -> int | None:
+    """
+    Los bytes de `antigravity.spool` que los hooks de `agy` todavía no mostraron (#757): el
+    tamaño menos `antigravity.offset`. Sólo lee; no usa `healthcheck.spool_facts`, que prueba
+    si se puede escribir creando un archivo en `state/` (revisión de Metis en #759). Si no se
+    puede saber (sin adaptador, o el spool no se puede leer), None: la fila no afirma nada.
+    Sin spool todavía es 0: nada le ha llegado.
+    """
+    try:
+        if spool is None:
+            import healthcheck  # noqa: F401 -- pone harness/ en sys.path
+            from adapters import antigravity as adapter
+            spool = Path(adapter.spool_path())
+        try:
+            size = spool.stat().st_size
+        except FileNotFoundError:
+            return 0
+        try:
+            offset = int((spool.parent / "antigravity.offset").read_text(encoding="utf-8").strip() or 0)
+        except FileNotFoundError:
+            offset = 0
+        return max(0, size - offset)
+    except (SystemExit, Exception):  # noqa: BLE001 -- sólo es para mostrar
+        return None
+
+
 def local_services(state_dir: Path) -> dict:
     import healthcheck as hc
     listener = hc.listener_facts()
@@ -496,11 +522,14 @@ def local_services(state_dir: Path) -> dict:
         unit = entry["listener"]["unit"] if entry.get("enabled") else "off"
         additional.append({"id": entry["id"], "email": entry["email"], "enabled": bool(entry.get("enabled")),
                            "unit": unit})
+    session = {"live": bool(live), "armed_at": str(live.get("armed_at") or ""),
+               "expires_at": str(live.get("expires_at") or "")}
+    if selected_runtime() == "antigravity":
+        session["unread_bytes"] = antigravity_unread()
     return {
         "listener": {"unit": listener["unit"], "heartbeat_age_s": listener.get("heartbeat_age_seconds")},
         "dispatcher": {"unit": hc.dispatcher_facts()["unit"]},
-        "session": {"live": bool(live), "armed_at": str(live.get("armed_at") or ""),
-                    "expires_at": str(live.get("expires_at") or "")},
+        "session": session,
         "phone": None if phone is None else {
             "online": bool(phone["online"]), "model": phone.get("model", ""),
             "app_version": phone.get("app_version", ""), "last_seen_age_s": phone.get("last_seen_age_s"),
@@ -716,6 +745,12 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
     health = source.health()
     checks = list(health.get("checks") or [])
     services = source.services()
+    # La fila «Agent session» según el runtime (#757): la vigilancia sólo existe en Claude Code.
+    # Una copia: `services` viene de la caché de la fuente.
+    from . import agent as agent_mod
+    runtime = str((source.agent() or {}).get("runtime") or "")
+    events = source.events() if agent_mod.evidence(runtime) == "spool" else None
+    services = {**services, "session": agent_mod.session(services, runtime, events, now)}
     attention = []
     for c in sorted(checks, key=lambda c: -STATUS_ORDER.get(c.get("status"), 1)):
         if c.get("status") != "ok" and not c.get("name", "").startswith("account:"):
@@ -792,6 +827,12 @@ def _q(value: str) -> str:
     return quote(str(value or ""), safe="")
 
 
+def _session_number(session: dict) -> str:
+    if session.get("evidence", "watch") == "watch":
+        return "live" if session.get("live") else "none"
+    return str(session.get("status") or "unknown")
+
+
 def numbers(model: dict) -> dict:
     """Lo de `/dashboard.json` (FR-19): sólo números y estados. Ni direcciones, ni
     teléfonos, ni asuntos, ni nombres de contactos o tokens."""
@@ -808,7 +849,9 @@ def numbers(model: dict) -> dict:
         "services": {
             "listener": services["listener"]["unit"],
             "dispatcher": services["dispatcher"]["unit"],
-            "session": "live" if services["session"]["live"] else "none",
+            # Claude Code: «live» o «none», como antes. Los demás runtimes no tienen vigilancia:
+            # su semáforo (`online`, `no_session`, `offline` o `unknown`; #757).
+            "session": _session_number(services["session"]),
             "phone": None if phone is None else ("online" if phone["online"] else "offline" if phone.get("sms", True)
                                                  else "app_closed"),
             "whatsapp": model["whatsapp"],

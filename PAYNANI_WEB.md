@@ -279,6 +279,14 @@ no marca avisos, no abre IMAP y no escribe en `state/`. La lectura está en
 - **Servicios:** el listener, el despachador, la sesión del agente, la pasarela SMS
   (modelo, PaynaniApp, batería y última conexión), WhatsApp (sólo si está activado) y
   cada cuenta adicional. Nada que paynani no administre, como el túnel.
+  La fila «Agent session» depende del runtime (#757): con Claude Code es la vigilancia
+  («Watching» o «No session»); con los demás, el mismo estado que el menú («El agente de
+  IA», abajo), con la hora en que el runtime aceptó lo último, o, con Antigravity, si algo
+  espera la siguiente conversación. En el modelo (y en `get_dashboard` para PaynaniWebMT),
+  `services.session` conserva `live`, `armed_at` y `expires_at` y agrega `runtime`,
+  `runtime_label`, `evidence` (`watch`, `delivery`, `spool` o `replay`), `status`,
+  `last_accepted` y, con `replay`, `unread`. En `/dashboard.json`, `services.session` sigue
+  siendo `live` o `none` con Claude Code; con los demás runtimes es su estado.
 - **Necesita tu atención,** en este orden y cada uno con su enlace:
   1. revisiones que no están en `ok`;
   2. cuentas desconectadas;
@@ -324,6 +332,9 @@ caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
     (`state/delivery.json`). Sólo cuenta lo que dijo el runtime actual: al cambiar de
     runtime, lo que dijo el anterior no es evidencia. Un rechazo más nuevo que la última aceptación, o una cola atorada
     más de 10 min, es «Offline».
+  - **Antigravity CLI** (#757): el despachador lo deja en el spool y los hooks de `agy` lo
+    muestran al empezar cada conversación. Que espere ahí es lo normal, así que nunca es
+    «No session»: «Online» si el despachador ya le entregó algo, si no «No data».
 - **La sección «AI Agent»** es el único título del menú (Q303; «Management» y «Tools» se quitaron en #715). Su entrada tiene el robot a la
   izquierda, alineado arriba; a la derecha va el nombre del agente (`AGENT_EMAIL_FROM_NAME`,
   o su correo si no hay nombre), y abajo, el harness y el estado. Si no se puede leer el
