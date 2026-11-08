@@ -596,6 +596,7 @@ OBSERVATION_LABELS = {
     "last_delivery_attempt": "last delivery attempt is observable",
     "last_delivery_result": "last delivery result is observable",
     "last_agent_run": "Antigravity CLI last agy -p run is observable",
+    "hooks_installed": "Antigravity CLI session hooks are observable",
 }
 
 # What the owner does about a failed headless agy run (#749 FR-10, FR-11).
@@ -608,6 +609,30 @@ ANTIGRAVITY_RUN_FIXES = {
     "timeout": "raise PAYNANI_ANTIGRAVITY_TIMEOUT in runtime.env, or check what the run was doing in agy",
     "run": "run scripts/healthcheck.py and read state/antigravity.json",
 }
+
+
+def _antigravity_hooks_check(name: str) -> dict:
+    """
+    The SessionStart and PreInvocation hooks in ~/.gemini/config/hooks.json (#749 T1).
+    Declared since T1 with no handler, so every Antigravity doctor ended in `unknown`
+    even with the hooks in place. Same reading as the `harness_step` row.
+    """
+    from . import harness_step
+
+    try:
+        found = harness_step.state("antigravity")
+        path = str(harness_step.target("antigravity"))
+    except Exception as exc:
+        return _check(name, "unknown", OBSERVATION_LABELS[name], {"error": exc.__class__.__name__})
+    facts = {"path": path, "state": found}
+    if found == "present":
+        return _check(name, "ok", f"Antigravity CLI session hooks registered in {path}", facts)
+    if found == "unknown":
+        return _check(name, "unknown", f"could not read {path} to check the Antigravity CLI hooks", facts,
+                      harness_step.command("antigravity", "--check"))
+    verb = "out of date" if found == "stale" else "missing"
+    return _check(name, "blocked", f"Antigravity CLI session hooks {verb} in {path}; mail waits in the spool",
+                  facts, harness_step.command("antigravity"))
 
 
 def _antigravity_run_check(name: str) -> dict:
@@ -755,6 +780,9 @@ def _observation_check(name: str, facts: dict) -> dict:
 
     if selected == "antigravity" and name == "last_agent_run":
         return _antigravity_run_check(name)
+
+    if selected == "antigravity" and name == "hooks_installed":
+        return _antigravity_hooks_check(name)
 
     if selected == "hermes" and name in {"notify_route_configured", "roster_route_configured"}:
         return _hermes_route_observation(name.removesuffix("_route_configured"))

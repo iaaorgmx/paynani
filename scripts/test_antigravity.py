@@ -4,6 +4,7 @@
 import os
 import pathlib
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -308,6 +309,48 @@ class Doctor(unittest.TestCase):
         result = self.check("")
         self.assertEqual("ok", result["status"])
         self.assertFalse(result["facts"]["last_agent_run"]["ok"])
+
+
+class DoctorHooks(unittest.TestCase):
+    """`hooks_installed` was declared in T1 and never checked: doctor said `unknown` on every install."""
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from paynani_lib import diagnostics, harness_step
+        self.diagnostics = diagnostics
+        self.harness_step = harness_step
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = pathlib.Path(self.tmp.name)
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def check(self):
+        return self.diagnostics._observation_check("hooks_installed", {"runtime": {"selected": "antigravity"}})
+
+    def test_registered_hooks_are_ok(self):
+        target = self.harness_step.target("antigravity")
+        target.parent.mkdir(parents=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/antigravity_hook.py"), "--install",
+                        "--settings", str(target)], check=True, capture_output=True)
+        self.assertEqual("present", self.harness_step.state("antigravity"))
+        result = self.check()
+        self.assertEqual("ok", result["status"], result)
+        self.assertNotEqual("hooks_installed", result["summary"])
+
+    def test_missing_hooks_are_blocked_with_the_command(self):
+        result = self.check()
+        self.assertEqual("blocked", result["status"], result)
+        self.assertIn("antigravity_hook.py", result["next_command"])
+
+    def test_an_unreadable_file_is_unknown_and_says_why(self):
+        target = self.harness_step.target("antigravity")
+        target.parent.mkdir(parents=True)
+        target.write_text("{not json", encoding="utf-8")
+        result = self.check()
+        self.assertEqual("unknown", result["status"], result)
+        self.assertIn("could not read", result["summary"])
 
 
 class Classify(unittest.TestCase):
