@@ -264,6 +264,38 @@ with tempfile.TemporaryDirectory() as raw:
     check("the provider duplicate is recorded as suppressed", latest[duplicate["event_id"]]["state"] == "suppressed")
     check("the suppression points to the canonical event", latest[duplicate["event_id"]]["related_event_id"] == first["event_id"])
 
+    # #749 F2 field test: an agent run the adapter waits for (agy -p) marks the
+    # event replied while it runs; the dispatcher must not turn it back into
+    # dispatched afterwards.
+    class Runner:
+        NAME = "runner"
+
+        def __init__(self, marks):
+            self.marks = marks
+
+        def deliver(self, record):
+            for state in self.marks:
+                ledger.transition(lifecycle, record["event_id"], state, runtime="agent")
+            return accepted("spooled; agy -p run completed")
+
+    for uid, marks, expected in ((10, ("presented", "replied"), "replied"),
+                                 (11, ("presented", "closed"), "closed"),
+                                 (12, ("presented",), "presented"),
+                                 (13, (), "dispatched")):
+        item = envelope(uid, address="known@example.com", roster_match=True,
+                        message_id=f"<run-{uid}@example.test>")
+        event.append(journal, item)
+        dispatch.CATCHUP_PACE = 0
+        dispatch.run_once(Runner(marks), journal, tmp / "cursor", ledger_path=lifecycle)
+        dispatch.CATCHUP_PACE = old_pace
+        check(f"after an agent run that marked {marks or 'nothing'}, the event stays {expected}",
+              ledger.latest(lifecycle)[item["event_id"]]["state"] == expected)
+
+    check("already_past: observed is never later",
+          not ledger.already_past(lifecycle, "missing-event", "dispatched"))
+    check("already_past: an unknown state is never past",
+          not ledger.already_past(lifecycle, first["event_id"], "nonsense"))
+
 old_find_binary = codex.find_binary
 old_run = codex.subprocess.run
 codex.find_binary = lambda: "/bin/codex"

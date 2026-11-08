@@ -267,6 +267,31 @@ def classify_run(returncode, stdout, stderr):
     return False, "run", error or f"status {facts['status'] or '?'} with exit {returncode}", facts
 
 
+# Where the official installers put the tools the agent runs (agy, himalaya), which
+# a systemd user service does not have on its PATH.
+USER_BIN_DIRS = ("~/.local/bin", "~/.cargo/bin")
+
+
+def run_env(binary=None):
+    """
+    The environment for `agy -p`: the dispatcher's, with the user's bin folders
+    on PATH. The run inherits the service's minimal PATH, and in the #749 F2
+    field test the agent's `send.sh` then said "himalaya was not found on PATH"
+    and the turn ran out of time looking for why. Folders already on PATH stay
+    where they are; the added ones go after them.
+    """
+    env = dict(os.environ)
+    current = [p for p in (env.get("PATH") or "").split(os.pathsep) if p]
+    extra = []
+    candidates = [os.path.dirname(binary)] if binary else []
+    candidates += [str(Path(d).expanduser()) for d in USER_BIN_DIRS]
+    for folder in candidates:
+        if folder and folder not in current and folder not in extra and os.path.isdir(folder):
+            extra.append(folder)
+    env["PATH"] = os.pathsep.join(current + extra)
+    return env
+
+
 def agent_prompt(envelope):
     """The notice itself, then where to read the event and how to treat it."""
     import event as ev
@@ -298,7 +323,8 @@ def _start_agent_run(envelope):
         run = subprocess.run(
             [binary, "-p", agent_prompt(envelope), "--output-format", "json",
              "--print-timeout", f"{limit}s"],
-            cwd=str(_repo_root()), capture_output=True, text=True, timeout=limit + KILL_GRACE)
+            cwd=str(_repo_root()), env=run_env(binary), capture_output=True, text=True,
+            timeout=limit + KILL_GRACE)
     except subprocess.TimeoutExpired:
         record.update(ok=False, problem="timeout", detail=f"agy -p did not return within {limit + KILL_GRACE}s")
         _note_run(record)
