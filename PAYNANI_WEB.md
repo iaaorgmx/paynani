@@ -582,6 +582,12 @@ habla al servicio `paynani-telegram` por `state/telegram/control.sock` (`TELEGRA
   correo, ni el `.env`. El formulario de agregar cuenta no devuelve la contraseña
   del correo cuando hay un error.
 - **Los documentos recibidos** por WhatsApp y Telegram (#676) se bajan siempre como archivo: `attachment` con el nombre limpio (sin `/`, `\\`, comillas ni saltos de línea, y con `filename*` en UTF-8), `application/octet-stream`, `nosniff`, `no-store` y `CSP sandbox`. Así un `.html` o un `.svg` que alguien mande no corre en el origen de PaynaniWeb. El servicio los da en cada pedido sólo si el mensaje se ve en el hilo, y nunca más de 20 MB.
+- **`GET /_health` no pide sesión ni token** y siempre responde `200` con
+  `{"ok": true, "configured": <hay usuario>, "agent": {"name": "…"}}`. El nombre
+  es el mismo de `GetInstance` y va vacío sin usuario; no trae correo, versión ni
+  runtime. Lo usa «Connect paynani» de PaynaniWebMT para llenar el nombre de la
+  conexión antes de emparejar (PaynaniWebMT#94, #773). Quien conozca la dirección
+  del gateway puede ver el nombre del agente.
 - **Emparejar una app** (`POST /api/owner/pair`, JSON
   `{"code", "name", "app": {"name", "version"}}`, como en el PRD; también acepta
   `app_name` y `app_version` de primer nivel) responde `201` con `client_id` y un token `pw_…`.

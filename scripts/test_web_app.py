@@ -27,7 +27,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "harness"))
 
 from paynani_lib import i18n  # noqa: E402
-from paynani_lib.web import app, strings, users  # noqa: E402
+from paynani_lib.web import app, dashboard, strings, users  # noqa: E402
+from paynani_lib.web import agent as agent_mod  # noqa: E402
 
 passed = failed = 0
 
@@ -221,11 +222,50 @@ for path in ("/assets/../web/users.py", "/assets/app.css/../../web/users.py", "/
     status, _, body = get(path)
     check(f"{path}: no sirve ningún archivo fuera de la lista", False, "def verify_password" in body or "scrypt" in body)
 status, hdrs, body = get("/_health")
-check("/_health sin usuario", (200, {"ok": True, "configured": False}), (status, json.loads(body)))
+check("/_health sin usuario: agent.name vacío (PaynaniWebMT#94 FR-7)",
+      (200, {"ok": True, "configured": False, "agent": {"name": ""}}), (status, json.loads(body)))
 
 users.create("ana@example.com", "Ana Ruiz", GOOD, user_file)
 status, _, body = get("/_health")
-check("/_health con usuario", {"ok": True, "configured": True}, json.loads(body))
+health = json.loads(body)
+check("/_health con usuario: sólo ok, configured y agent.name", ({"ok", "configured", "agent"}, {"name"}, True),
+      (set(health), set(health["agent"]), health["configured"]))
+
+
+# FR-7: el nombre es el mismo de GetInstance (agent.summary), y /_health no calcula el estado.
+class _NameOnly(dashboard.Source):
+    def __init__(self, info):
+        self.info = info
+        self.status_calls = 0
+
+    def agent(self):
+        return self.info
+
+    def services(self):
+        self.status_calls += 1
+        return {}
+
+    def events(self):
+        self.status_calls += 1
+        return []
+
+
+for info, want in (({"name": "Iris Claude-Tob", "email": "iris@example.com", "runtime": "codex"}, "Iris Claude-Tob"),
+                   ({"name": "", "email": "metis.tob@example.com", "runtime": ""}, "metis.tob"),
+                   ({"name": "<b>Eve</b>", "email": "", "runtime": ""}, "<b>Eve</b>")):
+    src = _NameOnly(info)
+    srv = app.serve("127.0.0.1", 0, user_file, ctx=app.Context(user_file, dashboard_source=src))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+    conn.request("GET", "/_health")
+    resp = conn.getresponse()
+    got = json.loads(resp.read())
+    conn.close()
+    srv.shutdown()
+    srv.server_close()
+    check(f"/_health agent.name = {want!r}, sin calcular el estado", (200, want, 0),
+          (resp.status, got["agent"]["name"], src.status_calls))
+    check(f"/_health y GetInstance dan el mismo nombre ({want!r})", agent_mod.summary(src)["name"], got["agent"]["name"])
 status, hdrs, page = get("/")
 check("con usuario y sin sesión, / lleva a /login (T3)", (303, "/login"), (status, hdrs.get("location")))
 status, _, page = get("/login")
