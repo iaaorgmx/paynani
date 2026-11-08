@@ -130,11 +130,27 @@ class Hook(unittest.TestCase):
         self.assertEqual({}, self.run_hook(self.common(invocationNum="x")))
 
     def test_output_shape(self):
+        # The shape agy 1.5.3 accepted in F0 (#749); a `metadata` string made it drop the step.
         self.assertEqual({}, ss.antigravity_output(""))
-        self.assertEqual(
-            {"injectSteps": [{"systemMessage": {"systemMessage": "hi",
-                                                "metadata": {"source": "paynani"}}}]},
-            ss.antigravity_output("hi"))
+        self.assertEqual({"injectSteps": [{"systemMessage": {"systemMessage": "hi"}}]},
+                         ss.antigravity_output("hi"))
+        self.assertTrue(ss.antigravity_output_valid(ss.antigravity_output("hi")))
+        self.assertTrue(ss.antigravity_output_valid({}))
+
+    def test_the_shape_agy_rejected_is_not_valid(self):
+        rejected = {"injectSteps": [{"systemMessage": {"systemMessage": "hi",
+                                                       "metadata": {"source": "paynani"}}}]}
+        self.assertFalse(ss.antigravity_output_valid(rejected))
+        self.assertFalse(ss.antigravity_output_valid({"injectSteps": [{"systemMessage": "hi"}]}))
+        self.assertFalse(ss.antigravity_output_valid({"injectSteps": []}))
+        self.assertFalse(ss.antigravity_output_valid([]))
+
+    def test_an_invalid_shape_is_printed_but_not_acknowledged(self):
+        self.spool.write_text(LINE_A + "\n")
+        bad = {"injectSteps": [{"systemMessage": {"systemMessage": "x", "metadata": {"a": "b"}}}]}
+        with mock.patch.object(ss, "antigravity_output", return_value=bad):
+            self.run_hook(self.common())
+        self.assertFalse(self.offset.exists())
 
     def test_main_routes_the_flag(self):
         with mock.patch.object(sys, "argv", ["session_start.py", "--antigravity"]), \

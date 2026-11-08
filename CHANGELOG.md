@@ -22,6 +22,14 @@
   - `healthcheck.py` dice cuántos bytes de `antigravity.spool` no ha mostrado el hook.
   - `install_manifest.py` conoce el runtime, y `upgrade_plan.py` vuelve a instalar los hooks cuando cambia `antigravity_hook.py`.
   - Pruebas en `scripts/test_antigravity_install.py`, `scripts/test_install.sh` y las de macOS.
+- **Antigravity CLI: lo que corrigió la prueba en un `agy` real (#749 F0, T8).** Manu Antig-Tob instaló paynani en `agy` 1.5.3 (WSL2) siguiendo INSTALL.md, y el correo funcionó de punta a punta. Hallazgos completos en #749.
+  - **El hook ya llega al modelo.** `agy` descartaba el paso entero por el `"metadata": {"source": "paynani"}` (`type mismatch: cannot convert string to message`, sólo en su `cli.log`). La salida es ahora `{"injectSteps": [{"systemMessage": {"systemMessage": "…"}}]}`, la forma que una prueba aislada con `agy -p` confirmó.
+  - **El hook ya no marca como visto lo que `agy` no aceptaría.** Antes avanzaba `antigravity.offset` aunque `agy` rechazara la salida, y el aviso se perdía. Ahora valida la forma exacta antes de reconocer (`antigravity_output_valid()`).
+  - **El clone va en `~/.gemini/workspace/paynani`.** Las herramientas de `agy` no pueden leer nada en `~/.gemini/antigravity-cli` («system protection boundary»), y su sandbox lo monta de sólo lectura. `bootstrap.sh` y `bootstrap_macos.py` clonan ahí por omisión; INSTALL.md, AGENTS.md y `harness/paths.py` lo dicen. Las credenciales del arnés siguen donde estaban.
+  - **`send.sh` ya no culpa a Himalaya v1** cuando `himalaya --version` no contesta nada (pasa en un sandbox): dice si no encontró el binario o si no respondió, y sugiere correrlo fuera del sandbox.
+  - **`bootstrap_user.py` no termina con un traceback** cuando no puede escribir (`EROFS`, `EACCES`, `EPERM`): dice qué archivo y que se repita fuera del sandbox.
+  - **La regla de `GEMINI.md` y la documentación** dicen qué comandos tienen que correr fuera del sandbox de `agy` (sin red, sin systemd, sin `sudo`), que `onboard` se corre en segundo plano y que `agy` recarga `hooks.json` solo.
+  - Pruebas en `test_antigravity_session.py`, `test_send_sh.py`, `test_bootstrap_user.py`, `test_bootstrap.sh` y `test_bootstrap_macos.py`.
 
 ## 0.24.0 (2026-11-07)
 
