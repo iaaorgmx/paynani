@@ -34,6 +34,9 @@ RUNTIME_ROOT = {
     "opencode": ".opencode",
     "antigravity": ".gemini/antigravity-cli",
 }
+# The clone goes under <root>/workspace/paynani, except on Antigravity CLI, whose
+# agent cannot read anything under ~/.gemini/antigravity-cli (#749 F0).
+CLONE_ROOT = {"antigravity": ".gemini"}
 HOMEBREW_INSTALL = "https://brew.sh/"
 
 
@@ -250,7 +253,7 @@ def default_ref() -> str:
 def resolve_clone(args: argparse.Namespace, runtime: str, home: Path) -> Path:
     if args.dir:
         return Path(args.dir).expanduser().resolve()
-    return home / RUNTIME_ROOT[runtime] / "workspace" / "paynani"
+    return home / CLONE_ROOT.get(runtime, RUNTIME_ROOT[runtime]) / "workspace" / "paynani"
 
 
 def ensure_clone(args: argparse.Namespace, runtime: str) -> tuple[Path, str]:

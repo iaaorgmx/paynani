@@ -1896,11 +1896,32 @@ picks it up through two hooks. This is the `replay-only` level of #749; a headle
 **No `agy` binary is required.** Delivery is a file append, so `install.sh`
 does not look for it.
 
-**Credentials** live where the harness keeps its files:
-`~/.gemini/antigravity-cli/workspace/.env`. `agy` shares `~/.gemini` with Gemini
-CLI, so the root is its own folder, and a `.env` in `~/.gemini/workspace` is never
-read: it could be another agent's mailbox.
-The recommended clone location is `~/.gemini/antigravity-cli/workspace/paynani`.
+**Clone into `~/.gemini/workspace/paynani`, not under `~/.gemini/antigravity-cli`.**
+`agy` keeps its own files in `~/.gemini/antigravity-cli` and walls that folder
+off from the agent: its file tools refuse to read anything there ("system
+protection boundary"), and its sandbox mounts it read-only. A clone there is a
+clone the agent cannot read. #749 F0 found this on `agy` 1.5.3.
+
+**Credentials.** `scripts/paynani onboard` writes them to the clone's own `.env`
+(`~/.gemini/workspace/paynani/.env`, mode 600), and that is what paynani uses.
+A `.env` you put in `~/.gemini/antigravity-cli/workspace/.env` by hand is read
+first instead, and `agy`'s file tools cannot open it. A `.env` loose in
+`~/.gemini/workspace` is never read: `agy` shares `~/.gemini` with Gemini CLI,
+so it could be another agent's mailbox.
+
+**`agy` runs every shell command in a sandbox first, and the sandbox has no
+network, no DNS, no systemd, no D-Bus and no `sudo`.** These fail inside it
+and work outside it: `scripts/preflight.py`, `scripts/send.sh`,
+`scripts/paynani event show`, `scripts/healthcheck.py`, `scripts/install.sh`,
+`scripts/bootstrap_user.py` and `systemctl --user`. `scripts/paynani event
+mark` works inside. When one fails in the sandbox, `agy` offers to run it
+outside, and your human approves. Two steps are your human's alone, in their
+own terminal: `sudo loginctl enable-linger <user>` and anything else that
+needs `sudo`.
+
+**`agy` shows a command's output only when the command ends.** `scripts/paynani
+onboard` stays up until the form is saved, so run it in the background, read
+the link from its output, and give it to your human right away.
 
 ```bash
 scripts/install.sh --runtime antigravity --dry-run   # review the plan
@@ -1928,9 +1949,15 @@ written. Both hooks run `harness/session_start.py --antigravity`:
   `/resume`), which does not fire `SessionStart`. It acts only on the first model
   call of each turn (`invocationNum` 0), so it adds at most one replay per turn.
 
-The replay reaches the model as an `injectSteps` system message. **Mail that
-arrives while a conversation sits idle waits in the spool until the next turn**;
-that is the expected behaviour of this level, not a fault.
+The replay reaches the model as an `injectSteps` system message,
+`{"systemMessage": {"systemMessage": "…"}}` and nothing else: with a
+`metadata` object holding a string, `agy` 1.5.3 drops the whole step and logs
+`type mismatch: cannot convert string to message` to its own `cli.log`, where
+no hook sees it. The hook therefore marks the spool read only after printing
+that exact shape. `agy` reloads `hooks.json` by itself; an open conversation
+picks up newly registered hooks on its next turn. **Mail that arrives while a
+conversation sits idle waits in the spool until the next turn**; that is the
+expected behaviour of this level, not a fault.
 
 **The agent's standing rule** goes in `agy`'s global rules file,
 `~/.gemini/GEMINI.md`, between paynani's markers: what `, roster]` means, how to
@@ -1963,13 +1990,69 @@ this clone, and only those, in `permissions.allow` of
 writes them only after the owner says yes; every other key in the file is kept.
 Never use `--dangerously-skip-permissions` for an agent that holds a mailbox.
 
+These rules let a command run **in the sandbox** without asking. They do not
+cover running it outside: in F0, `send.sh` still asked the first time it had to
+leave the sandbox. When your human approves with "always allow", `agy` saves a
+prefix rule of its own, `command(<clone>/scripts/send.sh)`, and stops asking.
+Approve exactly `scripts/send.sh` and `scripts/paynani` that way, not a
+broader prefix.
+
+**Optional: let mail reach the agent with no conversation open.** Setting
+`PAYNANI_ANTIGRAVITY_MODE=agent` in `runtime.env` makes the dispatcher run
+`agy -p "<notice>" --output-format json --print-timeout <n>s` in the clone for
+each event, after it writes the spool. It is **off by default**, because it
+lets a roster message start work on this machine with nobody watching. Read the
+roster rules in `AGENTS.md` before turning it on.
+
+- Each event gets a new `agy` conversation. Resuming one by id worked in #749
+  F2, but took 105 s against 7 s for a new one, and a new one cannot collide
+  with a conversation your human has open.
+- `PAYNANI_ANTIGRAVITY_TIMEOUT` (seconds, default 300) is the turn limit. The
+  dispatcher waits for the run, so it also bounds how long one event holds the
+  queue.
+- The run counts only when `agy` exits 0 with `"status": "SUCCESS"` and stderr
+  names no refused permission. A failed run still leaves the event in the spool,
+  and the hooks show it in the next conversation. It is never run again,
+  because a retry would append the same line every time.
+- `state/antigravity.json` keeps the last run: event id, times, conversation id,
+  `ok`, and a `problem` (`login`, `permission`, `timeout` or `run`) with one
+  line of detail. It never keeps the prompt or the reply. `scripts/paynani
+  doctor` reports it as `last_agent_run`, with what to do.
+- The hooks run inside `agy -p` too. The run's own `PreInvocation` shows the
+  spool and moves `antigravity.offset`, so the event does not come back in the
+  next conversation.
+- `agentMode: "auto"` in `agy`'s settings decides commands that leave the
+  sandbox with a risk classifier instead of a question. The permission rules
+  above still apply.
+- The notice (sender and subject) goes in `agy`'s command line, so other users
+  of the machine can see it in `ps` while the run lasts. `agy` 1.5.3 does not
+  read a `-p` prompt from stdin (`-p -` is taken as the prompt `-`). On an
+  agent's own host there is usually one user; on a shared one, leave this mode
+  off.
+
+**The login when paynani starts `agy` by itself.** In #749 F2, `agy -p` ran
+from a systemd user service with the Google account and the system keyring, the
+same login the owner made in a terminal (Metis[Q138] = A). If the keyring does
+not work from systemd on your host (`doctor` reports a `login` problem), use one
+of `agy`'s two official alternatives. Your human sets either one; paynani never
+asks for or stores the key:
+
+- `GEMINI_API_KEY` with `"modelProvider": "gemini"` in `agy`'s settings, the key
+  in an environment file for the dispatcher service at mode 600, never in the
+  mailbox `.env` and never in a chat. It is billed per use in AI Studio, not
+  through the account's plan.
+- `AGY_ADC_AUTH=true` after `gcloud auth application-default login`.
+
 **Verifying it.** `scripts/paynani doctor` reports `harness_step` as `blocked`
 until the hooks are registered. `scripts/healthcheck.py` reports how many spool
 bytes no conversation has picked up yet; with no conversation open, unread bytes
 are this runtime's normal resting state, and the mail is safe in the spool.
 
-The hook format, the `GEMINI.md` location and the `command(regex:…)` form come
-from Antigravity's documentation; #749 F0 measures them on a real host.
+#749 F0 checked these on `agy` 1.5.3 (Ubuntu 24.04 on WSL2): the hook format
+above, `~/.gemini/GEMINI.md` as the rules file, and the body file the agent
+writes for `send.sh` (it lands in
+`~/.gemini/antigravity-cli/brain/<conversation>/scratch/`, which `send.sh`
+reads). Whether `agy` honours the `command(regex:…)` form is not settled yet.
 
 ---
 

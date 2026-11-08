@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import io
 import os
@@ -207,6 +208,19 @@ def dry_run_fresh_openclaw(w: World):
 
 
 with_world(dry_run_fresh_openclaw)
+
+
+def clone_dir_antigravity(_w: World):
+    # agy cannot read anything under ~/.gemini/antigravity-cli (#749 F0).
+    home = Path("/home/x")
+    args = argparse.Namespace(dir=None)
+    check("macOS: antigravity clones into ~/.gemini/workspace/paynani",
+          bm.resolve_clone(args, "antigravity", home) == home / ".gemini" / "workspace" / "paynani")
+    check("macOS: other runtimes keep <root>/workspace/paynani",
+          bm.resolve_clone(args, "codex", home) == home / ".codex" / "workspace" / "paynani")
+
+
+with_world(clone_dir_antigravity)
 
 
 def service_python_uses_stable_homebrew_opt_path(w: World):

@@ -492,6 +492,14 @@ reset; mkdir -p "$home/.hermes"
 bs
 assert "one harness and no --runtime: its workspace, and --runtime goes empty to the user half" \
     'called "git clone --branch v0.11.0 https://example.invalid/paynani.git $home/.hermes/workspace/paynani" && called "bootstrap_user.py --runtime  --ref v0.11.0"'
+reset; mkdir -p "$home/.gemini/antigravity-cli"
+bs
+assert "antigravity found by its harness folder clones into ~/.gemini/workspace (#749 F0)" \
+    'called "git clone --branch v0.11.0 https://example.invalid/paynani.git $home/.gemini/workspace/paynani" && ! called "antigravity-cli/workspace/paynani"'
+reset
+bs --runtime antigravity
+assert "--runtime antigravity clones into ~/.gemini/workspace, which agy can read (#749 F0)" \
+    'called "git clone --branch v0.11.0 https://example.invalid/paynani.git $home/.gemini/workspace/paynani"'
 reset
 bs
 assert "no harness, no --runtime, no --dir: exit 2"         '[ "$rc" -eq 2 ] && ! called "git clone"'

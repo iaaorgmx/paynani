@@ -29,6 +29,7 @@ terminal) or an invalid option.
 from __future__ import annotations
 
 import argparse
+import errno
 import getpass
 import json
 import os
@@ -611,8 +612,10 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
         setattr(ctx, key, value)
 
     steps = steps_for(args)
+    current = None
     try:
         for number, (name, function, repeat) in enumerate(steps, start=1):
+            current = (name, repeat)
             ctx.say(f"[{number}/{len(steps)}] {name}")
             ok, detail = function(ctx)
             if not ok:
@@ -624,6 +627,18 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
     except NeedData as exc:
         ctx.say(f"bootstrap_user: {exc}")
         return EX_USAGE
+    except OSError as exc:
+        # An agent sandbox (Antigravity CLI's, #749 F0) mounts ~/.config and the
+        # harness folders read-only; a traceback there reads like a bug in paynani.
+        if exc.errno not in (errno.EROFS, errno.EACCES, errno.EPERM):
+            raise
+        ctx.say(ctx.L("b.read_only", file=exc.filename or "?", error=exc.strerror or exc))
+        if current:
+            # The same two lines as a step that fails (Iris's review of #758), so
+            # the human knows which command to run outside the sandbox.
+            ctx.say(ctx.L("b.not_ready", step=current[0]))
+            ctx.say(ctx.L("b.repeat", command=current[1]))
+        return EX_STEP
 
     if args.dry_run:
         return EX_OK

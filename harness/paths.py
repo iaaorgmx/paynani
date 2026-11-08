@@ -15,7 +15,8 @@ because nothing in this file checks them:
     Claude Code    ~/.claude/workspace/paynani
     OpenAI Codex   ~/.codex/workspace/paynani
     OpenCode       ~/.opencode/workspace/paynani
-    Antigravity    ~/.gemini/antigravity-cli/workspace/paynani
+    Antigravity    ~/.gemini/workspace/paynani  (agy cannot read inside
+                   ~/.gemini/antigravity-cli; #749 F0)
 
 The rule is deliberately boring, and it is the whole rule:
 

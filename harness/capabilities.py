@@ -195,7 +195,7 @@ CAPABILITIES = {
             "delivery_modes": ("replay",),
             "durable_handoff": "supported",
             "requires_open_session": "no",
-            "starts_agent_run": "no",
+            "starts_agent_run": "opt_in",
             "presentation_observable": "unknown",
             "headless_mode": "supported",
             "credentials_location": "harness_workspace_env",
@@ -205,16 +205,18 @@ CAPABILITIES = {
             "spool_writable",
             "spool_unread_bytes",
             "hooks_installed",
+            "last_agent_run",
         ),
         "notes": (
             "Delivery is a durable spool append. agy's SessionStart hook replays it "
             "for a new conversation and PreInvocation (invocationNum 0) at the start "
-            "of each turn, so a resumed conversation sees it too (#749)."
+            "of each turn, so a resumed conversation sees it too (#749). Agent mode "
+            "(PAYNANI_ANTIGRAVITY_MODE=agent) is opt-in: agy -p per event."
         ),
         "documentation": {
-            "how_it_arrives": "Paynani appends one line to state/antigravity.spool.",
+            "how_it_arrives": "Paynani appends one line to state/antigravity.spool; with agent mode it also runs agy -p.",
             "guarantee": "The event is durably waiting for the next agy conversation or turn.",
-            "do_not_promise": "Do not promise an agy session was open or read the spool.",
+            "do_not_promise": "Do not promise an agy session was open or read the spool, nor that agy -p answered the mail.",
         },
     },
 }
