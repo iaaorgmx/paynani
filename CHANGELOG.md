@@ -1,5 +1,9 @@
 # Changelog
 
+## Sin publicar
+
+- **Antigravity CLI: el adaptador (#749 T1).** El runtime `antigravity` entrega cada aviso en `state/antigravity.spool`, como Claude Code, y los hooks de `agy` lo van a mostrar al empezar cada conversación y cada turno (T2). Nivel `replay-only` en `harness/capabilities.py`, DESIGN.md y HARNESS_CAPABILITIES.md. Todavía no se instala: `--runtime antigravity` llega con T4.
+
 ## 0.24.0 (2026-11-07)
 
 ### Si actualizas desde 0.23.0
