@@ -1918,6 +1918,8 @@ scripts/antigravity_hook.py --check       # exits 0 when it is in place for this
 scripts/antigravity_hook.py --uninstall   # remove it, backing up first
 ```
 
+`scripts/install.sh --runtime antigravity --uninstall` leaves the hooks in place
+and prints the `--uninstall` command above instead.
 Everything goes under one top-level key, `paynani`, and no other key is read or
 written. Both hooks run `harness/session_start.py --antigravity`:
 
