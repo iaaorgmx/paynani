@@ -172,7 +172,8 @@ class AgentMode(unittest.TestCase):
         self.assertTrue(result.ok, result)
         self.assertIn("completed", result.detail)
         call = __import__("json").loads(self.args.read_text())
-        self.assertEqual(str(self.clone), call["cwd"])
+        # macOS: /var is a symlink to /private/var, and the child sees the resolved path.
+        self.assertEqual(self.clone.resolve(), pathlib.Path(call["cwd"]).resolve())
         argv = call["argv"]
         self.assertEqual("-p", argv[0])
         self.assertIn("Someone — Subject", argv[1])
