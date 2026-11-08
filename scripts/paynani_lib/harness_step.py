@@ -8,6 +8,8 @@ configuration before a roster message can reach a session:
 - Codex: the SessionStart and SessionEnd hooks in $CODEX_HOME/hooks.json
 - OpenCode: the paynani plugin in OpenCode's plugin directory
 - OpenClaw: the standing rule in ~/.openclaw/workspace/AGENTS.md (#186)
+- Antigravity CLI: the SessionStart and PreInvocation hooks under the `paynani`
+  key of ~/.gemini/config/hooks.json (#749)
 
 The scripts that write them already exist and stay the only writers
 (`scripts/claude_hook.py` and the rest): they merge, back up the file first and
@@ -39,6 +41,7 @@ STEPS = {
     "codex": ("codex_hook.py", "--settings", "the Codex session hooks"),
     "opencode": ("opencode_plugin.py", "--target", "the paynani OpenCode plugin"),
     "openclaw": ("openclaw_rules.py", "--target", "the paynani standing rule for OpenClaw"),
+    "antigravity": ("antigravity_hook.py", "--settings", "the Antigravity CLI session hooks"),
 }
 
 
@@ -69,6 +72,8 @@ def target(runtime: str, home: Path | None = None) -> Path:
         return base / "opencode" / "plugins" / "paynani.js"
     if runtime == "openclaw":
         return home / ".openclaw" / "workspace" / "AGENTS.md"
+    if runtime == "antigravity":
+        return home / ".gemini" / "config" / "hooks.json"
     raise ValueError(f"{runtime} has no harness step")
 
 
@@ -124,6 +129,13 @@ def state(runtime: str, home: Path | None = None) -> str:
             except FileNotFoundError:
                 return "absent"
             return "present" if current == plugin.content() else "stale"
+        if runtime == "antigravity":
+            settings = _read_json(path)
+            if settings is None:
+                return "unknown"
+            # missing -> absent; disabled, another clone or edited by hand -> stale.
+            found = _module("antigravity_hook").state(settings)
+            return {"registered": "present", "missing": "absent"}.get(found, "stale")
         return _module("openclaw_rules").state(path)
     except (Exception, SystemExit):
         return "unknown"

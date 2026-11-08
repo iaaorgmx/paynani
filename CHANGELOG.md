@@ -13,6 +13,14 @@
   - Pruebas en `scripts/test_antigravity_hook.py`.
 - **Antigravity CLI: las credenciales del buzón** (#749 FR-4, T5). `~/.gemini/antigravity-cli` es una raíz más de `HARNESS_ROOTS` (`harness/paths.py`) y de `PAYNANI_HARNESS_ROOTS` (`scripts/envpath.sh`), así que `~/.gemini/antigravity-cli/workspace/.env` se lee donde está, como con los demás harnesses. Es la primera raíz de dos niveles: `agy` comparte `~/.gemini` con Gemini CLI, y `~/.gemini/workspace/.env` nunca se toma. Las tablas de AGENTS.md (paso 2) e INSTALL.md tienen la fila nueva, y `test_docs.py` ya reconoce una raíz anidada en esas tablas.
 - **Antigravity CLI: la regla del agente y sus permisos** (#749 FR-6 y FR-7, T6). `scripts/antigravity_rules.py` (`--print`, `--check`, `--install`, `--uninstall`) escribe en `~/.gemini/GEMINI.md`, entre marcas, qué significa `, roster]`, cómo leer y cerrar un aviso y cómo contestar en cada canal, igual que la regla de OpenClaw y con los mismos ayudantes. `harness_rules.py` acepta el runtime `antigravity`: propone en `~/.gemini/antigravity-cli/settings.json` sólo `scripts/paynani` y `scripts/send.sh` de este clone (`command(regex:…)` anclado, según la documentación de `agy`), muestra la regla palabra por palabra y no escribe nada sin que el dueño diga que sí. Nunca `--dangerously-skip-permissions`.
+- **Antigravity CLI: `--runtime antigravity` en la instalación (#749, T4).**
+  - `scripts/install.sh`, `bootstrap.sh` (Linux) y `scripts/bootstrap_macos.py` + `scripts/install_macos.py` (macOS) lo aceptan. Escriben `PAYNANI_RUNTIME=antigravity` en `runtime.env` y prueban que se pueda escribir `state/antigravity.spool`. Al final nombran el paso de los hooks (`antigravity_hook_next_step=`), y `--uninstall` dice cómo quitarlos.
+  - La carpeta del harness es `~/.gemini/antigravity-cli`. Por omisión el clone va en `~/.gemini/antigravity-cli/workspace/paynani`.
+  - `bootstrap_user.py` registra los hooks con `antigravity_hook.py` después de mostrarlos. Ahora también detecta una raíz de dos niveles (`detect_runtimes()` usa la ruta relativa completa).
+  - `paynani doctor` reporta `harness_step` como `blocked` mientras falten los hooks, o si apuntan a otro clone o están apagados.
+  - `healthcheck.py` dice cuántos bytes de `antigravity.spool` no ha mostrado el hook.
+  - `install_manifest.py` conoce el runtime, y `upgrade_plan.py` vuelve a instalar los hooks cuando cambia `antigravity_hook.py`.
+  - Pruebas en `scripts/test_antigravity_install.py`, `scripts/test_install.sh` y las de macOS.
 
 ## 0.24.0 (2026-11-07)
 

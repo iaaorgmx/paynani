@@ -39,6 +39,7 @@ Usage:
   scripts/install.sh --runtime claudecode [--upgrade|--uninstall] [--dry-run]
   scripts/install.sh --runtime codex [--upgrade|--uninstall] [--dry-run]
   scripts/install.sh --runtime opencode [--upgrade|--uninstall] [--dry-run]
+  scripts/install.sh --runtime antigravity [--upgrade|--uninstall] [--dry-run]
   scripts/install.sh --runtime RUNTIME [--upgrade] --with-sms     (adds the SMS gateway and PaynaniWeb)
                      [--upgrade|--uninstall] [--non-interactive]
                      [--notify-secret-file PATH --roster-secret-file PATH]
@@ -50,7 +51,7 @@ Modes:
   --uninstall        Remove only artifacts owned by this installer
 
 Options:
-  --runtime RUNTIME          Required: openclaw, hermes, claudecode, codex, or opencode
+  --runtime RUNTIME          Required: openclaw, hermes, claudecode, codex, opencode, or antigravity
   --deliver TARGET          Guidance label for an operator-managed Hermes target
   --chat-id ID               Guidance label for that target's chat ID
   --profile PROFILE          Guidance label for an existing operator-managed profile
@@ -299,7 +300,7 @@ discover_prerequisites() {
     if [[ "$mode" == uninstall ]]; then
         runtime_cli="not-required-for-uninstall"
     else
-        if [[ "$runtime" == claudecode || "$runtime" == codex || "$runtime" == opencode ]]; then
+        if [[ "$runtime" == claudecode || "$runtime" == codex || "$runtime" == opencode || "$runtime" == antigravity ]]; then
             # No runtime CLI is required. Delivery is a file append, and the
             # runtime binary is only used by optional session-side setup -- so
             # demanding it here would refuse a host that this runtime works
@@ -593,7 +594,7 @@ load_ownership_manifest() {
             exit "$EX_CONFIG"
         fi
         previous_runtime=""
-        for candidate in openclaw hermes claudecode codex opencode; do
+        for candidate in openclaw hermes claudecode codex opencode antigravity; do
             [[ "$candidate" != "$runtime" ]] || continue
             mapfile -d '' -t arguments < <(manifest_arguments "$candidate")
             if output=$(python3 "$ROOT/scripts/install_manifest.py" read "${arguments[@]}" 2>&1); then
@@ -663,6 +664,11 @@ render_artifact() {
         fi
         if [[ "$runtime" == opencode ]]; then
             printf 'PAYNANI_RUNTIME=opencode\n'
+            printf '%s' "$recorded_env_line"
+            return
+        fi
+        if [[ "$runtime" == antigravity ]]; then
+            printf 'PAYNANI_RUNTIME=antigravity\n'
             printf '%s' "$recorded_env_line"
             return
         fi
@@ -1394,6 +1400,32 @@ probe_opencode_spool() {
     printf 'opencode_plugin_next_step=%s\n' "python3 $ROOT/scripts/opencode_plugin.py --install"
 }
 
+probe_antigravity_spool() {
+    # Antigravity CLI (#749) is read the way Claude Code is: from inside an `agy`
+    # session, by its SessionStart and PreInvocation hooks. No `agy` needs to be
+    # open, or even installed, for the durable half to be ready. The hooks are
+    # registered separately with scripts/antigravity_hook.py --install, and
+    # nothing here can see whether a session runs them.
+    local state spool probe
+    state=$(python3 -c 'import sys; sys.path.insert(0, "'"$ROOT"'/harness"); import paths; print(paths.state_dir())') || \
+        die_config 'could not resolve the state directory for the Antigravity spool'
+    spool="$state/antigravity.spool"
+    mkdir -p -- "$state" 2>/dev/null || \
+        die_config "state directory $state cannot be created"
+    probe="$state/.antigravity-spool-probe.$$"
+    if ! : >"$probe" 2>/dev/null; then
+        rm -f -- "$probe" 2>/dev/null || true
+        die_config "state directory $state is not writable, so no event could ever be delivered"
+    fi
+    rm -f -- "$probe" 2>/dev/null || true
+    if [[ -e "$spool" && ! -w "$spool" ]]; then
+        die_config "$spool exists but is not writable"
+    fi
+    printf 'antigravity_spool_probe=accepted spool=%s\n' "$spool"
+    printf 'antigravity_spool_probe=hooks-replay scope=writability-only\n'
+    printf 'antigravity_hook_next_step=%s\n' "python3 $ROOT/scripts/antigravity_hook.py --install"
+}
+
 print_final_verification_report() {
     local unit label secret_path secret_mode
     printf 'verification_report_begin\n'
@@ -1448,6 +1480,12 @@ print_final_verification_report() {
         # The plugin runs inside OpenCode. From here it is unobservable whether
         # it is registered in the OpenCode that will actually be opened.
         printf 'verification_note=opencode-delivery scope=spool-writable-only plugin=unobservable\n'
+    elif [[ "$runtime" == antigravity ]]; then
+        printf 'verification_secret=not-applicable runtime=antigravity\n'
+        printf 'verification_smoke=antigravity-spool result=writable\n'
+        # The hooks run inside agy. From here it is unobservable whether a
+        # session runs them, as with Claude Code.
+        printf 'verification_note=antigravity-delivery scope=spool-writable-only session-hooks=unobservable\n'
     else
         printf 'verification_secret=not-applicable runtime=openclaw\n'
         printf 'verification_smoke=openclaw-service-environment result=accepted\n'
@@ -1641,7 +1679,7 @@ done
 
 [[ -n "$runtime" ]] || die_usage '--runtime is required'
 case "$runtime" in
-    openclaw|hermes|claudecode|codex|opencode) ;;
+    openclaw|hermes|claudecode|codex|opencode|antigravity) ;;
     *) die_usage "unsupported runtime: $runtime" ;;
 esac
 
@@ -1760,6 +1798,10 @@ if [[ "$mode" == uninstall ]]; then
         # The plugin file lives in OpenCode's configuration, not in the ownership
         # manifest, so it is named here rather than removed silently.
         printf 'install: the OpenCode plugin is not removed by this step; run: python3 %s/scripts/opencode_plugin.py --uninstall\n' "$ROOT"
+    elif [[ "$runtime" == antigravity ]]; then
+        # The hooks sit under the paynani key of agy's own hooks.json, outside the
+        # ownership manifest: named here rather than removed silently (#749).
+        printf 'install: the Antigravity CLI hooks are not removed by this step; run: python3 %s/scripts/antigravity_hook.py --uninstall\n' "$ROOT"
     elif [[ "$runtime" == openclaw ]]; then
         # Same boundary: the standing rule sits in the agent's own AGENTS.md.
         # Leaving it there tells an agent to act on mail nothing tags any more.
@@ -1799,6 +1841,8 @@ elif [[ "$runtime" == codex ]]; then
     probe_codex_spool
 elif [[ "$runtime" == opencode ]]; then
     probe_opencode_spool
+elif [[ "$runtime" == antigravity ]]; then
+    probe_antigravity_spool
 else
     probe_hermes_routes
 fi
