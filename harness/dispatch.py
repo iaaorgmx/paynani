@@ -360,10 +360,12 @@ def deliver_with_retries(adapter, record, stop, status_path=None, ledger_path=No
             if status_path:
                 note_delivery(status_path, "last_accepted", record.get("event_id"),
                               adapter.NAME, result.detail)
-            if ledger_path:
+            state = result.lifecycle or "dispatched"
+            # An agent run may have marked it replied or closed already (#749 F2).
+            if ledger_path and not ledger.already_past(ledger_path, record.get("event_id"), state):
                 ledger.transition(
                     ledger_path, record.get("event_id"),
-                    result.lifecycle or "dispatched", runtime=adapter.NAME,
+                    state, runtime=adapter.NAME,
                     detail=result.detail,
                     message_id=record.get("message_id", ""),
                     provider_id=record.get("provider_id", ""),

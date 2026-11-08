@@ -101,6 +101,24 @@ def latest(ledger_path):
     return out
 
 
+def already_past(ledger_path, event_id, state):
+    """
+    True when the event's latest state is already later than `state`.
+
+    An agent run that the adapter waits for (Antigravity `agy -p`, `claude -p`,
+    `codex exec`) marks the event `presented`, `replied` or `closed` while it
+    runs. When the dispatcher then records `dispatched`, the event read as
+    unanswered again: the #749 F2 field test showed `replied` turning back into
+    `dispatched`. `observed` is never "later"; `suppressed` is.
+    """
+    if state not in STATES:
+        return False
+    current = (latest(ledger_path).get(str(event_id or "").strip()) or {}).get("state")
+    if current not in STATES or current == "observed":
+        return False
+    return STATES.index(current) > STATES.index(state)
+
+
 def history(ledger_path, event_id):
     return [r for r in records(ledger_path) if r.get("event_id") == event_id]
 
