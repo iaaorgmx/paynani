@@ -378,6 +378,39 @@ check "opencode config directory: is not adopted for credentials" "$ROOT/.env" \
 rm -rf "$home"
 
 # ---------------------------------------------------------------------------
+# Antigravity CLI is the sixth harness root, and the first two levels deep
+# (#749 FR-4): `agy` shares ~/.gemini with Gemini CLI, so its root is
+# ~/.gemini/antigravity-cli. The rule is the same: only workspace/.env resolves
+# there. ~/.gemini/workspace/.env may be another agent's mailbox and is never
+# adopted, and with Claude Code credentials on the same host neither is.
+# ---------------------------------------------------------------------------
+home=$(tmpdir)
+mkdir -p "$home/.gemini/antigravity-cli/workspace"
+printf 'PAYNANI_EMAIL=agent@example.com\n' >"$home/.gemini/antigravity-cli/workspace/.env"
+agree_all "antigravity harness" "$home"
+check "antigravity harness: credentials are read where the harness keeps them" \
+    "$home/.gemini/antigravity-cli/workspace/.env" "$(py "$home" "" env)"
+check "antigravity harness: state still hangs off the clone" "$ROOT/state" "$(py "$home" "" state)"
+check "antigravity harness: runtime config still hangs off the clone" \
+    "$ROOT/runtime.env" "$(py "$home" "" runtime-env)"
+check "antigravity harness: an explicit override still wins" "/srv/named.env" \
+    "$(py "$home" /srv/named.env env)"
+mkdir -p "$home/.claude/workspace"
+printf 'PAYNANI_EMAIL=other@example.com\n' >"$home/.claude/workspace/.env"
+agree_all "antigravity and claude harnesses" "$home"
+check "antigravity and claude harnesses: neither is adopted" "$ROOT/.env" \
+    "$(py "$home" "" env)"
+rm -rf "$home"
+
+home=$(tmpdir)
+mkdir -p "$home/.gemini/workspace"
+printf 'PAYNANI_EMAIL=agent@example.com\n' >"$home/.gemini/workspace/.env"
+agree_all "gemini shared directory" "$home"
+check "gemini shared directory: ~/.gemini/workspace/.env is not adopted" "$ROOT/.env" \
+    "$(py "$home" "" env)"
+rm -rf "$home"
+
+# ---------------------------------------------------------------------------
 # The runtime's own config is not the agent's mailbox.
 #
 # ~/.hermes/.env holds Hermes' gateway token. The rule matches
