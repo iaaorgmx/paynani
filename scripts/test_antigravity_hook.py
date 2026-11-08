@@ -94,6 +94,14 @@ class Install(Base):
         self.assertEqual(self.settings.with_suffix(".json.paynani.bak").read_bytes(), before)
         self.assertFalse(self.settings.with_suffix(".json.paynani.tmp").exists())
 
+    def test_the_file_keeps_its_mode(self):
+        self.put(THEIRS)
+        os.chmod(self.settings, 0o600)
+        hook.install(self.settings)
+        self.assertEqual(self.settings.stat().st_mode & 0o777, 0o600)
+        hook.uninstall(self.settings)
+        self.assertEqual(self.settings.stat().st_mode & 0o777, 0o600)
+
     def test_installing_twice_changes_nothing_the_second_time(self):
         self.put(THEIRS)
         hook.install(self.settings)
