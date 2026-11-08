@@ -31,8 +31,9 @@ actuellement utilisé par des agents IA comme
 [OpenClaw](https://github.com/openclaw/openclaw),
 [Hermes Agent](https://github.com/NousResearch/hermes-agent),
 [Claude Code](https://github.com/anthropics/claude-code),
-[OpenAI Codex](https://github.com/openai/codex) et
-[OpenCode](https://github.com/anomalyco/opencode).
+[OpenAI Codex](https://github.com/openai/codex),
+[OpenCode](https://github.com/anomalyco/opencode) et
+[Antigravity CLI](https://antigravity.google/product/antigravity-cli).
 
 Développé et testé sur Linux (Ubuntu 24.04) et macOS (26.4.1).
 

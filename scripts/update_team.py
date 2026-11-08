@@ -17,7 +17,7 @@ comentó o lo revisó con comentarios.
 - PaynaniApp: en iaaorgmx/PaynaniApp-Agentic o iaaorgmx/PaynaniApp.
 
 El nombre, el tipo (human o agent) y, de un agente, su harness (Claude
-Code, Codex, OpenCode, OpenClaw, Hermes Agent…) los decide una persona: una cuenta nueva entra con `type: "?"` y la prueba de la página falla hasta
+Code, Codex, OpenCode, OpenClaw, Hermes Agent, Antigravity CLI…) los decide una persona: una cuenta nueva entra con `type: "?"` y la prueba de la página falla hasta
 que alguien lo escriba en team.json. `extra_projects` suma proyectos a mano a los que
 salen de los commits (Julian pidió PaynaniWeb y PaynaniApp en su fila). Alguien sin commits (Daniel y Ares, que apoyan con
 pruebas reales, Iris[Q35]) se agrega a mano en team.json y el script lo conserva.

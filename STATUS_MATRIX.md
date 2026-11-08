@@ -15,7 +15,7 @@ The listener, dispatcher, replies and notifiers rows are universal -- every
 runtime prints the same shape of line, because those mechanisms exist outside
 any runtime adapter. The closed/open/delivering distinction turns on whether a
 runtime session was ever open, which only matters for a pull-based runtime
-(Claude Code, Codex, OpenCode); OpenClaw and Hermes Agent are always either
+(Claude Code, Codex, OpenCode, Antigravity CLI); OpenClaw and Hermes Agent are always either
 reachable or not, with no distinct "open without a session" state to report.
 The instructions standing rule exists on OpenClaw alone.
 
@@ -59,6 +59,23 @@ answers, not that a delivered event reaches anyone` (OpenClaw/Hermes/Codex); on
 Claude Code the `watch` row sits between the spool line and that one. None of these lines is
 proof that a person saw and acted on a message -- only `replies` speaks to
 that, and only for roster mail.
+
+## Antigravity CLI: the spool and autonomous mode
+
+Antigravity CLI keeps no presence registry, so like Codex it cannot tell
+"closed" from "open, nothing delivering yet": `agy`'s SessionStart and
+PreInvocation hooks show the spool, and whether a conversation runs them is not
+visible from outside. What it can report is the spool and, with autonomous mode
+on (`PAYNANI_ANTIGRAVITY_MODE=agent`, the default since #771), how the last
+`agy -p` run went. Measured on Manu Agy-Tob's host with `agy` 1.5.3 and
+paynani 0.25.0 (2026-11-08, #749).
+
+| State | What it means | What `healthcheck.py` prints |
+|---|---|---|
+| Spool line | Always shown. Unread bytes with no conversation open is normal: the next conversation or turn shows them. | `spool        <clone>/state/antigravity.spool`, then `N byte(s) not yet picked up by a session, of M` and `whether a session has armed a watch is not observable from here; unread bytes with no session open is normal`, then `reachable: <spool>` (the spool is writable). |
+| Autonomous run answered | The dispatcher wrote the spool and `agy -p` exited 0 with `SUCCESS` and no refused permission. | Under `dispatcher`: `last accepted <event_id> by antigravity at <timestamp>` and `runtime said: spooled; agy -p run completed`. |
+| Autonomous run failed | The event is still in the spool for the next conversation, and it is not retried. The problem is one of `login`, `permission`, `timeout` or `run`; `paynani doctor` says what to do in its `last_agent_run` row. | `runtime said: spooled; agy -p failed (<problem>): <detail>`. Measured: `agy -p failed (permission): permission that headless mode cannot prompt for, so it was auto-denied` (the run had already answered with `send.sh`, then tried to edit a file outside the sandbox). A run cut short by a restart of `paynani-dispatch` prints no `runtime said:` line, because the dispatcher stopped before it could log one; `state/antigravity.json` keeps it as `problem: run`, `detail: interrupted`, and `paynani doctor` shows it. |
+| Autonomous mode off | Only the spool is written. | `last accepted <event_id> by antigravity at <timestamp>` with no `runtime said:` line under it; mail waits for someone to start a turn in `agy`. |
 
 ## OpenClaw only: the instructions standing rule
 
