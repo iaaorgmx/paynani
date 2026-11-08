@@ -218,6 +218,7 @@ STRINGS = {
     'b.sum_owner': 'Owner in roster.md: {value}',
     'b.not_ready': 'Not ready: the step "{step}" failed.',
     'b.repeat': 'To repeat it: {command}',
+    'b.read_only': 'Cannot write {file}: {error}. If this runs inside an agent sandbox, run the command below outside it; the steps already done are skipped.',
     'b.ready_pending': 'Ready. One step is left for you: open {app} on this machine; the first session arms the mail watch.',
     'b.slow_mailbox': "Note: doctor's mailbox check did not answer within 30 s, but the himalaya step of this run checked the same account and it works; the mail server is slow. If it keeps happening, run: himalaya account check -a paynani",
     'b.codex_hooks': 'In Codex: approve the paynani hooks in /hooks (Codex skips new hooks until you trust them), then open a NEW Codex session; a session that was already open does not pick them up.',

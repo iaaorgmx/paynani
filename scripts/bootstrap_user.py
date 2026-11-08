@@ -612,8 +612,10 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
         setattr(ctx, key, value)
 
     steps = steps_for(args)
+    current = None
     try:
         for number, (name, function, repeat) in enumerate(steps, start=1):
+            current = (name, repeat)
             ctx.say(f"[{number}/{len(steps)}] {name}")
             ok, detail = function(ctx)
             if not ok:
@@ -630,9 +632,12 @@ def main(argv=None, *, ctx_overrides: dict | None = None) -> int:
         # harness folders read-only; a traceback there reads like a bug in paynani.
         if exc.errno not in (errno.EROFS, errno.EACCES, errno.EPERM):
             raise
-        ctx.say(f"bootstrap_user: cannot write {exc.filename or 'a file'}: {exc.strerror}.")
-        ctx.say("      If this runs inside an agent sandbox, run the same command again"
-                " outside it; the steps already done are skipped.")
+        ctx.say(ctx.L("b.read_only", file=exc.filename or "?", error=exc.strerror or exc))
+        if current:
+            # The same two lines as a step that fails (Iris's review of #758), so
+            # the human knows which command to run outside the sandbox.
+            ctx.say(ctx.L("b.not_ready", step=current[0]))
+            ctx.say(ctx.L("b.repeat", command=current[1]))
         return EX_STEP
 
     if args.dry_run:

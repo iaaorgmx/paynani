@@ -218,6 +218,7 @@ STRINGS = {
     'b.sum_owner': 'Dueño en roster.md: {value}',
     'b.not_ready': 'No ha quedado listo: ha fallado el paso «{step}».',
     'b.repeat': 'Para repetirlo: {command}',
+    'b.read_only': 'No se puede escribir {file}: {error}. Si esto se ejecuta dentro del sandbox de un agente, ejecuta fuera de él el comando de abajo; los pasos ya hechos se omiten.',
     'b.ready_pending': 'Listo. Falta un paso tuyo: abre {app} en esta máquina; la primera sesión arma la vigilancia del correo.',
     'b.slow_mailbox': 'Nota: la prueba del buzón de doctor no contestó en 30 s, pero el paso de himalaya de esta ejecución probó la misma cuenta y funciona; el servidor de correo va lento. Si se repite, ejecuta: himalaya account check -a paynani',
     'b.codex_hooks': 'En Codex: aprueba los hooks de paynani en /hooks (Codex se salta los hooks nuevos hasta que los apruebas) y abre una sesión NUEVA de Codex; una sesión que ya estaba abierta no los recoge.',

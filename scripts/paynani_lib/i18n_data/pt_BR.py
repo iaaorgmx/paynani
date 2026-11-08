@@ -218,6 +218,7 @@ STRINGS = {
     'b.sum_owner': 'Dono no roster.md: {value}',
     'b.not_ready': 'Não ficou pronto: a etapa "{step}" falhou.',
     'b.repeat': 'Para repetir: {command}',
+    'b.read_only': 'Não é possível gravar {file}: {error}. Se isto roda dentro do sandbox de um agente, rode o comando abaixo fora dele; as etapas já feitas são puladas.',
     'b.ready_pending': 'Pronto. Falta um passo seu: abra o {app} nesta máquina; a primeira sessão arma a vigilância do e-mail.',
     'b.slow_mailbox': 'Observação: o teste da caixa do doctor não respondeu em 30 s, mas a etapa do himalaya desta execução testou a mesma conta e ela funciona; o servidor de e-mail está lento. Se continuar, rode: himalaya account check -a paynani',
     'b.codex_hooks': 'No Codex: aprove os hooks do paynani em /hooks (o Codex ignora hooks novos até você aprová-los) e abra uma sessão NOVA do Codex; uma sessão que já estava aberta não os carrega.',
