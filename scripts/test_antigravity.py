@@ -118,7 +118,7 @@ class Registration(unittest.TestCase):
 FAKE_AGY = r'''#!/usr/bin/env python3
 import json, os, sys
 with open(os.environ["FAKE_AGY_ARGS"], "w") as f:
-    json.dump({"argv": sys.argv[1:], "cwd": os.getcwd()}, f)
+    json.dump({"argv": sys.argv[1:], "cwd": os.getcwd(), "path": os.environ.get("PATH", "")}, f)
 mode = os.environ.get("FAKE_AGY_MODE", "success")
 if mode == "success":
     print(json.dumps({"conversation_id": "c-1", "status": "SUCCESS", "response": "ok\n", "num_turns": 1}))
@@ -237,6 +237,26 @@ class AgentMode(unittest.TestCase):
             result = antigravity.deliver(envelope())
         self.assertTrue(result.ok, result)
         self.assertEqual("run", antigravity.last_agent_run()["problem"])
+
+    def test_the_run_gets_the_user_bin_folders_on_path(self):
+        # #749 F2 field test: under systemd the agent's send.sh could not find
+        # himalaya in ~/.local/bin, and the turn timed out.
+        home = pathlib.Path(self.tmp.name) / "home"
+        (home / ".local/bin").mkdir(parents=True)
+        with mock.patch.dict(os.environ, {"HOME": str(home), "PATH": "/usr/bin:/bin"}):
+            self.deliver("success")
+        path = __import__("json").loads(self.args.read_text())["path"].split(os.pathsep)
+        self.assertEqual(["/usr/bin", "/bin"], path[:2])
+        self.assertIn(str(home / ".local/bin"), path)
+        self.assertIn(str(self.agy.parent), path)
+
+    def test_run_env_keeps_order_and_skips_missing_folders(self):
+        home = pathlib.Path(self.tmp.name) / "home2"
+        (home / ".local/bin").mkdir(parents=True)
+        with mock.patch.dict(os.environ, {"HOME": str(home),
+                                          "PATH": os.pathsep.join([str(home / ".local/bin"), "/usr/bin"])}):
+            path = antigravity.run_env().get("PATH").split(os.pathsep)
+        self.assertEqual([str(home / ".local/bin"), "/usr/bin"], path)
 
     def test_a_bad_timeout_falls_back(self):
         for value in ("", "x", "0", "-4"):
