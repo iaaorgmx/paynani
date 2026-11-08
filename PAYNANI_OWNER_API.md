@@ -459,6 +459,25 @@ usa la web en sus direcciones; el secreto sólo sale al crearlo.
 `id`, y para el segundo `agent_replies` (`true` o `false`). Responden el token como queda.
 Un token que no existe o ya está revocado da `404 not_found`.
 
+### `DeleteApiToken` (delicada)
+
+`id`. Borra un token **vencido o revocado** de la lista para siempre (#760). La bitácora
+de la API conserva lo que hizo, por prefijo.
+
+```json
+{"deleted": "<id>"}
+```
+
+| Error | Cuándo |
+|---|---|
+| `409 token_active` | El token sigue activo: primero `RevokeApiToken` |
+| `404 not_found` | No existe (o ya se borró) |
+
+```bash
+curl -s https://<paynani>/api/owner -H "Authorization: Bearer $OWNER" \
+  -H 'Content-Type: application/json' -d '{"action": "DeleteApiToken", "id": "<id>"}'
+```
+
 ## Archivos
 
 - **Subir:** la acción que acepta archivos se llama con `multipart/form-data`: los

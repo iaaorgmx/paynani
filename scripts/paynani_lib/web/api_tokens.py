@@ -132,6 +132,41 @@ def update(sha256: str, *, path: Path | None = None, agent_replies: bool | None 
     return None
 
 
+def is_spent(record: dict, now: dt.datetime | None = None) -> bool:
+    """Revocado o vencido: ya no sirve para nada, y sólo así se puede borrar (#760)."""
+    if record.get("revoked_at"):
+        return True
+    expiry = record.get("expires_at")
+    if not expiry:
+        return False
+    try:
+        when = dt.datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt.timezone.utc)
+    return when <= (now or dt.datetime.now(dt.timezone.utc))
+
+
+def delete(sha256: str, *, path: Path | None = None, now: dt.datetime | None = None) -> str:
+    """
+    Borra un token vencido o revocado (#760): `deleted`, `active` (sigue sirviendo: primero
+    se revoca) o `missing`. La bitácora de la API (api_security) guarda lo que hizo por
+    prefijo y no se toca.
+    """
+    target = Path(path) if path else path_for()
+    with _locked(target):
+        records = _read(target)
+        for index, record in enumerate(records):
+            if hmac.compare_digest(record["sha256"], sha256):
+                if not is_spent(record, now):
+                    return "active"
+                del records[index]
+                _write(target, records)
+                return "deleted"
+    return "missing"
+
+
 def lookup(secret: str, *, path: Path | None = None,
            now: dt.datetime | None = None) -> tuple[str, dict | None]:
     if not isinstance(secret, str) or not re.fullmatch(r"pn_[A-Za-z0-9_-]{20,128}", secret):

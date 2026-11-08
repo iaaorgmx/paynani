@@ -1,5 +1,9 @@
 # Changelog
 
+## Sin publicar
+
+- **PaynaniWeb: el detalle de un API Token, nuevo, y borrar los vencidos o revocados** (#760, mockup aprobado por Julian, Iris[Q72]=A). El detalle mostraba las fechas en ISO con microsegundos y todo en una sola lista. Ahora tiene una cabecera con el estado y cuándo vence o venció, y las tarjetas «Details», «SMS limits» (con una barra `<progress>`) y «Agent»; las fechas van en `<time>`, en la zona del navegador. Un token vencido o revocado tiene «Delete this token» (`POST /api-tokens/delete`, con la contraseña de la web), que lo quita del archivo; uno activo no se puede borrar. La API del dueño agrega la acción delicada `DeleteApiToken` (409 `token_active`, 404 `not_found`), para que PaynaniWebMT haga lo mismo (PaynaniWebMT#90). También: los errores del detalle ya no se escapan dos veces. Pruebas en `scripts/test_web_api_a2.py` y `scripts/test_owner_api_a3.py`.
+
 ## 0.25.0 (2026-11-08)
 
 ### Si actualizas desde 0.24.0

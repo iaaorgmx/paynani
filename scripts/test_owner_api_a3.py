@@ -344,6 +344,22 @@ check("revocar otra vez: 404 (ya no está activo)", (404, "not_found"), (status,
 check("CreateApiToken y RevokeApiToken quedan como owner_sensitive (5 llamadas)", 5, sensitive_count() - tokens_sensitive)
 check("la bitácora no trae el secreto del token creado", False, secret in (state / "api_security.jsonl").read_text())
 
+# DeleteApiToken (#760): sólo vencidos o revocados.
+status, body = api("CreateApiToken", name="Vivo", expiry="7d", permissions=["read"], sms_per_hour="10", sms_per_day="50")
+live_id = body["token"]["id"]
+before_delete = sensitive_count()
+status, body = api("DeleteApiToken", id=live_id)
+check("DeleteApiToken con un token activo: 409 token_active, y sigue en la lista", (409, "token_active", True),
+      (status, body["code"], any(t["id"] == live_id for t in api("ListApiTokens")[1]["tokens"])))
+status, body = api("DeleteApiToken", id=tid)
+check("DeleteApiToken con el revocado: 200 y ya no está en la lista", (200, tid, False),
+      (status, body.get("deleted"), any(t["id"] == tid for t in api("ListApiTokens")[1]["tokens"])))
+status, body = api("DeleteApiToken", id=tid)
+check("borrarlo otra vez: 404 not_found", (404, "not_found"), (status, body["code"]))
+status, body = api("DeleteApiToken", id="nope")
+check("DeleteApiToken con un id mal formado: invalid_parameter", (400, "id"), (status, body.get("field")))
+check("DeleteApiToken queda como owner_sensitive", True, sensitive_count() - before_delete >= 3)
+
 # --- Los tokens no se cruzan ---------------------------------------------------------------------
 status, body = api("ListApiTokens", tok=agent_token)
 check("un token de agente pn_ no llama acciones del dueño", (401, "invalid_token"), (status, body["code"]))

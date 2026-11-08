@@ -87,6 +87,49 @@ try:
     assert req("POST", "/api-tokens/revoke", form={"csrf": csrf, "id": record["sha256"], "password": password}, cookie=cookie)[0] == 303
     assert api_tokens.lookup(secret, path=api_tokens.path_for(user_file))[0] == "token_revoked"
     assert req("POST", "/api-tokens/revoke", form={"csrf": csrf, "id": record["sha256"], "password": password}, cookie=cookie)[0] == 400
+    # #760: el detalle nuevo y «Delete this token», sólo para vencidos o revocados.
+    token_file = api_tokens.path_for(user_file)
+    status, _, page = req("GET", "/api-tokens/detail?id=" + record["sha256"], cookie=cookie)
+    assert status == 200 and 'action="/api-tokens/delete"' in page and 'action="/api-tokens/revoke"' not in page
+    assert 'estado-token-revoked' in page and 'class="tok-tarjeta"' in page and '<progress class="tok-uso"' in page
+    assert not re.search(r">[^<]*\d{2}:\d{2}:\d{2}\.\d{6}", page), "ISO con microsegundos a la vista"
+    assert 'style="' not in page
+    _, active = api_tokens.create("Activo", permissions=["read"], path=token_file)
+    future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=22)).isoformat()
+    _, expired = api_tokens.create("Vencido", permissions=["read"], path=token_file)
+    raw = json.loads(token_file.read_text(encoding="utf-8"))
+    for row in raw:
+        if row["sha256"] == expired["sha256"]:
+            row["expires_at"] = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=3)).isoformat()
+        if row["sha256"] == active["sha256"]:
+            row["expires_at"] = future
+    token_file.write_text(json.dumps(raw), encoding="utf-8")
+    status, _, page = req("GET", "/api-tokens/detail?id=" + active["sha256"], cookie=cookie)
+    assert status == 200 and 'action="/api-tokens/revoke"' in page and 'action="/api-tokens/delete"' not in page
+    assert 'estado-token-active' in page and "22" in page
+    status, _, page = req("GET", "/api-tokens/detail?id=" + expired["sha256"], cookie=cookie)
+    assert status == 200 and 'estado-token-expired' in page and 'action="/api-tokens/delete"' in page
+    delete_form = {"csrf": csrf, "id": active["sha256"], "password": password}
+    status, _, page = req("POST", "/api-tokens/delete", form=delete_form, cookie=cookie)
+    assert status == 400 and 'role="alert"' in page
+    assert api_tokens.get_record(active["sha256"], path=token_file) is not None
+    delete_form["id"] = expired["sha256"]
+    assert req("POST", "/api-tokens/delete", form={**delete_form, "csrf": "bad"}, cookie=cookie)[0] == 403
+    assert req("POST", "/api-tokens/delete", form={**delete_form, "password": "wrong"}, cookie=cookie)[0] == 400
+    assert req("POST", "/api-tokens/delete", form=delete_form, cookie=cookie, origin="https://evil.example")[0] == 403
+    assert api_tokens.get_record(expired["sha256"], path=token_file) is not None
+    status, headers, _ = req("POST", "/api-tokens/delete", form=delete_form, cookie=cookie)
+    assert status == 303 and headers["Location"].endswith("/api-tokens?deleted=1")
+    assert api_tokens.get_record(expired["sha256"], path=token_file) is None
+    status, _, page = req("GET", "/api-tokens?deleted=1", cookie=cookie)
+    assert status == 200 and 'class="aviso-ok"' in page
+    assert req("POST", "/api-tokens/delete", form=delete_form, cookie=cookie)[0] == 400
+    revoked_form = {"csrf": csrf, "id": record["sha256"], "password": password}
+    assert req("POST", "/api-tokens/delete", form=revoked_form, cookie=cookie)[0] == 303
+    assert api_tokens.get_record(record["sha256"], path=token_file) is None
+    for lang in ("es-MX", "en-US", "es-ES", "fr-FR", "pt-BR"):
+        _, _, localized = req("GET", f"/api-tokens/detail?id={active['sha256']}&lang={lang}", cookie=cookie)
+        assert "web.tokens." not in localized and "&amp;#" not in localized, lang
     now = dt.datetime.now(dt.timezone.utc)
     orders = tmp / "state" / "sms" / "orders.jsonl"
     orders.parent.mkdir(parents=True)

@@ -317,6 +317,21 @@ def revoke_api_token(call: owner_api.OwnerCall) -> dict:
     return {"token": _token_view(_token_update(call, revoke=True))}
 
 
+@owner_api.action("DeleteApiToken", sensitive=True)
+def delete_api_token(call: owner_api.OwnerCall) -> dict:
+    """Borra un token vencido o revocado (#760). Uno que sigue activo se revoca primero (409)."""
+    digest = _token_id(call)
+    try:
+        outcome = api_tokens.delete(digest, path=_tokens_path(call))
+    except (OSError, ValueError):
+        raise ApiError(500, "internal_error", "The token could not be deleted.") from None
+    if outcome == "missing":
+        raise ApiError(404, "not_found", "No such API token.", field="id")
+    if outcome == "active":
+        raise ApiError(409, "token_active", "The token is still active: revoke it first.", field="id")
+    return {"deleted": digest}
+
+
 @owner_api.action("SetApiTokenAgentReplies")
 def set_api_token_agent_replies(call: owner_api.OwnerCall) -> dict:
     """Si el agente contesta las respuestas a los SMS que mandó ese token (#651)."""
