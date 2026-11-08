@@ -15,6 +15,12 @@ that is a decision for the human, not for an installer (#335, P9).
 - OpenClaw: `openclaw approvals allowlist add --agent main <path>`, the public
   CLI. The allowlist lives in OpenClaw's SQLite store, which is not ours to
   edit (confirmed by Ximena in #344).
+- Antigravity CLI (#749 FR-6, FR-7): `permissions.allow` in
+  ~/.gemini/antigravity-cli/settings.json for `scripts/paynani` and
+  `scripts/send.sh` only (headless `agy` turns down anything that needs approval),
+  and the standing rule in ~/.gemini/GEMINI.md (`scripts/antigravity_rules.py`).
+  Both are shown, the rule word for word, before anything is written. Never
+  `--dangerously-skip-permissions`.
 - Hermes, Codex, OpenCode: no rules are written; `plan()` says what to add by
   hand and `apply()` prints the same.
 """
@@ -29,8 +35,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-RUNTIMES = ("claudecode", "openclaw", "hermes", "codex", "opencode")
+RUNTIMES = ("claudecode", "openclaw", "hermes", "codex", "opencode", "antigravity")
 OPENCLAW_AGENT = "main"
+# Runtimes whose rules this module writes itself, after showing them.
+WRITES = ("claudecode", "openclaw", "antigravity")
 
 
 def scripts(clone) -> list[str]:
@@ -66,6 +74,48 @@ def _read_settings(path: Path) -> dict:
 def _missing_claude(clone, home=None) -> list[str]:
     allow = _read_settings(claude_settings(home)).get("permissions", {}).get("allow", [])
     return [r for r in claude_rules(clone) if r not in allow]
+
+
+# --- Antigravity CLI (#749) -----------------------------------------------------
+
+def antigravity_rules(clone) -> list[str]:
+    """
+    The two commands `agy` may run without asking, by absolute path and nothing
+    else (FR-7): `scripts/paynani` and `scripts/send.sh` of this clone. The
+    `command(regex:…)` form is the one Antigravity's documentation gives (#744);
+    the pattern is anchored at both ends, so `scripts/paynani_old` or a command
+    that only mentions the path does not match. To confirm on a real `agy` (F0).
+    """
+    paynani, send, _watch = scripts(clone)
+    return [f"command(regex:^{re.escape(path)}( .*)?$)" for path in (paynani, send)]
+
+
+def antigravity_settings(home=None) -> Path:
+    return Path(home or Path.home()) / ".gemini" / "antigravity-cli" / "settings.json"
+
+
+def antigravity_rules_file(home=None) -> Path:
+    return Path(home or Path.home()) / ".gemini" / "GEMINI.md"
+
+
+def _antigravity_module(clone):
+    """`scripts/antigravity_rules.py` of this clone, imported by path."""
+    import importlib.util
+    path = Path(clone).resolve() / "scripts" / "antigravity_rules.py"
+    spec = importlib.util.spec_from_file_location("paynani_antigravity_rules", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _missing_antigravity(clone, home=None) -> list[str]:
+    allow = _read_settings(antigravity_settings(home)).get("permissions", {}).get("allow", [])
+    return [r for r in antigravity_rules(clone) if r not in allow]
+
+
+def _antigravity_rule_needed(clone, home=None) -> bool:
+    module = _antigravity_module(clone)
+    return module.state(antigravity_rules_file(home), root=Path(clone).resolve()) != "present"
 
 
 def _indent_of(path: Path) -> int:
@@ -143,6 +193,14 @@ def plan(runtime, clone, home=None, which=shutil.which, runner=subprocess.run) -
         raise ValueError(f"unknown runtime: {runtime}")
     if runtime == "claudecode":
         return [f"add to {claude_settings(home)} permissions.allow: {r}" for r in _missing_claude(clone, home)]
+    if runtime == "antigravity":
+        steps = [f"add to {antigravity_settings(home)} permissions.allow: {r}"
+                 for r in _missing_antigravity(clone, home)]
+        if _antigravity_rule_needed(clone, home):
+            steps.append(f"write the paynani standing rule into {antigravity_rules_file(home)} "
+                         "(shown word for word before it is written; "
+                         "scripts/antigravity_rules.py --print shows it now)")
+        return steps
     if runtime == "openclaw":
         binary = which("openclaw")
         if not binary:
@@ -169,12 +227,17 @@ def apply(runtime, clone, assume_yes=False, home=None, confirm=input, out=print,
         return False, f"harness rules: {exc}"
     if not steps:
         return True, "harness rules: already in place"
-    if runtime not in ("claudecode", "openclaw") or (runtime == "openclaw" and steps[0].startswith("harness rules:")):
+    if runtime not in WRITES or (runtime == "openclaw" and steps[0].startswith("harness rules:")):
         out(steps[0])
         return True, "harness rules: printed for manual setup"
     out("harness rules: paynani needs these, and only these:")
     for line in steps:
         out(f"  {line}")
+    if runtime == "antigravity" and any("GEMINI.md" in line for line in steps):
+        # FR-6: the operator sees the rule word for word before it is written.
+        out("")
+        out(_antigravity_module(clone).block(Path(clone).resolve()).rstrip("\n"))
+        out("")
     if not assume_yes:
         try:
             answer = confirm("Add them? [y/N] ").strip().lower()
@@ -194,6 +257,8 @@ def apply(runtime, clone, assume_yes=False, home=None, confirm=input, out=print,
         allow.extend(r for r in claude_rules(clone) if r not in allow)
         _write_json(path, data)
         return True, f"harness rules: {len(steps)} added to {path}"
+    if runtime == "antigravity":
+        return _apply_antigravity(clone, home, out)
     binary = which("openclaw")
     for p in scripts(clone):
         if not any(line.endswith(p) for line in steps):
@@ -203,3 +268,28 @@ def apply(runtime, clone, assume_yes=False, home=None, confirm=input, out=print,
         if done.returncode != 0:
             return False, f"harness rules: openclaw refused {p}: {(done.stderr or done.stdout).strip()}"
     return True, f"harness rules: {len(steps)} added to the OpenClaw allowlist of agent {OPENCLAW_AGENT}"
+
+
+def _apply_antigravity(clone, home, out) -> tuple[bool, str]:
+    """After the owner said yes: the permissions, then the rule. Each only if missing."""
+    done = []
+    path = antigravity_settings(home)
+    try:
+        missing = _missing_antigravity(clone, home)
+        if missing:
+            data = _read_settings(path)
+            allow = data.setdefault("permissions", {}).setdefault("allow", [])
+            allow.extend(r for r in antigravity_rules(clone) if r not in allow)
+            _write_json(path, data)
+            done.append(f"{len(missing)} permission rule(s) added to {path}")
+    except (ValueError, OSError) as exc:
+        return False, f"harness rules: {exc}"
+    target = antigravity_rules_file(home)
+    if _antigravity_rule_needed(clone, home):
+        module = _antigravity_module(clone)
+        try:
+            module.rules.install(target, wanted=module.block(Path(clone).resolve()))
+        except (OSError, SystemExit) as exc:
+            return False, f"harness rules: could not write {target}: {exc}"
+        done.append(f"standing rule written to {target}")
+    return True, "harness rules: " + "; ".join(done)

@@ -1,5 +1,9 @@
 # Changelog
 
+## Sin publicar
+
+- **Antigravity CLI: la regla del agente y sus permisos** (#749 FR-6 y FR-7, T6). `scripts/antigravity_rules.py` (`--print`, `--check`, `--install`, `--uninstall`) escribe en `~/.gemini/GEMINI.md`, entre marcas, qué significa `, roster]`, cómo leer y cerrar un aviso y cómo contestar en cada canal, igual que la regla de OpenClaw y con los mismos ayudantes. `harness_rules.py` acepta el runtime `antigravity`: propone en `~/.gemini/antigravity-cli/settings.json` sólo `scripts/paynani` y `scripts/send.sh` de este clone (`command(regex:…)` anclado, según la documentación de `agy`), muestra la regla palabra por palabra y no escribe nada sin que el dueño diga que sí. Nunca `--dangerously-skip-permissions`.
+
 ## 0.24.0 (2026-11-07)
 
 ### Si actualizas desde 0.23.0
