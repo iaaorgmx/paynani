@@ -566,6 +566,7 @@ in the workspace folder of its own installation directory:
 | Claude Code | `~/.claude/workspace/.env` |
 | OpenAI Codex | `~/.codex/workspace/.env` |
 | OpenCode | `~/.opencode/workspace/.env` |
+| Antigravity CLI | `~/.gemini/antigravity-cli/workspace/.env` |
 
 The resolver reads that file where it lies; nothing needs to be moved, copied or
 linked. Only the credentials resolve to the harness: state, `runtime.env`, the
