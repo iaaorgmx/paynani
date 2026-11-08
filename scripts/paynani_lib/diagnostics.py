@@ -753,8 +753,8 @@ def _observation_check(name: str, facts: dict) -> dict:
 
 def _harness_step_checks(selected) -> list[dict]:
     """
-    The runtime's own registration (#474): Claude Code and Codex hooks, the
-    OpenClaw standing rule. Without it mail never reaches a session, so its
+    The runtime's own registration (#474): Claude Code, Codex and Antigravity CLI
+    (#749) hooks, the OpenClaw standing rule. Without it mail never reaches a session, so its
     absence is `blocked`, and `bootstrap.sh` does not say Ready over it.
     OpenCode is left to its existing `plugin_installed` row; Hermes has no step.
     """

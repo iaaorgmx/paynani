@@ -112,6 +112,7 @@ RULES = (
     (r"^scripts/opencode_plugin\.py$|^harness/opencode/.*\.js$", "reinstall-and-restart", "OpenCode plugin (~/.config/opencode/plugins/paynani.js)", None, None, {"opencode"}, OPENCODE_PLUGIN),
     (r"^scripts/claude_hook\.py$", "reinstall-and-restart", "Claude Code session hook (settings.json)", None, None, {"claudecode"}, "python3 scripts/claude_hook.py --install"),
     (r"^scripts/codex_hook\.py$", "reinstall-and-restart", "Codex session hooks", None, None, {"codex"}, "python3 scripts/codex_hook.py --install"),
+    (r"^scripts/antigravity_hook\.py$", "reinstall-and-restart", "Antigravity CLI session hooks (~/.gemini/config/hooks.json)", None, None, {"antigravity"}, "python3 scripts/antigravity_hook.py --install"),
     (r"^scripts/openclaw_rules\.py$", "reinstall-and-restart", "OpenClaw standing rule (~/.openclaw/workspace/AGENTS.md)", None, None, {"openclaw"}, "python3 scripts/openclaw_rules.py --install"),
     # Long-running services.
     (r"^scripts/idle_listener\.py$", "restart", "listener", "listener-all", "listener-all", None, None),
@@ -147,7 +148,7 @@ RULES = (
     (r"^harness/adapters/.*\.py$", "restart", "dispatcher", *DISPATCHER, None, None),
     (r"^harness/(event|paths|ledger|python_floor|phone)\.py$", "restart", "listener, account listeners, dispatcher, SMS gateway and Telegram service", "both", "both", None, None),
     # Read when a session starts or a watch is armed.
-    (r"^harness/(session_start\.py|session_watch\.sh)$", "next-session", "session hook and watcher", None, None, {"claudecode", "codex"}, None),
+    (r"^harness/(session_start\.py|session_watch\.sh)$", "next-session", "session hook and watcher", None, None, {"claudecode", "codex", "antigravity"}, None),
     # Both services record this value at process start, and version_drift
     # compares both against disk. Every tagged upgrade changes VERSION, so
     # applying one must restart the listener, its per-account instances and the

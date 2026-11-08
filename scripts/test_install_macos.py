@@ -199,6 +199,23 @@ class MacOSInstallTest(unittest.TestCase):
         second = self.run_install("--runtime", "opencode")
         self.assertEqual(0, second.returncode, second.stdout + second.stderr)
 
+    def test_antigravity_install_needs_no_binary_and_names_the_hooks_step(self):
+        # #749 T4: like OpenCode, delivery is a spool; the agy hooks are a separate step.
+        first = self.run_install("--runtime", "antigravity")
+        output = first.stdout + first.stderr
+        self.assertEqual(10, first.returncode, output)
+        self.assertIn("antigravity_spool_probe=accepted", output)
+        self.assertIn("antigravity.spool", output)
+        self.assertIn("scripts/antigravity_hook.py --install", output)
+        self.assertIn("verification_report_end result=passed", output)
+        runtime_text = (self.clone / "runtime.env").read_text(encoding="utf-8")
+        self.assertIn('PAYNANI_RUNTIME="antigravity"', runtime_text)
+        self.assertNotIn("OPENCLAW=", runtime_text)
+        env = self.read_plist("com.paynani.dispatch")["EnvironmentVariables"]
+        self.assertEqual("antigravity", env["PAYNANI_RUNTIME"])
+        second = self.run_install("--runtime", "antigravity")
+        self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+
     def test_dry_run_reports_plan_without_writing_artifacts(self):
         completed = self.run_install("--runtime", "openclaw", "--dry-run")
         output = completed.stdout + completed.stderr
@@ -336,7 +353,7 @@ class MacOSInstallTest(unittest.TestCase):
         completed = self.run_install("--runtime", "hermes")
         output = completed.stdout + completed.stderr
         self.assertEqual(64, completed.returncode, output)
-        self.assertIn("macOS install currently supports --runtime openclaw, codex and opencode only", output)
+        self.assertIn("macOS install currently supports --runtime openclaw, codex, opencode and antigravity only", output)
         self.assertFalse((self.clone / "runtime.env").exists())
         self.assertFalse((self.home / "Library" / "LaunchAgents").exists())
 
