@@ -189,6 +189,34 @@ CAPABILITIES = {
             "do_not_promise": "Do not promise delivery when the TUI is open without a target session.",
         },
     },
+    "antigravity": {
+        "display_name": "Antigravity CLI",
+        "static": {
+            "delivery_modes": ("replay",),
+            "durable_handoff": "supported",
+            "requires_open_session": "no",
+            "starts_agent_run": "no",
+            "presentation_observable": "unknown",
+            "headless_mode": "supported",
+            "credentials_location": "harness_workspace_env",
+            "session_discovery": "session_start_hook",
+        },
+        "dynamic_observations": (
+            "spool_writable",
+            "spool_unread_bytes",
+            "hooks_installed",
+        ),
+        "notes": (
+            "Delivery is a durable spool append. agy's SessionStart hook replays it "
+            "for a new conversation and PreInvocation (invocationNum 0) at the start "
+            "of each turn, so a resumed conversation sees it too (#749)."
+        ),
+        "documentation": {
+            "how_it_arrives": "Paynani appends one line to state/antigravity.spool.",
+            "guarantee": "The event is durably waiting for the next agy conversation or turn.",
+            "do_not_promise": "Do not promise an agy session was open or read the spool.",
+        },
+    },
 }
 
 

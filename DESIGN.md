@@ -305,6 +305,7 @@ the Markdown block.
 <!-- capabilities-matrix:start -->
 | Adapter | Modes | Durable handoff | Requires open session | Starts agent run | Presentation observable | Headless | Level |
 |---|---|---|---|---|---|---|---|
+| Antigravity CLI (`antigravity`) | replay | supported | no | no | unknown | supported | replay-only |
 | Claude Code (`claudecode`) | replay | supported | no | opt_in | unknown | supported | replay-only |
 | OpenAI Codex (`codex`) | replay, now | supported | no | opt_in | unknown | supported | live |
 | Hermes Agent (`hermes`) | now, durable | supported | no | yes | unknown | supported | autonomous |

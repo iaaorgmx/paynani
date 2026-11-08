@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- **Antigravity CLI: el adaptador (#749 T1).** El runtime `antigravity` entrega cada aviso en `state/antigravity.spool`, como Claude Code, y los hooks de `agy` lo van a mostrar al empezar cada conversación y cada turno (T2). Nivel `replay-only` en `harness/capabilities.py`, DESIGN.md y HARNESS_CAPABILITIES.md. Todavía no se instala: `--runtime antigravity` llega con T4.
 - **Antigravity CLI: registro de los hooks (#749, T3).** `scripts/antigravity_hook.py --print | --check | --install | --uninstall` escribe los hooks de paynani en `~/.gemini/config/hooks.json`, bajo una llave propia, `paynani`. Ahí van `SessionStart` y `PreInvocation`, los dos con `python3 <clone>/harness/session_start.py --antigravity` y `timeout` 10.
   - Las llaves de otros no se tocan.
   - Antes de escribir deja un respaldo `.paynani.bak`. La escritura es atómica y el archivo conserva su modo.

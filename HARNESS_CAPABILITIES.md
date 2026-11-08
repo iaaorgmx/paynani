@@ -6,11 +6,26 @@ This page is generated from `harness/capabilities.py`; edit the data there.
 
 | Adapter | Modes | Durable handoff | Requires open session | Starts agent run | Presentation observable | Headless | Level |
 |---|---|---|---|---|---|---|---|
+| Antigravity CLI (`antigravity`) | replay | supported | no | no | unknown | supported | replay-only |
 | Claude Code (`claudecode`) | replay | supported | no | opt_in | unknown | supported | replay-only |
 | OpenAI Codex (`codex`) | replay, now | supported | no | opt_in | unknown | supported | live |
 | Hermes Agent (`hermes`) | now, durable | supported | no | yes | unknown | supported | autonomous |
 | OpenClaw (`openclaw`) | now | unsupported | yes | unknown | unknown | unsupported | live |
 | OpenCode (`opencode`) | replay | supported | no | yes | yes | unsupported | autonomous |
+
+## Antigravity CLI (`antigravity`)
+
+### How It Arrives
+
+Paynani appends one line to state/antigravity.spool.
+
+### Guarantee
+
+The event is durably waiting for the next agy conversation or turn.
+
+### What Not To Promise
+
+Do not promise an agy session was open or read the spool.
 
 ## Claude Code (`claudecode`)
 
