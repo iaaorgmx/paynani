@@ -44,7 +44,7 @@ yours: open a session, which arms the mail watch.
 
 | Option | What it does |
 |---|---|
-| `--runtime R` | `openclaw`, `hermes`, `claudecode`, `codex` or `opencode`; otherwise detected and confirmed |
+| `--runtime R` | `openclaw`, `hermes`, `claudecode`, `codex`, `opencode` or `antigravity`; otherwise detected and confirmed |
 | `--user U` | Who to install for; default `$SUDO_USER` |
 | `--dir PATH` | Where to clone; default `<harness root>/workspace/paynani` |
 | `--ref REF` | Tag or branch; default the newest release tag |
@@ -1882,6 +1882,91 @@ journalctl --user -u paynani-dispatch.service | grep -iE "openclaw not found|inj
 
 Both silent means it resolved. Without this the watcher runs, the log fills, every
 other check in §7 passes, and no notification is ever delivered.
+
+### Antigravity CLI
+
+Antigravity CLI (`agy`) is wired like Claude Code, for the same reason: **nothing
+outside a conversation can speak into it**. There is no documented way to put a
+message into an open, idle `agy` window (#744). So the dispatcher writes each
+rendered line to `state/antigravity.spool` and stops there, and the conversation
+picks it up through two hooks. This is the `replay-only` level of #749; a headless
+`agy -p` per event is a later step (F2), not part of this install.
+
+**No `agy` binary is required.** Delivery is a file append, so `install.sh`
+does not look for it.
+
+**Credentials** live where the harness keeps its files:
+`~/.gemini/antigravity-cli/workspace/.env`. `agy` shares `~/.gemini` with Gemini
+CLI, so the root is its own folder, and a `.env` in `~/.gemini/workspace` is never
+read: it could be another agent's mailbox.
+The recommended clone location is `~/.gemini/antigravity-cli/workspace/paynani`.
+
+```bash
+scripts/install.sh --runtime antigravity --dry-run   # review the plan
+scripts/install.sh --runtime antigravity
+```
+
+**Two hooks have to be registered in `agy`'s own hooks file**,
+`~/.gemini/config/hooks.json`. That file is yours, so the installer never
+converges it; register them explicitly:
+
+```bash
+scripts/antigravity_hook.py --print       # show the block, change nothing
+scripts/antigravity_hook.py --install     # write it, backing up first
+scripts/antigravity_hook.py --check       # exits 0 when it is in place for this clone
+scripts/antigravity_hook.py --uninstall   # remove it, backing up first
+```
+
+Everything goes under one top-level key, `paynani`, and no other key is read or
+written. Both hooks run `harness/session_start.py --antigravity`:
+
+- `SessionStart` replays what is waiting when a conversation starts.
+- `PreInvocation` covers a resumed conversation (`-c`, `--conversation`,
+  `/resume`), which does not fire `SessionStart`. It acts only on the first model
+  call of each turn (`invocationNum` 0), so it adds at most one replay per turn.
+
+The replay reaches the model as an `injectSteps` system message. **Mail that
+arrives while a conversation sits idle waits in the spool until the next turn**;
+that is the expected behaviour of this level, not a fault.
+
+**The agent's standing rule** goes in `agy`'s global rules file,
+`~/.gemini/GEMINI.md`, between paynani's markers: what `, roster]` means, how to
+read and close a notice, and how to answer on each channel.
+
+```bash
+scripts/antigravity_rules.py --print       # show the rule, change nothing
+scripts/antigravity_rules.py --install     # write or refresh it
+scripts/antigravity_rules.py --check       # exits 0 when the current rule is in place
+scripts/antigravity_rules.py --uninstall   # remove only the block
+```
+
+Everything outside the markers is kept, and a first edit leaves
+`GEMINI.md.paynani.bak` beside it.
+
+**Permissions.** When `agy` runs without anyone to approve a tool (headless), a
+command that needs approval is turned down **without stopping the run** and the
+run still exits 0. So the agent needs `scripts/paynani` and `scripts/send.sh` of
+this clone, and only those, in `permissions.allow` of
+`~/.gemini/antigravity-cli/settings.json`:
+
+```json
+{"permissions": {"allow": [
+  "command(regex:^<clone>/scripts/paynani( .*)?$)",
+  "command(regex:^<clone>/scripts/send\\.sh( .*)?$)"
+]}}
+```
+
+`bootstrap.sh` proposes both, and the standing rule above, word for word, and
+writes them only after the owner says yes; every other key in the file is kept.
+Never use `--dangerously-skip-permissions` for an agent that holds a mailbox.
+
+**Verifying it.** `scripts/paynani doctor` reports `harness_step` as `blocked`
+until the hooks are registered. `scripts/healthcheck.py` reports how many spool
+bytes no conversation has picked up yet; with no conversation open, unread bytes
+are this runtime's normal resting state, and the mail is safe in the spool.
+
+The hook format, the `GEMINI.md` location and the `command(regex:…)` form come
+from Antigravity's documentation; #749 F0 measures them on a real host.
 
 ---
 
