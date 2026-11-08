@@ -2,6 +2,7 @@
 
 ## Sin publicar
 
+- **Antigravity CLI: el adaptador (#749 T1).** El runtime `antigravity` entrega cada aviso en `state/antigravity.spool`, como Claude Code, y los hooks de `agy` lo van a mostrar al empezar cada conversación y cada turno (T2). Nivel `replay-only` en `harness/capabilities.py`, DESIGN.md y HARNESS_CAPABILITIES.md. Todavía no se instala: `--runtime antigravity` llega con T4.
 - **Antigravity CLI: la regla del agente y sus permisos** (#749 FR-6 y FR-7, T6). `scripts/antigravity_rules.py` (`--print`, `--check`, `--install`, `--uninstall`) escribe en `~/.gemini/GEMINI.md`, entre marcas, qué significa `, roster]`, cómo leer y cerrar un aviso y cómo contestar en cada canal, igual que la regla de OpenClaw y con los mismos ayudantes. `harness_rules.py` acepta el runtime `antigravity`: propone en `~/.gemini/antigravity-cli/settings.json` sólo `scripts/paynani` y `scripts/send.sh` de este clone (`command(regex:…)` anclado, según la documentación de `agy`), muestra la regla palabra por palabra y no escribe nada sin que el dueño diga que sí. Nunca `--dangerously-skip-permissions`.
 
 ## 0.24.0 (2026-11-07)
