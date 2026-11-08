@@ -496,11 +496,15 @@ def local_services(state_dir: Path) -> dict:
         unit = entry["listener"]["unit"] if entry.get("enabled") else "off"
         additional.append({"id": entry["id"], "email": entry["email"], "enabled": bool(entry.get("enabled")),
                            "unit": unit})
+    session = {"live": bool(live), "armed_at": str(live.get("armed_at") or ""),
+               "expires_at": str(live.get("expires_at") or "")}
+    if selected_runtime() == "antigravity":
+        # Lo que espera la siguiente conversación de `agy` (#757): sólo el número de bytes.
+        session["unread_bytes"] = (hc.spool_facts("antigravity") or {}).get("bytes_unread")
     return {
         "listener": {"unit": listener["unit"], "heartbeat_age_s": listener.get("heartbeat_age_seconds")},
         "dispatcher": {"unit": hc.dispatcher_facts()["unit"]},
-        "session": {"live": bool(live), "armed_at": str(live.get("armed_at") or ""),
-                    "expires_at": str(live.get("expires_at") or "")},
+        "session": session,
         "phone": None if phone is None else {
             "online": bool(phone["online"]), "model": phone.get("model", ""),
             "app_version": phone.get("app_version", ""), "last_seen_age_s": phone.get("last_seen_age_s"),
@@ -716,6 +720,12 @@ def build(source: Source, now: dt.datetime, account: str = "") -> dict:
     health = source.health()
     checks = list(health.get("checks") or [])
     services = source.services()
+    # La fila «Agent session» según el runtime (#757): la vigilancia sólo existe en Claude Code.
+    # Una copia: `services` viene de la caché de la fuente.
+    from . import agent as agent_mod
+    runtime = str((source.agent() or {}).get("runtime") or "")
+    events = source.events() if agent_mod.evidence(runtime) == "spool" else None
+    services = {**services, "session": agent_mod.session(services, runtime, events, now)}
     attention = []
     for c in sorted(checks, key=lambda c: -STATUS_ORDER.get(c.get("status"), 1)):
         if c.get("status") != "ok" and not c.get("name", "").startswith("account:"):
@@ -792,6 +802,12 @@ def _q(value: str) -> str:
     return quote(str(value or ""), safe="")
 
 
+def _session_number(session: dict) -> str:
+    if session.get("evidence", "watch") == "watch":
+        return "live" if session.get("live") else "none"
+    return str(session.get("status") or "unknown")
+
+
 def numbers(model: dict) -> dict:
     """Lo de `/dashboard.json` (FR-19): sólo números y estados. Ni direcciones, ni
     teléfonos, ni asuntos, ni nombres de contactos o tokens."""
@@ -808,7 +824,9 @@ def numbers(model: dict) -> dict:
         "services": {
             "listener": services["listener"]["unit"],
             "dispatcher": services["dispatcher"]["unit"],
-            "session": "live" if services["session"]["live"] else "none",
+            # Claude Code: «live» o «none», como antes. Los demás runtimes no tienen vigilancia:
+            # su semáforo (`online`, `no_session`, `offline` o `unknown`; #757).
+            "session": _session_number(services["session"]),
             "phone": None if phone is None else ("online" if phone["online"] else "offline" if phone.get("sms", True)
                                                  else "app_closed"),
             "whatsapp": model["whatsapp"],

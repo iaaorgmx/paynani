@@ -335,6 +335,82 @@ _model = {"status": "ok", "checks_ok": 1, "checks_total": 1, "mail_today": {}, "
 check("/dashboard.json: el teléfono sólo Webchat cerrado es app_closed, no offline", "app_closed",
       dashboard.numbers(_model)["services"]["phone"])
 
+# ---- «Agent session» según el runtime (#757) -------------------------------------
+# La vigilancia sólo existe en Claude Code; en los demás runtimes la fila no dice «No session»
+# por no tener vigilancia, y el modelo lleva `runtime`, `evidence` y `status` para PaynaniWebMT.
+i18n.set_current("en-US")
+_ACC = utc("2026-10-30T23:10:00")
+
+
+def _svc(live=False, accepted="", by="", error="", oldest=None, unread=None, dispatcher="active"):
+    session = {"live": live, "armed_at": utc("2026-10-30T23:00:00") if live else "", "expires_at": ""}
+    if unread is not None:
+        session["unread_bytes"] = unread
+    return {"listener": {"unit": "active", "heartbeat_age_s": 5}, "dispatcher": {"unit": dispatcher},
+            "session": session, "phone": None, "additional": [],
+            "queue": {"pending": 0 if oldest is None else 1, "oldest_age_s": oldest},
+            "delivery": {"last_accepted": {"at": accepted, "runtime": by}, "last_error": {"at": error, "runtime": by}}}
+
+
+def _session(runtime, services, events=()):
+    model = dashboard.build(fake(services=services, events=list(events),
+                                 agent={"name": "Agente", "email": "agent@example.com", "runtime": runtime}), NOW)
+    return model, _dp.session_row(model["services"]["session"], NOW), dashboard.numbers(model)["services"]["session"]
+
+
+m757, row, num = _session("claudecode", _svc(live=True))
+check("Claude Code con vigilancia: «Watching», como antes", (True, "live", "watch"),
+      ("Watching" in row and "pill-ok" in row, num, m757["services"]["session"]["evidence"]))
+m757, row, num = _session("claudecode", _svc(live=False))
+check("Claude Code sin vigilancia: sigue «No session» en ámbar", (True, "none"), ("No session" in row and "pill-warn" in row, num))
+
+m757, row, num = _session("openclaw", _svc(accepted=_ACC, by="openclaw"))
+s757 = m757["services"]["session"]
+check("OpenClaw (el caso de John Bravo): ni «No session» ni «no session is watching the mail»", (False, False),
+      ("No session" in row, "no session is watching" in row))
+check("OpenClaw con una entrega aceptada: verde «Online», con la hora y el runtime", (True, True, True, "online"),
+      ("pill-ok" in row and "Online" in row, "OpenClaw" in row, "took the last one at" in row, num))
+check("OpenClaw: el modelo dice runtime, evidence y status para PaynaniWebMT",
+      ("openclaw", "OpenClaw", "delivery", "online", _ACC),
+      (s757["runtime"], s757["runtime_label"], s757["evidence"], s757["status"], s757["last_accepted"]))
+check("OpenClaw: `live` sigue en el modelo para los PaynaniWebMT viejos", (True, False), ("live" in s757, s757["live"]))
+m757, row, num = _session("hermes", _svc())
+check("Hermes sin nada entregado: gris «No data», no «No session»", (True, True, "unknown"),
+      ("pill-off" in row and "No data" in row, "nothing delivered yet" in row, num))
+m757, row, num = _session("hermes", _svc(accepted=_ACC, by="hermes", error=utc("2026-10-30T23:20:00")))
+check("Hermes con un rechazo más nuevo: rojo «Offline»", (True, "offline"), ("pill-bad" in row, num))
+m757, row, num = _session("openclaw", _svc(accepted=_ACC, by="hermes"))
+check("lo que aceptó otro runtime no cuenta (Ximena en #645)", ("unknown", ""),
+      (num, m757["services"]["session"]["last_accepted"]))
+
+_stuck = [{"event_id": "e1", "channel": "mail", "state": "dispatched", "runtime": "codex",
+           "state_at": utc("2026-10-30T23:00:00"), "observed_at": utc("2026-10-30T23:00:00")}]
+m757, row, num = _session("codex", _svc(accepted=_ACC, by="codex"), _stuck)
+check("Codex con un mensaje sin tomar más de 10 min: ámbar, y dice por qué", (True, True, "no_session", "spool"),
+      ("pill-warn" in row, "has waited more than 10 min" in row, num, m757["services"]["session"]["evidence"]))
+m757, row, num = _session("opencode", _svc(accepted=_ACC, by="opencode"))
+check("OpenCode con lo último tomado: verde", (True, "online"), ("pill-ok" in row, num))
+
+m757, row, num = _session("antigravity", _svc(accepted=_ACC, by="antigravity", unread=120))
+s757 = m757["services"]["session"]
+check("Antigravity con algo en el spool: «waiting for the next conversation», no «No session»",
+      (True, False, "replay", True, "Antigravity CLI"),
+      ("waiting for the next conversation" in row, "No session" in row, s757["evidence"], s757["unread"], s757["runtime_label"]))
+m757, row, num = _session("antigravity", _svc(accepted=_ACC, by="antigravity", unread=0))
+check("Antigravity sin nada pendiente: «nothing pending», verde", (True, True, False),
+      ("nothing pending" in row, "pill-ok" in row, m757["services"]["session"]["unread"]))
+
+m757, row, num = _session("", _svc(live=True))
+check("sin saber el runtime, una vigilancia armada se dice como antes", (True, "live"), ("Watching" in row, num))
+check("un modelo viejo sin `evidence` se pinta como la vigilancia", True,
+      "No session" in _dp.session_row({"live": False}, NOW))
+_src = fake(services=_svc(accepted=_ACC, by="openclaw"),
+            agent={"name": "Agente", "email": "agent@example.com", "runtime": "openclaw"})
+dashboard.build(_src, NOW)
+check("la fuente se copia: build() no cambia el `services` en caché", False,
+      "evidence" in _src.data["services"]["session"])
+
+
 httpd.shutdown()
 check("la configuración real no cambió (.env y Himalaya)", BEFORE, [sha(p) for p in REAL])
 
