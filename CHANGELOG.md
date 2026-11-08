@@ -3,6 +3,7 @@
 ## Sin publicar
 
 - **Antigravity CLI: el adaptador (#749 T1).** El runtime `antigravity` entrega cada aviso en `state/antigravity.spool`, como Claude Code, y los hooks de `agy` lo van a mostrar al empezar cada conversación y cada turno (T2). Nivel `replay-only` en `harness/capabilities.py`, DESIGN.md y HARNESS_CAPABILITIES.md. Todavía no se instala: `--runtime antigravity` llega con T4.
+- **Antigravity CLI: el hook (#749 T2).** `harness/session_start.py --antigravity` contesta a los hooks `SessionStart` y `PreInvocation` de `agy` con `injectSteps`. En una conversación nueva muestra el correo del spool, los avisos del roster sin cerrar y si el listener o el despachador están caídos. Al empezar cada turno (`invocationNum` 0) muestra sólo el correo nuevo y los servicios caídos; en las demás llamadas al modelo contesta `{}` sin consultar nada. Así una conversación retomada, que no dispara `SessionStart`, también ve el correo. Como `agy` no tiene Monitor, el hook marca el spool como visto después de imprimir la respuesta.
 
 ## 0.24.0 (2026-11-07)
 
