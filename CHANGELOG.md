@@ -3,6 +3,25 @@
 ## Sin publicar
 
 - **PaynaniWeb: el detalle de un API Token, nuevo, y borrar los vencidos o revocados** (#760, mockup aprobado por Julian, Iris[Q72]=A). El detalle mostraba las fechas en ISO con microsegundos y todo en una sola lista. Ahora tiene una cabecera con el estado y cuándo vence o venció, y las tarjetas «Details», «SMS limits» (con una barra `<progress>`) y «Agent»; las fechas van en `<time>`, en la zona del navegador. Un token vencido o revocado tiene «Delete this token» (`POST /api-tokens/delete`, con la contraseña de la web), que lo quita del archivo; uno activo no se puede borrar. La API del dueño agrega la acción delicada `DeleteApiToken` (409 `token_active`, 404 `not_found`), para que PaynaniWebMT haga lo mismo (PaynaniWebMT#90). También: los errores del detalle ya no se escapan dos veces. Pruebas en `scripts/test_web_api_a2.py` y `scripts/test_owner_api_a3.py`.
+
+## 0.25.0 (2026-11-08)
+
+### Si actualizas desde 0.24.0
+
+```bash
+git fetch --tags --force origin
+git pull --ff-only origin main
+git describe --tags          # tiene que decir v0.25.0
+python3 scripts/upgrade_plan.py --from v0.24.0     # y haz lo que imprima
+```
+
+El plan corre `scripts/install.sh --runtime <tu runtime> --upgrade` (cambiaron `install.sh` e `install_manifest.py`), y reinicia el listener (con las cuentas adicionales), el despachador, la pasarela SMS, Telegram y PaynaniWeb. Cambiaron `harness/ledger.py` y `harness/paths.py`, que todos ellos usan, y los catálogos de idiomas de PaynaniWeb. En Claude Code cambió `harness/session_start.py`: la vigilancia nueva se arma en la siguiente sesión. No hay servicios nuevos ni dependencias nuevas del puente de WhatsApp, y Himalaya sigue en 2.x.
+
+Esta versión agrega **Antigravity CLI (`agy`) como runtime** (#749). En un host que ya usa otro runtime no cambia nada de eso. Para instalarlo en un host nuevo, sigue INSTALL.md §6 «Antigravity CLI»: el clone va en `~/.gemini/workspace/paynani`. El modo autónomo (`PAYNANI_ANTIGRAVITY_MODE=agent`) está apagado por omisión.
+
+**Para comprobarlo en cualquier runtime:** `scripts/paynani doctor` en `ok`, y en PaynaniWeb, la fila «Agent session» del Dashboard dice el estado de tu runtime (con OpenClaw, Hermes, Codex u OpenCode ya no dice «No session» cuando todo funciona).
+
+- **Antigravity CLI: `agy -p` encuentra Himalaya** (#763, #749 F2). La corrida del modo autónomo heredaba el PATH mínimo del servicio de systemd, y `send.sh` dentro de `agy -p` decía «himalaya was not found on PATH». Ahora la corrida lleva la carpeta de `agy`, `~/.local/bin` y `~/.cargo/bin` después del PATH que ya hay. Lo encontró la prueba de campo en el host de Manu.
 - **El despachador ya no regresa un evento a `dispatched`** (#749 F2). Con un runtime que espera la corrida del agente (`agy -p`, `claude -p`, `codex exec`), el agente marca el evento `presented`, `replied` o `closed` mientras corre, y al terminar el despachador escribía `dispatched` encima. Así un correo contestado volvía a verse sin contestar. Pasó en la prueba de campo de Antigravity en el host de Manu. Ahora `ledger.already_past()` impide anotar un estado anterior al que ya tiene el evento. Pruebas en `scripts/test_event_lifecycle.py`.
 - **Antigravity CLI: modo autónomo (#749 F2, FR-9 a FR-11).** Con `PAYNANI_ANTIGRAVITY_MODE=agent` en `runtime.env`, el despachador corre `agy -p "<aviso>" --output-format json --print-timeout <n>s` en el clone por cada evento, después de escribir el spool. Está apagado por omisión. Cada evento usa una conversación nueva, y nunca `--dangerously-skip-permissions`. Sólo cuenta como hecho con exit 0, `status: SUCCESS` y sin un permiso rechazado en stderr. Si falla, el aviso sigue en el spool para la siguiente conversación y no se reintenta. `state/antigravity.json` guarda la última corrida (sin el prompt ni la respuesta), y `paynani doctor` la reporta como `last_agent_run`, con qué hacer si el problema es el login, un permiso o el tiempo. `PAYNANI_ANTIGRAVITY_TIMEOUT` (300 s por omisión) limita el turno. INSTALL.md §6 explica el modo y las dos salidas oficiales para un host sin llavero (`GEMINI_API_KEY` y `AGY_ADC_AUTH`). En `harness/capabilities.py`, `starts_agent_run` pasa a `opt_in`, como en Claude Code y Codex. Medido en el host de Manu con `agy` 1.5.3: `agy -p` funciona desde systemd con el login de Google. Pruebas con un `agy` falso en `scripts/test_antigravity.py`.
 - **`bootstrap_user.py`: el aviso del sandbox en tu idioma y con el paso** (#749, revisión de Iris en #758). Si un paso no puede escribir un archivo (`EROFS`, `EACCES` o `EPERM`, como dentro del sandbox de `agy`), el mensaje pasa por el catálogo (`b.read_only`, en los 5 idiomas) y agrega las mismas dos líneas que un paso que falla: cuál paso era y el comando para repetirlo fuera del sandbox.
