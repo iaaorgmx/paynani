@@ -13,11 +13,12 @@ Todo lo que se pone en el HTML pasa por `e()`.
 """
 from __future__ import annotations
 
+import datetime as dt
 from urllib.parse import quote as urlquote
 
 from .. import i18n
 from ..i18n_data import CATALOGUES
-from . import owner_clients, when
+from . import owner_clients, token_strings, when  # noqa: F401  (token_strings: web.tokens.rel.*)
 from .shell import ROW_CHEVRON, e
 
 KEYS = ["title", "empty", "name", "app", "paired", "last_used", "status", "active", "revoked", "never",
@@ -91,6 +92,35 @@ WORDS = {
               "O código vale uma única vez. Não o dê a mais ninguém: ele abre o controle completo do seu paynani.",
               "Concluir", "Revogado"],
 }
+# El detalle nuevo y «Borrar esta app» (#769, mockup aprobado por Julian, Iris[Q74]=B).
+KEYS += ["sec_details", "line_revoked", "line_used", "line_unused", "delete_title", "delete_hint", "delete", "deleted",
+         "delete_active"]
+WORDS["es-MX"] += ["Detalles", "Revocada el {when} · {rel}", "{app} · último uso {rel}", "{app} · todavía sin usar",
+                   "Borrar esta app",
+                   "Su token ya no abre la API. Borrarla la quita de esta lista para siempre. La bitácora de la API conserva el prefijo de su token y lo que hizo.",
+                   "Borrar app", "App borrada.", "Esta app sigue activa: primero revócala."]
+WORDS["en-US"] += ["Details", "Revoked {when} · {rel}", "{app} · last used {rel}", "{app} · not used yet",
+                   "Delete this app",
+                   "Its token no longer opens the API. Deleting removes it from this list for good. The API log keeps its token prefix and what it did.",
+                   "Delete app", "App deleted.", "This app is still active: revoke it first."]
+WORDS["es-ES"] += ["Detalles", "Revocada el {when} · {rel}", "{app} · último uso {rel}", "{app} · todavía sin usar",
+                   "Borrar esta app",
+                   "Su token ya no abre la API. Borrarla la quita de esta lista para siempre. El registro de la API conserva el prefijo de su token y lo que hizo.",
+                   "Borrar app", "App borrada.", "Esta app sigue activa: primero revócala."]
+WORDS["fr-FR"] += ["Détails", "Révoquée le {when} · {rel}", "{app} · dernière utilisation {rel}", "{app} · pas encore utilisée",
+                   "Supprimer cette app",
+                   "Son jeton n’ouvre plus l’API. La supprimer la retire de cette liste pour de bon. Le journal de l’API garde le préfixe de son jeton et ce qu’elle a fait.",
+                   "Supprimer l’app", "App supprimée.", "Cette app est encore active : révoquez-la d’abord."]
+WORDS["pt-BR"] += ["Detalhes", "Revogado em {when} · {rel}", "{app} · último uso {rel}", "{app} · ainda não usado",
+                   "Apagar este app",
+                   "O token dele não abre mais a API. Apagar tira o app desta lista para sempre. O registro da API guarda o prefixo do token e o que ele fez.",
+                   "Apagar app", "App apagado.", "Este app ainda está ativo: revogue-o primeiro."]
+# «Revocar esta app» avisa que después se puede borrar.
+for _language, _more in {"es-MX": " Una app revocada se puede borrar después.", "en-US": " A revoked app can then be deleted.",
+                         "es-ES": " Una app revocada se puede borrar después.",
+                         "fr-FR": " Une app révoquée peut ensuite être supprimée.",
+                         "pt-BR": " Um app revogado pode ser apagado depois."}.items():
+    WORDS[_language][KEYS.index("revoke_hint")] += _more
 for _language, _words in WORDS.items():
     assert len(KEYS) == len(_words), _language
     CATALOGUES[_language].update({"web.apps." + key: value for key, value in zip(KEYS, _words)})
@@ -175,21 +205,69 @@ def _password_form(action: str, csrf: str, button: str, button_class: str, extra
             f'<button class="{button_class}" type="submit">{button}</button></form>')
 
 
-def detail_body(record: dict, csrf: str, *, error: str = "") -> str:
-    """El detalle de una app (#742 §2): sus datos y, si sigue activa, «Revocar esta app»."""
-    fields = [("name", e(record.get("name"))), ("id", f'<code>{e(record.get("client_id"))}</code>'),
-              ("app", _app(record)), ("paired", _time(record.get("paired_at"), short=False)),
-              ("last_used", _time(record.get("last_used_at"), short=False)), ("status", _state(record))]
-    if record.get("revoked_at"):
-        fields.append(("revoked_at", _time(record.get("revoked_at"), short=False)))
-    fields.append(("access", _th("full")))
-    details = "".join(f"<dt>{_th(key)}</dt><dd>{value}</dd>" for key, value in fields)
-    out = f'{_flash(error, "")}<dl class="token-detail app-detalle">{details}</dl>'
-    if not record.get("revoked_at"):
-        hidden = f'<input type="hidden" name="id" value="{e(record.get("client_id"))}">'
-        out += (f'<section class="zona-peligro"><h2>{_th("revoke_title")}</h2><p>{_th("revoke_hint")}</p>'
-                f'{_password_form("/apps/revoke", csrf, _th("revoke"), "peligro", hidden)}</section>')
-    return out
+def _ago(stamp: str | None, now: dt.datetime) -> str:
+    """«hace 12 minutos», «ayer», «hace 2 días»: texto plano, se escapa al usarlo."""
+    moment = when.parse(stamp or "")
+    if moment is None:
+        return ""
+    seconds = (now - moment).total_seconds()
+    if seconds < 86400:
+        return when.ago(seconds)
+    days = int(seconds // 86400)
+    return i18n.t("web.tokens.rel.day_ago") if days == 1 else i18n.t("web.tokens.rel.days_ago", n=days)
+
+
+def _app_text(record: dict) -> str:
+    name, version = record.get("app_name") or "", record.get("app_version") or ""
+    return (name + (f" v{version}" if version else "")).strip() or "—"
+
+
+def _row(label: str, value: str, small: str = "") -> str:
+    note = f"<small>{small}</small>" if small else ""
+    return f'<div class="tok-fila"><dt>{label}</dt><dd>{value}{note}</dd></div>'
+
+
+def _when_row(key: str, stamp: str | None, now: dt.datetime) -> str:
+    # Corta: de hoy sólo la hora, porque «hace …» ya va debajo.
+    return _row(_th(key), _time(stamp, short=True), e(_ago(stamp, now)) if stamp else "")
+
+
+def detail_body(record: dict, csrf: str, *, error: str = "", now: dt.datetime | None = None) -> str:
+    """
+    El detalle de una app (#769, mockup aprobado por Julian, Iris[Q74]=B), como el de un token
+    (#760): la cabecera con el id, el estado y cuándo se revocó o se usó, «Details», y al final
+    «Revocar esta app» (activa) o «Borrar esta app» (revocada). `error` ya viene escapado.
+    """
+    now = now or dt.datetime.now(dt.timezone.utc)
+    revoked, last = record.get("revoked_at"), record.get("last_used_at")
+    # La línea lleva un `<time>`: el texto del catálogo se escapa entero y luego entra la etiqueta.
+    slot = "\x00when\x00"
+    if revoked:
+        line = e(i18n.t("web.apps.line_revoked", when=slot, rel=_ago(revoked, now))).replace(e(slot), _time(revoked, short=True))
+    elif last:
+        line = _th("line_used", app=_app_text(record), rel=_ago(last, now))
+    else:
+        line = _th("line_unused", app=_app_text(record))
+    head = (f'<div class="tok-cabeza"><div><h2>{e(record.get("name"))}</h2>'
+            f'<code class="tok-prefijo">{e(record.get("client_id"))}</code>'
+            f'<span class="tok-vence">{line}</span></div>{_state(record)}</div>')
+    details = (f'<section class="tok-tarjeta"><h3>{_th("sec_details")}</h3><dl>'
+               + _row(_th("app"), _app(record))
+               + _when_row("paired", record.get("paired_at"), now)
+               + _when_row("last_used", last, now)
+               + (_when_row("revoked_at", revoked, now) if revoked else "")
+               + _row(_th("access"), _th("full"))
+               + "</dl></section>")
+    hidden = f'<input type="hidden" name="id" value="{e(record.get("client_id"))}">'
+    if revoked:
+        danger = (f'<section class="zona-peligro zona-borrar"><h2>{_th("delete_title")}</h2><p>{_th("delete_hint")}</p>'
+                  f'{_password_form("/apps/delete", csrf, _th("delete"), "peligro", hidden)}</section>')
+    else:
+        danger = (f'<section class="zona-peligro"><h2>{_th("revoke_title")}</h2><p>{_th("revoke_hint")}</p>'
+                  f'{_password_form("/apps/revoke", csrf, _th("revoke"), "peligro", hidden)}</section>')
+    error_notice = f'<p class="error" role="alert">{error}</p>' if error else ""
+    crumb = f'<p class="migas"><a href="/apps">← {_th("title")}</a></p>'
+    return f'{crumb}{error_notice}<div class="tok">{head}{details}{danger}</div>'
 
 
 def pair_body(csrf: str, *, error: str = "") -> str:

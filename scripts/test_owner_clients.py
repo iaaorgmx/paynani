@@ -86,6 +86,15 @@ check("revocado no abre", "token_revoked", owner_clients.lookup(token, path=stor
 check("revocar dos veces da None", None, owner_clients.revoke(record["client_id"], path=store))
 check("revocar un id malformado da None", None, owner_clients.revoke("../x", path=store))
 check("varios clientes a la vez (Q3)", 2, len(owner_clients.list_clients(path=store)))
+# #769: borrar sólo una app revocada.
+second = next(r for r in owner_clients.list_clients(path=store) if not r.get("revoked_at"))
+check("borrar una app activa: active, y sigue ahí", ("active", 2),
+      (owner_clients.delete(second["client_id"], path=store), len(owner_clients.list_clients(path=store))))
+check("borrar la revocada: deleted, y ya no está", ("deleted", [second["client_id"]]),
+      (owner_clients.delete(record["client_id"], path=store), [r["client_id"] for r in owner_clients.list_clients(path=store)]))
+check("borrarla otra vez: missing", "missing", owner_clients.delete(record["client_id"], path=store))
+check("un id malformado: missing", "missing", owner_clients.delete("../x", path=store))
+check("borrar no deja el archivo abierto a otros", 0o600, stat.S_IMODE(store.stat().st_mode))
 
 # --- el endpoint y la página ------------------------------------------------------------------
 sent = []
@@ -218,7 +227,7 @@ check("contraseña mala en «Generar código»: 400 en la misma página, con el 
 target = data["client_id"]
 status, _, page = req("GET", f"/apps/detail?id={target}&lang=es-MX", cookie=cookie)
 check("detalle: 200 con sus datos y «Revocar esta app»", (200, True, True, True, True),
-      (status, "MT de prueba" in page, f"<code>{target}</code>" in page, "Revocar esta app" in page,
+      (status, "MT de prueba" in page, f'<code class="tok-prefijo">{target}</code>' in page, "Revocar esta app" in page,
        f'name="id" value="{target}"' in page))
 check("detalle: sin hashes ni token", (False, False),
       (any(r["sha256"] in page for r in json.loads(store.read_text())), data["token"] in page))
@@ -241,6 +250,34 @@ check("revocar otra vez: 404", 404, status)
 status, _, page = req("GET", f"/apps/detail?id={target}&lang=es-MX", cookie=cookie)
 check("detalle de una revocada: «Revocada», con la fecha y sin formulario", (200, True, False),
       (status, "estado-app-revoked" in page, 'action="/apps/revoke"' in page))
+
+# --- #769: el detalle nuevo y «Borrar esta app» --------------------------------------------------
+check("revocada: «Borrar esta app», con la fecha y cuánto hace", (True, True, True, False),
+      ('action="/apps/delete"' in page, "zona-borrar" in page, "Revocada el <time" in page, 'style="' in page))
+active = next(r for r in owner_clients.list_clients(path=store) if not r.get("revoked_at"))
+status, _, page = req("GET", f"/apps/detail?id={active['client_id']}&lang=es-MX", cookie=cookie)
+check("activa: «Revocar», sin «Borrar», y avisa que después se puede borrar", (200, True, False, True),
+      (status, 'action="/apps/revoke"' in page, 'action="/apps/delete"' in page, "se puede borrar después" in page))
+form = {"csrf": csrf, "password": GOOD, "id": active["client_id"]}
+status, _, page = req("POST", "/apps/delete", form=form, cookie=cookie)
+check("borrar una activa: 400 con el aviso, y sigue", (400, True, True),
+      (status, "primero revócala" in page, any(r["client_id"] == active["client_id"] for r in owner_clients.list_clients(path=store))))
+form["id"] = target
+check("borrar sin CSRF: 403", 403, req("POST", "/apps/delete", form={**form, "csrf": "mala"}, cookie=cookie)[0])
+status, _, page = req("POST", "/apps/delete", form={**form, "password": "mala"}, cookie=cookie)
+check("borrar con contraseña mala: 400 en el detalle, y sigue", (400, True),
+      (status, any(r["client_id"] == target for r in owner_clients.list_clients(path=store))))
+check("el error de la contraseña no se escapa dos veces", False, "&amp;" in page.split('role="alert">', 1)[-1].split("</p>", 1)[0])
+status, headers, _ = req("POST", "/apps/delete", form=form, cookie=cookie)
+check("borrar la revocada: 303 a la lista con el aviso, y ya no está", (303, True, False),
+      (status, headers.get("location", "").endswith("/apps?deleted=1"),
+       any(r["client_id"] == target for r in owner_clients.list_clients(path=store))))
+status, _, page = req("GET", "/apps?deleted=1&lang=es-MX", cookie=cookie)
+check("la lista con «App borrada.»", (200, True), (status, "App borrada." in page))
+check("borrarla otra vez: 404", 404, req("POST", "/apps/delete", form=form, cookie=cookie)[0])
+for lang in ("es-MX", "en-US", "es-ES", "fr-FR", "pt-BR"):
+    _, _, localized = req("GET", f"/apps/detail?id={active['client_id']}&lang={lang}", cookie=cookie)
+    check(f"detalle en {lang}: sin llaves crudas", False, "web.apps." in localized or "web.tokens." in localized)
 
 # --- el CLI -----------------------------------------------------------------------------------
 env = {**os.environ, "PAYNANI_WEB_USER": str(user_file)}

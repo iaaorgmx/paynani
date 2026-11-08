@@ -208,6 +208,26 @@ def revoke(client_id: str, *, path: Path | None = None, now: dt.datetime | None 
     return None
 
 
+def delete(client_id: str, *, path: Path | None = None) -> str:
+    """
+    Borra una app ya revocada (#769): "deleted", "active" (primero se revoca) o "missing".
+    La bitácora de la API no se toca: guarda el prefijo del token, no el registro.
+    """
+    if not isinstance(client_id, str) or not _CLIENT_ID.fullmatch(client_id):
+        return "missing"
+    target = Path(path) if path else clients_path()
+    with _locked(target):
+        clients = _clients(target)
+        for index, record in enumerate(clients):
+            if record.get("client_id") == client_id:
+                if not record.get("revoked_at"):
+                    return "active"
+                del clients[index]
+                _write(target, clients)
+                return "deleted"
+    return "missing"
+
+
 def touch(sha256: str, *, path: Path | None = None, now: dt.datetime | None = None) -> None:
     target = Path(path) if path else clients_path()
     with _locked(target):

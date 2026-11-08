@@ -360,6 +360,30 @@ status, body = api("DeleteApiToken", id="nope")
 check("DeleteApiToken con un id mal formado: invalid_parameter", (400, "id"), (status, body.get("field")))
 check("DeleteApiToken queda como owner_sensitive", True, sensitive_count() - before_delete >= 3)
 
+# ListClients y DeleteClient (#769, Iris[Q74]=B): sólo se borra una app ya revocada.
+_, (old_token, old) = owner_clients.pair(owner_clients.new_code(path=store), "Laptop vieja", app_name="PaynaniWebMT", path=store)
+status, body = api("ListClients")
+ids = [c["client_id"] for c in body.get("clients", [])]
+check("ListClients: las apps, sin el hash ni el token", (200, True, True, False, False),
+      (status, client["client_id"] in ids, old["client_id"] in ids, any("sha256" in c for c in body["clients"]),
+       old_token in json.dumps(body)))
+before_delete = sensitive_count()
+status, body = api("DeleteClient", client_id=old["client_id"])
+check("DeleteClient con una app activa: 409 client_active, y sigue", (409, "client_active", True),
+      (status, body["code"], old["client_id"] in [c["client_id"] for c in api("ListClients")[1]["clients"]]))
+owner_clients.revoke(old["client_id"], path=store)
+status, body = api("DeleteClient", client_id=old["client_id"])
+check("DeleteClient con la revocada: 200 y ya no está", (200, old["client_id"], False),
+      (status, body.get("deleted"), old["client_id"] in [c["client_id"] for c in api("ListClients")[1]["clients"]]))
+status, body = api("DeleteClient", client_id=old["client_id"])
+check("borrarla otra vez: 404 not_found", (404, "not_found"), (status, body["code"]))
+status, body = api("DeleteClient", client_id="../x")
+check("DeleteClient con un id mal formado: invalid_parameter", (400, "client_id"), (status, body.get("field")))
+status, body = api("DeleteClient")
+check("DeleteClient sin client_id: 400", 400, status)
+check("DeleteClient queda como owner_sensitive", True, sensitive_count() - before_delete >= 3)
+check("el cliente que llama sigue activo", "ok", owner_clients.lookup(token, path=store)[0])
+
 # --- Los tokens no se cruzan ---------------------------------------------------------------------
 status, body = api("ListApiTokens", tok=agent_token)
 check("un token de agente pn_ no llama acciones del dueño", (401, "invalid_token"), (status, body["code"]))
