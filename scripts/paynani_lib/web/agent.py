@@ -124,13 +124,18 @@ def status(services: dict, runtime: str, events: list[dict] | None = None,
     return "unknown"
 
 
+def display_name(info: dict) -> str:
+    """El nombre del agente: el de la firma o, si no hay, la parte local de su correo."""
+    return info.get("name") or (info.get("email") or "").split("@")[0]
+
+
 def summary(source: Source, now: dt.datetime | None = None) -> dict:
     """El bloque del menú: `{name, runtime, runtime_label, status}`. Sólo lee el ledger
     cuando el runtime lo necesita (Codex y OpenCode)."""
     info = source.agent()
     runtime = info.get("runtime", "")
     events = source.events() if runtime in SPOOL_RUNTIMES else None
-    name = info.get("name") or (info.get("email") or "").split("@")[0]
+    name = display_name(info)
     return {"name": name, "runtime": runtime, "runtime_label": runtime_label(runtime),
             "status": status(source.services(), runtime, events, now)}
 

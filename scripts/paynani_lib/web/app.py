@@ -412,6 +412,14 @@ class Context:
         except Exception:  # noqa: BLE001 -- sólo es para mostrar
             return None
 
+    def agent_name(self) -> str:
+        """Sólo el nombre del agente, el mismo de `GetInstance`, sin calcular su estado
+        (PaynaniWebMT PRD #94, FR-7). Vacío si algo falla."""
+        try:
+            return str(agent.display_name(self.dashboard.agent()) or "")
+        except Exception:  # noqa: BLE001 -- sólo es para mostrar
+            return ""
+
     def agent_model(self) -> dict:
         return agent.build(self.dashboard, self.now())
 
@@ -966,7 +974,12 @@ def make_handler(ctx: Context):
             if self._static(parsed.path):
                 return
             if parsed.path == "/_health":
-                body = json.dumps({"ok": True, "configured": users.exists(self.CTX.user_file)}).encode("utf-8")
+                # PaynaniWebMT PRD #94, FR-7: también el nombre del agente, sin token, para
+                # que «Connect paynani» llene el nombre de la conexión. Sin usuario va vacío.
+                configured = users.exists(self.CTX.user_file)
+                body = json.dumps({"ok": True, "configured": configured,
+                                   "agent": {"name": self.CTX.agent_name() if configured else ""}}
+                                  ).encode("utf-8")
                 self._send(200, "application/json; charset=UTF-8", body)
                 return
             self._begin()
