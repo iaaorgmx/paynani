@@ -207,7 +207,27 @@ def agent_env(runtime: str, runtime_bin: str | None = None) -> dict[str, str]:
     }
     if runtime == "openclaw" and runtime_bin:
         env["OPENCLAW"] = runtime_bin
+    if runtime == "antigravity":
+        env["PAYNANI_ANTIGRAVITY_MODE"] = antigravity_mode()
     return env
+
+
+def antigravity_mode() -> str:
+    """
+    Antigravity's autonomous mode (#749): on by default, so mail wakes the agent
+    with `agy -p` (Julian, Metis[Q157]). The environment wins, then the value
+    runtime.env already has, so an owner's "off" survives an upgrade. Anything
+    but "agent" is "off".
+    """
+    value = os.environ.get("PAYNANI_ANTIGRAVITY_MODE", "").strip()
+    if not value and runtime_env().exists():
+        for line in runtime_env().read_text(encoding="utf-8").splitlines():
+            name, _, raw = line.partition("=")
+            if name.strip() == "PAYNANI_ANTIGRAVITY_MODE":
+                value = raw.strip().strip('"')
+    if not value:
+        return "agent"
+    return "agent" if value.lower() == "agent" else "off"
 
 
 def plist_for(name: str, python: str, runtime: str, runtime_bin: str | None = None) -> dict:
@@ -562,6 +582,8 @@ def write_runtime_env(runtime: str, runtime_bin: str | None = None) -> bool:
     lines = [f'PAYNANI_RUNTIME="{runtime}"\n']
     if runtime == "openclaw" and runtime_bin:
         lines.append(f'OPENCLAW="{runtime_bin}"\n')
+    if runtime == "antigravity":
+        lines.append(f'PAYNANI_ANTIGRAVITY_MODE="{antigravity_mode()}"\n')
     lines.append(f'PAYNANI_ENV="{env_file()}"\n')
     lines.append('PAYNANI_SUPERVISOR="launchd"\n')
     desired = "".join(lines)

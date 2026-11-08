@@ -406,8 +406,8 @@ runtime_env="$clone/runtime.env"
     printf 'FAIL Antigravity generated runtime configuration is not mode 0600\n'
     fail=$((fail + 1))
 }
-[[ "$(<"$runtime_env")" == 'PAYNANI_RUNTIME=antigravity' ]] || {
-    printf 'FAIL generated runtime configuration selects Antigravity\n'
+[[ "$(<"$runtime_env")" == $'PAYNANI_RUNTIME=antigravity\nPAYNANI_ANTIGRAVITY_MODE=agent' ]] || {
+    printf 'FAIL generated runtime configuration selects Antigravity with autonomous mode on\n'
     fail=$((fail + 1))
 }
 [[ "$LAST_OUTPUT" == *'antigravity_spool_probe=accepted'*'antigravity.spool'* &&
@@ -418,6 +418,21 @@ runtime_env="$clone/runtime.env"
     fail=$((fail + 1))
 }
 check_status 'second Antigravity convergence is idempotent' 0 --runtime antigravity
+# Metis[Q157]: the owner turns autonomous mode off through the environment, and
+# a later plain re-run keeps it off.
+PAYNANI_ANTIGRAVITY_MODE=off check_status 'Antigravity re-run turns autonomous mode off from the environment' 10 \
+    --runtime antigravity
+check_status 'Antigravity plain re-run keeps autonomous mode off' 0 --runtime antigravity
+[[ "$(<"$runtime_env")" == $'PAYNANI_RUNTIME=antigravity\nPAYNANI_ANTIGRAVITY_MODE=off' ]] || {
+    printf 'FAIL Antigravity re-run did not keep PAYNANI_ANTIGRAVITY_MODE=off\n'
+    fail=$((fail + 1))
+}
+PAYNANI_ANTIGRAVITY_MODE=agent check_status 'Antigravity re-run turns autonomous mode back on from the environment' 10 \
+    --runtime antigravity
+[[ "$(<"$runtime_env")" == $'PAYNANI_RUNTIME=antigravity\nPAYNANI_ANTIGRAVITY_MODE=agent' ]] || {
+    printf 'FAIL PAYNANI_ANTIGRAVITY_MODE=agent in the environment did not win\n'
+    fail=$((fail + 1))
+}
 check_status 'Antigravity uninstall names the hooks step' 10 --runtime antigravity --uninstall
 [[ "$LAST_OUTPUT" == *'antigravity_hook.py --uninstall'* ]] || {
     printf 'FAIL Antigravity uninstall did not name the hooks removal step\n'
