@@ -161,7 +161,7 @@ def session_row(session: dict, now: dt.datetime) -> str:
     runtime = session.get("runtime_label") or session.get("runtime") or "?"
     if kind == "replay":
         unread = session.get("unread")
-        detail = _t("svc.replay.pending", runtime=runtime) if unread else _t("svc.replay.none", runtime=runtime)
+        detail = _t("svc.replay." + ("unknown" if unread is None else "pending" if unread else "none"), runtime=runtime)
     elif status == "no_session":
         detail = _t("svc.spool.stuck", runtime=runtime)
     else:

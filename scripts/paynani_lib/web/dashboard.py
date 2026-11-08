@@ -484,6 +484,32 @@ def _unit_check(name: str, unit: str) -> dict:
     return _check(name, "blocked", f"{name} service is {unit}")
 
 
+def antigravity_unread(spool: Path | None = None) -> int | None:
+    """
+    Los bytes de `antigravity.spool` que los hooks de `agy` todavía no mostraron (#757): el
+    tamaño menos `antigravity.offset`. Sólo lee; no usa `healthcheck.spool_facts`, que prueba
+    si se puede escribir creando un archivo en `state/` (revisión de Metis en #759). Si no se
+    puede saber (sin adaptador, o el spool no se puede leer), None: la fila no afirma nada.
+    Sin spool todavía es 0: nada le ha llegado.
+    """
+    try:
+        if spool is None:
+            import healthcheck  # noqa: F401 -- pone harness/ en sys.path
+            from adapters import antigravity as adapter
+            spool = Path(adapter.spool_path())
+        try:
+            size = spool.stat().st_size
+        except FileNotFoundError:
+            return 0
+        try:
+            offset = int((spool.parent / "antigravity.offset").read_text(encoding="utf-8").strip() or 0)
+        except FileNotFoundError:
+            offset = 0
+        return max(0, size - offset)
+    except (SystemExit, Exception):  # noqa: BLE001 -- sólo es para mostrar
+        return None
+
+
 def local_services(state_dir: Path) -> dict:
     import healthcheck as hc
     listener = hc.listener_facts()
@@ -499,8 +525,7 @@ def local_services(state_dir: Path) -> dict:
     session = {"live": bool(live), "armed_at": str(live.get("armed_at") or ""),
                "expires_at": str(live.get("expires_at") or "")}
     if selected_runtime() == "antigravity":
-        # Lo que espera la siguiente conversación de `agy` (#757): sólo el número de bytes.
-        session["unread_bytes"] = (hc.spool_facts("antigravity") or {}).get("bytes_unread")
+        session["unread_bytes"] = antigravity_unread()
     return {
         "listener": {"unit": listener["unit"], "heartbeat_age_s": listener.get("heartbeat_age_seconds")},
         "dispatcher": {"unit": hc.dispatcher_facts()["unit"]},

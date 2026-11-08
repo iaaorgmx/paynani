@@ -411,6 +411,26 @@ check("la fuente se copia: build() no cambia el `services` en caché", False,
       "evidence" in _src.data["services"]["session"])
 
 
+# ---- Antigravity: lo que espera, sin escribir en state/ (revisión de Metis en #759) ------
+with tempfile.TemporaryDirectory() as _tmp:
+    _spool = Path(_tmp) / "antigravity.spool"
+    check("sin spool todavía: 0 (nada le ha llegado)", 0, dashboard.antigravity_unread(_spool))
+    _spool.write_text("uno\ndos\n", encoding="utf-8")
+    check("spool sin offset: todo sin leer", 8, dashboard.antigravity_unread(_spool))
+    (Path(_tmp) / "antigravity.offset").write_text("8", encoding="utf-8")
+    check("offset al final: 0", 0, dashboard.antigravity_unread(_spool))
+    (Path(_tmp) / "antigravity.offset").write_text("x", encoding="utf-8")
+    check("offset ilegible: None, no afirma nada", None, dashboard.antigravity_unread(_spool))
+    (Path(_tmp) / "antigravity.offset").write_text("4", encoding="utf-8")
+    _before = sorted(p.name for p in Path(_tmp).iterdir())
+    dashboard.antigravity_unread(_spool)
+    check("no crea ningún archivo junto al spool (sin prueba de escritura)", _before,
+          sorted(p.name for p in Path(_tmp).iterdir()))
+m757, row, num = _session("antigravity", _svc(accepted=_ACC, by="antigravity", unread=None))
+check("Antigravity sin saber lo pendiente: ni «nothing pending» ni «waiting»", (False, False, True, None),
+      ("nothing pending" in row, "waiting" in row, "shown when each conversation starts" in row,
+       m757["services"]["session"]["unread"]))
+
 httpd.shutdown()
 check("la configuración real no cambió (.env y Himalaya)", BEFORE, [sha(p) for p in REAL])
 
