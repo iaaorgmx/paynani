@@ -619,10 +619,11 @@ def _antigravity_run_check(name: str) -> dict:
     except Exception as exc:
         return _check(name, "unknown", OBSERVATION_LABELS[name], {"error": exc.__class__.__name__})
     facts = {"agent_mode": mode, "last_agent_run": record}
-    if record is None:
-        if mode:
-            return _check(name, "unknown", "agent mode is on and no agy -p run has been recorded yet", facts)
+    if not mode:
+        # Nothing to fix with the mode off, even after an old failed run (Iris's review of #761).
         return _check(name, "ok", "agent mode is off; mail reaches agy through the hooks only", facts)
+    if record is None:
+        return _check(name, "unknown", "agent mode is on and no agy -p run has been recorded yet", facts)
     if record.get("ok"):
         return _check(name, "ok", f"last agy -p run succeeded at {record.get('at')}", facts)
     problem = record.get("problem") or "run"

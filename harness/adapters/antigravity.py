@@ -55,8 +55,7 @@ KILL_GRACE = 30
 
 # Text that means the Google login is not usable from here (FR-10). The owner
 # fixes it; retrying does not.
-LOGIN_MARKERS = ("authentication required", "secret keyring is locked", "not logged in",
-                 "keyring")
+LOGIN_MARKERS = ("authentication required", "secret keyring is locked", "not logged in")
 # A rejected tool permission. agy 1.5.3 in agentMode "auto" decides with a
 # classifier and was not seen to refuse in F0, so this follows the documented
 # wording; a run that reports SUCCESS with one of these in stderr is a failure.
@@ -247,14 +246,19 @@ def classify_run(returncode, stdout, stderr):
         "finished_reason": str(result.get("finished_reason") or agy_error.get("reason") or ""),
     }
     error = _one_line(result.get("error") or agy_error.get("short_error") or "")
+    refused = PERMISSION_RE.search(stderr or "")
+    if returncode == 0 and facts["status"] == "SUCCESS":
+        # agy writes log lines to stderr, so on a good run only a refused
+        # permission turns it into a failure; a log line that mentions a
+        # login is not one (Iris's review of #761).
+        if refused:
+            return False, "permission", _one_line(refused.group(0)), facts
+        return True, "", "", facts
     haystack = " ".join((error, stderr or "")).lower()
     if any(marker in haystack for marker in LOGIN_MARKERS):
         return False, "login", error or _one_line(stderr), facts
-    refused = PERMISSION_RE.search(stderr or "")
     if refused:
         return False, "permission", _one_line(refused.group(0)), facts
-    if returncode == 0 and facts["status"] == "SUCCESS":
-        return True, "", "", facts
     if facts["finished_reason"] == "print_timeout":
         return False, "timeout", error or "the turn did not finish within --print-timeout", facts
     if not result:

@@ -280,6 +280,41 @@ class Doctor(unittest.TestCase):
         antigravity._note_run({"event_id": "e", "at": "t", "ok": True, "problem": "", "detail": ""})
         self.assertEqual("ok", self.check("agent")["status"])
 
+    def test_mode_off_after_an_old_failure_is_ok(self):
+        # Iris's review of #761: with the mode off there is nothing to fix.
+        antigravity._note_run({"event_id": "e", "at": "t", "ok": False, "problem": "login",
+                               "detail": "secret keyring is locked"})
+        result = self.check("")
+        self.assertEqual("ok", result["status"])
+        self.assertFalse(result["facts"]["last_agent_run"]["ok"])
+
+
+class Classify(unittest.TestCase):
+    """classify_run() on what agy prints (#749 FR-10)."""
+
+    GOOD = '{"conversation_id": "c", "status": "SUCCESS", "response": "ok"}'
+
+    def test_a_good_run_with_login_words_in_its_log_is_still_good(self):
+        # Iris's review of #761: agy writes log lines to stderr.
+        for stderr in ("I1108 keyring: using libsecret backend\n",
+                       "debug: telemetry not logged in, skipping\n",
+                       "warning: authentication required for an optional plugin\n"):
+            with self.subTest(stderr=stderr):
+                ok, problem, _, _ = antigravity.classify_run(0, self.GOOD, stderr)
+                self.assertEqual((True, ""), (ok, problem))
+
+    def test_a_good_run_with_a_refused_permission_is_not_good(self):
+        ok, problem, _, _ = antigravity.classify_run(0, self.GOOD, "permission for command(x) denied\n")
+        self.assertEqual((False, "permission"), (ok, problem))
+
+    def test_a_failed_run_with_a_locked_keyring_is_login(self):
+        ok, problem, _, _ = antigravity.classify_run(1, "", "error: secret keyring is locked\n")
+        self.assertEqual((False, "login"), (ok, problem))
+
+    def test_the_bare_word_keyring_is_not_login(self):
+        ok, problem, _, _ = antigravity.classify_run(1, "", "keyring backend: libsecret\npanic: boom\n")
+        self.assertEqual((False, "run"), (ok, problem))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -2024,6 +2024,11 @@ roster rules in `AGENTS.md` before turning it on.
 - `agentMode: "auto"` in `agy`'s settings decides commands that leave the
   sandbox with a risk classifier instead of a question. The permission rules
   above still apply.
+- The notice (sender and subject) goes in `agy`'s command line, so other users
+  of the machine can see it in `ps` while the run lasts. `agy` 1.5.3 does not
+  read a `-p` prompt from stdin (`-p -` is taken as the prompt `-`). On an
+  agent's own host there is usually one user; on a shared one, leave this mode
+  off.
 
 **The login when paynani starts `agy` by itself.** In #749 F2, `agy -p` ran
 from a systemd user service with the Google account and the system keyring, the
