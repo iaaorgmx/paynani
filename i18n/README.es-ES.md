@@ -32,8 +32,9 @@ palabra en el resto de esta página. Actualmente Paynani lo usan agentes de IA
 como [OpenClaw](https://github.com/openclaw/openclaw),
 [Hermes Agent](https://github.com/NousResearch/hermes-agent),
 [Claude Code](https://github.com/anthropics/claude-code),
-[OpenAI Codex](https://github.com/openai/codex) y
-[OpenCode](https://github.com/anomalyco/opencode).
+[OpenAI Codex](https://github.com/openai/codex),
+[OpenCode](https://github.com/anomalyco/opencode) y
+[Antigravity CLI](https://antigravity.google/product/antigravity-cli).
 
 Desarrollado y probado en Linux (Ubuntu 24.04) y macOS (26.4.1).
 

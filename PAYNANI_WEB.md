@@ -329,6 +329,8 @@ caché de 60 s. Nada de aquí escribe en `state/` ni toca la red.
   - **Claude Code:** una sesión con la vigilancia viva (`watch_registry_facts`).
   - **Codex y OpenCode:** la sesión lee el spool. Un evento despachado a ese runtime que
     nadie toma en 10 min es «No session». Los que se quedaron con otro runtime no cuentan.
+  - **Antigravity CLI:** si algo espera en el spool a la siguiente conversación o turno de
+    `agy` (`replay`).
   - **OpenClaw y Hermes:** lo que el runtime contestó al entregarle el último evento
     (`state/delivery.json`). Sólo cuenta lo que dijo el runtime actual: al cambiar de
     runtime, lo que dijo el anterior no es evidencia. Un rechazo más nuevo que la última aceptación, o una cola atorada

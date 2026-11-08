@@ -733,7 +733,7 @@ private message to the bot:
   is being written (OpenClaw and Hermes can), pipe it into
   `scripts/paynani telegram send <contact> --stream`: the person sees it appear
   and it ends as one normal message. If you only have the finished text (Claude
-  Code, Codex, OpenCode), send it once; the person sees «escribiendo…» until it
+  Code, Codex, OpenCode, Antigravity CLI), send it once; the person sees «escribiendo…» until it
   goes out.
 - **For a long task, say so first** with
   `scripts/paynani telegram draft <contact> "Revisando tu pedido…"`. The next

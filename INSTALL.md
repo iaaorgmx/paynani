@@ -36,8 +36,8 @@ services and the harness rules all belong to that user. It confirms the
 runtime it detects (or asks which one, if there are several), asks for the
 mailbox (password hidden) and the owner's name and address, and it says **Ready** only when `paynani doctor` and
 `healthcheck.py` both pass. Before that it registers the step each harness
-needs for mail to reach a session (the Claude Code or Codex hooks, the OpenCode
-plugin, the OpenClaw standing rule), shown first and backed up, because that
+needs for mail to reach a session (the Claude Code, Codex or Antigravity CLI hooks,
+the OpenCode plugin, the OpenClaw standing rule), shown first and backed up, because that
 file is outside the agent's workspace and auto mode or a sandbox usually stops
 the agent from writing it (#474). With Claude Code or Codex the last step is
 yours: open a session, which arms the mail watch.
@@ -1527,7 +1527,7 @@ cursor only once that adapter reports the runtime accepted it. A template is in
 [`systemd/paynani-dispatch.service`](systemd/paynani-dispatch.service).
 
 **Choose the runtime with `PAYNANI_RUNTIME`** in that unit: `openclaw`,
-`hermes`, `claudecode`, `codex`, `opencode`, or `auto`. `auto` picks only when exactly one supported runtime is
+`hermes`, `claudecode`, `codex`, `opencode`, `antigravity`, or `auto`. `auto` picks only when exactly one supported runtime is
 present on the host, and refuses rather than guessing when none or several are.
 Set it explicitly if this machine runs more than one harness.
 

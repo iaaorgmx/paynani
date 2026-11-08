@@ -380,7 +380,7 @@ of the session that produced it works for months and then does not.
 
 ## Why some runtimes pull
 
-Claude Code, OpenAI Codex and OpenCode are exceptions to the section above, and
+Claude Code, OpenAI Codex, OpenCode and Antigravity CLI are exceptions to the section above, and
 it is worth understanding before changing anything in their adapters,
 `session_watch.sh`, the OpenCode plugin, or the pull-runtime branches of
 `session_start.py`.
@@ -422,7 +422,7 @@ the hook is what replaces it.
 
 **Session catch-up is therefore a pull-runtime mechanism by necessity, not a
 feature the push runtimes are missing.** `harness/session_start.py` exists for
-Claude Code, OpenAI Codex and OpenCode; on OpenClaw and Hermes, nothing invokes
+Claude Code, OpenAI Codex, OpenCode and Antigravity CLI; on OpenClaw and Hermes, nothing invokes
 it and nothing should. It is worth saying plainly because the reverse was
 implied for two releases, and it cost an investigation.
 

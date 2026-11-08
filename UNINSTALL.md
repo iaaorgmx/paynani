@@ -133,8 +133,11 @@ pgrep -af idle_listener.py                           # no debe salir nada
 están en el clon.** Cuando el host tiene un harness, la contraseña del buzón vive
 en el `.env` del workspace de ese harness (`~/.openclaw/workspace/.env`,
 `~/.hermes/workspace/.env`, `~/.claude/workspace/.env`,
-`~/.codex/workspace/.env`, `~/.opencode/workspace/.env`) y `<clon>/.env` ni
-siquiera existe. Un `rm -f .env` desde el clon no borraría nada en ese caso, y te
+`~/.codex/workspace/.env`, `~/.opencode/workspace/.env`,
+`~/.gemini/antigravity-cli/workspace/.env`) y `<clon>/.env` ni siquiera existe.
+Antigravity CLI es la excepción: `agy` no puede leer su propio workspace, así
+que ahí la contraseña normalmente está en el `.env` del clon
+(`~/.gemini/workspace/paynani/.env`). Un `rm -f .env` desde el clon no borraría nada en ese caso, y te
 dejaría creyendo que borraste la contraseña.
 
 No adivines la ruta: pregúntasela a la instalación, desde dentro del clon.

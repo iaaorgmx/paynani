@@ -122,8 +122,11 @@ pgrep -af idle_listener.py                           # expect nothing
 clone.** When the host has a harness, the mailbox password lives in that
 harness's workspace `.env` (`~/.openclaw/workspace/.env`,
 `~/.hermes/workspace/.env`, `~/.claude/workspace/.env`,
-`~/.codex/workspace/.env`, `~/.opencode/workspace/.env`) and `<clone>/.env` does
-not exist at all. An `rm -f .env` from the clone would delete nothing in that
+`~/.codex/workspace/.env`, `~/.opencode/workspace/.env`,
+`~/.gemini/antigravity-cli/workspace/.env`) and `<clone>/.env` does not exist
+at all. Antigravity CLI is the exception: `agy` cannot read its own workspace,
+so there the password is usually in the clone's `.env`
+(`~/.gemini/workspace/paynani/.env`). An `rm -f .env` from the clone would delete nothing in that
 case, and leave you believing you had removed the password.
 
 Do not guess the path. Ask the install, from inside the clone:

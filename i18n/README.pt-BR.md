@@ -30,8 +30,9 @@ seu agente. Esse programa anfitrião se chama *harness*, e é assim que a palavr
 como [OpenClaw](https://github.com/openclaw/openclaw),
 [Hermes Agent](https://github.com/NousResearch/hermes-agent),
 [Claude Code](https://github.com/anthropics/claude-code),
-[OpenAI Codex](https://github.com/openai/codex) e
-[OpenCode](https://github.com/anomalyco/opencode).
+[OpenAI Codex](https://github.com/openai/codex),
+[OpenCode](https://github.com/anomalyco/opencode) e
+[Antigravity CLI](https://antigravity.google/product/antigravity-cli).
 
 Desenvolvido e testado em Linux (Ubuntu 24.04) e macOS (26.4.1).
 
