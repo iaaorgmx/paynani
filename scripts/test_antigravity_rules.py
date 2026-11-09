@@ -65,10 +65,10 @@ with tempfile.TemporaryDirectory() as tmp:
 with tempfile.TemporaryDirectory() as tmp:
     home = Path(tmp)
     steps = harness_rules.plan("antigravity", ROOT, home=home)
-    check("the plan has three permission rules and the standing rule", 4, len(steps))
+    check("the plan has five permission rules and the standing rule", 6, len(steps))
     check("the permission rules go in antigravity-cli/settings.json", True,
-          all(str(harness_rules.antigravity_settings(home)) in s for s in steps[:3]))
-    check("the last step names GEMINI.md", True, str(harness_rules.antigravity_rules_file(home)) in steps[3])
+          all(str(harness_rules.antigravity_settings(home)) in s for s in steps[:5]))
+    check("the last step names GEMINI.md", True, str(harness_rules.antigravity_rules_file(home)) in steps[5])
 
     shown = []
     ok, detail = harness_rules.apply("antigravity", ROOT, home=home, confirm=lambda _q: "n", out=shown.append)
@@ -89,9 +89,7 @@ with tempfile.TemporaryDirectory() as tmp:
     data = json.loads(settings.read_text())
     check("other keys and rules are kept", ("gemini-x", "command(regex:^ls$)"),
           (data["model"], data["permissions"]["allow"][0]))
-    check("the three paynani rules are added", harness_rules.antigravity_rules(ROOT), data["permissions"]["allow"][1:])
-    check("the third one is systemctl for paynani units (#775)", harness_rules.SYSTEMCTL_RULE,
-          data["permissions"]["allow"][-1])
+    check("the five paynani rules are added", harness_rules.antigravity_rules(ROOT), data["permissions"]["allow"][1:])
     check("the file keeps its indentation", True, '\n    "model"' in settings.read_text())
     check("the standing rule is in GEMINI.md", "present",
           antigravity_rules.state(harness_rules.antigravity_rules_file(home), root=ROOT))
@@ -127,8 +125,29 @@ for command in ("systemctl --user stop paynani-dispatch",
                 "systemctl --user restart sshd",
                 "systemctl --user restart paynani-dispatch sshd",
                 "systemctl --user restart paynani-dispatch; rm -rf ~",
-                "sudo systemctl --user restart paynani-dispatch"):
+                "sudo systemctl --user restart paynani-dispatch",
+                "systemctl --user restart paynani-evil.service",
+                "systemctl --user daemon-reload; rm -rf ~",
+                "systemctl --user list-units --all --plain --no-legend '*' | awk '{print $1}' | xargs -r systemctl --user restart",
+                "systemctl --user list-units --all --plain --no-legend 'paynani-idle@*.service' | awk '{print $1}' | xargs -r systemctl --user stop"):
     check(f"not allowed: {command}", False, allowed(command))
+for command in ("systemctl --user restart paynani-logrotate.timer",
+                "systemctl --user daemon-reload"):
+    check(f"allowed: {command}", True, allowed(command))
+
+# --- every systemctl line a real upgrade plan prints passes (Iris on #776) -----
+import importlib.util  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location("paynani_upgrade_plan", ROOT / "scripts" / "upgrade_plan.py")
+up = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(up)
+units = [up.LISTENER, up.LISTENER_INSTANCES, up.DISPATCHER, up.SMS_GATEWAY, up.WEB, up.TELEGRAM, up.WHATSAPP]
+lines = up.commands({"ok": True, "system": "Linux", "runtime": "antigravity", "reinstall": False,
+                     "reinstall_commands": [], "restart_units": units, "restart_runtime": [], "next_session": False})
+systemctl_lines = [line for line in lines if line.startswith("systemctl")]
+check("the plan has daemon-reload, the named restart and the pattern restarts", True, len(systemctl_lines) >= 3)
+for line in systemctl_lines:
+    check(f"the plan line passes: {line[:70]}", True, allowed(line))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
