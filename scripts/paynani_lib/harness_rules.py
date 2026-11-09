@@ -85,9 +85,33 @@ def antigravity_rules(clone) -> list[str]:
     `command(regex:…)` form is the one Antigravity's documentation gives (#744);
     the pattern is anchored at both ends, so `scripts/paynani_old` or a command
     that only mentions the path does not match. To confirm on a real `agy` (F0).
+
+    The third rule (#775) lets `agy` restart or query paynani's own user units at
+    the end of an upgrade, one or several in one command, as `upgrade_plan.py`
+    prints them (`paynani-idle@<account>` included). Without it `agy` turns the
+    restart down without stopping, and the services keep running the old code.
+    `stop`, `disable` and any other unit stay outside.
     """
     paynani, send, _watch = scripts(clone)
-    return [f"command(regex:^{re.escape(path)}( .*)?$)" for path in (paynani, send)]
+    return ([f"command(regex:^{re.escape(path)}( .*)?$)" for path in (paynani, send)]
+            + [SYSTEMCTL_RULE, DAEMON_RELOAD_RULE, INSTANCES_RULE])
+
+
+# paynani's own units only (systemd/), so a `paynani-whatever` someone else made stays out.
+_UNIT = r"paynani-(dispatch|idle|sms|web|telegram|whatsapp|logrotate)(@[A-Za-z0-9_.-]+)?(\.service|\.timer)?"
+SYSTEMCTL_RULE = f"command(regex:^systemctl --user (restart|status) {_UNIT}( {_UNIT})*$)"
+# The other two systemctl lines `upgrade_plan.commands()` prints on Linux, exactly
+# (Iris on #776). `test_antigravity_rules.py` checks every systemctl line of a real
+# plan against these rules, so the two cannot drift apart unnoticed.
+DAEMON_RELOAD_RULE = "command(regex:^systemctl --user daemon-reload$)"
+# The units the plan restarts by pattern (per-account listeners `paynani-idle@*`, and
+# the optional `paynani-sms*`, `paynani-web*`, `paynani-whatsapp*`...): it lists the
+# matching ones and restarts those, so the pattern is fixed to paynani's own names.
+# Written by hand rather than with re.escape: that escapes spaces too, and `\ ` is an
+# invalid escape in RE2-style engines, which `agy` may use.
+INSTANCES_RULE = (r"command(regex:^systemctl --user list-units --all --plain --no-legend "
+                  r"'paynani-(dispatch|idle|sms|web|telegram|whatsapp)@?\*\.service' "
+                  r"\| awk '\{print \$1\}' \| xargs -r systemctl --user restart$)")
 
 
 def antigravity_settings(home=None) -> Path:

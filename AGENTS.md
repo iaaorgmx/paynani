@@ -163,6 +163,13 @@ file per harness:
 | OpenCode | `~/.opencode/workspace/.env` |
 | Antigravity CLI | `~/.gemini/antigravity-cli/workspace/.env` |
 
+On Antigravity CLI the usual place is the clone's own `.env`
+(`~/.gemini/workspace/paynani/.env`), which `scripts/paynani onboard` writes. The
+file in the table is read first only if your human put one there by hand. Your
+file tools cannot open anything under `~/.gemini/antigravity-cli`, and you do not
+need to: the command above and paynani's scripts read it outside the sandbox
+(INSTALL.md §6 «Antigravity CLI», *Credentials*).
+
 A clone that was set up with its own `.env` inside it keeps that instead; the
 command above answers with whichever this host has, and it reads the harness's
 file where it lies rather than asking you to move or copy it. Only the

@@ -1976,17 +1976,31 @@ Everything outside the markers is kept, and a first edit leaves
 **Permissions.** When `agy` runs without anyone to approve a tool (headless), a
 command that needs approval is turned down **without stopping the run** and the
 run still exits 0. So the agent needs `scripts/paynani` and `scripts/send.sh` of
-this clone, and only those, in `permissions.allow` of
+this clone, and `systemctl --user restart|status` of paynani's own units (so an
+upgrade can restart them, #775), and only those, in `permissions.allow` of
 `~/.gemini/antigravity-cli/settings.json`:
 
 ```json
 {"permissions": {"allow": [
   "command(regex:^<clone>/scripts/paynani( .*)?$)",
-  "command(regex:^<clone>/scripts/send\\.sh( .*)?$)"
+  "command(regex:^<clone>/scripts/send\\.sh( .*)?$)",
+  "command(regex:^systemctl --user (restart|status) paynani-(dispatch|idle|sms|web|telegram|whatsapp|logrotate)(@[A-Za-z0-9_.-]+)?(\\.service|\\.timer)?( paynani-(dispatch|idle|sms|web|telegram|whatsapp|logrotate)(@[A-Za-z0-9_.-]+)?(\\.service|\\.timer)?)*$)",
+  "command(regex:^systemctl --user daemon-reload$)",
+  "command(regex:^systemctl --user list-units --all --plain --no-legend 'paynani-(dispatch|idle|sms|web|telegram|whatsapp)@?\\*\\.service' \\| awk '\\{print \\$1\\}' \\| xargs -r systemctl --user restart$)"
 ]}}
 ```
 
-`bootstrap.sh` proposes both, and the standing rule above, word for word, and
+The last three are the `systemctl` lines `upgrade_plan.py` prints: reload the
+unit files, restart paynani's units by name, and restart the ones it finds by
+pattern (the per-account listeners `paynani-idle@<account>` and the optional
+services). Without them those lines are turned down without stopping and the
+services keep running the old code. They allow no `stop`, no `disable` and no
+unit that is not paynani's. `agy` cannot edit this file itself (its file tools
+cannot reach `~/.gemini/antigravity-cli`), so on an install from before #775
+your human adds the three lines by hand, or runs
+`scripts/bootstrap_user.py --runtime antigravity --upgrade --ref <tag>`.
+
+`bootstrap.sh` proposes all five, and the standing rule above, word for word, and
 writes them only after the owner says yes; every other key in the file is kept.
 Never use `--dangerously-skip-permissions` for an agent that holds a mailbox.
 

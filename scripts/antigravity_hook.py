@@ -21,7 +21,8 @@ repaired.
 
 Usage:
   antigravity_hook.py --print       show the block, change nothing
-  antigravity_hook.py --check       exit 0 when the block is there and points to this clone
+  antigravity_hook.py --check       exit 0 when the block is there and points to this clone,
+                                    1 when it is not, 3 inside agy's sandbox (it cannot tell)
   antigravity_hook.py --install     write the block (showing it first), backing up first
   antigravity_hook.py --uninstall   remove the block, backing up first
 """
@@ -144,12 +145,42 @@ def uninstall(path):
     return 0
 
 
+COULD_NOT_TELL = 3
+
+
+def in_sandbox(env=None, home=None):
+    """
+    True inside `agy`'s command sandbox (#775). `agy` sets ANTIGRAVITY_AGENTAPI_EXE
+    for the commands it runs, and its sandbox mounts the home read-only with a
+    `~/.gemini` built at start that does not carry `config/hooks.json` or
+    `GEMINI.md`: the files look missing while they are installed. Measured on
+    Manu Agy-Tob's host with `agy` 1.5.3. Outside the sandbox the home is writable.
+    """
+    env = os.environ if env is None else env
+    home = pathlib.Path.home() if home is None else pathlib.Path(home)
+    return bool(env.get("ANTIGRAVITY_AGENTAPI_EXE")) and not os.access(home, os.W_OK)
+
+
+def could_not_read(path, script):
+    """The --check answer when the file cannot be seen from here: not «absent»."""
+    print(f"could not read {path} from here: inside agy's sandbox it is hidden even when it is "
+          f"installed. Run this outside the sandbox: python3 {ROOT}/scripts/{script} --check")
+    return COULD_NOT_TELL
+
+
 def check(path):
-    settings, _ = load(path)
+    try:
+        settings, _ = load(path)
+    except SystemExit as exc:
+        if in_sandbox():
+            return could_not_read(path, "antigravity_hook.py")
+        raise exc
     found = state(settings)
     if found == "registered":
         print(f"registered in {path}: {' and '.join(EVENTS)} run {command()}")
         return 0
+    if in_sandbox():
+        return could_not_read(path, "antigravity_hook.py")
     fix = f"run: {ROOT}/scripts/antigravity_hook.py --install"
     reasons = {
         "missing": f"no {KEY!r} key",
