@@ -77,9 +77,12 @@ def reexec_target(py, environ=None):
 
 def enforce(version_info=None, executable=None, execv=None, environ=None):
     py = facts(version_info, executable)
-    if py["supported"]:
-        return py
     environ = os.environ if environ is None else environ
+    if py["supported"]:
+        # Do not pass the mark on: a later command started with the old python3
+        # must get its own re-run (Iris, #778).
+        environ.pop(REEXEC_MARK, None)
+        return py
     target = reexec_target(py, environ)
     if target:
         # An agent's shell found an older python3 than the one the install uses
@@ -89,7 +92,9 @@ def enforce(version_info=None, executable=None, execv=None, environ=None):
         (execv or os.execv)(target, argv)
     message = refusal(py)
     recorded = installed_python(environ)
-    if recorded:
+    if recorded and not (os.path.isfile(recorded) and os.access(recorded, os.X_OK)):
+        message += f"\nThe install recorded {recorded}, but it is not an executable file; re-run the installer."
+    elif recorded:
         message += f"\nThe install recorded {recorded}; run the command with it."
     print(message, file=sys.stderr, flush=True)
     raise SystemExit(1)

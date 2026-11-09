@@ -79,8 +79,13 @@ calls, code, message = run_old({"PAYNANI_PYTHON": new_python, python_floor.REEXE
 check("already re-run once: refuses instead of looping", (calls, code) == ([], 1))
 
 calls, code, message = run_old({"PAYNANI_PYTHON": "/nowhere/python3.13"})
-check("a recorded Python that is gone: refuses, and names it",
-      calls == [] and code == 1 and "The install recorded /nowhere/python3.13" in message)
+check("a recorded Python that is gone: refuses, names it, and says to re-run the installer",
+      calls == [] and code == 1
+      and "The install recorded /nowhere/python3.13, but it is not an executable file; re-run the installer" in message)
+
+calls, code, message = run_old({"PAYNANI_PYTHON": new_python, python_floor.REEXEC_MARK: "1"})
+check("a usable recorded Python: the refusal says to run the command with it",
+      f"The install recorded {new_python}; run the command with it." in message)
 
 calls, code, _ = run_old({"PAYNANI_PYTHON": new_python}, executable=new_python)
 check("the recorded one is this one: refuses (no pointless re-run)", (calls, code) == ([], 1))
@@ -96,6 +101,11 @@ check("no variable and no runtime.env: nothing recorded", python_floor.installed
 calls = []
 facts = python_floor.enforce((3, 12, 0), "/x", execv=lambda *a: calls.append(a), environ={"PAYNANI_PYTHON": new_python})
 check("a supported Python never re-runs", facts["supported"] and calls == [])
+
+env = {"PAYNANI_PYTHON": new_python, python_floor.REEXEC_MARK: "1"}
+python_floor.enforce((3, 13, 0), "/x", environ=env)
+check("the re-run process drops the mark, so its own children can re-run (Iris, #778)",
+      python_floor.REEXEC_MARK not in env)
 
 import ast  # noqa: E402
 for rel in ("harness/python_floor.py", "harness/paths.py"):
