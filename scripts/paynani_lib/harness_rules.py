@@ -85,9 +85,19 @@ def antigravity_rules(clone) -> list[str]:
     `command(regex:…)` form is the one Antigravity's documentation gives (#744);
     the pattern is anchored at both ends, so `scripts/paynani_old` or a command
     that only mentions the path does not match. To confirm on a real `agy` (F0).
+
+    The third rule (#775) lets `agy` restart or query paynani's own user units at
+    the end of an upgrade, one or several in one command, as `upgrade_plan.py`
+    prints them (`paynani-idle@<account>` included). Without it `agy` turns the
+    restart down without stopping, and the services keep running the old code.
+    `stop`, `disable` and any other unit stay outside.
     """
     paynani, send, _watch = scripts(clone)
-    return [f"command(regex:^{re.escape(path)}( .*)?$)" for path in (paynani, send)]
+    return [f"command(regex:^{re.escape(path)}( .*)?$)" for path in (paynani, send)] + [SYSTEMCTL_RULE]
+
+
+_UNIT = r"paynani-[a-z]+(@[A-Za-z0-9_.-]+)?(\.service)?"
+SYSTEMCTL_RULE = f"command(regex:^systemctl --user (restart|status) {_UNIT}( {_UNIT})*$)"
 
 
 def antigravity_settings(home=None) -> Path:

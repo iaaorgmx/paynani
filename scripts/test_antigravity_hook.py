@@ -229,6 +229,41 @@ class CommandLine(Base):
         self.assertIn("is not valid JSON", result.stderr)
         self.assertEqual(self.settings.read_text(encoding="utf-8"), "{ broken")
 
+    def sandboxed(self, script, *args):
+        """Like agy's sandbox (#775): ANTIGRAVITY_AGENTAPI_EXE set and a read-only home."""
+        env = dict(os.environ, HOME=str(self.home), ANTIGRAVITY_AGENTAPI_EXE="/usr/bin/true")
+        os.chmod(self.home, 0o555)
+        self.addCleanup(os.chmod, self.home, 0o755)
+        return subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True, env=env, timeout=30)
+
+    def test_check_inside_the_sandbox_says_it_cannot_tell(self):
+        result = self.sandboxed(SCRIPT, "--check")
+        self.assertEqual(result.returncode, hook.COULD_NOT_TELL, result.stdout + result.stderr)
+        self.assertIn(f"could not read {self.settings} from here", result.stdout)
+        self.assertIn("outside the sandbox", result.stdout)
+        self.assertNotIn("NOT registered", result.stdout)
+        self.assertNotIn("--install", result.stdout)
+
+    def test_rules_check_inside_the_sandbox_says_it_cannot_tell(self):
+        result = self.sandboxed(SCRIPT.with_name("antigravity_rules.py"), "--check")
+        self.assertEqual(result.returncode, hook.COULD_NOT_TELL, result.stdout + result.stderr)
+        self.assertIn(f"could not read {self.home / '.gemini' / 'GEMINI.md'} from here", result.stdout)
+        self.assertNotIn("ABSENT", result.stdout)
+
+    def test_a_registered_block_still_reads_ok_inside_the_sandbox(self):
+        self.put({"paynani": hook.block()})
+        result = self.sandboxed(SCRIPT, "--check")
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_in_sandbox_needs_both_signs(self):
+        self.assertFalse(hook.in_sandbox(env={}, home=self.home))
+        self.assertFalse(hook.in_sandbox(env={"ANTIGRAVITY_AGENTAPI_EXE": "/x/agy"}, home=self.home),
+                         "agy running a command outside the sandbox: the home is writable")
+        os.chmod(self.home, 0o555)
+        self.addCleanup(os.chmod, self.home, 0o755)
+        self.assertFalse(hook.in_sandbox(env={}, home=self.home))
+        self.assertTrue(hook.in_sandbox(env={"ANTIGRAVITY_AGENTAPI_EXE": "/x/agy"}, home=self.home))
+
     def test_one_action_is_required(self):
         self.assertNotEqual(self.cli().returncode, 0)
         self.assertNotEqual(self.cli("--install", "--uninstall").returncode, 0)

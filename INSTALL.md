@@ -1976,17 +1976,26 @@ Everything outside the markers is kept, and a first edit leaves
 **Permissions.** When `agy` runs without anyone to approve a tool (headless), a
 command that needs approval is turned down **without stopping the run** and the
 run still exits 0. So the agent needs `scripts/paynani` and `scripts/send.sh` of
-this clone, and only those, in `permissions.allow` of
+this clone, and `systemctl --user restart|status` of paynani's own units (so an
+upgrade can restart them, #775), and only those, in `permissions.allow` of
 `~/.gemini/antigravity-cli/settings.json`:
 
 ```json
 {"permissions": {"allow": [
   "command(regex:^<clone>/scripts/paynani( .*)?$)",
-  "command(regex:^<clone>/scripts/send\\.sh( .*)?$)"
+  "command(regex:^<clone>/scripts/send\\.sh( .*)?$)",
+  "command(regex:^systemctl --user (restart|status) paynani-[a-z]+(@[A-Za-z0-9_.-]+)?(\\.service)?( paynani-[a-z]+(@[A-Za-z0-9_.-]+)?(\\.service)?)*$)"
 ]}}
 ```
 
-`bootstrap.sh` proposes both, and the standing rule above, word for word, and
+Without the third rule, the restart at the end of an upgrade is turned down
+without stopping and the services keep running the old code. It allows no
+`stop`, no `disable` and no other unit. `agy` cannot edit this file itself
+(its file tools cannot reach `~/.gemini/antigravity-cli`), so on an install
+from before #775 your human adds the third line by hand, or runs
+`scripts/bootstrap_user.py --runtime antigravity --upgrade --ref <tag>`.
+
+`bootstrap.sh` proposes all three, and the standing rule above, word for word, and
 writes them only after the owner says yes; every other key in the file is kept.
 Never use `--dangerously-skip-permissions` for an agent that holds a mailbox.
 

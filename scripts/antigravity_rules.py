@@ -21,7 +21,8 @@ the operator before writing it, and never writes it without that.
 
 Usage:
   antigravity_rules.py --print       show the block, change nothing
-  antigravity_rules.py --check       exits 0 when the current block is in place
+  antigravity_rules.py --check       exits 0 when the current block is in place, 1 when
+                                     it is not, 3 inside agy's sandbox (it cannot tell)
   antigravity_rules.py --install     write or refresh the block
   antigravity_rules.py --uninstall   remove the block, leaving the rest of the file
 """
@@ -33,6 +34,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import openclaw_rules as rules  # noqa: E402
+import antigravity_hook  # noqa: E402
 
 START, END = rules.START, rules.END
 TARGET = pathlib.Path("~/.gemini/GEMINI.md")
@@ -145,10 +147,18 @@ def main():
         print(block(), end="")
         return 0
     if args.check:
-        found = state(path)
+        # Inside agy's sandbox GEMINI.md is hidden even when it is installed (#775).
+        try:
+            found = state(path)
+        except SystemExit:
+            if antigravity_hook.in_sandbox():
+                return antigravity_hook.could_not_read(path, "antigravity_rules.py")
+            raise
         if found == "present":
             print(f"standing rule in place in {path}")
             return 0
+        if antigravity_hook.in_sandbox():
+            return antigravity_hook.could_not_read(path, "antigravity_rules.py")
         print(f"standing rule {found.upper()} in {path}; run: {ROOT}/scripts/antigravity_rules.py --install")
         return 1
     if args.install:

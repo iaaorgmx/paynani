@@ -65,10 +65,10 @@ with tempfile.TemporaryDirectory() as tmp:
 with tempfile.TemporaryDirectory() as tmp:
     home = Path(tmp)
     steps = harness_rules.plan("antigravity", ROOT, home=home)
-    check("the plan has two permission rules and the standing rule", 3, len(steps))
+    check("the plan has three permission rules and the standing rule", 4, len(steps))
     check("the permission rules go in antigravity-cli/settings.json", True,
-          all(str(harness_rules.antigravity_settings(home)) in s for s in steps[:2]))
-    check("the last step names GEMINI.md", True, str(harness_rules.antigravity_rules_file(home)) in steps[2])
+          all(str(harness_rules.antigravity_settings(home)) in s for s in steps[:3]))
+    check("the last step names GEMINI.md", True, str(harness_rules.antigravity_rules_file(home)) in steps[3])
 
     shown = []
     ok, detail = harness_rules.apply("antigravity", ROOT, home=home, confirm=lambda _q: "n", out=shown.append)
@@ -89,7 +89,9 @@ with tempfile.TemporaryDirectory() as tmp:
     data = json.loads(settings.read_text())
     check("other keys and rules are kept", ("gemini-x", "command(regex:^ls$)"),
           (data["model"], data["permissions"]["allow"][0]))
-    check("the two paynani rules are added", harness_rules.antigravity_rules(ROOT), data["permissions"]["allow"][1:])
+    check("the three paynani rules are added", harness_rules.antigravity_rules(ROOT), data["permissions"]["allow"][1:])
+    check("the third one is systemctl for paynani units (#775)", harness_rules.SYSTEMCTL_RULE,
+          data["permissions"]["allow"][-1])
     check("the file keeps its indentation", True, '\n    "model"' in settings.read_text())
     check("the standing rule is in GEMINI.md", "present",
           antigravity_rules.state(harness_rules.antigravity_rules_file(home), root=ROOT))
@@ -111,6 +113,22 @@ check("scripts/send.sh with arguments is allowed", True, allowed(f"{send} a@b.c 
 check("scripts/paynani_old is not", False, allowed(f"{paynani}_old event mark x"))
 check("a command that only mentions the path is not", False, allowed(f"rm -rf / ; {paynani} event mark x"))
 check("session_watch.sh is not (agy has no Monitor to arm it)", False, allowed(f"bash {_watch} state"))
+
+# --- #775: restarting paynani's units at the end of an upgrade -----------------
+for command in ("systemctl --user restart paynani-dispatch",
+                "systemctl --user restart paynani-dispatch.service",
+                "systemctl --user status paynani-web",
+                "systemctl --user restart paynani-idle.service paynani-dispatch.service paynani-sms.service",
+                "systemctl --user restart paynani-idle@ventas.service"):
+    check(f"allowed: {command}", True, allowed(command))
+for command in ("systemctl --user stop paynani-dispatch",
+                "systemctl --user disable paynani-dispatch",
+                "systemctl restart paynani-dispatch",
+                "systemctl --user restart sshd",
+                "systemctl --user restart paynani-dispatch sshd",
+                "systemctl --user restart paynani-dispatch; rm -rf ~",
+                "sudo systemctl --user restart paynani-dispatch"):
+    check(f"not allowed: {command}", False, allowed(command))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
