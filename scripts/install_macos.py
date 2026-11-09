@@ -586,6 +586,9 @@ def write_runtime_env(runtime: str, runtime_bin: str | None = None) -> bool:
         lines.append(f'PAYNANI_ANTIGRAVITY_MODE="{antigravity_mode()}"\n')
     lines.append(f'PAYNANI_ENV="{env_file()}"\n')
     lines.append('PAYNANI_SUPERVISOR="launchd"\n')
+    # The interpreter the LaunchAgents run (#777). An agent's shell may find Apple's
+    # Python 3.9 first; python_floor.enforce() re-runs the command with this one.
+    lines.append(f'PAYNANI_PYTHON="{sys.executable}"\n')
     desired = "".join(lines)
     current = path.read_text() if path.exists() else None
     if current == desired:

@@ -58,6 +58,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Before paynani_lib, which needs 3.10: on a host whose shell finds an older python3
+# (Apple's 3.9 on macOS), this re-runs the command with the interpreter the install
+# recorded, or says which one to use (#777).
+sys.path.append(str(Path(__file__).resolve().parent.parent / "harness"))
+import python_floor  # noqa: E402
+
+python_floor.enforce()
 from paynani_lib import (  # noqa: E402
     accounts_cli, config_cli, diagnostics, event_cli, i18n, onboard,
     openclaw_cli, roster_cli, set_cli, status_cli,
